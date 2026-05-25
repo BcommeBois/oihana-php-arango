@@ -1,0 +1,22 @@
+# ----------------------------------------------------------------------------
+# oihana/php-arango — example configuration
+#
+# Copy this file to `configs/config.toml` and adjust the values for your
+# local ArangoDB instance. Only the [arango] section is consumed by the
+# library's `bin/console.php` smoke-test runner.
+# ----------------------------------------------------------------------------
+
+[arango]
+database   = "your_database"
+endpoint   = "tcp://127.0.0.1:8529"
+user       = "root"
+password   = ""
+batchSize  = 20000
+connection = "Keep-Alive"
+create     = true
+debug      = false
+encrypt    = false
+lazy       = true
+reconnect  = true
+timeout    = 6
+type       = "Basic"

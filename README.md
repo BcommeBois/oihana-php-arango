@@ -1,0 +1,103 @@
+# Oihana PHP Arango
+
+![Oihana PHP Arango](https://raw.githubusercontent.com/BcommeBois/oihana-php-arango/main/assets/images/oihana-php-arango-logo-inline-512x160.png)
+
+Composable PHP toolkit for [ArangoDB](https://www.arangodb.com/). Part of the **Oihana PHP** ecosystem, this package bundles a modern HTTP client, a high-level façade, document/edge models, controllers, helpers and CLI commands — everything you need to build an ArangoDB-backed application end-to-end.
+
+[![Latest Version](https://img.shields.io/packagist/v/oihana/php-arango.svg?style=flat-square)](https://packagist.org/packages/oihana/php-arango)
+[![Total Downloads](https://img.shields.io/packagist/dt/oihana/php-arango.svg?style=flat-square)](https://packagist.org/packages/oihana/php-arango)
+[![License](https://img.shields.io/packagist/l/oihana/php-arango.svg?style=flat-square)](LICENSE)
+
+## 📚 Documentation
+
+Full API reference (generated with phpDocumentor): `https://bcommebois.github.io/oihana-php-arango`
+
+User guides (FR + EN) live under [`wiki/`](wiki/).
+
+## 📦 Installation
+
+Requires [PHP 8.4+](https://php.net/releases/) and an [ArangoDB 3.11+](https://www.arangodb.com/) server. Install via [Composer](https://getcomposer.org/):
+
+```bash
+composer require oihana/php-arango
+```
+
+## ✨ What you can do
+
+- **Talk to ArangoDB** through a modern, ready-to-use HTTP client built on Guzzle — Basic + JWT/Bearer authentication, automatic 401 refresh, cluster failover, retry on transient errors.
+- **Run AQL queries** with safe placeholder binding (`aql()` helper), an `AqlBuilder` for fluent assembly, and a lazy `Cursor` supporting `map / forEach / reduce / flatMap`.
+- **Manage collections, documents, edges and indexes** — full CRUD, batch operations, bulk JSON-Lines import, 7 typed index types (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `FulltextIndex`, `MdiIndex`, `VectorIndex`, `InvertedIndex`).
+- **Use transactions, graphs, analyzers and views** — streaming transactions with `withTransaction()` auto-commit/abort, gharial-based graphs with typed vertex/edge collections, ArangoSearch analyzers and views (full-text `SEARCH`, `PHRASE`, `BM25`).
+- **Compose document models** via fine-grained traits (CRUD, AQL helpers, signals before/after CRUD).
+- **Plug controllers** into any [Slim](https://www.slimframework.com/)-compatible PSR-15 stack with `DocumentsController` + capability gating.
+- **Run live smoke tests** against a real `arangod` via the built-in `arango:test:clients` and `arango:test:facade` console commands.
+
+### Under the hood
+
+- A consistent set of value objects and enums — no magic strings.
+- Pure-PHP transport based on [GuzzleHttp](https://github.com/guzzle/guzzle) v7.
+- Helpers for [PSR-11 Container](https://www.php-fig.org/psr/psr-11/) wiring.
+- Hydration delegated to [`oihana/php-reflect`](https://github.com/BcommeBois/oihana-php-reflect) — the client returns array data by default, the high-level façade hydrates into typed objects.
+- Casbin RBAC adapter for ArangoDB included (`oihana\arango\casbin\ArangoCasbinAdapter`).
+
+## ✅ Running tests
+
+Run all tests:
+
+```bash
+composer test
+```
+
+Run a specific test file:
+
+```bash
+composer test ./tests/oihana/arango/SomeTest.php
+```
+
+### Live smoke tests against a real arangod
+
+The package ships with two end-to-end smoke tests that exercise every public surface against a live ArangoDB server. They operate on an ephemeral database that is created and dropped per run, so production data is never touched.
+
+```bash
+# Copy the example config and adjust the [arango] section
+cp configs/config.example.toml configs/config.toml
+
+# Run the full smoke suite for the new clients/ HTTP library
+./bin/console.php arango:test:clients
+
+# Run the smoke suite for the high-level ArangoDB façade
+./bin/console.php arango:test:facade
+```
+
+Both commands accept `--step=N`, `--step=N1-N2`, `--step=all`, `--no-cleanup`, `--endpoint=…`, `--user=…`, `--password=…`, `--database=…`.
+
+## 🛠️ Generate the documentation
+
+We use [phpDocumentor](https://phpdoc.org/) to generate documentation into the `./docs` folder.
+
+```bash
+composer doc
+```
+
+## 🧾 License
+
+Licensed under the [Mozilla Public License 2.0 (MPL‑2.0)](https://www.mozilla.org/en-US/MPL/2.0/).
+
+## 👤 About the author
+
+- Author: Marc ALCARAZ (aka eKameleon)
+- Email: `marc@ooop.fr`
+- Website: `https://www.ooop.fr`
+
+## 🔗 Related packages
+
+- `oihana/php-auth` – Casbin RBAC + JWT/OIDC authorization toolkit: `https://github.com/BcommeBois/oihana-php-auth`
+- `oihana/php-commands` – Symfony Console kernel + traits: `https://github.com/BcommeBois/oihana-php-commands`
+- `oihana/php-core` – core helpers and utilities: `https://github.com/BcommeBois/oihana-php-core`
+- `oihana/php-enums` – typed constants & enums: `https://github.com/BcommeBois/oihana-php-enums`
+- `oihana/php-exceptions` – framework exceptions: `https://github.com/BcommeBois/oihana-php-exceptions`
+- `oihana/php-files` – file system helpers: `https://github.com/BcommeBois/oihana-php-files`
+- `oihana/php-reflect` – reflection and hydration utilities: `https://github.com/BcommeBois/oihana-php-reflect`
+- `oihana/php-schema` – Schema.org constants and vocabulary: `https://github.com/BcommeBois/oihana-php-schema`
+- `oihana/php-signals` – signal/slot dispatcher: `https://github.com/BcommeBois/oihana-php-signals`
+- `oihana/php-system` – framework helpers (controllers, models, request handling): `https://github.com/BcommeBois/oihana-php-system`
