@@ -23,7 +23,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test suite under `tests/oihana/arango/` (163 PHP files): all green under PHPUnit 12 strict mode.
 - Bilingual user guides under `wiki/{fr,en}/`: architecture, AQL, models, controllers, edges, indexes, transactions, graphs, analyzers, views, testing.
 - CLI entry point `bin/console.php` bootstrapping a minimal PHP-DI container from `definitions/` and `configs/config.toml` so the smoke tests can run without dragging in a host application.
-
-### Lineage
-
-- Source code, tests and documentation extracted from the [`oihana-odbc-php`](https://github.com/BcommeBois/oihana-odbc-php) project (sub-phase 8C of the [`arango/client/`](https://github.com/BcommeBois/oihana-odbc-php/tree/main/api/src/oihana/arango) rewrite chantier). The legacy `arango/client/` fork was rewritten as `arango/clients/` over phases 1-7, then extracted here as a standalone library.
