@@ -49,7 +49,9 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 
 ### Client HTTP — [`clients/`](clients/)
 
-- [Client HTTP ArangoDB](clients/README.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` failover cluster, authentification Basic + JWT/Bearer.
+- [Vue d'ensemble du client HTTP](clients/README.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` failover cluster, authentification Basic + JWT/Bearer.
+- [Démarrer](clients/getting-started.md) — votre premier `ArangoClient`, votre premier document, en sept petites étapes. **Nouveau sur ArangoDB ? Commencez ici.**
+- [Collections et documents](clients/documents.md) — CRUD complet, opérations en batch, import JSON-Lines en masse, edges.
 
 ### AQL — [`aql/`](aql/)
 

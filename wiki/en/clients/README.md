@@ -11,6 +11,17 @@ This page covers the **client** layer. For the façade quickstart, see [Quicksta
 
 > The client is designed as a **standalone** library — it does not depend on the `db/` layer, on Slim, or on Symfony Console. You can use it as-is for a CLI script, a worker, or an integration test suite. Its design is inspired by the official JavaScript library [`arangojs`](https://github.com/arangodb/arangojs).
 
+## Learn the client progressively
+
+If you've never used ArangoDB, read these pages in order:
+
+| # | Page | Audience |
+|---|---|---|
+| 1 | [Getting started](getting-started.md) | **Beginners** — your first `ArangoClient`, your first document, in seven small steps. |
+| 2 | [Collections and documents](documents.md) | Beginner → intermediate — full CRUD, batch operations, bulk JSON-Lines import, edges. |
+
+The rest of this page is a **reference** — architecture diagram, authentication modes, resilience, when to use the client vs the high-level façade.
+
 ## Architecture
 
 ```
@@ -28,7 +39,7 @@ ArangoClient ─────► HttpTransport (Guzzle) ───► arangod
               └─► View               (arangosearch — SEARCH, PHRASE, BM25)
 ```
 
-## Getting started
+## Quick example
 
 ```php
 use oihana\arango\clients\ArangoClient ;

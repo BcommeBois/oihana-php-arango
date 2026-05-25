@@ -49,7 +49,9 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 
 ### HTTP client — [`clients/`](clients/)
 
-- [ArangoDB HTTP client](clients/README.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` cluster failover, Basic + JWT/Bearer authentication.
+- [HTTP client overview](clients/README.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` cluster failover, Basic + JWT/Bearer authentication.
+- [Getting started](clients/getting-started.md) — your first `ArangoClient`, your first document, in seven small steps. **New to ArangoDB? Start here.**
+- [Collections and documents](clients/documents.md) — full CRUD, batch operations, bulk JSON-Lines import, edges.
 
 ### AQL — [`aql/`](aql/)
 
