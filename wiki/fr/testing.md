@@ -6,8 +6,8 @@ Deux commandes Symfony Console permettent de valider la stack ArangoDB de bout e
 
 | Commande | Cible testée |
 |---|---|
-| `bun arango:test:clients` | Lib bas-niveau `oihana\arango\clients\` (`ArangoClient`, `Database`, `Collection`, `EdgeCollection`, `Cursor`, `AqlQuery`, exceptions, indexes typés). |
-| `bun arango:test:facade` | Façade haut-niveau `oihana\arango\db\ArangoDB` (et son `CollectionManagementTrait`) : les 19 méthodes publiques que les modèles et contrôleurs consomment. |
+| `./bin/console.php arango:test:clients` | Lib bas-niveau `oihana\arango\clients\` (`ArangoClient`, `Database`, `Collection`, `EdgeCollection`, `Cursor`, `AqlQuery`, exceptions, indexes typés). |
+| `./bin/console.php arango:test:facade` | Façade haut-niveau `oihana\arango\db\ArangoDB` (et son `CollectionManagementTrait`) : les 19 méthodes publiques que les modèles et contrôleurs consomment. |
 
 Les deux commandes :
 
@@ -19,8 +19,8 @@ L'option `--no-cleanup` permet de garder la base autour pour inspection post-mor
 
 ## Quand les utiliser
 
-- Après une modification de la lib `clients/` → `bun arango:test:clients`.
-- Après une modification de la façade `db/ArangoDB` ou du trait `CollectionManagementTrait` → `bun arango:test:facade`.
+- Après une modification de la lib `clients/` → `./bin/console.php arango:test:clients`.
+- Après une modification de la façade `db/ArangoDB` ou du trait `CollectionManagementTrait` → `./bin/console.php arango:test:facade`.
 - Avant un commit qui touche au cursor, aux options de query, à la grammaire d'index ou aux exceptions → les deux.
 - Sur un nouvel environnement (poste développeur, CI, préprod) pour valider la configuration `[arango]` du `config.toml`.
 
@@ -43,16 +43,16 @@ L'option `--no-cleanup` permet de garder la base autour pour inspection post-mor
 
 ```shell
 # Tous les steps
-bun arango:test:clients
+./bin/console.php arango:test:clients
 
 # Sélection
-bun arango:test:clients --step=1-3        # steps 1 à 3
-bun arango:test:clients --step=6          # juste le step 6
-bun arango:test:clients --step=1,3,5      # liste explicite
+./bin/console.php arango:test:clients --step=1-3        # steps 1 à 3
+./bin/console.php arango:test:clients --step=6          # juste le step 6
+./bin/console.php arango:test:clients --step=1,3,5      # liste explicite
 
 # Inspection
-bun arango:test:clients --no-cleanup      # garde la base éphémère
-bun arango:test:clients --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
+./bin/console.php arango:test:clients --no-cleanup      # garde la base éphémère
+./bin/console.php arango:test:clients --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
 ```
 
 Code : [src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php](../../src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php).
@@ -75,16 +75,16 @@ Code : [src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php](.
 
 ```shell
 # Tous les steps
-bun arango:test:facade
+./bin/console.php arango:test:facade
 
 # Sélection
-bun arango:test:facade --step=1-3
-bun arango:test:facade --step=6
-bun arango:test:facade --step=1,3,5
+./bin/console.php arango:test:facade --step=1-3
+./bin/console.php arango:test:facade --step=6
+./bin/console.php arango:test:facade --step=1,3,5
 
 # Inspection
-bun arango:test:facade --no-cleanup
-bun arango:test:facade --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
+./bin/console.php arango:test:facade --no-cleanup
+./bin/console.php arango:test:facade --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
 ```
 
 Code : [src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php](../../src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php).
@@ -121,8 +121,6 @@ Les deux commandes sont **wirées via PHP-DI** dans la bibliothèque, prêtes à
 - Configuration : [`configs/config.example.toml`](../../configs/config.example.toml) (à copier en `configs/config.toml` localement avant la première exécution).
 
 Une commande de test ajoutée ultérieurement doit suivre la même chaîne : ajouter sa factory dans `definitions/commands.php` puis l'enregistrer dans `definitions/application.php` via `$application->add(...)`.
-
-> Note transition `oihana/php-arango`. Au moment de l'extraction opensource (Phase 8), ces commandes suivront dans la lib mais avec leur propre mini-conteneur DI standalone, indépendant des dépendances du projet (Slim, Casbin, etc.). Cf. la mémoire de chantier interne pour les détails.
 
 ## Voir aussi
 

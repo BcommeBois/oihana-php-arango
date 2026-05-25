@@ -6,8 +6,8 @@ Two Symfony Console commands validate the ArangoDB stack end-to-end against a re
 
 | Command | Target |
 |---|---|
-| `bun arango:test:clients` | Low-level library `oihana\arango\clients\` (`ArangoClient`, `Database`, `Collection`, `EdgeCollection`, `Cursor`, `AqlQuery`, exceptions, typed indexes). |
-| `bun arango:test:facade` | High-level façade `oihana\arango\db\ArangoDB` (and its `CollectionManagementTrait`): the 19 public methods that models and controllers actually consume. |
+| `./bin/console.php arango:test:clients` | Low-level library `oihana\arango\clients\` (`ArangoClient`, `Database`, `Collection`, `EdgeCollection`, `Cursor`, `AqlQuery`, exceptions, typed indexes). |
+| `./bin/console.php arango:test:facade` | High-level façade `oihana\arango\db\ArangoDB` (and its `CollectionManagementTrait`): the 19 public methods that models and controllers actually consume. |
 
 Both commands:
 
@@ -19,8 +19,8 @@ The `--no-cleanup` flag keeps the database around for post-mortem inspection.
 
 ## When to use them
 
-- After touching the `clients/` library → `bun arango:test:clients`.
-- After touching the `db/ArangoDB` façade or `CollectionManagementTrait` → `bun arango:test:facade`.
+- After touching the `clients/` library → `./bin/console.php arango:test:clients`.
+- After touching the `db/ArangoDB` façade or `CollectionManagementTrait` → `./bin/console.php arango:test:facade`.
 - Before a commit that affects the cursor, query options, index grammar or exceptions → both.
 - On a new environment (developer machine, CI, staging) to validate the `[arango]` section of `config.toml`.
 
@@ -43,16 +43,16 @@ The `--no-cleanup` flag keeps the database around for post-mortem inspection.
 
 ```shell
 # All steps
-bun arango:test:clients
+./bin/console.php arango:test:clients
 
 # Subset
-bun arango:test:clients --step=1-3        # steps 1 through 3
-bun arango:test:clients --step=6          # step 6 only
-bun arango:test:clients --step=1,3,5      # explicit list
+./bin/console.php arango:test:clients --step=1-3        # steps 1 through 3
+./bin/console.php arango:test:clients --step=6          # step 6 only
+./bin/console.php arango:test:clients --step=1,3,5      # explicit list
 
 # Inspection
-bun arango:test:clients --no-cleanup      # keep the ephemeral database
-bun arango:test:clients --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
+./bin/console.php arango:test:clients --no-cleanup      # keep the ephemeral database
+./bin/console.php arango:test:clients --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
 ```
 
 Source: [src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php](../../src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php).
@@ -75,16 +75,16 @@ Source: [src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php](
 
 ```shell
 # All steps
-bun arango:test:facade
+./bin/console.php arango:test:facade
 
 # Subset
-bun arango:test:facade --step=1-3
-bun arango:test:facade --step=6
-bun arango:test:facade --step=1,3,5
+./bin/console.php arango:test:facade --step=1-3
+./bin/console.php arango:test:facade --step=6
+./bin/console.php arango:test:facade --step=1,3,5
 
 # Inspection
-bun arango:test:facade --no-cleanup
-bun arango:test:facade --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
+./bin/console.php arango:test:facade --no-cleanup
+./bin/console.php arango:test:facade --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
 ```
 
 Source: [src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php](../../src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php).

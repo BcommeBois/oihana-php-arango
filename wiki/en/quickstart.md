@@ -129,7 +129,7 @@ $first = $db->getFirstResult( fn( $d ) =>          // dynamic dispatch
 
 After `execute()`, three *getters* expose the metadata:
 
-- `getCursor()` — direct access to the underlying [`Cursor`](../../src/oihana/arango/client/Cursor.php).
+- `getCursor()` — direct access to the underlying [`Cursor`](../../src/oihana/arango/clients/cursor/Cursor.php).
 - `getFoundRows()` — *total count* (equivalent to AQL `FULL COUNT`). Requires the query to have been prepared with `fullCount: true`.
 - `getExtra()` — additional metadata returned by the server (statistics, *warnings*, *plan*).
 

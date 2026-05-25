@@ -267,7 +267,7 @@ final class UsersController extends DocumentsController
 }
 ```
 
-`CapabilityAuthorizerTrait` — bundled in the `CapabilityGuardTrait` facade — builds a request-scoped `Closure(string): bool` against the Casbin `CapabilityEnforcer` and the current Zitadel `userId`. It applies `safeSubject` automatically (see [auth code tips](../auth/tips.md)). When the enforcer is unavailable or the request carries no authenticated user, `buildAuthorizer` returns `null` — the `if` short-circuits and the framework falls back on its default behaviour (fail open, see next section).
+`CapabilityAuthorizerTrait` — bundled in the `CapabilityGuardTrait` facade — builds a request-scoped `Closure(string): bool` against the Casbin `CapabilityEnforcer` and the current Zitadel `userId`. It applies `safeSubject` automatically (see [auth code tips](https://github.com/BcommeBois/oihana-php-auth/blob/main/wiki/en/tips.md)). When the enforcer is unavailable or the request carries no authenticated user, `buildAuthorizer` returns `null` — the `if` short-circuits and the framework falls back on its default behaviour (fail open, see next section).
 
 Benefit: the override is **a single line per controller**, not per HTTP verb. The wiring covers `list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete` automatically.
 

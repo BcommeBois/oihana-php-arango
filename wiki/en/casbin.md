@@ -164,7 +164,7 @@ A *policy*'s `_key` must be unique by `<ptype>:<v0>:<v1>:<v2>` convention. Tryin
 
 ### `safeSubject` for identifiers
 
-Any subject (`v0`) passed to the *enforcer* (read or write) must go through `casbinSafeSubject()` to avoid Casbin's silent coercion on some characters. See [Authentication tips](../auth/tips.md) on the host project side.
+Any subject (`v0`) passed to the *enforcer* (read or write) must go through `casbinSafeSubject()` to avoid Casbin's silent coercion on some characters. See [Authentication tips](https://github.com/BcommeBois/oihana-php-auth/blob/main/wiki/en/tips.md) in `oihana/php-auth`.
 
 ## See also
 

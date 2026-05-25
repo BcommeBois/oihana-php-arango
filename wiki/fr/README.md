@@ -2,9 +2,7 @@
 
 ![Langue](https://img.shields.io/badge/langue-Français-blue)
 
-`oihana/php-arango` est un framework PHP qui industrialise le travail avec [ArangoDB](https://arangodb.com) : client natif, *builder* AQL composable, modèles haut-niveau (`Documents`, `Edges`) par composition de traits, contrôleurs Slim CRUD, adaptateur Casbin RBAC et commandes Symfony Console.
-
-> Cette documentation est **en construction active**. Le sommaire ci-dessous reflète l'avancement réel : les pages marquées *prévu* sont planifiées mais pas encore rédigées. Voir la section [Statut du chantier](#statut-du-chantier).
+`oihana/php-arango` est une bibliothèque PHP qui industrialise le travail avec [ArangoDB](https://arangodb.com) : client HTTP natif (Guzzle), *builder* AQL composable, modèles haut-niveau (`Documents`, `Edges`) par composition de traits, contrôleurs Slim CRUD, adaptateur Casbin RBAC et commandes Symfony Console.
 
 ## À qui s'adresse cette documentation
 
@@ -25,7 +23,7 @@ use oihana\arango\models\Documents ;
 $users = new Documents( $container ,
 [
     AQL::COLLECTION => 'users'              ,
-    AQL::DATABASE   => Databases::ARANGO    ,
+    AQL::DATABASE   => 'default'            ,
     AQL::SCHEMA     => User::class          ,
     AQL::FIELDS     =>
     [
@@ -44,67 +42,56 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 
 ### Fondations
 
-- [Introduction](introduction.md) — *disponible* — qu'est-ce qu'ArangoDB, l'intérêt de la technologie, la philosophie `oihana`, et pourquoi cette bibliothèque existe.
-- [Dépendances](dependencies.md) — *disponible* — packages `oihana/php-*` requis, mapping *namespace* → package, snippet `composer require` minimal pour un usage autonome.
-- [Glossaire](glossary.md) — *disponible* — termes clés du framework : *bind variable*, *document reference*, *skin*, *facet*, *traversal*, *edge*.
+- [Introduction](introduction.md) — qu'est-ce qu'ArangoDB, l'intérêt de la technologie, la philosophie `oihana`, et pourquoi cette bibliothèque existe.
+- [Dépendances](dependencies.md) — packages `oihana/php-*` requis, mapping *namespace* → package, snippet `composer require` minimal pour un usage autonome.
+- [Glossaire](glossary.md) — termes clés du framework : *bind variable*, *document reference*, *skin*, *facet*, *traversal*, *edge*.
 
 ### Démarrer
 
-- [Quickstart `ArangoDB`](quickstart.md) — *disponible* — instancier le client, exécuter une requête AQL brute, traits de base (`ArangoTrait`).
-- [Helpers AQL `db/helpers/`](db-helpers.md) — *disponible* — `aqlExpression`, `aqlDocument`, `aqlValue`, *field builders* et compagnie.
-- [Bind variables `db/binds/`](db-binds.md) — *disponible* — `aqlBind`, validation et formatage des valeurs injectées.
+- [Quickstart `ArangoDB`](quickstart.md) — instancier le client, exécuter une requête AQL brute, traits de base (`ArangoTrait`).
+- [Helpers AQL `db/helpers/`](db-helpers.md) — `aqlExpression`, `aqlDocument`, `aqlValue`, *field builders* et compagnie.
+- [Bind variables `db/binds/`](db-binds.md) — `aqlBind`, validation et formatage des valeurs injectées.
 
 ### Construire des requêtes AQL
 
-- [Construire une requête AQL pas à pas](aql/aql-building-queries.md) — *disponible* — enchaînement `FOR → FILTER → SORT → LIMIT → RETURN`, avec diagramme et exemples.
-- [Opérations AQL `db/operations/`](aql/aql-operations.md) — *disponible* — les 21 opérations natives (`aqlFor`, `aqlFilter`, `aqlReturn`, `aqlInsert`, `aqlTraversal`, ...).
-- [Opérateurs `db/operators/`](aql/aql-operators.md) — *disponible* — les 42 comparateurs (logiques, quantifiés, *range*, *ternary*).
-- [Fonctions de chaînes](aql/aql-functions-strings.md) — *disponible* — 37 fonctions AQL côté chaînes.
-- [Fonctions de dates](aql/aql-functions-dates.md) — *disponible* — 30 fonctions AQL côté dates.
-- [Fonctions numériques](aql/aql-functions-numerics.md) — *disponible* — 31 fonctions AQL côté nombres.
-- [Fonctions de tableaux](aql/aql-functions-arrays.md) — *disponible* — 19 fonctions AQL côté tableaux.
-- [Fonctions documents et vérifications](aql/aql-functions-checks.md) — *disponible* — 28 fonctions : *type-checks*, *casts*, opérations sur documents, informations de la base.
+- [Construire une requête AQL pas à pas](aql/aql-building-queries.md) — enchaînement `FOR → FILTER → SORT → LIMIT → RETURN`, avec diagramme et exemples.
+- [Opérations AQL `db/operations/`](aql/aql-operations.md) — les 21 opérations natives (`aqlFor`, `aqlFilter`, `aqlReturn`, `aqlInsert`, `aqlTraversal`, ...).
+- [Opérateurs `db/operators/`](aql/aql-operators.md) — les 42 comparateurs (logiques, quantifiés, *range*, *ternary*).
+- [Fonctions de chaînes](aql/aql-functions-strings.md) — 37 fonctions AQL côté chaînes.
+- [Fonctions de dates](aql/aql-functions-dates.md) — 30 fonctions AQL côté dates.
+- [Fonctions numériques](aql/aql-functions-numerics.md) — 31 fonctions AQL côté nombres.
+- [Fonctions de tableaux](aql/aql-functions-arrays.md) — 19 fonctions AQL côté tableaux.
+- [Fonctions documents et vérifications](aql/aql-functions-checks.md) — 28 fonctions : *type-checks*, *casts*, opérations sur documents, informations de la base.
 
 ### Options et configuration
 
-- [Référence des options AQL](options.md) — *disponible* — `QueryOptions`, `InsertOptions`, `UpdateOptions`, `TraversalOptions`, options d'index, sérialisation.
-- [Référence des enums](enums.md) — *disponible* — `Operator`, `Comparator`, `Clause`, `Logic`, `Node`, `Traversal`, `IndexType`, `DateUnit`.
+- [Référence des options AQL](options.md) — `QueryOptions`, `InsertOptions`, `UpdateOptions`, `TraversalOptions`, options d'index, sérialisation.
+- [Référence des enums](enums.md) — `Operator`, `Comparator`, `Clause`, `Logic`, `Node`, `Traversal`, `IndexType`, `DateUnit`.
 
 ### Couche métier
 
-- [Modèles `Documents` et `Edges`](models.md) — *disponible* — architecture des traits, catalogue des clés `AQL::*`, méthodes CRUD, hooks de cycle de vie, cascade via *signals*.
-- [Projection des edges et joins](edges-joins-projection.md) — *disponible* — `Field::SKINS`, `AQL::SKIN`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, pattern `CapabilityAuthorizerTrait`.
-- [Filtres HTTP `?filter=`](filter.md) — *disponible* — syntaxe `?filter=`, opérateurs (`eq`, `ne`, `like`, `in`, ...), transformations `alt`, chaînage, `FilterType::*`.
-- [Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) — *disponible* — conditions serveur-only, `FilterType::VIRTUAL`, règle de choix URL vs interne.
-- [Contrôleurs Slim](controllers/README.md) — *disponible* — `DocumentsController`, `EdgesController`, `PropertyController`, injection DI, hooks `beforeModelCall` / `afterModelCall`, `InjectFilterTrait`.
+- [Modèles `Documents` et `Edges`](models.md) — architecture des traits, catalogue des clés `AQL::*`, méthodes CRUD, hooks de cycle de vie, cascade via *signals*.
+- [Projection des edges et joins](edges-joins-projection.md) — `Field::SKINS`, `AQL::SKIN`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, pattern `CapabilityAuthorizerTrait`.
+- [Filtres HTTP `?filter=`](filter.md) — syntaxe `?filter=`, opérateurs (`eq`, `ne`, `like`, `in`, ...), transformations `alt`, chaînage, `FilterType::*`.
+- [Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) — conditions serveur-only, `FilterType::VIRTUAL`, règle de choix URL vs interne.
+- [Contrôleurs Slim](controllers/README.md) — `DocumentsController`, `EdgesController`, `PropertyController`, injection DI, hooks `beforeModelCall` / `afterModelCall`, `InjectFilterTrait`.
   - [Payloads](controllers/payloads.md) — extraction du *body* HTTP, catalogue `AQLType`, validation i18n pré-extraction, `COMPRESS` sur PATCH.
   - [Rules](controllers/rules.md) — validation après payload, `Arango::RULES` + `CUSTOM_RULES`, helpers `rules() / min() / max() / between()`, catalogue vendor + projet, format 422.
   - [Skins](controllers/skins.md) — projection en sortie, catalogue des 12 *skins* canoniques, `Skin::INTERNAL` strictement serveur.
   - [Capabilities](controllers/capabilities.md) — gating fin sur la **valeur** d'un paramètre ou d'un champ, 7 traits Capability, pattern *authorizer* injecté vers le modèle.
-- [Commandes Symfony Console](commands.md) — *disponible* — `DocumentsCommand` et ses actions (`insert`, `upsert`, `harvest`, `list`, `count`, `get`, `update`, `replace`, `delete`, `truncate`).
-- [Indexes et gestion des collections](indexes.md) — *disponible* — `CollectionManagementTrait`, types d'index (`Persistent`, `TTL`, `Geo`, `MDI`, `Vector`).
-- [Smoke tests live](testing.md) — *disponible* — `bun arango:test:clients` (lib bas-niveau) et `bun arango:test:facade` (façade `ArangoDB`), exécutés contre une base de données éphémère pour ne jamais toucher la prod.
+- [Commandes Symfony Console](commands.md) — `DocumentsCommand` et ses actions (`insert`, `upsert`, `harvest`, `list`, `count`, `get`, `update`, `replace`, `delete`, `truncate`).
+- [Indexes et gestion des collections](indexes.md) — `CollectionManagementTrait`, types d'index (`Persistent`, `TTL`, `Geo`, `MDI`, `Vector`).
+- [Smoke tests live](testing.md) — `./bin/console.php arango:test:clients` (lib bas-niveau) et `./bin/console.php arango:test:facade` (façade `ArangoDB`), exécutés contre une base de données éphémère pour ne jamais toucher la prod.
 
 ### Modules spécialisés
 
-- [Adaptateur Casbin RBAC](casbin.md) — *disponible* — `ArangoCasbinAdapter`, *batch* et *filtered* adapters, synchronisation edges → *policies*, pièges connus.
-- [Client ArangoDB *legacy*](client.md) — *disponible* — fork du driver officiel, *caveat* PHP 8.4, *roadmap* de réécriture moderne.
-- [Helpers racine `oihana\arango\helpers`](helpers.md) — *disponible* — grammaire de tri, parsing d'identifiants, encodage de révisions `_rev`.
+- [Client HTTP ArangoDB](client.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` failover cluster, authentification Basic + JWT/Bearer.
+- [Adaptateur Casbin RBAC](casbin.md) — `ArangoCasbinAdapter`, *batch* et *filtered* adapters, synchronisation edges → *policies*, pièges connus.
+- [Helpers racine `oihana\arango\helpers`](helpers.md) — grammaire de tri, parsing d'identifiants, encodage de révisions `_rev`.
 
 ### Transverse
 
-- [Tips et pièges](tips.md) — *disponible* — règles d'or à respecter ; page enrichie au fil des incidents.
-
-## Statut du chantier
-
-| Phase | Description | État |
-|---|---|---|
-| 0 | Fondations — introduction, dépendances, glossaire | *disponible* |
-| 1 | Démarrer — quickstart, `db/helpers`, `db/binds` | *disponible* |
-| 2 | Cœur AQL — *operations*, *operators*, *functions* | *disponible* |
-| 3 | Options et enums | *disponible* |
-| 4 | Couche métier — modèles, contrôleurs, commandes | *disponible* |
-| 5 | Modules spécialisés — Casbin, client *legacy* | *disponible* |
+- [Tips et pièges](tips.md) — règles d'or à respecter ; page enrichie au fil des incidents.
 
 ## Code source
 

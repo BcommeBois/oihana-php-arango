@@ -47,7 +47,7 @@ Le besoin est né d'un constat simple : **l'écosystème PHP autour d'ArangoDB e
 - Les couches d'intégration usuelles (DI PSR-11, Slim, Symfony Console) ne sont pas fournies — chaque projet refait sa colle.
 - Les besoins transverses (projection par *skin*, *edges* et *joins* avec gating par permission, adaptateur Casbin, *signals* pour la cascade des relations) sont absents et chacun les ré-implémente.
 
-`oihana/php-arango` adresse les quatre points. Le dossier [`client/`](../../src/oihana/arango/client/) est lui-même un fork du driver officiel, conservé tel quel et juste patché pour fonctionner en PHP 8.4 — il est appelé à être remplacé par un client moderne réécrit aux standards de la bibliothèque.
+`oihana/php-arango` adresse les quatre points. Le dossier [`clients/`](../../src/oihana/arango/clients/) embarque un client HTTP moderne (Guzzle, PHP 8.4+) écrit aux standards de la bibliothèque : transport résilient, retry sur erreurs transitoires, failover cluster, authentification Basic + JWT/Bearer, surface couvrant la totalité de l'API REST d'`arangod` (documents, edges, AQL, indexes, transactions, graphs, analyzers, views).
 
 ## Public et prérequis
 

@@ -135,8 +135,6 @@ composer require symfony/console:^6.0
 composer require casbin/casbin:^3.0
 ```
 
-> `oihana/php-arango` itself is not yet published as a standalone package. Until the extraction takes place, the code lives under `src/oihana/arango/` in a host application. The `composer require oihana/php-arango:dev-main` snippet will become valid at that point.
-
 ## Note on versions
 
 All `oihana/*` packages are currently versioned as `dev-main`. As long as one dependency of the graph is `dev-main`, the package that consumes it stays `dev-main` too — it would be incoherent to tag `1.0.0` a package that points at `dev-main`. Stabilization will happen by cascade once the whole graph is ready to receive a tag.

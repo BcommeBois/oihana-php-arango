@@ -177,7 +177,7 @@ $init[ Arango::AUTHORIZER ] = fn( string $subject ) : bool
 
 `CapabilityAuthorizerTrait::buildAuthorizer( $request )` fabrique automatiquement ce *callable* request-scoped basé sur le `CapabilityEnforcer` Casbin. Le modèle filtre alors ses *edges* et *joins* annotés `AQL::REQUIRES` en consultant ce *callable* — sans avoir à comprendre Casbin lui-même.
 
-C'est le contrat de **séparation des responsabilités** entre `oihana/php-arango` (qui ne sait rien d'auth) et la couche contrôleur du projet hôte (qui implémente Casbin). Quand un jour `oihana/php-arango` est extrait en lib autonome, l'*authorizer* reste injectable depuis l'extérieur — voir le chantier [découplage `oihana/php-arango` ↔ `oihana/api`](../../../../docs/fr/arango/dependencies.md#couplages-locaux-au-projet-hôte).
+C'est le contrat de **séparation des responsabilités** entre `oihana/php-arango` (qui ne sait rien de l'authentification) et la couche `oihana/php-auth` (qui implémente Casbin). L'*authorizer* est injectable depuis l'extérieur — voir [Intégration avec `oihana/php-auth`](../dependencies.md#intégration-avec-oihanaphp-auth).
 
 ## Exemple complet — `/products?skin=offers.full`
 
@@ -240,4 +240,4 @@ Le client n'a jamais besoin de demander une URL différente selon son rôle. Le 
 - [Projection des edges et joins — `AQL::REQUIRES`](../edges-joins-projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires) — *capability* au niveau modèle (edge/join).
 - [Filtres HTTP `?filter=`](../filter.md) — paramètre couvert par `CapabilityFilterKeysTrait`.
 - [Adaptateur Casbin RBAC](../casbin.md) — système d'autorisation sous-jacent.
-- [Dépendances — Couplages locaux](../dependencies.md#couplages-locaux-au-projet-hôte) — le contrat d'injection d'*authorizer* qui garde `oihana/php-arango` indépendant.
+- [Dépendances — Intégration avec `oihana/php-auth`](../dependencies.md#intégration-avec-oihanaphp-auth) — le contrat d'injection d'*authorizer*.
