@@ -87,8 +87,22 @@ Sub-folder dedicated to keys and values consumed by the [`*Options`](options.md)
 | `TraversalOrder` | Traversal strategy | `BFS` (breadth), `DFS` (depth), `WEIGHTED` |
 | `TraversalUniqueEdges` | Edge uniqueness policy | `NONE`, `PATH`, `GLOBAL` |
 | `TraversalUniqueVertices` | Vertex uniqueness policy | `NONE`, `PATH`, `GLOBAL` |
-| `FaithParam` | Faiss parameters consumed by `VectorIndexOptions` | `NLISTS`, `NPROBE`, `M`, `EFCONSTRUCTION`, etc. (vary with ArangoDB version) |
 | `PercentileMethod` | Method used by [`percentile()`](aql/aql-functions-numerics.md#array-aggregation) | `RANK`, `INTERPOLATION` |
+
+`FaithParam` and `PercentileMethod` actually live directly under `enums/` (not under `enums/options/`); see the section below for `FaithParam`'s real constants.
+
+### Vector index — `FaithParam`
+
+Faiss parameters consumed by `VectorIndexOptions`:
+
+| Constant | Underlying key |
+|---|---|
+| `DIMENSION` | `dimension` |
+| `METRIC` | `metric` |
+| `N_LISTS` | `nLists` |
+| `DEFAULT_N_PROBE` | `defaultNProbe` |
+| `FACTORY` | `factory` |
+| `TRAINING_ITERATIONS` | `trainingIterations` |
 
 ## Statistics and execution plan
 

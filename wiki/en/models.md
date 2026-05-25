@@ -277,4 +277,6 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 - [Internal filtering](db/filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` for server-only conditions.
 - [Slim controllers](controllers/README.md) — HTTP exposition of the model.
 - [Enums reference](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consumed here.
+- [Client-side CRUD](clients/documents.md) — the lower-level layer this model is built on.
+- [Client-side AQL](clients/aql.md) — `aql()` helper and lazy `Cursor` semantics underneath `prepare/execute`.
 - [Quickstart `ArangoDB`](getting-started/quickstart.md) — the underlying low-level layer.

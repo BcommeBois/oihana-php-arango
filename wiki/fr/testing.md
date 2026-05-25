@@ -69,7 +69,7 @@ Code : [src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php](.
 | 4 | Single result : `getFirstResult`, `getObject`, `getResult`, **`INSERT … RETURN NEW`** (aller-retour explicite) |
 | 5 | Streaming : `streamDocuments()` (Generator) |
 | 6 | **Nesting `fullCount`** : `getFoundRows()` + `getExtra()` avec `fullCount: true` passé à plat dans `prepare()`. La cible de régression critique de Lot 6.1 — si le *nesting* sous `options.{...}` est cassé, `getFoundRows()` retourne silencieusement `0`. |
-| 7 | **Exception wrapping** : une AQL invalide doit lever une `oihana\arango\client\Exception` (*legacy*) avec la nouvelle exception `oihana\arango\clients\exceptions\ArangoException` chaînée via `$previous`. C'est ce qui permet aux ~50 sites de *catch* du projet de continuer à matcher pendant la transition. |
+| 7 | **Surface d'exception** : une AQL invalide doit remonter en `oihana\arango\clients\exceptions\ArangoException`, avec l'exception clients/ sous-jacente chaînée via `$previous`. |
 
 ### Usage
 
@@ -126,4 +126,4 @@ Une commande de test ajoutée ultérieurement doit suivre la même chaîne : ajo
 
 - [Commandes Symfony Console](commands.md) — `DocumentsCommand` et ses actions métier (CRUD, harvest, …).
 - [Indexes et gestion des collections](indexes.md) — la grammaire d'index et le `CollectionManagementTrait`.
-- [Client ArangoDB *legacy*](clients/README.md) — *contexte* de la réécriture en cours.
+- [Le client HTTP](clients/README.md) — couche bas niveau exercée par `arango:test:clients`.

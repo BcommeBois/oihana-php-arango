@@ -70,7 +70,11 @@ Les skins sont des chaînes de caractères opaques. Tout skin défini dans `Acme
 Quand une edge pointe vers un document complexe, on déclare sa projection en composant `AQL::FIELDS` et `AQL::EDGES` directement sur la définition d'edge dans `AQL::EDGES`. Le pattern est illustré par `employeeEdge.php` :
 
 ```php
-function employeeEdge( ?string $employeePath = Paths::PEOPLE ) :array
+// Exemple côté projet hôte (`Acme\functions\edges\employeeEdge`).
+function employeeEdge(
+    ?string $employeePath     = Paths::PEOPLE ,
+    ?string $workLocationPath = Paths::LOCATIONS ,
+) :array
 {
     return
     [

@@ -196,7 +196,7 @@ All these enums consume `ConstantsTrait` ([`oihana/php-enums`](getting-started/d
 | `ArangoDumpTrait` | Mechanics of serializing a collection to a dump. |
 | `ArangoRestoreTrait` | Mechanics of reinjecting a dump. |
 | `DocumentsCommandTrait` | Shares behaviors between Documents actions. |
-| `DocumentsCommandParamTrait` | Parsing of CLI parameters specific to `DocumentsCommand`. |
+| `DocumentsCommandParamTrait` | Shared constants registry (`ConstantsTrait` + `CommandParamTrait`) for `DocumentsCommandParam`. |
 
 ## Registration in the commands registry
 

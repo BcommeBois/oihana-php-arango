@@ -278,3 +278,5 @@ Les hooks `beforeModelCall`/`afterModelCall` viennent du trait `ModelCallTrait` 
 - [Contrôleurs Slim](controllers/README.md) — exposition HTTP du modèle.
 - [Référence des enums](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consommés ici.
 - [Quickstart `ArangoDB`](getting-started/quickstart.md) — la couche bas niveau sous-jacente.
+- [CRUD côté client](clients/documents.md) — la couche bas niveau sur laquelle ce modèle est bâti.
+- [AQL côté client](clients/aql.md) — helper `aql()` et sémantique paresseuse du `Cursor` sous `prepare/execute`.

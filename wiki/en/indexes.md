@@ -17,7 +17,7 @@ ArangoDB exposes six index types usable by the framework. The right choice depen
 | `vector` | Similarity search (*embeddings*, *cosine*). ArangoDB 3.12+. | float-array field | Requires Enterprise edition for some Faiss features. |
 | `fulltext` *(deprecated)* | Simple text search. | one string field | Replaced by ArangoSearch views — avoid for new features. |
 
-For advanced text search (linguistic analyzers, BM25, facets), prefer **ArangoSearch views** rather than a `fulltext` index. These views are not wrapped by `oihana/php-arango` to date — they are used directly through an `aqlSearch()` clause in a custom AQL query.
+For advanced text search (linguistic analyzers, BM25, facets), prefer **ArangoSearch views** rather than a `fulltext` index. The client layer wraps both analyzers and views — see [clients/arangosearch.md](clients/arangosearch.md). For full-text on a **single** collection, the client layer also exposes an `InvertedIndex` ([clients/indexes.md](clients/indexes.md#invertedindex--modern-full-text-310)) that is not yet available on the `db/` façade.
 
 ## Management methods
 
@@ -186,7 +186,7 @@ $vec->params  =
 [
     'dimension'    => 768          ,
     'metric'       => 'cosine'     ,
-    FaithParam::NLISTS => 1000     ,
+    FaithParam::N_LISTS => 1000     ,
 ] ;
 $vec->name = 'idx_documents_vector' ;
 
@@ -223,4 +223,5 @@ Useful for *doctor* commands or admin reports. The list always includes implicit
 - [Quickstart `ArangoDB`](getting-started/quickstart.md#manage-indexes) — `createIndex` / `dropIndex` / `getIndex` / `getIndexes` methods.
 - [AQL options reference — Index options](options.md#index-options--optionsindexes) — property details per class.
 - [`Documents` and `Edges` models](models.md) — `AQL::INDEXES` key for *lazy* declaration.
+- [Client-side indexes](clients/indexes.md) — the typed `readonly` index classes (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `MDIIndex`, `VectorIndex`, `InvertedIndex`, `FulltextIndex`) used directly against `/_api/index`.
 - [Official ArangoDB documentation — Working with indexes](https://docs.arangodb.com/stable/index-and-search/indexing/working-with-indexes/).

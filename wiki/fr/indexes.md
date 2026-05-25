@@ -17,7 +17,7 @@ ArangoDB expose six types d'index utilisables par le framework. Le bon choix dé
 | `vector` | Recherche par similarité (*embeddings*, *cosine*). ArangoDB 3.12+. | champ tableau de floats | Requiert édition Enterprise pour certaines features Faiss. |
 | `fulltext` *(deprecated)* | Recherche textuelle simple. | un champ chaîne | Remplacé par les vues ArangoSearch — éviter pour les nouvelles fonctionnalités. |
 
-Pour la recherche textuelle avancée (analyseurs linguistiques, BM25, facettes), préférer les **vues ArangoSearch** plutôt qu'un index `fulltext`. Ces vues ne sont pas wrappées par `oihana/php-arango` à ce jour — elles s'utilisent directement via une clause `aqlSearch()` dans une requête AQL custom.
+Pour la recherche textuelle avancée (analyseurs linguistiques, BM25, facettes), préférer les **vues ArangoSearch** plutôt qu'un index `fulltext`. La couche client wrappe analyzers et views — voir [clients/arangosearch.md](clients/arangosearch.md). Pour du full-text sur **une seule** collection, la couche client expose aussi un `InvertedIndex` ([clients/indexes.md](clients/indexes.md#invertedindex--full-text-moderne-310)) qui n'est pas encore disponible sur la façade `db/`.
 
 ## Méthodes de gestion
 
@@ -186,7 +186,7 @@ $vec->params  =
 [
     'dimension'    => 768          ,
     'metric'       => 'cosine'     ,
-    FaithParam::NLISTS => 1000     ,
+    FaithParam::N_LISTS => 1000     ,
 ] ;
 $vec->name = 'idx_documents_vector' ;
 
@@ -223,4 +223,5 @@ Utile pour les commandes de *doctor* ou les rapports d'admin. La liste inclut sy
 - [Quickstart `ArangoDB`](getting-started/quickstart.md#gérer-les-index) — méthodes `createIndex` / `dropIndex` / `getIndex` / `getIndexes`.
 - [Référence des options AQL — Options d'index](options.md#options-dindex--optionsindexes) — détail des propriétés par classe.
 - [Modèles `Documents` et `Edges`](models.md) — clé `AQL::INDEXES` pour la déclaration *lazy*.
+- [Indexes côté client](clients/indexes.md) — les classes d'index typées `readonly` (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `MDIIndex`, `VectorIndex`, `InvertedIndex`, `FulltextIndex`) utilisées directement contre `/_api/index`.
 - [Documentation officielle ArangoDB — Working with indexes](https://docs.arangodb.com/stable/index-and-search/indexing/working-with-indexes/).

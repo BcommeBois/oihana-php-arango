@@ -87,8 +87,22 @@ Sous-dossier dédié aux clés et valeurs consommées par les classes [`*Options
 | `TraversalOrder` | Stratégie de parcours | `BFS` (largeur), `DFS` (profondeur), `WEIGHTED` |
 | `TraversalUniqueEdges` | Politique d'unicité des arêtes | `NONE`, `PATH`, `GLOBAL` |
 | `TraversalUniqueVertices` | Politique d'unicité des sommets | `NONE`, `PATH`, `GLOBAL` |
-| `FaithParam` | Paramètres Faiss consommés par `VectorIndexOptions` | `NLISTS`, `NPROBE`, `M`, `EFCONSTRUCTION`, etc. (variables selon la version ArangoDB) |
 | `PercentileMethod` | Méthode de calcul utilisée par [`percentile()`](aql/aql-functions-numerics.md#agrégation-sur-tableau) | `RANK`, `INTERPOLATION` |
+
+`FaithParam` et `PercentileMethod` vivent en réalité directement sous `enums/` (pas sous `enums/options/`) ; les vraies constantes de `FaithParam` sont listées ci-dessous.
+
+### Index vectoriel — `FaithParam`
+
+Paramètres Faiss consommés par `VectorIndexOptions` :
+
+| Constante | Clé sous-jacente |
+|---|---|
+| `DIMENSION` | `dimension` |
+| `METRIC` | `metric` |
+| `N_LISTS` | `nLists` |
+| `DEFAULT_N_PROBE` | `defaultNProbe` |
+| `FACTORY` | `factory` |
+| `TRAINING_ITERATIONS` | `trainingIterations` |
 
 ## Statistiques et plan d'exécution
 

@@ -70,7 +70,11 @@ Skins are opaque strings. Any skin defined in `Acme\enums\Skin` (which extends t
 When an edge points to a complex document, declare its projection by composing `AQL::FIELDS` and `AQL::EDGES` directly on the edge definition inside `AQL::EDGES`. The pattern is illustrated by `employeeEdge.php`:
 
 ```php
-function employeeEdge( ?string $employeePath = Paths::PEOPLE ) :array
+// Host-project example (`Acme\functions\edges\employeeEdge`).
+function employeeEdge(
+    ?string $employeePath     = Paths::PEOPLE ,
+    ?string $workLocationPath = Paths::LOCATIONS ,
+) :array
 {
     return
     [
