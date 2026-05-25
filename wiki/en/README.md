@@ -40,19 +40,18 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 
 ## Table of contents
 
-### Foundations
+### Getting started — [`getting-started/`](getting-started/)
 
-- [Introduction](introduction.md) — what ArangoDB is, why the technology matters, the `oihana` philosophy, and why this library exists.
-- [Dependencies](dependencies.md) — required `oihana/php-*` packages, *namespace* → package mapping, minimal `composer require` snippet for standalone use.
-- [Glossary](glossary.md) — key framework terms: *bind variable*, *document reference*, *skin*, *facet*, *traversal*, *edge*.
+- [Introduction](getting-started/introduction.md) — what ArangoDB is, why the technology matters, the `oihana` philosophy, and why this library exists.
+- [Dependencies](getting-started/dependencies.md) — required `oihana/php-*` packages, *namespace* → package mapping, minimal `composer require` snippet for standalone use.
+- [Quickstart `ArangoDB`](getting-started/quickstart.md) — instantiate the client, execute raw AQL, base traits (`ArangoTrait`).
+- [Glossary](getting-started/glossary.md) — key framework terms: *bind variable*, *document reference*, *skin*, *facet*, *traversal*, *edge*.
 
-### Getting started
+### HTTP client — [`clients/`](clients/)
 
-- [Quickstart `ArangoDB`](quickstart.md) — instantiate the client, execute raw AQL, base traits (`ArangoTrait`).
-- [AQL helpers `db/helpers/`](db-helpers.md) — `aqlExpression`, `aqlDocument`, `aqlValue`, *field builders* and friends.
-- [Bind variables `db/binds/`](db-binds.md) — `aqlBind`, validation and formatting of injected values.
+- [ArangoDB HTTP client](clients/README.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` cluster failover, Basic + JWT/Bearer authentication.
 
-### Building AQL queries
+### AQL — [`aql/`](aql/)
 
 - [Building an AQL query step by step](aql/aql-building-queries.md) — `FOR → FILTER → SORT → LIMIT → RETURN` chain, with diagram and examples.
 - [AQL operations `db/operations/`](aql/aql-operations.md) — the 21 native operations (`aqlFor`, `aqlFilter`, `aqlReturn`, `aqlInsert`, `aqlTraversal`, ...).
@@ -63,6 +62,13 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 - [Array functions](aql/aql-functions-arrays.md) — 19 array AQL functions.
 - [Document and check functions](aql/aql-functions-checks.md) — 28 functions: *type checks*, *casts*, document operations, database info.
 
+### Db layer — [`db/`](db/)
+
+- [AQL helpers `db/helpers/`](db/helpers.md) — `aqlExpression`, `aqlDocument`, `aqlValue`, *field builders* and friends.
+- [Bind variables `db/binds/`](db/binds.md) — `aqlBind`, validation and formatting of injected values.
+- [HTTP filters `?filter=`](db/filter.md) — `?filter=` syntax, operators (`eq`, `ne`, `like`, `in`, ...), `alt` transformations, chaining, `FilterType::*`.
+- [Internal filtering — `AQL::CONDITIONS` + `AQL::BINDS`](db/filter-internal.md) — server-only conditions, `FilterType::VIRTUAL`, URL vs internal decision rule.
+
 ### Options and configuration
 
 - [AQL options reference](options.md) — `QueryOptions`, `InsertOptions`, `UpdateOptions`, `TraversalOptions`, index options, serialization.
@@ -72,20 +78,23 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 
 - [`Documents` and `Edges` models](models.md) — trait architecture, full `AQL::*` keys catalog, CRUD methods, lifecycle hooks, cascade via *signals*.
 - [Edge and join projection](edges-joins-projection.md) — `Field::SKINS`, `AQL::SKIN`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `CapabilityAuthorizerTrait` pattern.
-- [HTTP filters `?filter=`](filter.md) — `?filter=` syntax, operators (`eq`, `ne`, `like`, `in`, ...), `alt` transformations, chaining, `FilterType::*`.
-- [Internal filtering — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) — server-only conditions, `FilterType::VIRTUAL`, URL vs internal decision rule.
-- [Slim controllers](controllers/README.md) — `DocumentsController`, `EdgesController`, `PropertyController`, DI injection, `beforeModelCall` / `afterModelCall` hooks, `InjectFilterTrait`.
-  - [Payloads](controllers/payloads.md) — HTTP *body* extraction, `AQLType` catalog, pre-extraction i18n validation, `COMPRESS` on PATCH.
-  - [Rules](controllers/rules.md) — validation after payload, `Arango::RULES` + `CUSTOM_RULES`, `rules() / min() / max() / between()` helpers, vendor + project catalogs, 422 format.
-  - [Skins](controllers/skins.md) — output projection, catalog of the 12 canonical *skins*, `Skin::INTERNAL` strictly server-only.
-  - [Capabilities](controllers/capabilities.md) — fine gating on a parameter or field **value**, 7 Capability traits, *authorizer* injection pattern toward the model.
-- [Symfony Console commands](commands.md) — `DocumentsCommand` and its actions (`insert`, `upsert`, `harvest`, `list`, `count`, `get`, `update`, `replace`, `delete`, `truncate`).
 - [Indexes and collection management](indexes.md) — `CollectionManagementTrait`, index types (`Persistent`, `TTL`, `Geo`, `MDI`, `Vector`).
+
+### Slim controllers — [`controllers/`](controllers/)
+
+- [Controllers overview](controllers/README.md) — `DocumentsController`, `EdgesController`, `PropertyController`, DI injection, `beforeModelCall` / `afterModelCall` hooks, `InjectFilterTrait`.
+- [Payloads](controllers/payloads.md) — HTTP *body* extraction, `AQLType` catalog, pre-extraction i18n validation, `COMPRESS` on PATCH.
+- [Rules](controllers/rules.md) — validation after payload, `Arango::RULES` + `CUSTOM_RULES`, `rules() / min() / max() / between()` helpers, vendor + project catalogs, 422 format.
+- [Skins](controllers/skins.md) — output projection, catalog of the 12 canonical *skins*, `Skin::INTERNAL` strictly server-only.
+- [Capabilities](controllers/capabilities.md) — fine gating on a parameter or field **value**, 7 Capability traits, *authorizer* injection pattern toward the model.
+
+### CLI and testing
+
+- [Symfony Console commands](commands.md) — `DocumentsCommand` and its actions (`insert`, `upsert`, `harvest`, `list`, `count`, `get`, `update`, `replace`, `delete`, `truncate`).
 - [Live smoke tests](testing.md) — `./bin/console.php arango:test:clients` (low-level library) and `./bin/console.php arango:test:facade` (`ArangoDB` façade), run against an ephemeral database so production is never touched.
 
 ### Specialized modules
 
-- [ArangoDB HTTP client](client.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` cluster failover, Basic + JWT/Bearer authentication.
 - [Casbin RBAC adapter](casbin.md) — `ArangoCasbinAdapter`, *batch* and *filtered* adapters, edge → *policy* synchronization, known pitfalls.
 - [Root helpers `oihana\arango\helpers`](helpers.md) — sort grammar, identifier parsing, `_rev` revision encoding.
 

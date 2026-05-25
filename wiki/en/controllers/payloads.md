@@ -280,5 +280,5 @@ For advanced cases (extension, custom hook, tests), the exposed public methods:
 - [Rules](rules.md) — validation applied to the payload after preparation.
 - [Skins](skins.md) — response projection (output, parallel to payload input).
 - [`Documents` and `Edges` models](../models.md) — payload consumer (`insert`, `update`, `replace`).
-- [Internal filtering](../filter-internal.md) — close pattern for server-only conditions.
+- [Internal filtering](../db/filter-internal.md) — close pattern for server-only conditions.
 - [Enums reference](../enums.md) — `AQLType`, `Arango::*`, `HttpMethod::*`.

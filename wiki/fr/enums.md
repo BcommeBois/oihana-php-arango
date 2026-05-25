@@ -2,7 +2,7 @@
 
 Le dossier [`src/oihana/arango/db/enums/`](../../src/oihana/arango/db/enums/) regroupe **28 enums et traits** qui exposent les constantes typées du framework. Tous suivent la convention `oihana/php-enums` (`ConstantsTrait` pour `keys()` / `values()` / introspection), ce qui en fait des registres consultables à l'exécution.
 
-> Convention transverse : aucune chaîne brute dans le code applicatif. Toute clé de configuration, tout opérateur AQL, tout type d'index passe par une constante d'enum — discipline détaillée dans l'[Introduction](introduction.md#la-philosophie-doihanaarango).
+> Convention transverse : aucune chaîne brute dans le code applicatif. Toute clé de configuration, tout opérateur AQL, tout type d'index passe par une constante d'enum — discipline détaillée dans l'[Introduction](getting-started/introduction.md#la-philosophie-doihanaarango).
 
 ## Sommaire
 
@@ -40,7 +40,7 @@ Constantes utilisées dans plusieurs exemples du framework — voir [Construire 
 
 ### `ArangoConfig`
 
-Clés de configuration du constructeur [`ArangoDB`](quickstart.md#configuration--clés-arangoconfig). Une vingtaine de constantes qui mappent sur les options de connexion : `ENDPOINT`, `DATABASE`, `TYPE`, `USER`, `PASSWORD`, `CONNECTION`, `TIMEOUT`, `CREATE`, `RECONNECT`, `DEBUG`, `BATCH_SIZE`, `MAX_RUNTIME`.
+Clés de configuration du constructeur [`ArangoDB`](getting-started/quickstart.md#configuration--clés-arangoconfig). Une vingtaine de constantes qui mappent sur les options de connexion : `ENDPOINT`, `DATABASE`, `TYPE`, `USER`, `PASSWORD`, `CONNECTION`, `TIMEOUT`, `CREATE`, `RECONNECT`, `DEBUG`, `BATCH_SIZE`, `MAX_RUNTIME`.
 
 ## Grammaire AQL
 
@@ -92,7 +92,7 @@ Sous-dossier dédié aux clés et valeurs consommées par les classes [`*Options
 
 ## Statistiques et plan d'exécution
 
-Trois enums décrivent la structure des métadonnées retournées par le serveur après l'exécution d'une requête. Ils permettent d'analyser le `cursor->getExtra()` (voir [Quickstart — métadonnées du cursor](quickstart.md#métadonnées-du-cursor)).
+Trois enums décrivent la structure des métadonnées retournées par le serveur après l'exécution d'une requête. Ils permettent d'analyser le `cursor->getExtra()` (voir [Quickstart — métadonnées du cursor](getting-started/quickstart.md#métadonnées-du-cursor)).
 
 | Enum | Rôle |
 |---|---|
@@ -116,7 +116,7 @@ Ces traits ne sont pas un point d'extension applicatif — ils sont consommés e
 
 ## Inspection à l'exécution
 
-Tous les enums du framework héritent de `ConstantsTrait` (via [`oihana/php-enums`](dependencies.md#oihanaphp-enums)), ce qui leur donne deux méthodes d'introspection utiles :
+Tous les enums du framework héritent de `ConstantsTrait` (via [`oihana/php-enums`](getting-started/dependencies.md#oihanaphp-enums)), ce qui leur donne deux méthodes d'introspection utiles :
 
 ```php
 use oihana\arango\db\enums\Operation ;
@@ -132,4 +132,4 @@ Pratique pour les outils de validation, les pages de debug, ou la génération d
 
 - [Référence des options AQL](options.md) — les enums `OverwriteMode`, `TraversalOrder` et compagnie en contexte.
 - [Construire une requête AQL pas à pas](aql/aql-building-queries.md) — usage des constantes `AQL::*` et `Traversal::*`.
-- [Dépendances](dependencies.md#oihanaphp-enums) — `oihana/php-enums` et le pattern `ConstantsTrait`.
+- [Dépendances](getting-started/dependencies.md#oihanaphp-enums) — `oihana/php-enums` et le pattern `ConstantsTrait`.

@@ -46,7 +46,7 @@ Logical definition that groups one or more edge collections and their vertex col
 
 ### Index
 
-Acceleration structure attached to a collection. Main types: `persistent` (lookups and uniqueness constraints), `ttl` (automatic document expiration), `geo` (geospatial queries), `fulltext` (deprecated in favor of *ArangoSearch* views), `vector` (similarity search, ArangoDB 3.12+), `mdi` (multi-dimensional). See [`indexes.md`](indexes.md).
+Acceleration structure attached to a collection. Main types: `persistent` (lookups and uniqueness constraints), `ttl` (automatic document expiration), `geo` (geospatial queries), `fulltext` (deprecated in favor of *ArangoSearch* views), `vector` (similarity search, ArangoDB 3.12+), `mdi` (multi-dimensional). See [`indexes.md`](../indexes.md).
 
 ### MVCC
 
@@ -88,7 +88,7 @@ MVCC revision identifier of a document. Changes at every write. Enables optimist
 
 ### Alteration (`alt`)
 
-Transformation function applied to a field's value **before** comparison in a filter. Exposed over HTTP via `?filter={"key":"name","val":"john","alt":"lower"}`, which produces `FILTER LOWER(doc.name) == "john"`. See [`filter.md`](filter.md).
+Transformation function applied to a field's value **before** comparison in a filter. Exposed over HTTP via `?filter={"key":"name","val":"john","alt":"lower"}`, which produces `FILTER LOWER(doc.name) == "john"`. See [`filter.md`](../db/filter.md).
 
 ### Authorizer
 
@@ -132,7 +132,7 @@ High-level class that represents an ArangoDB collection and exposes the CRUD + l
 
 ### Projection
 
-Selection of the fields returned by the framework for a given document, dependent on the current *skin* and on the `Field::SKINS` markers placed on the fields. See [`edges-joins-projection.md`](edges-joins-projection.md).
+Selection of the fields returned by the framework for a given document, dependent on the current *skin* and on the `Field::SKINS` markers placed on the fields. See [`edges-joins-projection.md`](../edges-joins-projection.md).
 
 ### Signal
 
@@ -140,7 +140,7 @@ Application event emitted by a model (e.g. `afterDelete`) and propagated through
 
 ### Skin
 
-Named projection of a document, passed via the `?skin=` URL parameter. Canonical values: `default` (light listing), `full` (full record), `main` (minimal skin to break INBOUND cycles), `internal` (server-only projection, never exposed over HTTP — see [`tips.md`](tips.md)). Controllers add their business-specific *skins* (e.g. `image`, `offers`).
+Named projection of a document, passed via the `?skin=` URL parameter. Canonical values: `default` (light listing), `full` (full record), `main` (minimal skin to break INBOUND cycles), `internal` (server-only projection, never exposed over HTTP — see [`tips.md`](../tips.md)). Controllers add their business-specific *skins* (e.g. `image`, `offers`).
 
 ### Trait composition
 

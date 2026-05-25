@@ -6,7 +6,7 @@ Cette page explique comment composer une requête AQL en utilisant les fonctions
 
 `oihana/php-arango` ne fournit pas de *query builder* objet à la `$qb->from(...)->where(...)->select(...)`. Une requête AQL est ici un **texte construit par concaténation** de fragments produits par des fonctions namespace.
 
-Chaque opération AQL (`FOR`, `FILTER`, `SORT`, `LIMIT`, `RETURN`, ...) a sa fonction `aql*` qui produit la sous-chaîne correspondante. On assemble ces sous-chaînes manuellement via `sprintf`, `compile()`, ou simple concaténation. Les valeurs dynamiques passent par [`aqlBind()`](../db-binds.md) pour rester sûres.
+Chaque opération AQL (`FOR`, `FILTER`, `SORT`, `LIMIT`, `RETURN`, ...) a sa fonction `aql*` qui produit la sous-chaîne correspondante. On assemble ces sous-chaînes manuellement via `sprintf`, `compile()`, ou simple concaténation. Les valeurs dynamiques passent par [`aqlBind()`](../db/binds.md) pour rester sûres.
 
 Cette approche a deux avantages : on lit dans le code PHP exactement la même structure que la requête AQL finale (pas d'abstraction qui « cache » le SQL), et on peut composer librement sans se battre contre une API restrictive.
 
@@ -192,7 +192,7 @@ $db
 $results = $db->getDocuments() ;
 ```
 
-Voir [Quickstart `ArangoDB`](../quickstart.md) pour le détail des méthodes d'exécution et d'hydratation.
+Voir [Quickstart `ArangoDB`](../getting-started/quickstart.md) pour le détail des méthodes d'exécution et d'hydratation.
 
 ## Au-delà du *manuel* — les modèles haut-niveau
 
@@ -208,6 +208,6 @@ Comprendre la composition manuelle est donc utile même quand on consomme les mo
 - [Opérations AQL `db/operations/`](aql-operations.md) — catalogue complet des 21 opérations.
 - [Opérateurs `db/operators/`](aql-operators.md) — catalogue des 42 opérateurs.
 - [Fonctions de chaînes / dates / numériques / tableaux / documents](aql-functions-strings.md).
-- [Helpers AQL `db/helpers/`](../db-helpers.md) — encodage de valeurs et composition de fragments.
-- [Bind variables `db/binds/`](../db-binds.md) — injection sûre.
+- [Helpers AQL `db/helpers/`](../db/helpers.md) — encodage de valeurs et composition de fragments.
+- [Bind variables `db/binds/`](../db/binds.md) — injection sûre.
 - [Documentation officielle AQL — high-level operations](https://docs.arangodb.com/stable/aql/high-level-operations/).

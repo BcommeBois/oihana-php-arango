@@ -2,7 +2,7 @@
 
 This page covers **collection and index management** on the framework side: how to create, drop, inspect; which index type to choose for the need; and the recommended *lazy* declaration pattern via `AQL::INDEXES` on a model.
 
-The detail of **properties** of each `*IndexOptions` class is in the [AQL options reference](options.md#index-options--optionsindexes). The detail of **methods** `collection*` and `*Index` is in the [Quickstart `ArangoDB`](quickstart.md#manage-collections). This page focuses on **how to choose** and **how to deploy**.
+The detail of **properties** of each `*IndexOptions` class is in the [AQL options reference](options.md#index-options--optionsindexes). The detail of **methods** `collection*` and `*Index` is in the [Quickstart `ArangoDB`](getting-started/quickstart.md#manage-collections). This page focuses on **how to choose** and **how to deploy**.
 
 ## Choose an index type
 
@@ -220,7 +220,7 @@ Useful for *doctor* commands or admin reports. The list always includes implicit
 
 ## See also
 
-- [Quickstart `ArangoDB`](quickstart.md#manage-indexes) — `createIndex` / `dropIndex` / `getIndex` / `getIndexes` methods.
+- [Quickstart `ArangoDB`](getting-started/quickstart.md#manage-indexes) — `createIndex` / `dropIndex` / `getIndex` / `getIndexes` methods.
 - [AQL options reference — Index options](options.md#index-options--optionsindexes) — property details per class.
 - [`Documents` and `Edges` models](models.md) — `AQL::INDEXES` key for *lazy* declaration.
 - [Official ArangoDB documentation — Working with indexes](https://docs.arangodb.com/stable/index-and-search/indexing/working-with-indexes/).

@@ -140,8 +140,8 @@ Official docs for logical and ternary operators: [Logical operators](https://doc
 All functions simply produce a **string** and do not validate their arguments. It is the caller's responsibility to make sure the operands are:
 
 - either AQL references (`'doc.field'`, `'@bind'`, `'users/42'`) — passed as-is;
-- or values encoded via [`aqlValue()`](../db-helpers.md#aqlvalue--the-foundation) — preferable as soon as there is a risk of ambiguity;
-- or *placeholders* produced by [`aqlBind()`](../db-binds.md) — recommended for any dynamic value.
+- or values encoded via [`aqlValue()`](../db/helpers.md#aqlvalue--the-foundation) — preferable as soon as there is a risk of ambiguity;
+- or *placeholders* produced by [`aqlBind()`](../db/binds.md) — recommended for any dynamic value.
 
 Mixing raw PHP values directly with operators without going through the helpers is possible but discouraged: the produced string will not be escaped and will expose the query to injection.
 
@@ -149,6 +149,6 @@ Mixing raw PHP values directly with operators without going through the helpers 
 
 - [Building an AQL query step by step](aql-building-queries.md) — chaining examples for operators + operations.
 - [AQL operations `db/operations/`](aql-operations.md) — where these predicates are consumed (`aqlFilter`, `aqlPrune`, `aqlSearch`).
-- [AQL helpers `db/helpers/`](../db-helpers.md) — `aqlValue` to encode values.
-- [Bind variables `db/binds/`](../db-binds.md) — safe injection.
+- [AQL helpers `db/helpers/`](../db/helpers.md) — `aqlValue` to encode values.
+- [Bind variables `db/binds/`](../db/binds.md) — safe injection.
 - [Official AQL documentation — operators](https://docs.arangodb.com/stable/aql/operators/).

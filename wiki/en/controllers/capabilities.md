@@ -177,7 +177,7 @@ $init[ Arango::AUTHORIZER ] = fn( string $subject ) : bool
 
 `CapabilityAuthorizerTrait::buildAuthorizer( $request )` automatically produces this request-scoped *callable* based on the Casbin `CapabilityEnforcer`. The model then filters its `AQL::REQUIRES`-annotated *edges* and *joins* by consulting that *callable* — without ever having to understand Casbin itself.
 
-This is the **separation-of-concerns contract** between `oihana/php-arango` (which knows nothing about authentication) and the `oihana/php-auth` layer (which implements Casbin). The *authorizer* remains injectable from the outside — see [Integration with `oihana/php-auth`](../dependencies.md#integration-with-oihanaphp-auth).
+This is the **separation-of-concerns contract** between `oihana/php-arango` (which knows nothing about authentication) and the `oihana/php-auth` layer (which implements Casbin). The *authorizer* remains injectable from the outside — see [Integration with `oihana/php-auth`](../getting-started/dependencies.md#integration-with-oihanaphp-auth).
 
 ## Complete example — `/products?skin=offers.full`
 
@@ -238,6 +238,6 @@ The client never needs to request a different URL depending on their role. The s
 
 - [Skins](skins.md) — complementary projection system (*capabilities* gate the **values** of *skins*).
 - [Edge and join projection — `AQL::REQUIRES`](../edges-joins-projection.md#restrict-edge-or-join-projection-to-a-permission--aqlrequires) — *capability* at the model level (edge/join).
-- [HTTP filters `?filter=`](../filter.md) — parameter covered by `CapabilityFilterKeysTrait`.
+- [HTTP filters `?filter=`](../db/filter.md) — parameter covered by `CapabilityFilterKeysTrait`.
 - [Casbin RBAC adapter](../casbin.md) — underlying authorization system.
-- [Dependencies — Integration with `oihana/php-auth`](../dependencies.md#integration-with-oihanaphp-auth) — the *authorizer* injection contract that keeps `oihana/php-arango` independent.
+- [Dependencies — Integration with `oihana/php-auth`](../getting-started/dependencies.md#integration-with-oihanaphp-auth) — the *authorizer* injection contract that keeps `oihana/php-arango` independent.

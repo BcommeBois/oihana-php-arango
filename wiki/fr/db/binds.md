@@ -1,6 +1,6 @@
 # Bind variables `db/binds/`
 
-Le dossier [`src/oihana/arango/db/binds/`](../../src/oihana/arango/db/binds/) regroupe les cinq fonctions qui assurent l'**injection sûre** des valeurs et des noms de collection dans une requête AQL.
+Le dossier [`src/oihana/arango/db/binds/`](../../../src/oihana/arango/db/binds/) regroupe les cinq fonctions qui assurent l'**injection sûre** des valeurs et des noms de collection dans une requête AQL.
 
 C'est la première brique de défense du framework contre l'injection AQL : aucune valeur dynamique ne devrait jamais être concaténée directement dans une requête. Toute valeur passe par `aqlBind()` ou `aqlBindCollection()`, qui retournent un *placeholder* sûr (`@var` ou `@@coll`) et stockent la valeur dans un tableau `bindVars` transmis séparément à ArangoDB.
 
@@ -177,7 +177,7 @@ Toute violation de nommage lève `oihana\exceptions\BindException`. Cette except
 
 ## Voir aussi
 
-- [Helpers AQL `db/helpers/`](db-helpers.md) — construire les expressions AQL qui consomment les *placeholders* produits ici.
-- [Construire une requête AQL pas à pas](aql/aql-building-queries.md) — vue d'ensemble du flot complet de composition d'une requête.
-- [Glossaire — bind variable](glossary.md#bind-variable).
+- [Helpers AQL `db/helpers/`](helpers.md) — construire les expressions AQL qui consomment les *placeholders* produits ici.
+- [Construire une requête AQL pas à pas](../aql/aql-building-queries.md) — vue d'ensemble du flot complet de composition d'une requête.
+- [Glossaire — bind variable](../getting-started/glossary.md#bind-variable).
 - [Documentation officielle ArangoDB — bind parameters](https://docs.arangodb.com/stable/aql/fundamentals/bind-parameters/).

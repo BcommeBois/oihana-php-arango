@@ -126,4 +126,4 @@ Une commande de test ajoutée ultérieurement doit suivre la même chaîne : ajo
 
 - [Commandes Symfony Console](commands.md) — `DocumentsCommand` et ses actions métier (CRUD, harvest, …).
 - [Indexes et gestion des collections](indexes.md) — la grammaire d'index et le `CollectionManagementTrait`.
-- [Client ArangoDB *legacy*](client.md) — *contexte* de la réécriture en cours.
+- [Client ArangoDB *legacy*](clients/README.md) — *contexte* de la réécriture en cours.

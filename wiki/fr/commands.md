@@ -9,7 +9,7 @@ Deux classes pivots :
 | `ArangoCommand` | Maintenance de la base (dump, restore, list dumps). | `dump`, `restore`, `list-dumps` |
 | `DocumentsCommand` | CRUD complet sur une collection. | `get`, `list`, `count`, `exist`, `last`, `insert`, `update`, `replace`, `upsert`, `delete`, `truncate`, `harvest` |
 
-Les deux héritent du squelette [`oihana/php-commands`](dependencies.md#oihanaphp-commands), qui fournit la gestion des arguments, options, formats de sortie (JSON, table, raw) et codes de retour.
+Les deux héritent du squelette [`oihana/php-commands`](getting-started/dependencies.md#oihanaphp-commands), qui fournit la gestion des arguments, options, formats de sortie (JSON, table, raw) et codes de retour.
 
 ## `ArangoCommand`
 
@@ -139,7 +139,7 @@ bun users count
 | `--dry-run` | Affiche l'AQL qui serait exécuté, sans le faire. |
 | `--force` | Bypass les confirmations interactives (utile pour `truncate`, `delete` en masse). |
 | `--format=json\|table\|raw` | Format de sortie. `json` par défaut. |
-| `--filter=<json>` | Conditions de filtrage (même syntaxe que [`?filter=` HTTP](filter.md)). |
+| `--filter=<json>` | Conditions de filtrage (même syntaxe que [`?filter=` HTTP](db/filter.md)). |
 | `--sort=<expr>` | Tri (grammaire `[-]field1,[-]field2`). |
 | `--limit=<n>` | Limite de pagination. |
 | `--offset=<n>` | Décalage de pagination. |
@@ -186,7 +186,7 @@ Voir les commandes `Acme\commands\proginov\*` pour des implémentations complèt
 | `ArangoCommonOption` | Options communes à toutes les commandes Arango. |
 | `ArangoDumpOption` / `ArangoRestoreOption` | Options spécifiques au dump et restore. |
 
-Tous ces enums consomment `ConstantsTrait` ([`oihana/php-enums`](dependencies.md#oihanaphp-enums)) et peuvent être inspectés à l'exécution via `keys()` / `values()`.
+Tous ces enums consomment `ConstantsTrait` ([`oihana/php-enums`](getting-started/dependencies.md#oihanaphp-enums)) et peuvent être inspectés à l'exécution via `keys()` / `values()`.
 
 ## Traits utilitaires
 
@@ -220,5 +220,5 @@ Oublier ce registre = commande introuvable côté CLI (« command "users" is not
 
 - [Modèles `Documents` et `Edges`](models.md) — la couche métier consommée par les commandes.
 - [Contrôleurs Slim](controllers/README.md) — exposition HTTP parallèle des mêmes opérations.
-- [Filtres HTTP `?filter=`](filter.md) — syntaxe `--filter=<json>` côté CLI.
-- [Dépendances — `oihana/php-commands`](dependencies.md#oihanaphp-commands) — squelette Symfony Console.
+- [Filtres HTTP `?filter=`](db/filter.md) — syntaxe `--filter=<json>` côté CLI.
+- [Dépendances — `oihana/php-commands`](getting-started/dependencies.md#oihanaphp-commands) — squelette Symfony Console.

@@ -126,4 +126,4 @@ Any subsequent test command must follow the same chain: add its factory to `defi
 
 - [Symfony Console commands](commands.md) — `DocumentsCommand` and its business actions (CRUD, harvest, …).
 - [Indexes and collection management](indexes.md) — index grammar and the `CollectionManagementTrait`.
-- [Legacy ArangoDB client](client.md) — context of the ongoing rewrite.
+- [Legacy ArangoDB client](clients/README.md) — context of the ongoing rewrite.

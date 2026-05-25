@@ -129,5 +129,5 @@ aqlFilter
 
 - [Building an AQL query step by step](aql-building-queries.md).
 - [Operators `db/operators/`](aql-operators.md) — date comparators.
-- [Glossary — bind variable](../glossary.md#bind-variable) — for dynamic filters.
+- [Glossary — bind variable](../getting-started/glossary.md#bind-variable) — for dynamic filters.
 - [Official AQL documentation — Date functions](https://docs.arangodb.com/stable/aql/functions/date/).

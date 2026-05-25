@@ -313,7 +313,7 @@ Cross-cutting trait consumed by all controllers. Centralizes the normalization o
 ## See also
 
 - [`Documents` and `Edges` models](../models.md) — the underlying business layer.
-- [HTTP filters `?filter=`](../filter.md) — URL syntax consumed by controllers.
-- [Internal filtering](../filter-internal.md) — `InjectFilterTrait` and `AQL::CONDITIONS`.
+- [HTTP filters `?filter=`](../db/filter.md) — URL syntax consumed by controllers.
+- [Internal filtering](../db/filter-internal.md) — `InjectFilterTrait` and `AQL::CONDITIONS`.
 - [Edge and join projection](../edges-joins-projection.md) — `Skin`, `AQL::REQUIRES`, *authorizer*.
 - [Symfony Console commands](../commands.md) — parallel CLI exposition.

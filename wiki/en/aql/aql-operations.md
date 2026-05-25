@@ -300,6 +300,6 @@ Official docs: [`WITH`](https://docs.arangodb.com/stable/aql/high-level-operatio
 
 - [Building an AQL query step by step](aql-building-queries.md) — pedagogical assembly narrative.
 - [Operators `db/operators/`](aql-operators.md) — catalog of the 42 operators consumed by `aqlFilter`.
-- [AQL helpers `db/helpers/`](../db-helpers.md) — value encoding, CUD sub-expressions, *field builders*.
-- [Bind variables `db/binds/`](../db-binds.md) — safe injection.
+- [AQL helpers `db/helpers/`](../db/helpers.md) — value encoding, CUD sub-expressions, *field builders*.
+- [Bind variables `db/binds/`](../db/binds.md) — safe injection.
 - [Official AQL documentation — high-level operations](https://docs.arangodb.com/stable/aql/high-level-operations/).

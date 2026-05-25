@@ -264,4 +264,4 @@ encodeRevision( '2026-05-17T14:32:18.000Z'        ) ;  // '_iVZdJZ--__'
 ordre d'écriture). ArangoDB **garantit l'unicité du `_rev` par document**, mais ne
 garantit pas qu'il soit interprétable comme un timestamp monotone. Pour l'horodatage
 métier, ajouter un champ `modified` explicite (la convention `Schema::MODIFIED` du
-package [`oihana/php-schema`](dependencies.md), alignée sur Schema.org).
+package [`oihana/php-schema`](getting-started/dependencies.md), alignée sur Schema.org).

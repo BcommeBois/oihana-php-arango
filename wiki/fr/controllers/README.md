@@ -313,7 +313,7 @@ Trait transverse consommé par tous les contrôleurs. Centralise la normalisatio
 ## Voir aussi
 
 - [Modèles `Documents` et `Edges`](../models.md) — la couche métier sous-jacente.
-- [Filtres HTTP `?filter=`](../filter.md) — syntaxe URL consommée par les contrôleurs.
-- [Filtrage interne](../filter-internal.md) — `InjectFilterTrait` et `AQL::CONDITIONS`.
+- [Filtres HTTP `?filter=`](../db/filter.md) — syntaxe URL consommée par les contrôleurs.
+- [Filtrage interne](../db/filter-internal.md) — `InjectFilterTrait` et `AQL::CONDITIONS`.
 - [Projection des edges et joins](../edges-joins-projection.md) — `Skin`, `AQL::REQUIRES`, *authorizer*.
 - [Commandes Symfony Console](../commands.md) — exposition CLI parallèle.

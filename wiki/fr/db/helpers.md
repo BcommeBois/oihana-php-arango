@@ -1,11 +1,11 @@
 # Helpers AQL `db/helpers/`
 
-Le dossier [`src/oihana/arango/db/helpers/`](../../src/oihana/arango/db/helpers/) rassemble les fonctions standalone qui composent les **fragments de texte AQL** : encodage d'une valeur, construction d'un document inline, sérialisation d'expressions, sous-expressions des opérations de modification, et *field builders* pour les `RETURN { ... }`.
+Le dossier [`src/oihana/arango/db/helpers/`](../../../src/oihana/arango/db/helpers/) rassemble les fonctions standalone qui composent les **fragments de texte AQL** : encodage d'une valeur, construction d'un document inline, sérialisation d'expressions, sous-expressions des opérations de modification, et *field builders* pour les `RETURN { ... }`.
 
 > Ne pas confondre avec deux autres dossiers homonymes :
 >
-> - [`db/operations/`](../../src/oihana/arango/db/operations/) — opérations AQL complètes (`aqlFor`, `aqlFilter`, `aqlReturn`, ...), documentées en [Construire une requête AQL pas à pas](aql/aql-building-queries.md).
-> - [`db/functions/`](../../src/oihana/arango/db/functions/) — fonctions AQL côté valeur (`CONCAT`, `LOWER`, `DATE_NOW`, ...), documentées dans les pages [Fonctions de chaînes](aql/aql-functions-strings.md) et suivantes.
+> - [`db/operations/`](../../../src/oihana/arango/db/operations/) — opérations AQL complètes (`aqlFor`, `aqlFilter`, `aqlReturn`, ...), documentées en [Construire une requête AQL pas à pas](../aql/aql-building-queries.md).
+> - [`db/functions/`](../../../src/oihana/arango/db/functions/) — fonctions AQL côté valeur (`CONCAT`, `LOWER`, `DATE_NOW`, ...), documentées dans les pages [Fonctions de chaînes](../aql/aql-functions-strings.md) et suivantes.
 >
 > Les helpers de cette page travaillent sur le **texte AQL** : ils produisent des chaînes prêtes à être injectées dans une requête.
 
@@ -171,7 +171,7 @@ Ces fonctions sont consommées par les *traits* CRUD des modèles (`DocumentsIns
 
 ## *Field builders* — sous-dossier `fields/`
 
-Le sous-dossier [`fields/`](../../src/oihana/arango/db/helpers/fields/) contient 12 *builders* qui produisent les sous-expressions `key: doc.value` typées d'un `RETURN { ... }`. Chacun prend en charge un type de champ et applique la projection appropriée (cast, accès, transformation).
+Le sous-dossier [`fields/`](../../../src/oihana/arango/db/helpers/fields/) contient 12 *builders* qui produisent les sous-expressions `key: doc.value` typées d'un `RETURN { ... }`. Chacun prend en charge un type de champ et applique la projection appropriée (cast, accès, transformation).
 
 ### Point d'entrée — `aqlFields()`
 
@@ -228,7 +228,7 @@ Ces prédicats sont consommés en interne par `aqlValue()` pour décider d'écha
 
 ## Helpers de projection par *skin*
 
-Deux fonctions liées au système de projection par *skin* (couvert en détail dans [Projection des edges et joins](edges-joins-projection.md)) :
+Deux fonctions liées au système de projection par *skin* (couvert en détail dans [Projection des edges et joins](../edges-joins-projection.md)) :
 
 | Fonction | Signature | Rôle |
 |---|---|---|
@@ -239,7 +239,7 @@ Ces deux fonctions ne sont presque jamais appelées directement par le code appl
 
 ## Voir aussi
 
-- [Bind variables `db/binds/`](db-binds.md) — placer les valeurs réelles produites par `aqlValue()` derrière des *placeholders* sûrs.
-- [Construire une requête AQL pas à pas](aql/aql-building-queries.md) — assembler ces helpers avec les opérations AQL.
-- [Projection des edges et joins](edges-joins-projection.md) — `matchesSkin` et `resolveSkinFields` en contexte.
+- [Bind variables `db/binds/`](binds.md) — placer les valeurs réelles produites par `aqlValue()` derrière des *placeholders* sûrs.
+- [Construire une requête AQL pas à pas](../aql/aql-building-queries.md) — assembler ces helpers avec les opérations AQL.
+- [Projection des edges et joins](../edges-joins-projection.md) — `matchesSkin` et `resolveSkinFields` en contexte.
 - [Documentation officielle AQL — fundamentals](https://docs.arangodb.com/stable/aql/fundamentals/).

@@ -4,10 +4,10 @@
 
 | Layer | Folder | What |
 |---|---|---|
-| **Low-level HTTP client** | [`src/oihana/arango/clients/`](../../src/oihana/arango/clients/) | Guzzle transport, authentication, retry, cluster failover, raw requests against the arangod REST API. |
-| **High-level façade** | [`src/oihana/arango/db/`](../../src/oihana/arango/db/) ([`ArangoDB`](quickstart.md)) | Hydration, exception wrapping, `prepare/execute`, AQL helpers — built on top of the client. |
+| **Low-level HTTP client** | [`src/oihana/arango/clients/`](../../../src/oihana/arango/clients/) | Guzzle transport, authentication, retry, cluster failover, raw requests against the arangod REST API. |
+| **High-level façade** | [`src/oihana/arango/db/`](../../../src/oihana/arango/db/) ([`ArangoDB`](../getting-started/quickstart.md)) | Hydration, exception wrapping, `prepare/execute`, AQL helpers — built on top of the client. |
 
-This page covers the **client** layer. For the façade quickstart, see [Quickstart `ArangoDB`](quickstart.md). For business models (`Documents`, `Edges`), see [Models](models.md).
+This page covers the **client** layer. For the façade quickstart, see [Quickstart `ArangoDB`](../getting-started/quickstart.md). For business models (`Documents`, `Edges`), see [Models](../models.md).
 
 > The client is designed as a **standalone** library — it does not depend on the `db/` layer, on Slim, or on Symfony Console. You can use it as-is for a CLI script, a worker, or an integration test suite. Its design is inspired by the official JavaScript library [`arangojs`](https://github.com/arangodb/arangojs).
 
@@ -156,13 +156,13 @@ The server is then free to serve the request from a follower; use this only for 
 | Need | Pick |
 |---|---|
 | Standalone CLI script, integration test, worker | Direct client (`ArangoClient` + `Database`). |
-| Application with PSR-11 DI, reusable `Documents` models, before/after signals, legacy `oihana\arango\client\Exception` wrapping | Façade `ArangoDB` ([Quickstart](quickstart.md)). |
+| Application with PSR-11 DI, reusable `Documents` models, before/after signals, legacy `oihana\arango\client\Exception` wrapping | Façade `ArangoDB` ([Quickstart](../getting-started/quickstart.md)). |
 | A single ad-hoc AQL query in an app already consuming the façade | Pull the client via `$arangoDB->getClient()` (discouraged unless you have a reason — prefer `prepare/execute` on the façade). |
 
 ## See also
 
-- [Quickstart `ArangoDB`](quickstart.md) — the high-level façade.
-- [Models `Documents` and `Edges`](models.md) — the business layer.
-- [Indexes](indexes.md) — typed index catalog.
-- [Testing](testing.md) — the two live commands `arango:test:clients` and `arango:test:facade`.
+- [Quickstart `ArangoDB`](../getting-started/quickstart.md) — the high-level façade.
+- [Models `Documents` and `Edges`](../models.md) — the business layer.
+- [Indexes](../indexes.md) — typed index catalog.
+- [Testing](../testing.md) — the two live commands `arango:test:clients` and `arango:test:facade`.
 - [arangojs (official JS lib)](https://github.com/arangodb/arangojs) — architectural reference.

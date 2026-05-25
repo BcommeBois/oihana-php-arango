@@ -9,7 +9,7 @@ Two pivot classes:
 | `ArangoCommand` | Database maintenance (dump, restore, list dumps). | `dump`, `restore`, `list-dumps` |
 | `DocumentsCommand` | Full CRUD on a collection. | `get`, `list`, `count`, `exist`, `last`, `insert`, `update`, `replace`, `upsert`, `delete`, `truncate`, `harvest` |
 
-Both inherit from the [`oihana/php-commands`](dependencies.md#oihanaphp-commands) skeleton, which provides argument handling, options, output formats (JSON, table, raw) and return codes.
+Both inherit from the [`oihana/php-commands`](getting-started/dependencies.md#oihanaphp-commands) skeleton, which provides argument handling, options, output formats (JSON, table, raw) and return codes.
 
 ## `ArangoCommand`
 
@@ -139,7 +139,7 @@ bun users count
 | `--dry-run` | Displays the AQL that would be executed, without doing it. |
 | `--force` | Bypass interactive confirmations (useful for `truncate`, bulk `delete`). |
 | `--format=json\|table\|raw` | Output format. `json` by default. |
-| `--filter=<json>` | Filter conditions (same syntax as [`?filter=` HTTP](filter.md)). |
+| `--filter=<json>` | Filter conditions (same syntax as [`?filter=` HTTP](db/filter.md)). |
 | `--sort=<expr>` | Sort (grammar `[-]field1,[-]field2`). |
 | `--limit=<n>` | Pagination limit. |
 | `--offset=<n>` | Pagination offset. |
@@ -186,7 +186,7 @@ See the `Acme\commands\proginov\*` commands for complete implementations on the 
 | `ArangoCommonOption` | Options common to all Arango commands. |
 | `ArangoDumpOption` / `ArangoRestoreOption` | Options specific to dump and restore. |
 
-All these enums consume `ConstantsTrait` ([`oihana/php-enums`](dependencies.md#oihanaphp-enums)) and can be inspected at runtime via `keys()` / `values()`.
+All these enums consume `ConstantsTrait` ([`oihana/php-enums`](getting-started/dependencies.md#oihanaphp-enums)) and can be inspected at runtime via `keys()` / `values()`.
 
 ## Utility traits
 
@@ -220,5 +220,5 @@ Forgetting this registry = command not found on the CLI side ("command 'users' i
 
 - [`Documents` and `Edges` models](models.md) — the business layer consumed by commands.
 - [Slim controllers](controllers/README.md) — parallel HTTP exposition of the same operations.
-- [HTTP filters `?filter=`](filter.md) — `--filter=<json>` syntax on the CLI side.
-- [Dependencies — `oihana/php-commands`](dependencies.md#oihanaphp-commands) — Symfony Console skeleton.
+- [HTTP filters `?filter=`](db/filter.md) — `--filter=<json>` syntax on the CLI side.
+- [Dependencies — `oihana/php-commands`](getting-started/dependencies.md#oihanaphp-commands) — Symfony Console skeleton.

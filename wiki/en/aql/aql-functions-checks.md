@@ -158,7 +158,7 @@ aqlReturn( aqlDocument
 
 - [Building an AQL query step by step](aql-building-queries.md).
 - [Operators `db/operators/`](aql-operators.md) — combine `IS_*` predicates with `AND` / `OR`.
-- [AQL helpers `db/helpers/`](../db-helpers.md) — `aqlDocument` to compose a return document.
+- [AQL helpers `db/helpers/`](../db/helpers.md) — `aqlDocument` to compose a return document.
 - [Official AQL documentation — Type check & cast](https://docs.arangodb.com/stable/aql/functions/type-check-and-cast/).
 - [Official AQL documentation — Document functions](https://docs.arangodb.com/stable/aql/functions/document/).
 - [Official AQL documentation — Miscellaneous](https://docs.arangodb.com/stable/aql/functions/miscellaneous/).

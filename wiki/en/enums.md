@@ -2,7 +2,7 @@
 
 The [`src/oihana/arango/db/enums/`](../../src/oihana/arango/db/enums/) folder groups **28 enums and traits** that expose the framework's typed constants. All follow the `oihana/php-enums` convention (`ConstantsTrait` for `keys()` / `values()` / introspection), making them registries consultable at runtime.
 
-> Cross-cutting convention: no raw string in application code. Every configuration key, AQL operator, index type goes through an enum constant — discipline detailed in the [Introduction](introduction.md#the-oihanaarango-philosophy).
+> Cross-cutting convention: no raw string in application code. Every configuration key, AQL operator, index type goes through an enum constant — discipline detailed in the [Introduction](getting-started/introduction.md#the-oihanaarango-philosophy).
 
 ## Summary
 
@@ -40,7 +40,7 @@ Constants used in many framework examples — see [Building an AQL query step by
 
 ### `ArangoConfig`
 
-Configuration keys for the [`ArangoDB`](quickstart.md#configuration--arangoconfig-keys) constructor. Around twenty constants that map to the connection options: `ENDPOINT`, `DATABASE`, `TYPE`, `USER`, `PASSWORD`, `CONNECTION`, `TIMEOUT`, `CREATE`, `RECONNECT`, `DEBUG`, `BATCH_SIZE`, `MAX_RUNTIME`.
+Configuration keys for the [`ArangoDB`](getting-started/quickstart.md#configuration--arangoconfig-keys) constructor. Around twenty constants that map to the connection options: `ENDPOINT`, `DATABASE`, `TYPE`, `USER`, `PASSWORD`, `CONNECTION`, `TIMEOUT`, `CREATE`, `RECONNECT`, `DEBUG`, `BATCH_SIZE`, `MAX_RUNTIME`.
 
 ## AQL grammar
 
@@ -92,7 +92,7 @@ Sub-folder dedicated to keys and values consumed by the [`*Options`](options.md)
 
 ## Statistics and execution plan
 
-Three enums describe the structure of the metadata returned by the server after a query execution. They allow analyzing `cursor->getExtra()` (see [Quickstart — cursor metadata](quickstart.md#cursor-metadata)).
+Three enums describe the structure of the metadata returned by the server after a query execution. They allow analyzing `cursor->getExtra()` (see [Quickstart — cursor metadata](getting-started/quickstart.md#cursor-metadata)).
 
 | Enum | Role |
 |---|---|
@@ -116,7 +116,7 @@ These traits are not an application extension point — they are consumed intern
 
 ## Runtime inspection
 
-All framework enums inherit from `ConstantsTrait` (via [`oihana/php-enums`](dependencies.md#oihanaphp-enums)), which gives them two useful introspection methods:
+All framework enums inherit from `ConstantsTrait` (via [`oihana/php-enums`](getting-started/dependencies.md#oihanaphp-enums)), which gives them two useful introspection methods:
 
 ```php
 use oihana\arango\db\enums\Operation ;
@@ -132,4 +132,4 @@ Useful for validation tools, debug pages, or generating drop-down lists on the a
 
 - [AQL options reference](options.md) — the `OverwriteMode`, `TraversalOrder` and other enums in context.
 - [Building an AQL query step by step](aql/aql-building-queries.md) — usage of `AQL::*` and `Traversal::*` constants.
-- [Dependencies](dependencies.md#oihanaphp-enums) — `oihana/php-enums` and the `ConstantsTrait` pattern.
+- [Dependencies](getting-started/dependencies.md#oihanaphp-enums) — `oihana/php-enums` and the `ConstantsTrait` pattern.

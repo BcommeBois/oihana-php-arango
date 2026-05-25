@@ -1,6 +1,6 @@
 # Bind variables `db/binds/`
 
-The [`src/oihana/arango/db/binds/`](../../src/oihana/arango/db/binds/) folder groups the five functions that ensure **safe injection** of values and collection names into an AQL query.
+The [`src/oihana/arango/db/binds/`](../../../src/oihana/arango/db/binds/) folder groups the five functions that ensure **safe injection** of values and collection names into an AQL query.
 
 This is the framework's first line of defense against AQL injection: no dynamic value should ever be concatenated directly into a query. Every value goes through `aqlBind()` or `aqlBindCollection()`, which return a safe *placeholder* (`@var` or `@@coll`) and store the value in a `bindVars` array passed separately to ArangoDB.
 
@@ -177,7 +177,7 @@ Any naming violation throws `oihana\exceptions\BindException`. This exception is
 
 ## See also
 
-- [AQL helpers `db/helpers/`](db-helpers.md) — build the AQL expressions that consume the *placeholders* produced here.
-- [Building an AQL query step by step](aql/aql-building-queries.md) — overview of the full query composition flow.
-- [Glossary — bind variable](glossary.md#bind-variable).
+- [AQL helpers `db/helpers/`](helpers.md) — build the AQL expressions that consume the *placeholders* produced here.
+- [Building an AQL query step by step](../aql/aql-building-queries.md) — overview of the full query composition flow.
+- [Glossary — bind variable](../getting-started/glossary.md#bind-variable).
 - [Official ArangoDB documentation — bind parameters](https://docs.arangodb.com/stable/aql/fundamentals/bind-parameters/).

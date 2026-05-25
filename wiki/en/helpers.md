@@ -265,4 +265,4 @@ encodeRevision( '2026-05-17T14:32:18.000Z'        ) ;  // '_iVZdJZ--__'
 **guarantees `_rev` uniqueness per document**, but doesn't guarantee it can be
 interpreted as a monotonic timestamp. For business timestamping, add an explicit
 `modified` field (the `Schema::MODIFIED` convention from the
-[`oihana/php-schema`](dependencies.md) package, aligned with Schema.org).
+[`oihana/php-schema`](getting-started/dependencies.md) package, aligned with Schema.org).

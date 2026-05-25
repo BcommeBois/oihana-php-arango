@@ -6,7 +6,7 @@ This page explains how to compose an AQL query using the standalone functions of
 
 `oihana/php-arango` does not provide an object *query builder* like `$qb->from(...)->where(...)->select(...)`. An AQL query here is a **text built by concatenation** of fragments produced by namespace functions.
 
-Each AQL operation (`FOR`, `FILTER`, `SORT`, `LIMIT`, `RETURN`, ...) has its `aql*` function that produces the corresponding substring. You assemble these substrings manually via `sprintf`, `compile()`, or simple concatenation. Dynamic values go through [`aqlBind()`](../db-binds.md) to stay safe.
+Each AQL operation (`FOR`, `FILTER`, `SORT`, `LIMIT`, `RETURN`, ...) has its `aql*` function that produces the corresponding substring. You assemble these substrings manually via `sprintf`, `compile()`, or simple concatenation. Dynamic values go through [`aqlBind()`](../db/binds.md) to stay safe.
 
 This approach has two benefits: you read in PHP code exactly the same structure as the final AQL query (no abstraction that "hides" the SQL), and you can compose freely without fighting a restrictive API.
 
@@ -192,7 +192,7 @@ $db
 $results = $db->getDocuments() ;
 ```
 
-See [Quickstart `ArangoDB`](../quickstart.md) for the detail of execution and hydration methods.
+See [Quickstart `ArangoDB`](../getting-started/quickstart.md) for the detail of execution and hydration methods.
 
 ## Beyond *manual* — high-level models
 
@@ -208,6 +208,6 @@ Understanding manual composition is therefore useful even when consuming the mod
 - [AQL operations `db/operations/`](aql-operations.md) — full catalog of the 21 operations.
 - [Operators `db/operators/`](aql-operators.md) — catalog of the 42 operators.
 - [String / date / numeric / array / document functions](aql-functions-strings.md).
-- [AQL helpers `db/helpers/`](../db-helpers.md) — value encoding and fragment composition.
-- [Bind variables `db/binds/`](../db-binds.md) — safe injection.
+- [AQL helpers `db/helpers/`](../db/helpers.md) — value encoding and fragment composition.
+- [Bind variables `db/binds/`](../db/binds.md) — safe injection.
 - [Official AQL documentation — high-level operations](https://docs.arangodb.com/stable/aql/high-level-operations/).

@@ -46,7 +46,7 @@ Définition logique qui regroupe une ou plusieurs collections d'arêtes et leurs
 
 ### Index
 
-Structure d'accélération attachée à une collection. Types principaux : `persistent` (lookups et contraintes d'unicité), `ttl` (expiration automatique d'un document), `geo` (requêtes géospatiales), `fulltext` (déprécié au profit des vues *ArangoSearch*), `vector` (recherche par similarité, ArangoDB 3.12+), `mdi` (multidimensionnel). Voir [`indexes.md`](indexes.md).
+Structure d'accélération attachée à une collection. Types principaux : `persistent` (lookups et contraintes d'unicité), `ttl` (expiration automatique d'un document), `geo` (requêtes géospatiales), `fulltext` (déprécié au profit des vues *ArangoSearch*), `vector` (recherche par similarité, ArangoDB 3.12+), `mdi` (multidimensionnel). Voir [`indexes.md`](../indexes.md).
 
 ### MVCC
 
@@ -88,7 +88,7 @@ Identifiant de révision MVCC d'un document. Change à chaque écriture. Permet 
 
 ### Alteration (`alt`)
 
-Fonction de transformation appliquée à la valeur d'un champ **avant** comparaison dans un filtre. Exposée côté HTTP via `?filter={"key":"name","val":"john","alt":"lower"}`, ce qui produit `FILTER LOWER(doc.name) == "john"`. Voir [`filter.md`](filter.md).
+Fonction de transformation appliquée à la valeur d'un champ **avant** comparaison dans un filtre. Exposée côté HTTP via `?filter={"key":"name","val":"john","alt":"lower"}`, ce qui produit `FILTER LOWER(doc.name) == "john"`. Voir [`filter.md`](../db/filter.md).
 
 ### Authorizer
 
@@ -136,7 +136,7 @@ Classe haut-niveau qui représente une collection ArangoDB et expose les opérat
 
 ### Projection
 
-Sélection des champs renvoyés par le framework pour un document donné, dépendante du *skin* courant et des marqueurs `Field::SKINS` posés sur les champs. Voir [`edges-joins-projection.md`](edges-joins-projection.md).
+Sélection des champs renvoyés par le framework pour un document donné, dépendante du *skin* courant et des marqueurs `Field::SKINS` posés sur les champs. Voir [`edges-joins-projection.md`](../edges-joins-projection.md).
 
 ### Signal
 
@@ -144,7 +144,7 @@ Sélection des champs renvoyés par le framework pour un document donné, dépen
 
 ### Skin
 
-Projection nommée d'un document, transmise via le paramètre URL `?skin=`. Valeurs canoniques : `default` (liste légère), `full` (fiche complète), `main` (skin minimal pour couper les cycles INBOUND), `internal` (projection serveur uniquement, jamais exposée HTTP — voir [`tips.md`](tips.md)). Les contrôleurs ajoutent leurs *skins* métier (par exemple `image`, `offers`).
+Projection nommée d'un document, transmise via le paramètre URL `?skin=`. Valeurs canoniques : `default` (liste légère), `full` (fiche complète), `main` (skin minimal pour couper les cycles INBOUND), `internal` (projection serveur uniquement, jamais exposée HTTP — voir [`tips.md`](../tips.md)). Les contrôleurs ajoutent leurs *skins* métier (par exemple `image`, `offers`).
 
 ## Voir aussi
 

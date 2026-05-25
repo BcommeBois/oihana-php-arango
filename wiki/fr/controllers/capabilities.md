@@ -177,7 +177,7 @@ $init[ Arango::AUTHORIZER ] = fn( string $subject ) : bool
 
 `CapabilityAuthorizerTrait::buildAuthorizer( $request )` fabrique automatiquement ce *callable* request-scoped basé sur le `CapabilityEnforcer` Casbin. Le modèle filtre alors ses *edges* et *joins* annotés `AQL::REQUIRES` en consultant ce *callable* — sans avoir à comprendre Casbin lui-même.
 
-C'est le contrat de **séparation des responsabilités** entre `oihana/php-arango` (qui ne sait rien de l'authentification) et la couche `oihana/php-auth` (qui implémente Casbin). L'*authorizer* est injectable depuis l'extérieur — voir [Intégration avec `oihana/php-auth`](../dependencies.md#intégration-avec-oihanaphp-auth).
+C'est le contrat de **séparation des responsabilités** entre `oihana/php-arango` (qui ne sait rien de l'authentification) et la couche `oihana/php-auth` (qui implémente Casbin). L'*authorizer* est injectable depuis l'extérieur — voir [Intégration avec `oihana/php-auth`](../getting-started/dependencies.md#intégration-avec-oihanaphp-auth).
 
 ## Exemple complet — `/products?skin=offers.full`
 
@@ -238,6 +238,6 @@ Le client n'a jamais besoin de demander une URL différente selon son rôle. Le 
 
 - [Skins](skins.md) — système de projection complémentaire (les *capabilities* gatent les **valeurs** des *skins*).
 - [Projection des edges et joins — `AQL::REQUIRES`](../edges-joins-projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires) — *capability* au niveau modèle (edge/join).
-- [Filtres HTTP `?filter=`](../filter.md) — paramètre couvert par `CapabilityFilterKeysTrait`.
+- [Filtres HTTP `?filter=`](../db/filter.md) — paramètre couvert par `CapabilityFilterKeysTrait`.
 - [Adaptateur Casbin RBAC](../casbin.md) — système d'autorisation sous-jacent.
-- [Dépendances — Intégration avec `oihana/php-auth`](../dependencies.md#intégration-avec-oihanaphp-auth) — le contrat d'injection d'*authorizer*.
+- [Dépendances — Intégration avec `oihana/php-auth`](../getting-started/dependencies.md#intégration-avec-oihanaphp-auth) — le contrat d'injection d'*authorizer*.

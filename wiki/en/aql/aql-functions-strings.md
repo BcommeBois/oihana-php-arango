@@ -2,7 +2,7 @@
 
 The [`src/oihana/arango/db/functions/strings/`](../../../src/oihana/arango/db/functions/strings/) sub-folder groups **37 functions** that match the native AQL *string functions*. Each PHP function returns the string `AQL_FUNCTION(args)` ready to be inserted in a predicate or projection.
 
-> Important distinction: the functions on this page produce AQL `LOWER(doc.name)` from the PHP code `lower('doc.name')`. They have **no relationship** with the `alt` transformations exposed on the HTTP URL side (`?filter={"alt":"lower"}`) documented in [`filter.md`](../filter.md) — these are two parallel worlds despite similar-sounding names.
+> Important distinction: the functions on this page produce AQL `LOWER(doc.name)` from the PHP code `lower('doc.name')`. They have **no relationship** with the `alt` transformations exposed on the HTTP URL side (`?filter={"alt":"lower"}`) documented in [`filter.md`](../db/filter.md) — these are two parallel worlds despite similar-sounding names.
 
 ## Summary
 
@@ -174,5 +174,5 @@ aqlFilter
 
 - [Building an AQL query step by step](aql-building-queries.md).
 - [Operators `db/operators/`](aql-operators.md) — the comparators where these functions are inserted.
-- [Bind variables `db/binds/`](../db-binds.md) — for comparison values.
+- [Bind variables `db/binds/`](../db/binds.md) — for comparison values.
 - [Official AQL documentation — String functions](https://docs.arangodb.com/stable/aql/functions/string/).

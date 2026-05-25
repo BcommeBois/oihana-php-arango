@@ -1,6 +1,6 @@
 # Filtres HTTP `?filter=`
 
-Le framework expose un système de filtrage déclaratif sur les routes `GET` adossées à un modèle [`Documents`](models.md). Le client envoie son intention sous forme de JSON dans le paramètre URL `?filter=`, le framework la convertit en une clause `FILTER` AQL avec *bind variables*, et l'exécute sur la collection cible.
+Le framework expose un système de filtrage déclaratif sur les routes `GET` adossées à un modèle [`Documents`](../models.md). Le client envoie son intention sous forme de JSON dans le paramètre URL `?filter=`, le framework la convertit en une clause `FILTER` AQL avec *bind variables*, et l'exécute sur la collection cible.
 
 Cette page documente :
 
@@ -116,7 +116,7 @@ AQL::FILTERS =>
 
 ## Transformations `alt`
 
-La clé `alt` applique une fonction AQL à `doc.<key>` **avant** la comparaison. C'est l'équivalent HTTP des [fonctions AQL côté PHP](aql/aql-functions-strings.md) — mais exposé sous forme de chaîne courte.
+La clé `alt` applique une fonction AQL à `doc.<key>` **avant** la comparaison. C'est l'équivalent HTTP des [fonctions AQL côté PHP](../aql/aql-functions-strings.md) — mais exposé sous forme de chaîne courte.
 
 ### Syntaxes supportées
 
@@ -142,7 +142,7 @@ L'ordre d'évaluation est **inner-to-outer** : le premier élément du tableau e
 
 ### Catalogue par catégorie
 
-> Pour la signature et la sémantique détaillée de chaque fonction, voir les pages [Fonctions de chaînes](aql/aql-functions-strings.md), [Fonctions de dates](aql/aql-functions-dates.md), [Fonctions numériques](aql/aql-functions-numerics.md), [Fonctions de tableaux](aql/aql-functions-arrays.md). Cette page liste leurs versions exposées côté URL.
+> Pour la signature et la sémantique détaillée de chaque fonction, voir les pages [Fonctions de chaînes](../aql/aql-functions-strings.md), [Fonctions de dates](../aql/aql-functions-dates.md), [Fonctions numériques](../aql/aql-functions-numerics.md), [Fonctions de tableaux](../aql/aql-functions-arrays.md). Cette page liste leurs versions exposées côté URL.
 
 #### Chaînes
 
@@ -408,6 +408,6 @@ Plus la chaîne est longue, plus la fonction AQL générée est coûteuse. En pr
 ## Voir aussi
 
 - [Filtrage interne `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) — conditions serveur-only, `FilterType::VIRTUAL`.
-- [Modèles `Documents` et `Edges`](models.md) — déclaration `AQL::FILTERS` dans la définition du modèle.
-- [Fonctions AQL](aql/aql-functions-strings.md) — équivalents PHP des transformations exposées ici.
-- [Glossaire — Alteration](glossary.md#alteration-alt) — définition de `alt`.
+- [Modèles `Documents` et `Edges`](../models.md) — déclaration `AQL::FILTERS` dans la définition du modèle.
+- [Fonctions AQL](../aql/aql-functions-strings.md) — équivalents PHP des transformations exposées ici.
+- [Glossaire — Alteration](../getting-started/glossary.md#alteration-alt) — définition de `alt`.

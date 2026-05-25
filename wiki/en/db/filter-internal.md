@@ -123,7 +123,7 @@ public function list( ?Request $request = null , ?Response $response = null , ar
 
 The client can still use `?filter={"key":"created","val":"2026-01-01","op":"ge"}`; the controller silently adds `&& doc.userId == @currentUserId`.
 
-The `InjectFilterTrait` (see [Slim controllers](controllers/README.md)) provides syntactic sugar for this exact case.
+The `InjectFilterTrait` (see [Slim controllers](../controllers/README.md)) provides syntactic sugar for this exact case.
 
 ## URL vs internal decision rule
 
@@ -179,7 +179,7 @@ Always reassign `$init[ AQL::BINDS ] = $binds` after a series of `aqlBind()` cal
 ## See also
 
 - [HTTP filters `?filter=`](filter.md) — URL-exposed system, complementary to this page.
-- [`Documents` and `Edges` models](models.md) — `AQL::FILTERS` declaration.
-- [Bind variables `db/binds/`](db-binds.md) — `aqlBind()` and the safe injection convention.
-- [AQL helpers `db/helpers/`](db-helpers.md) — `key()`, `equal()` and friends to compose conditions.
-- [Slim controllers](controllers/README.md) — `InjectFilterTrait`, `beforeModelCall` hooks.
+- [`Documents` and `Edges` models](../models.md) — `AQL::FILTERS` declaration.
+- [Bind variables `db/binds/`](binds.md) — `aqlBind()` and the safe injection convention.
+- [AQL helpers `db/helpers/`](helpers.md) — `key()`, `equal()` and friends to compose conditions.
+- [Slim controllers](../controllers/README.md) — `InjectFilterTrait`, `beforeModelCall` hooks.

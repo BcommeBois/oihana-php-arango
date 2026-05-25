@@ -46,17 +46,17 @@ $users = new Documents( $container ,
 ]) ;
 ```
 
-The container is used to resolve dependencies declared by service identifier: `DATABASE` resolves to an [`ArangoDB`](quickstart.md) instance, `SCHEMA` designates a mapping class, etc.
+The container is used to resolve dependencies declared by service identifier: `DATABASE` resolves to an [`ArangoDB`](getting-started/quickstart.md) instance, `SCHEMA` designates a mapping class, etc.
 
 ### Full `AQL::*` key catalog
 
 | Key | Type | Role |
 |---|---|---|
 | `AQL::COLLECTION` | `string` | Target ArangoDB collection name. |
-| `AQL::DATABASE` | `string` | DI identifier of the [`ArangoDB`](quickstart.md) service. |
+| `AQL::DATABASE` | `string` | DI identifier of the [`ArangoDB`](getting-started/quickstart.md) service. |
 | `AQL::SCHEMA` | `class-string` | Schema class for hydration (`Thing` or hydratable). |
-| `AQL::FIELDS` | `array` | Exposed fields and their [`Filter::*`](enums.md#types) (see [Field](glossary.md#field)). |
-| `AQL::FILTERS` | `array` | Fields filterable from URL and their `FilterType::*` (see [filter.md](filter.md)). |
+| `AQL::FIELDS` | `array` | Exposed fields and their [`Filter::*`](enums.md#types) (see [Field](getting-started/glossary.md#field)). |
+| `AQL::FILTERS` | `array` | Fields filterable from URL and their `FilterType::*` (see [filter.md](db/filter.md)). |
 | `AQL::SEARCHABLE` | `array` | Fields `?search=` operates on. |
 | `AQL::SORTABLE` | `array` | URL key → AQL field mapping for `?sort=`. |
 | `AQL::SORT_DEFAULT` | `string` | Default sort in grammar format ([`sortKeys`](helpers.md)). |
@@ -68,7 +68,7 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::FILLABLE` | `array` | Fields mass-assignable on insert/update. |
 | `AQL::ALTERS` | `array` | Post-query transformations on returned documents. |
 | `AQL::INDEXES` | `array` | Indexes to create on first instantiation (lazy). |
-| `AQL::CONDITIONS` | `array` | Server-side injected AQL conditions (see [filter-internal.md](filter-internal.md)). |
+| `AQL::CONDITIONS` | `array` | Server-side injected AQL conditions (see [filter-internal.md](db/filter-internal.md)). |
 | `AQL::BINDS` | `array` | Server-side injected *bind variables*. |
 
 ### Main methods
@@ -185,7 +185,7 @@ The big functional block: each trait brings one capability (filtering, sorting, 
 
 | Trait | Brings |
 |---|---|
-| `FieldsTrait` | Builds the `RETURN { ... }` by routing each field to its [*field builder*](db-helpers.md#field-builders--fields-sub-folder). |
+| `FieldsTrait` | Builds the `RETURN { ... }` by routing each field to its [*field builder*](db/helpers.md#field-builders--fields-sub-folder). |
 | `FilterTrait` | Converts `?filter=` JSON to `FILTER ...` AQL with *binds*. |
 | `SortTrait` | Converts `?sort=` text grammar to `SORT ...`. |
 | `SearchTrait` | Converts `?search=` to a `LIKE` or `STARTS_WITH` filter depending on the field. |
@@ -268,13 +268,13 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 | `afterModelCall( $request , array &$init , mixed &$result )` | After each operation. | Response enrichment, *logging*, *audit*. |
 | `afterDelete` (*signal*) | After a vertex `delete()`. | Edge cascade (`EdgesFromTrait`/`EdgesToTrait`). |
 
-`beforeModelCall`/`afterModelCall` hooks come from the `ModelCallTrait` controller-side trait (cf. [Slim controllers](controllers/README.md)). The `afterDelete` signal comes from the [`oihana/php-signals`](dependencies.md#oihanaphp-signals) *bus*.
+`beforeModelCall`/`afterModelCall` hooks come from the `ModelCallTrait` controller-side trait (cf. [Slim controllers](controllers/README.md)). The `afterDelete` signal comes from the [`oihana/php-signals`](getting-started/dependencies.md#oihanaphp-signals) *bus*.
 
 ## See also
 
 - [Edge and join projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`.
-- [HTTP filters `?filter=`](filter.md) — URL filter syntax, `alt` transformations, operators.
-- [Internal filtering](filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` for server-only conditions.
+- [HTTP filters `?filter=`](db/filter.md) — URL filter syntax, `alt` transformations, operators.
+- [Internal filtering](db/filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` for server-only conditions.
 - [Slim controllers](controllers/README.md) — HTTP exposition of the model.
 - [Enums reference](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consumed here.
-- [Quickstart `ArangoDB`](quickstart.md) — the underlying low-level layer.
+- [Quickstart `ArangoDB`](getting-started/quickstart.md) — the underlying low-level layer.

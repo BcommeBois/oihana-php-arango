@@ -2,7 +2,7 @@
 
 Le sous-dossier [`src/oihana/arango/db/functions/strings/`](../../../src/oihana/arango/db/functions/strings/) regroupe **37 fonctions** qui correspondent aux *string functions* natives d'AQL. Chaque fonction PHP retourne la chaîne `FONCTION_AQL(args)` prête à être insérée dans un prédicat ou une projection.
 
-> Distinction importante : les fonctions de cette page produisent l'AQL `LOWER(doc.name)` à partir du code PHP `lower('doc.name')`. Elles n'ont **aucun rapport** avec les transformations `alt` exposées côté URL HTTP (`?filter={"alt":"lower"}`) documentées dans [`filter.md`](../filter.md) — ce sont deux mondes parallèles, malgré des noms qui se ressemblent.
+> Distinction importante : les fonctions de cette page produisent l'AQL `LOWER(doc.name)` à partir du code PHP `lower('doc.name')`. Elles n'ont **aucun rapport** avec les transformations `alt` exposées côté URL HTTP (`?filter={"alt":"lower"}`) documentées dans [`filter.md`](../db/filter.md) — ce sont deux mondes parallèles, malgré des noms qui se ressemblent.
 
 ## Sommaire
 
@@ -174,5 +174,5 @@ aqlFilter
 
 - [Construire une requête AQL pas à pas](aql-building-queries.md).
 - [Opérateurs `db/operators/`](aql-operators.md) — les comparateurs où l'on insère ces fonctions.
-- [Bind variables `db/binds/`](../db-binds.md) — pour les valeurs de comparaison.
+- [Bind variables `db/binds/`](../db/binds.md) — pour les valeurs de comparaison.
 - [Documentation officielle AQL — String functions](https://docs.arangodb.com/stable/aql/functions/string/).

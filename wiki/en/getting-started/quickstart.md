@@ -1,6 +1,6 @@
 # Quickstart `ArangoDB`
 
-The [`ArangoDB`](../../src/oihana/arango/db/ArangoDB.php) class is the entry point of the framework's whole low-level layer. It wraps a connection to the server, exposes collection and index management via the [`CollectionManagementTrait`](../../src/oihana/arango/db/traits/CollectionManagementTrait.php) trait, and provides raw AQL query execution.
+The [`ArangoDB`](../../../src/oihana/arango/db/ArangoDB.php) class is the entry point of the framework's whole low-level layer. It wraps a connection to the server, exposes collection and index management via the [`CollectionManagementTrait`](../../../src/oihana/arango/db/traits/CollectionManagementTrait.php) trait, and provides raw AQL query execution.
 
 The high-level models (`Documents`, `Edges`) and the Slim controllers all build on this class. Understanding `ArangoDB` is therefore a prerequisite for everything else.
 
@@ -129,13 +129,13 @@ $first = $db->getFirstResult( fn( $d ) =>          // dynamic dispatch
 
 After `execute()`, three *getters* expose the metadata:
 
-- `getCursor()` — direct access to the underlying [`Cursor`](../../src/oihana/arango/clients/cursor/Cursor.php).
+- `getCursor()` — direct access to the underlying [`Cursor`](../../../src/oihana/arango/clients/cursor/Cursor.php).
 - `getFoundRows()` — *total count* (equivalent to AQL `FULL COUNT`). Requires the query to have been prepared with `fullCount: true`.
 - `getExtra()` — additional metadata returned by the server (statistics, *warnings*, *plan*).
 
 ## Manage collections
 
-`ArangoDB` consumes [`CollectionManagementTrait`](../../src/oihana/arango/db/traits/CollectionManagementTrait.php), which exposes six idempotent methods for collections:
+`ArangoDB` consumes [`CollectionManagementTrait`](../../../src/oihana/arango/db/traits/CollectionManagementTrait.php), which exposes six idempotent methods for collections:
 
 | Method | Description |
 |---|---|
@@ -173,7 +173,7 @@ $index->unique = true        ;
 $db->createIndex( 'users' , $index ) ;
 ```
 
-The full catalog of `*IndexOptions` classes (`Persistent`, `TTL`, `Geo`, `MDI`, `Vector`) will be detailed on the [Indexes and collection management](indexes.md) page.
+The full catalog of `*IndexOptions` classes (`Persistent`, `TTL`, `Geo`, `MDI`, `Vector`) will be detailed on the [Indexes and collection management](../indexes.md) page.
 
 ## Logger
 
@@ -181,7 +181,7 @@ The second constructor argument accepts a `Psr\Log\LoggerInterface`. All network
 
 ## See also
 
-- [AQL helpers `db/helpers/`](db-helpers.md) — build composable AQL expressions without `sprintf`.
-- [Bind variables `db/binds/`](db-binds.md) — inject values safely.
-- [`Documents` and `Edges` models](models.md) — high-level layer that consumes `ArangoDB` to expose full CRUD.
+- [AQL helpers `db/helpers/`](../db/helpers.md) — build composable AQL expressions without `sprintf`.
+- [Bind variables `db/binds/`](../db/binds.md) — inject values safely.
+- [`Documents` and `Edges` models](../models.md) — high-level layer that consumes `ArangoDB` to expose full CRUD.
 - [Glossary](glossary.md) — framework terms.

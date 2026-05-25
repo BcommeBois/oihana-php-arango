@@ -1,6 +1,6 @@
 # HTTP filters `?filter=`
 
-The framework exposes a declarative filtering system on `GET` routes backed by a [`Documents`](models.md) model. The client sends its intent as JSON in the `?filter=` URL parameter, the framework converts it into a `FILTER` AQL clause with *bind variables*, and executes it on the target collection.
+The framework exposes a declarative filtering system on `GET` routes backed by a [`Documents`](../models.md) model. The client sends its intent as JSON in the `?filter=` URL parameter, the framework converts it into a `FILTER` AQL clause with *bind variables*, and executes it on the target collection.
 
 This page documents:
 
@@ -116,7 +116,7 @@ AQL::FILTERS =>
 
 ## `alt` transformations
 
-The `alt` key applies an AQL function to `doc.<key>` **before** comparison. It is the HTTP equivalent of the [PHP-side AQL functions](aql/aql-functions-strings.md) — but exposed as a short string.
+The `alt` key applies an AQL function to `doc.<key>` **before** comparison. It is the HTTP equivalent of the [PHP-side AQL functions](../aql/aql-functions-strings.md) — but exposed as a short string.
 
 ### Supported syntaxes
 
@@ -142,7 +142,7 @@ Evaluation order is **inner-to-outer**: the first array element is applied first
 
 ### Catalog by category
 
-> For the signature and detailed semantics of each function, see [String functions](aql/aql-functions-strings.md), [Date functions](aql/aql-functions-dates.md), [Numeric functions](aql/aql-functions-numerics.md), [Array functions](aql/aql-functions-arrays.md). This page lists their URL-side exposed versions.
+> For the signature and detailed semantics of each function, see [String functions](../aql/aql-functions-strings.md), [Date functions](../aql/aql-functions-dates.md), [Numeric functions](../aql/aql-functions-numerics.md), [Array functions](../aql/aql-functions-arrays.md). This page lists their URL-side exposed versions.
 
 #### Strings
 
@@ -408,6 +408,6 @@ The longer the chain, the more expensive the generated AQL function. In practice
 ## See also
 
 - [Internal filtering `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) — server-only conditions, `FilterType::VIRTUAL`.
-- [`Documents` and `Edges` models](models.md) — `AQL::FILTERS` declaration in the model definition.
-- [AQL functions](aql/aql-functions-strings.md) — PHP equivalents of the transformations exposed here.
-- [Glossary — Alteration](glossary.md#alteration-alt) — `alt` definition.
+- [`Documents` and `Edges` models](../models.md) — `AQL::FILTERS` declaration in the model definition.
+- [AQL functions](../aql/aql-functions-strings.md) — PHP equivalents of the transformations exposed here.
+- [Glossary — Alteration](../getting-started/glossary.md#alteration-alt) — `alt` definition.
