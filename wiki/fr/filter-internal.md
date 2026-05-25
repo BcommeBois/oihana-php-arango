@@ -1,0 +1,185 @@
+# Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`
+
+Cette page couvre les **filtres serveur-only** : conditions AQL qui doivent s'appliquer à une requête de modèle, mais qu'on ne veut **pas** exposer à l'URL `?filter=` parce qu'elles touchent un champ sensible, calculé, ou parce qu'elles relèvent de la logique métier interne du contrôleur.
+
+Deux mécanismes complémentaires :
+
+1. **`FilterType::VIRTUAL`** — pour qu'une clé soit acceptée depuis l'URL `?filter=` mais que **le framework n'émette aucune clause AQL** correspondante (à charge du contrôleur d'injecter la vraie condition).
+2. **`AQL::CONDITIONS` + `AQL::BINDS`** — pour injecter directement des conditions AQL brutes dans l'appel à `list()`, `count()`, `get()`, etc., sans exposer la moindre clé à l'URL.
+
+Pour le filtrage **exposé à l'URL** (whitelisté via `AQL::FILTERS`), voir [Filtres HTTP `?filter=`](filter.md).
+
+## `FilterType::VIRTUAL` — clé URL sans clause AQL
+
+### Quand l'utiliser
+
+`FilterType::VIRTUAL` est utile quand on veut qu'un client puisse écrire `?filter={"key":"current","val":true}` dans l'URL — mais que la décision de ce qu'est « current » se prenne côté serveur, sans exposer le champ technique sous-jacent.
+
+Cas typiques :
+
+- **Champ calculé à la sortie** : `current` sur `/me/sessions`, dérivé du `tokenHash` de la requête courante (pas un champ persisté).
+- **Champ sensible** : on veut filtrer sur un hash ou un token sans que le hash apparaisse jamais dans la requête de l'utilisateur.
+
+### Pattern
+
+Déclarer la clé en `FilterType::VIRTUAL` dans `AQL::FILTERS` du modèle. Le framework accepte la clé dans `?filter=`, la conserve dans la réponse (champ `url`), mais **n'émet aucune clause AQL**. Le contrôleur surcharge `beforeModelCall()` pour injecter la vraie condition via `AQL::CONDITIONS` + `AQL::BINDS`.
+
+```php
+// DI du modèle MeSessions
+AQL::FILTERS =>
+[
+    // ... autres clés exposées
+    Prop::CURRENT => FilterType::VIRTUAL ,
+]
+
+// MeSessionsController::beforeModelCall
+protected function beforeModelCall( ?Request $request , array &$init ) : void
+{
+    parent::beforeModelCall( $request , $init ) ;
+
+    if ( $this->isCurrentFilterRequested( $init ) )
+    {
+        $hash  = $this->extractTokenHashFromRequest( $request ) ;
+        $binds = $init[ AQL::BINDS ] ?? [] ;
+
+        $init[ AQL::CONDITIONS ][] = equal
+        (
+            key     ( Session::TOKEN_HASH , AQL::DOC )      ,
+            aqlBind ( $hash , $binds , 'meSessionsCurrentHash' )
+        ) ;
+
+        $init[ AQL::BINDS ] = $binds ;
+    }
+}
+```
+
+Côté client, la réponse JSON contient toujours `"url": "https://.../me/sessions?filter=current:true"` — la traçabilité est préservée. Mais aucun `tokenHash` ne transite jamais dans la requête HTTP.
+
+### Avantages
+
+- **Confidentialité** : le champ technique (`tokenHash`) reste invisible côté client.
+- **Traçabilité** : l'URL reste lisible et reproductible pour le client.
+- **Découpage propre** : le modèle déclare l'intention (« cette clé est filtrable »), le contrôleur fournit la sémantique concrète.
+
+## `AQL::CONDITIONS` + `AQL::BINDS` — conditions serveur uniquement
+
+### Quand l'utiliser
+
+Pour toute condition qui **ne doit pas être filtrable depuis l'URL** : code interne, champ sensible, condition complexe, restriction d'audience selon le contexte de la requête.
+
+Trois cas typiques :
+
+1. **Restriction par utilisateur** : un endpoint `/me/orders` filtre forcément sur `doc.userId == @currentUserId`. Le client ne doit même pas pouvoir essayer d'écrire `?filter={"key":"userId","val":"..."}`.
+2. **Champ jamais exposé** : filtrer sur `doc.deletedAt == null` pour exclure les *soft-deletes*, sans déclarer `deletedAt` dans `AQL::FILTERS`.
+3. **Condition complexe** : sous-requête, comparaison multi-champ, prédicat custom.
+
+### Pattern
+
+Injecter directement les conditions AQL et les *bind variables* dans l'appel au modèle :
+
+```php
+use oihana\arango\enums\AQL ;
+use oihana\arango\enums\Boolean ;
+use function oihana\arango\db\binds\aqlBind ;
+use function oihana\arango\db\helpers\functions\key ;
+use function oihana\arango\db\operators\equal ;
+
+$binds = [] ;
+
+$sessions = $this->model->list
+([
+    AQL::CONDITIONS =>
+    [
+        equal( key( Session::USER_ID , AQL::DOC ) , aqlBind( $userKey , $binds , 'sessionUserId' ) ) ,
+        equal( key( Schema::ACTIVE   , AQL::DOC ) , Boolean::TRUE                                  ) ,
+    ] ,
+    AQL::BINDS => $binds ,
+]) ;
+```
+
+Les conditions injectées sont ajoutées au `FILTER` AQL généré, **après** les conditions issues de `?filter=`. Les *bind variables* sont fusionnées avec celles auto-générées par le pipeline `FilterTrait`.
+
+### Composition avec `?filter=`
+
+Les deux mécanismes cohabitent sans conflit :
+
+```php
+// Le contrôleur expose ?filter=, mais force un userId côté serveur
+public function list( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
+{
+    $userKey = $this->getCurrentUserKey( $request ) ;
+    $binds   = [] ;
+
+    $init[ AQL::CONDITIONS ][] = equal
+    (
+        key( 'userId' , AQL::DOC ) ,
+        aqlBind( $userKey , $binds , 'currentUserId' )
+    ) ;
+    $init[ AQL::BINDS ] = $binds ;
+
+    return parent::list( $request , $response , $args , $init ) ;
+}
+```
+
+Le client peut continuer à utiliser `?filter={"key":"created","val":"2026-01-01","op":"ge"}` ; le contrôleur ajoute silencieusement `&& doc.userId == @currentUserId`.
+
+Le `InjectFilterTrait` (cf. [Contrôleurs Slim](controllers/README.md)) fournit un sucre syntaxique pour ce cas exact.
+
+## Règle de décision URL vs interne
+
+| Besoin | Mécanisme |
+|---|---|
+| Le client doit pouvoir filtrer librement sur ce champ | `AQL::FILTERS` + `?filter=` (cf. [filter.md](filter.md)) |
+| Le client passe une clé `?filter=`, le serveur traduit en vraie condition cachée | `FilterType::VIRTUAL` + `AQL::CONDITIONS` |
+| Le serveur impose une condition jamais visible côté client | `AQL::CONDITIONS` + `AQL::BINDS` |
+| Le serveur veut conserver la lisibilité de la condition côté client mais sans exposer le champ technique | `FilterType::VIRTUAL` |
+
+## Anti-patterns
+
+### Concaténer une valeur PHP dans une condition AQL
+
+```php
+// JAMAIS — risque d'injection AQL
+$init[ AQL::CONDITIONS ][] = "doc.userId == '$userKey'" ;
+```
+
+Toujours passer par `aqlBind()` :
+
+```php
+$init[ AQL::CONDITIONS ][] = equal
+(
+    key( 'userId' , AQL::DOC ) ,
+    aqlBind( $userKey , $binds , 'currentUserId' )
+) ;
+$init[ AQL::BINDS ] = $binds ;
+```
+
+### Exposer un champ sensible via `AQL::FILTERS`
+
+```php
+// Mauvais — le client peut maintenant filtrer sur le hash
+AQL::FILTERS =>
+[
+    Prop::TOKEN_HASH => FilterType::STRING ,
+]
+```
+
+Pour les champs sensibles, utiliser `FilterType::VIRTUAL` sur une clé sémantique (`current`) et masquer le champ technique (`tokenHash`).
+
+### Oublier de fusionner `$binds`
+
+```php
+// Mauvais — $binds modifié par aqlBind() n'est pas re-affecté à $init
+$init[ AQL::CONDITIONS ][] = equal( ... , aqlBind( ... , $binds , ... ) ) ;
+// $init[ AQL::BINDS ] manquant ici
+```
+
+Toujours réassigner `$init[ AQL::BINDS ] = $binds` après une série d'appels à `aqlBind()`.
+
+## Voir aussi
+
+- [Filtres HTTP `?filter=`](filter.md) — système exposé à l'URL, complémentaire à cette page.
+- [Modèles `Documents` et `Edges`](models.md) — déclaration `AQL::FILTERS`.
+- [Bind variables `db/binds/`](db-binds.md) — `aqlBind()` et la convention d'injection sûre.
+- [Helpers AQL `db/helpers/`](db-helpers.md) — `key()`, `equal()` et compagnie pour composer les conditions.
+- [Contrôleurs Slim](controllers/README.md) — `InjectFilterTrait`, hooks `beforeModelCall`.
