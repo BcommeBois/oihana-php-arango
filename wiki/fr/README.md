@@ -4,6 +4,8 @@
 
 `oihana/php-arango` est une bibliothèque PHP qui industrialise le travail avec [ArangoDB](https://arangodb.com) : client HTTP natif (Guzzle), *builder* AQL composable, modèles haut-niveau (`Documents`, `Edges`) par composition de traits, contrôleurs Slim CRUD, adaptateur Casbin RBAC et commandes Symfony Console.
 
+![Oihana PHP Arango](https://raw.githubusercontent.com/BcommeBois/oihana-php-arango/main/assets/images/oihana-php-arango-logo-inline-512x160.png)
+
 ## À qui s'adresse cette documentation
 
 Aux développeurs PHP qui construisent une API ou un service au-dessus d'ArangoDB et qui veulent :
@@ -49,9 +51,15 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 
 ### Client HTTP — [`clients/`](clients/)
 
-- [Vue d'ensemble du client HTTP](clients/README.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` failover cluster, authentification Basic + JWT/Bearer.
+- [Vue d'ensemble du client HTTP](clients/README.md) — `ArangoClient`, `Database`, architecture, quand utiliser le client vs la façade.
 - [Démarrer](clients/getting-started.md) — votre premier `ArangoClient`, votre premier document, en sept petites étapes. **Nouveau sur ArangoDB ? Commencez ici.**
 - [Collections et documents](clients/documents.md) — CRUD complet, opérations en batch, import JSON-Lines en masse, edges.
+- [Requêtes AQL et Cursors](clients/aql.md) — helper `aql()`, `AqlQuery`, `Cursor` paresseux avec `map` / `forEach` / `reduce` / `flatMap`.
+- [Graphes](clients/graphs.md) — graphes *gharial* nommés, `EdgeDefinition`, insertions d'arêtes type-safe, traversal AQL.
+- [Transactions](clients/transactions.md) — transactions streaming, `withTransaction()` auto-commit/abort.
+- [Indexes](clients/indexes.md) — sept classes d'index typées (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `MDIIndex`, `VectorIndex`, `InvertedIndex`, `FulltextIndex`).
+- [ArangoSearch](clients/arangosearch.md) — analyzers et views pour la recherche full-text.
+- [Résilience et authentification](clients/resilience.md) — modes d'auth et auto-refresh sur 401, politique de retry, failover multi-hôtes, timeouts.
 
 ### AQL — [`aql/`](aql/)
 

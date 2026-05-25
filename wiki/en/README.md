@@ -4,6 +4,8 @@
 
 `oihana/php-arango` is a PHP library that streamlines working with [ArangoDB](https://arangodb.com): native HTTP client (Guzzle), composable AQL builder, high-level models (`Documents`, `Edges`) built by trait composition, Slim CRUD controllers, Casbin RBAC adapter, and Symfony Console commands.
 
+![Oihana PHP Arango](https://raw.githubusercontent.com/BcommeBois/oihana-php-arango/main/assets/images/oihana-php-arango-logo-inline-512x160.png)
+
 ## Who this documentation is for
 
 PHP developers building an API or service on top of ArangoDB who want to:
@@ -49,9 +51,15 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 
 ### HTTP client — [`clients/`](clients/)
 
-- [HTTP client overview](clients/README.md) — `ArangoClient`, `Database`, `HttpTransport` (Guzzle), `RetryPolicy`, `HostRing` cluster failover, Basic + JWT/Bearer authentication.
+- [HTTP client overview](clients/README.md) — `ArangoClient`, `Database`, architecture, when to use the client vs the façade.
 - [Getting started](clients/getting-started.md) — your first `ArangoClient`, your first document, in seven small steps. **New to ArangoDB? Start here.**
 - [Collections and documents](clients/documents.md) — full CRUD, batch operations, bulk JSON-Lines import, edges.
+- [AQL queries and Cursors](clients/aql.md) — `aql()` helper, `AqlQuery`, lazy `Cursor` with `map` / `forEach` / `reduce` / `flatMap`.
+- [Graphs](clients/graphs.md) — named *gharial* graphs, `EdgeDefinition`, type-safe edge inserts, AQL traversal.
+- [Transactions](clients/transactions.md) — streaming transactions, `withTransaction()` auto-commit/abort.
+- [Indexes](clients/indexes.md) — seven typed index classes (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `MDIIndex`, `VectorIndex`, `InvertedIndex`, `FulltextIndex`).
+- [ArangoSearch](clients/arangosearch.md) — analyzers and views for full-text search.
+- [Resilience and authentication](clients/resilience.md) — auth modes and 401 auto-refresh, retry policy, multi-host failover, timeouts.
 
 ### AQL — [`aql/`](aql/)
 

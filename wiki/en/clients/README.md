@@ -13,21 +13,27 @@ This page covers the **client** layer. For the façade quickstart, see [Quicksta
 
 ## Learn the client progressively
 
-If you've never used ArangoDB, read these pages in order:
+If you've never used ArangoDB, read these pages in order. Each one builds on the previous.
 
 | # | Page | Audience |
 |---|---|---|
 | 1 | [Getting started](getting-started.md) | **Beginners** — your first `ArangoClient`, your first document, in seven small steps. |
 | 2 | [Collections and documents](documents.md) | Beginner → intermediate — full CRUD, batch operations, bulk JSON-Lines import, edges. |
+| 3 | [AQL queries and Cursors](aql.md) | Intermediate — `aql()` helper, `AqlQuery`, bind variables, lazy `Cursor` with `map` / `forEach` / `reduce` / `flatMap`. |
+| 4 | [Graphs](graphs.md) | Intermediate — named *gharial* graphs, `EdgeDefinition`, vertex/edge collections with type-safe inserts, AQL traversal. |
+| 5 | [Transactions](transactions.md) | Advanced — streaming transactions, `withTransaction()` auto-commit/abort, scoping collection access. |
+| 6 | [Indexes](indexes.md) | Intermediate — seven typed index classes (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `MDIIndex`, `VectorIndex`, `InvertedIndex`, `FulltextIndex`). |
+| 7 | [ArangoSearch](arangosearch.md) | Advanced — analyzers and views for multi-collection full-text search with `SEARCH` / `BM25` / `PHRASE`. |
+| 8 | [Resilience and authentication](resilience.md) | Ops — auth modes and 401 auto-refresh, retry policy, multi-host failover, timeouts, dirty reads. |
 
-The rest of this page is a **reference** — architecture diagram, authentication modes, resilience, when to use the client vs the high-level façade.
+The rest of this page is a **reference** — architecture diagram, quick example, method tables for `ArangoClient` and `Database`, when to use the client vs the high-level façade.
 
 ## Architecture
 
 ```
 ArangoClient ─────► HttpTransport (Guzzle) ───► arangod
      │                    │
-     │                    ├─► RetryPolicy   (1209 conflict, 3002 maintenance)
+     │                    ├─► RetryPolicy   (1200 conflict, 3002 maintenance)
      │                    └─► HostRing      (round-robin cluster failover)
      │
      └──► Database (one hub per database)
@@ -110,57 +116,9 @@ Every operation tied to a *database* goes through a `Database`. An instance is o
 | `view( string $name )` / `views()` / `listViews()` / `createView( ... )` | ArangoSearch views. |
 | `exists()` / `create()` / `drop()` | Database lifecycle. |
 
-## Authentication
+## Configuration and resilience
 
-Three modes supported through `ClientOptions::$authType`:
-
-- `AuthType::BASIC` — credentials sent as `Authorization: Basic …` on every request. Default.
-- `AuthType::JWT` (alias `BEARER`) — token sent as `Authorization: Bearer …`. The token can be obtained via `$client->login( $user , $password )` which switches the transport automatically.
-- **401 auto-refresh.** If a Bearer request receives a 401, the transport tries a single `login` then replays the request. The flag is carried by `HttpTransport` (not by `ClientOptions`, which stays `readonly`).
-
-```php
-// Start in Basic, then exchange for a JWT
-$token = $client->login( 'root' , 'secret' ) ;
-// The client is now in Bearer automatically.
-
-// Switch back to Basic explicitly
-$client->useBasicAuth( 'root' , 'secret' ) ;
-```
-
-## Resilience: retry and cluster failover
-
-`ClientOptions::$endpoints` accepts **multiple URLs** — the [`HostRing`](https://github.com/BcommeBois/oihana-php-arango/blob/main/src/oihana/arango/clients/http/HostRing.php) class picks a host in round-robin and falls over to the next one on network failure.
-
-`RetryPolicy` kicks in for **Arango error codes** that are *safe-to-retry*:
-
-- `1209` — `ERROR_ARANGO_CONFLICT` (write-write conflict, the engine can be retried).
-- `3002` — `ERROR_CLUSTER_AGENCY_*` / maintenance — typically transient during a *leader switch*.
-
-```php
-$client = new ArangoClient( new ClientOptions(
-    endpoints : [ 'tcp://node-1:8529' , 'tcp://node-2:8529' , 'tcp://node-3:8529' ] ,
-    database  : 'app' ,
-    user      : 'root' ,
-    password  : 'secret' ,
-    reconnect : true ,        // keep keep-alive on reconnect
-) ) ;
-```
-
-## Dirty reads (replicas)
-
-In a cluster setup, you can allow reads from replicas by turning on the global `allowDirtyRead` flag — it injects the `x-arango-allow-dirty-read: true` header on **every** request:
-
-```php
-$client = new ArangoClient( new ClientOptions(
-    endpoints       : [ ... ] ,
-    database        : 'app' ,
-    user            : 'root' ,
-    password        : 'secret' ,
-    allowDirtyRead  : true ,    // OPT-IN
-) ) ;
-```
-
-The server is then free to serve the request from a follower; use this only for reads that tolerate slight replication lag.
+Authentication modes (Basic, JWT with 401 auto-refresh), retry policy on transient errors, multi-host failover, timeouts, keep-alive, and dirty reads are all covered in a dedicated page — see [Resilience and authentication](resilience.md).
 
 ## When to use the client directly vs the façade
 
