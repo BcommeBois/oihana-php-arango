@@ -1,6 +1,6 @@
 # Numeric functions `db/functions/numerics/`
 
-The [`api/src/oihana/arango/db/functions/numerics/`](../../../../api/src/oihana/arango/db/functions/numerics/) sub-folder groups **31 functions** that match the native AQL *numeric functions* — scalar computations, trigonometry, logarithms, array aggregations, range generation.
+The [`src/oihana/arango/db/functions/numerics/`](../../../src/oihana/arango/db/functions/numerics/) sub-folder groups **31 functions** that match the native AQL *numeric functions* — scalar computations, trigonometry, logarithms, array aggregations, range generation.
 
 ## Summary
 

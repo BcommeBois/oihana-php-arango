@@ -1,6 +1,6 @@
 # Bind variables `db/binds/`
 
-The [`api/src/oihana/arango/db/binds/`](../../../api/src/oihana/arango/db/binds/) folder groups the five functions that ensure **safe injection** of values and collection names into an AQL query.
+The [`src/oihana/arango/db/binds/`](../../src/oihana/arango/db/binds/) folder groups the five functions that ensure **safe injection** of values and collection names into an AQL query.
 
 This is the framework's first line of defense against AQL injection: no dynamic value should ever be concatenated directly into a query. Every value goes through `aqlBind()` or `aqlBindCollection()`, which return a safe *placeholder* (`@var` or `@@coll`) and store the value in a `bindVars` array passed separately to ArangoDB.
 

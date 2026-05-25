@@ -1,6 +1,6 @@
 # Operators `db/operators/`
 
-The [`api/src/oihana/arango/db/operators/`](../../../../api/src/oihana/arango/db/operators/) folder provides the **42 functions** that produce an AQL **predicate** — a string like `'doc.x == doc.y'` that plugs into an `aqlFilter()`, an `aqlReturn()`, or any other place a boolean expression is expected.
+The [`src/oihana/arango/db/operators/`](../../../src/oihana/arango/db/operators/) folder provides the **42 functions** that produce an AQL **predicate** — a string like `'doc.x == doc.y'` that plugs into an `aqlFilter()`, an `aqlReturn()`, or any other place a boolean expression is expected.
 
 All functions share the same base signature `(mixed $leftOperand, mixed $rightOperand) : string`, with the exception of unary logical operators (`logicalNot`) and a few special operators (`ternary`, `nullish`, `rangeOperator`).
 

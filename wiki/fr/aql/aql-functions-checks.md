@@ -1,6 +1,6 @@
 # Fonctions documents et vérifications
 
-Cette page regroupe **28 fonctions** réparties entre la racine de [`db/functions/`](../../../../api/src/oihana/arango/db/functions/) (24 fonctions transverses) et le sous-dossier [`db/functions/documents/`](../../../../api/src/oihana/arango/db/functions/documents/) (4 fonctions documents). On y trouve les *type checks*, les *casts*, les opérations sur documents et les fonctions d'information de la base.
+Cette page regroupe **28 fonctions** réparties entre la racine de [`db/functions/`](../../../src/oihana/arango/db/functions/) (24 fonctions transverses) et le sous-dossier [`db/functions/documents/`](../../../src/oihana/arango/db/functions/documents/) (4 fonctions documents). On y trouve les *type checks*, les *casts*, les opérations sur documents et les fonctions d'information de la base.
 
 ## Sommaire
 

@@ -1,6 +1,6 @@
 # Symfony Console commands
 
-The [`api/src/oihana/arango/commands/`](../../../api/src/oihana/arango/commands/) folder exposes the [`Documents`](models.md) business layer on the **command line** side. Same CRUD operations as the HTTP controllers, accessible via `php bin/console.php <name>` or a `bun` alias on the project side.
+The [`src/oihana/arango/commands/`](../../src/oihana/arango/commands/) folder exposes the [`Documents`](models.md) business layer on the **command line** side. Same CRUD operations as the HTTP controllers, accessible via `php bin/console.php <name>` or a `bun` alias on the project side.
 
 Two pivot classes:
 
@@ -21,7 +21,7 @@ Both inherit from the [`oihana/php-commands`](dependencies.md#oihanaphp-commands
 | `restore` | `ArangoRestoreAction` | Reinjection of a previous dump into the database. |
 | `list-dumps` | `ArangoListDumpsAction` | List of dumps available in the archives folder. |
 
-Configured via the option arrays [`ArangoDumpOption`](../../../api/src/oihana/arango/commands/options/ArangoDumpOption.php), [`ArangoRestoreOption`](../../../api/src/oihana/arango/commands/options/ArangoRestoreOption.php), and the common [`ArangoCommonOption`](../../../api/src/oihana/arango/commands/options/ArangoCommonOption.php) (folder path, verbosity, `--dry-run` mode, ...).
+Configured via the option arrays [`ArangoDumpOption`](../../src/oihana/arango/commands/options/ArangoDumpOption.php), [`ArangoRestoreOption`](../../src/oihana/arango/commands/options/ArangoRestoreOption.php), and the common [`ArangoCommonOption`](../../src/oihana/arango/commands/options/ArangoCommonOption.php) (folder path, verbosity, `--dry-run` mode, ...).
 
 ### DI definition
 
@@ -161,17 +161,17 @@ A native `import` action (consuming a JSON array in a single command, with trans
 
 `DocumentsCommandHarvest` is not CRUD: it is an **extension point** to synchronize a collection from an external source (ERP, third-party API, flat file). The standard pattern is to subclass `DocumentsCommand` and provide a custom implementation of the `harvest` action.
 
-Typical use case in `oihana-odbc-php`:
+Typical use case:
 
 ```bash
-# Harvest products from the Proginov ERP (ODBC)
+# Harvest products from the external ERP (ODBC)
 bun proginov:harvest:products
 
 # Harvest pricing offers
 bun proginov:harvest:products:offers
 ```
 
-See the `fr\bouney\commands\proginov\*` commands for complete implementations on the project side.
+See the `Acme\commands\proginov\*` commands for complete implementations on the project side.
 
 ## Enum catalog
 

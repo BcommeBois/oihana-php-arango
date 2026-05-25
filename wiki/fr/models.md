@@ -1,6 +1,6 @@
 # Modèles `Documents` et `Edges`
 
-Le dossier [`api/src/oihana/arango/models/`](../../../api/src/oihana/arango/models/) fournit la **couche haut-niveau** du framework : deux classes pivots (`Documents` et `Edges`) qui exposent un CRUD complet, le filtrage, la pagination, le tri, la recherche, les facettes, la projection par *skin*, les *edges* et les *joins* — toute la richesse d'une ressource REST en une seule définition.
+Le dossier [`src/oihana/arango/models/`](../../src/oihana/arango/models/) fournit la **couche haut-niveau** du framework : deux classes pivots (`Documents` et `Edges`) qui exposent un CRUD complet, le filtrage, la pagination, le tri, la recherche, les facettes, la projection par *skin*, les *edges* et les *joins* — toute la richesse d'une ressource REST en une seule définition.
 
 Les classes sont composées par agrégation de **~50 traits à responsabilité unique**. Chaque modèle est instancié avec un conteneur PSR-11 et un tableau de configuration aux clés [`AQL::*`](enums.md#aql), qui paramètre la collection cible, la projection, les filtres, les *edges*, etc.
 
@@ -226,7 +226,7 @@ Aucune dépendance à `Documents`, à un conteneur DI, à un `ArangoDB`. Juste d
 
 ## Intégration DI
 
-Convention dans `oihana-odbc-php` : un fichier par modèle sous `api/definitions/@arango/`. Chaque fichier retourne un tableau de définitions DI.
+Convention typique : un fichier par modèle sous `api/definitions/@arango/`. Chaque fichier retourne un tableau de définitions DI.
 
 ```php
 // api/definitions/@arango/models/users.php

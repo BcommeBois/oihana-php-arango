@@ -1,6 +1,6 @@
 # Fonctions de chaînes `db/functions/strings/`
 
-Le sous-dossier [`api/src/oihana/arango/db/functions/strings/`](../../../../api/src/oihana/arango/db/functions/strings/) regroupe **37 fonctions** qui correspondent aux *string functions* natives d'AQL. Chaque fonction PHP retourne la chaîne `FONCTION_AQL(args)` prête à être insérée dans un prédicat ou une projection.
+Le sous-dossier [`src/oihana/arango/db/functions/strings/`](../../../src/oihana/arango/db/functions/strings/) regroupe **37 fonctions** qui correspondent aux *string functions* natives d'AQL. Chaque fonction PHP retourne la chaîne `FONCTION_AQL(args)` prête à être insérée dans un prédicat ou une projection.
 
 > Distinction importante : les fonctions de cette page produisent l'AQL `LOWER(doc.name)` à partir du code PHP `lower('doc.name')`. Elles n'ont **aucun rapport** avec les transformations `alt` exposées côté URL HTTP (`?filter={"alt":"lower"}`) documentées dans [`filter.md`](../filter.md) — ce sont deux mondes parallèles, malgré des noms qui se ressemblent.
 

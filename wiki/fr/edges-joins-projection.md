@@ -63,11 +63,11 @@ Field::SKINS => 'main,full'                       // chaîne séparée par virgu
 Field::SKINS => null                              // équivalent à pas de marqueur
 ```
 
-Les skins sont des chaînes de caractères opaques. Tout skin défini dans `fr\bouney\enums\Skin` (qui étend le trait `oihana\controllers\enums\traits\SkinTrait`) peut être utilisé librement, y compris les skins métier comme `Skin::IMAGE`, `Skin::OFFERS`, `Skin::EMPLOYEE`.
+Les skins sont des chaînes de caractères opaques. Tout skin défini dans `Acme\enums\Skin` (qui étend le trait `oihana\controllers\enums\traits\SkinTrait`) peut être utilisé librement, y compris les skins métier comme `Skin::IMAGE`, `Skin::OFFERS`, `Skin::EMPLOYEE`.
 
 ## Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge
 
-Quand une edge pointe vers un document complexe, on déclare sa projection en composant `AQL::FIELDS` et `AQL::EDGES` directement sur la définition d'edge dans `AQL::EDGES`. Le pattern est illustré par [employeeEdge.php](../../../api/src/fr/bouney/definitions/edges/customers/employeeEdge.php) :
+Quand une edge pointe vers un document complexe, on déclare sa projection en composant `AQL::FIELDS` et `AQL::EDGES` directement sur la définition d'edge dans `AQL::EDGES`. Le pattern est illustré par `employeeEdge.php` :
 
 ```php
 function employeeEdge( ?string $employeePath = Paths::PEOPLE ) :array
@@ -240,9 +240,9 @@ Quand `AQL::REQUIRES` est absent, aucun contrôle n'est appliqué — comporteme
 
 ### Câblage côté contrôleur — pattern recommandé
 
-`oihana/arango` ne connaît rien du système d'autorisation utilisé (Casbin, OPA, contrôle maison…). Le contrôleur fournit un callable `Closure(string $subject): bool` que le framework appellera pour chaque sujet déclaré.
+`oihana/php-arango` ne connaît rien du système d'autorisation utilisé (Casbin, OPA, contrôle maison…). Le contrôleur fournit un callable `Closure(string $subject): bool` que le framework appellera pour chaque sujet déclaré.
 
-`DocumentsController` expose deux hooks de cycle de vie issus du trait [`ModelCallTrait`](../../../api/vendor/oihana/php-system/src/oihana/controllers/traits/ModelCallTrait.php) — `beforeModelCall( ?Request , array &$init )` et `afterModelCall( ?Request , array &$init , mixed &$result )` — qui sont automatiquement invoqués autour de chaque opération CRUD principale (`list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete`). Le pattern recommandé est d'override `beforeModelCall` une seule fois pour activer le contrôle d'accès sur tous les verbes HTTP du contrôleur :
+`DocumentsController` expose deux hooks de cycle de vie issus du trait [`ModelCallTrait`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/ModelCallTrait.php) — `beforeModelCall( ?Request , array &$init )` et `afterModelCall( ?Request , array &$init , mixed &$result )` — qui sont automatiquement invoqués autour de chaque opération CRUD principale (`list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete`). Le pattern recommandé est d'override `beforeModelCall` une seule fois pour activer le contrôle d'accès sur tous les verbes HTTP du contrôleur :
 
 ```php
 use oihana\api\controllers\traits\CapabilityAuthorizerTrait;
@@ -267,13 +267,13 @@ final class UsersController extends DocumentsController
 }
 ```
 
-Le trait [`CapabilityAuthorizerTrait`](../../../api/src/oihana/api/controllers/traits/CapabilityAuthorizerTrait.php) — fait partie de la facade [`CapabilityGuardTrait`](../../../api/src/oihana/api/controllers/traits/CapabilityGuardTrait.php) — fabrique un `Closure(string): bool` request-scoped basé sur le `CapabilityEnforcer` Casbin et le `userId` Zitadel courant. Il applique automatiquement `safeSubject` sur l'identifiant utilisateur (voir [tips d'auth-code](../auth/tips.md)). Quand l'enforcer est indisponible ou que la requête ne porte pas d'utilisateur authentifié, `buildAuthorizer` retourne `null` — l'`if` saute et le framework retombe sur son comportement par défaut (fail open, voir section suivante).
+Le trait `CapabilityAuthorizerTrait` — fait partie de la facade `CapabilityGuardTrait` — fabrique un `Closure(string): bool` request-scoped basé sur le `CapabilityEnforcer` Casbin et le `userId` Zitadel courant. Il applique automatiquement `safeSubject` sur l'identifiant utilisateur (voir [tips d'auth-code](../auth/tips.md)). Quand l'enforcer est indisponible ou que la requête ne porte pas d'utilisateur authentifié, `buildAuthorizer` retourne `null` — l'`if` saute et le framework retombe sur son comportement par défaut (fail open, voir section suivante).
 
 Avantage : l'override est **une seule ligne par contrôleur**, pas par verbe HTTP. Le câblage couvre `list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete` automatiquement.
 
 ### Variante — pattern request-agnostique avec `InjectAuthorizerTrait`
 
-Quand le callable est connu à la construction du contrôleur (test unitaire, callable issu directement du conteneur DI sans dépendre du request, mode batch CLI…), un trait alternatif [`InjectAuthorizerTrait`](../../../api/src/oihana/arango/controllers/traits/inject/InjectAuthorizerTrait.php) (côté `oihana/arango`, agnostique de Casbin) permet de stocker un callable stable au constructeur et de le poser dans chaque `$init` :
+Quand le callable est connu à la construction du contrôleur (test unitaire, callable issu directement du conteneur DI sans dépendre du request, mode batch CLI…), un trait alternatif [`InjectAuthorizerTrait`](../../src/oihana/arango/controllers/traits/inject/InjectAuthorizerTrait.php) (côté `oihana/php-arango`, agnostique de Casbin) permet de stocker un callable stable au constructeur et de le poser dans chaque `$init` :
 
 ```php
 use oihana\arango\controllers\traits\inject\InjectAuthorizerTrait;

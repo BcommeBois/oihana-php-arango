@@ -1,12 +1,12 @@
 # Dépendances
 
-`oihana/arango` s'appuie sur un petit ensemble de packages `oihana/php-*` qui couvrent les briques de base (enums, exceptions, réflexion, fichiers) et les couches transverses (système, signaux, commandes). Cette page liste les dépendances exactes observées dans le code, leur rôle, et propose un snippet `composer require` minimal selon les sous-modules effectivement utilisés.
+`oihana/php-arango` s'appuie sur un petit ensemble de packages `oihana/php-*` qui couvrent les briques de base (enums, exceptions, réflexion, fichiers) et les couches transverses (système, signaux, commandes). Cette page liste les dépendances exactes observées dans le code, leur rôle, et propose un snippet `composer require` minimal selon les sous-modules effectivement utilisés.
 
 > Toutes les dépendances `oihana/*` sont aujourd'hui versionnées en `dev-main`. La stabilisation viendra par cascade quand l'ensemble du graphe sera tagué. Voir la note finale.
 
 ## Vue d'ensemble
 
-Le tableau ci-dessous reflète les *imports* `use oihana\...` réellement présents dans le code de `api/src/oihana/arango/` au moment de la rédaction. Le nombre d'imports donne une idée de la centralité de chaque package.
+Le tableau ci-dessous reflète les *imports* `use oihana\...` réellement présents dans le code de `src/oihana/arango/` au moment de la rédaction. Le nombre d'imports donne une idée de la centralité de chaque package.
 
 | Package | Namespace racine | Imports | Rôle |
 |---|---|---|---|
@@ -27,7 +27,7 @@ Le tableau ci-dessous reflète les *imports* `use oihana\...` réellement prése
 
 - Namespace : `oihana\enums\`
 - Rôle : fournit `ConstantsTrait` (introspection `keys()` / `values()`) et la convention commune des enums du framework. Toutes les classes `AQL`, `Arango`, `Filter`, `Operator`, `Comparator`, `Skin`, etc. sont basées sur ce trait.
-- Centralité : **maximale**. Aucun module de `oihana/arango` ne fonctionne sans ce package.
+- Centralité : **maximale**. Aucun module de `oihana/php-arango` ne fonctionne sans ce package.
 
 ### `oihana/php-exceptions`
 
@@ -68,12 +68,12 @@ Le tableau ci-dessous reflète les *imports* `use oihana\...` réellement prése
 ### `oihana/php-signals`
 
 - Namespace : `oihana\signals\`
-- Rôle : bus de signaux applicatifs léger. `oihana/arango` l'utilise pour la **cascade automatique des relations** : un `Documents::delete()` émet un signal `afterDelete` que les `EdgesFromTrait` et `EdgesToTrait` interceptent pour purger les arêtes liées.
+- Rôle : bus de signaux applicatifs léger. `oihana/php-arango` l'utilise pour la **cascade automatique des relations** : un `Documents::delete()` émet un signal `afterDelete` que les `EdgesFromTrait` et `EdgesToTrait` interceptent pour purger les arêtes liées.
 - Centralité : **faible en imports** (2) mais **critique fonctionnellement** dès qu'on déclare des `AQL::EDGES` sur un modèle.
 
 ## Dépendances cross-cutting (non `oihana/*`)
 
-`oihana/arango` ne tire aucune dépendance lourde par lui-même, mais certains sous-modules s'intègrent à des frameworks tiers que le projet hôte doit fournir :
+`oihana/php-arango` ne tire aucune dépendance lourde par lui-même, mais certains sous-modules s'intègrent à des frameworks tiers que le projet hôte doit fournir :
 
 | Sous-module | Dépendance externe attendue | Notes |
 |---|---|---|
@@ -82,24 +82,22 @@ Le tableau ci-dessous reflète les *imports* `use oihana\...` réellement prése
 | `arango/casbin/` | `casbin/casbin` | `ArangoCasbinAdapter` implémente `Casbin\Persist\Adapter`, `BatchAdapter`, `FilteredAdapter`. |
 | `arango/client/` | aucune (le code est embarqué) | Fork *legacy* du driver officiel ArangoDB PHP. |
 
-Le conteneur PSR-11 utilisé partout dans les exemples est PHP-DI ; rien dans `oihana/arango` n'est cependant couplé à cette implémentation — toute implémentation `Psr\Container\ContainerInterface` convient.
+Le conteneur PSR-11 utilisé partout dans les exemples est PHP-DI ; rien dans `oihana/php-arango` n'est cependant couplé à cette implémentation — toute implémentation `Psr\Container\ContainerInterface` convient.
 
-## Couplages locaux au projet hôte
+## Intégration avec `oihana/php-auth`
 
-Quatre imports résiduels ciblent un namespace `oihana\api\*` qui n'appartient à aucun package vendor : il vit sous `api/src/oihana/api/` dans `oihana-odbc-php`. Ces imports sont à traiter avant l'extraction de `oihana/arango` en bibliothèque autonome.
+La chaîne *capabilities* (gating par permission Casbin) du sous-dossier `arango/auth/` et `arango/casbin/` repose sur les contrats publics exposés par le package séparé [`oihana/php-auth`](https://github.com/BcommeBois/oihana-php-auth) :
 
-| Symbole importé | Localisation | Statut |
-|---|---|---|
-| `oihana\api\auth\CapabilityEnforcer` | local `api/src/oihana/api/auth/` | à abstraire ou supprimer |
-| `oihana\api\auth\PermissionSubjectResolver` | local `api/src/oihana/api/auth/` | à abstraire ou supprimer |
-| `oihana\api\controllers\traits\DocumentsControllerCapabilitiesTrait` | local `api/src/oihana/api/controllers/traits/` | à extraire ou rendre optionnel |
-| `oihana\api\controllers\traits\PermissionAuthorizerTrait` | local `api/src/oihana/api/controllers/traits/` | à extraire ou rendre optionnel |
+- `oihana\auth\CapabilityEnforcerInterface` — exécute une décision Casbin sur un sujet.
+- `oihana\auth\PermissionSubjectResolverInterface` — résout le sujet Casbin courant à partir de la requête / du JWT.
+- `oihana\auth\controllers\traits\DocumentsControllerCapabilitiesTrait` — point d'entrée *opt-in* des contrôleurs HTTP pour activer le contrôle d'accès fin.
+- `oihana\auth\controllers\traits\PermissionAuthorizerTrait` — fabrique le `Closure(string $subject): bool` request-scoped.
 
-Ces couplages sont concentrés sur la chaîne *capabilities* (gating par permission Casbin). Trois options à arbitrer au moment de l'extraction : (1) extraire ces traits dans un package `oihana/php-api-auth` dédié ; (2) injecter le callable d'autorisation via le contrat existant `Closure(string $subject): bool` et déplacer ces traits dans le projet hôte ; (3) accepter la dépendance et publier `oihana/arango` avec un `suggest` Composer.
+`oihana/php-auth` est déclaré dans `composer.json` comme dépendance directe : aucune action n'est nécessaire côté consommateur pour bénéficier de ces traits.
 
 ## Snippet `composer require` minimal
 
-Pour un usage **complet** de `oihana/arango` (couche AQL + modèles + contrôleurs Slim + commandes CLI + Casbin) :
+Pour un usage **complet** de `oihana/php-arango` (couche AQL + modèles + contrôleurs Slim + commandes CLI + Casbin) :
 
 ```bash
 composer require \
@@ -137,7 +135,7 @@ composer require symfony/console:^6.0
 composer require casbin/casbin:^3.0
 ```
 
-> `oihana/arango` lui-même n'est pas encore publié en tant que package autonome. Tant que l'extraction n'a pas eu lieu, le code vit sous `api/src/oihana/arango/` dans `oihana-odbc-php`. Le snippet `composer require oihana/arango:dev-main` deviendra valide à ce moment-là.
+> `oihana/php-arango` lui-même n'est pas encore publié en tant que package autonome. Tant que l'extraction n'a pas eu lieu, le code vit sous `src/oihana/arango/` dans une application hôte. Le snippet `composer require oihana/php-arango:dev-main` deviendra valide à ce moment-là.
 
 ## Note sur les versions
 

@@ -1,6 +1,6 @@
 # Référence des enums
 
-Le dossier [`api/src/oihana/arango/db/enums/`](../../../api/src/oihana/arango/db/enums/) regroupe **28 enums et traits** qui exposent les constantes typées du framework. Tous suivent la convention `oihana/php-enums` (`ConstantsTrait` pour `keys()` / `values()` / introspection), ce qui en fait des registres consultables à l'exécution.
+Le dossier [`src/oihana/arango/db/enums/`](../../src/oihana/arango/db/enums/) regroupe **28 enums et traits** qui exposent les constantes typées du framework. Tous suivent la convention `oihana/php-enums` (`ConstantsTrait` pour `keys()` / `values()` / introspection), ce qui en fait des registres consultables à l'exécution.
 
 > Convention transverse : aucune chaîne brute dans le code applicatif. Toute clé de configuration, tout opérateur AQL, tout type d'index passe par une constante d'enum — discipline détaillée dans l'[Introduction](introduction.md#la-philosophie-doihanaarango).
 

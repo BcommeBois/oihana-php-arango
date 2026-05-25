@@ -1,6 +1,6 @@
 # AQL operations `db/operations/`
 
-The [`api/src/oihana/arango/db/operations/`](../../../../api/src/oihana/arango/db/operations/) folder provides the **21 operations** that match the *high-level operations* of the AQL language. Each function produces the corresponding AQL text fragment and can freely concatenate with the others to form a complete query.
+The [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) folder provides the **21 operations** that match the *high-level operations* of the AQL language. Each function produces the corresponding AQL text fragment and can freely concatenate with the others to form a complete query.
 
 For the pedagogical overview of composition, see [Building an AQL query step by step](aql-building-queries.md). This page is the **reference** for each operation.
 

@@ -26,9 +26,9 @@ ArangoDB delivers both promises in a single engine:
 - **Competitive performance** on both models, without the cost of an abstraction layer.
 - **Optional schema**: you can start without a schema, then introduce JSON Schema validators progressively.
 
-The trade-off: the community is smaller than MongoDB's or PostgreSQL's, and the official client ecosystem is less polished — which is part of the motivation for `oihana/arango`.
+The trade-off: the community is smaller than MongoDB's or PostgreSQL's, and the official client ecosystem is less polished — which is part of the motivation for `oihana/php-arango`.
 
-## The `oihana/arango` philosophy
+## The `oihana/php-arango` philosophy
 
 The framework follows five principles that thread through the whole codebase:
 
@@ -47,7 +47,7 @@ The need was born from a simple observation: **the PHP ecosystem around ArangoDB
 - The usual integration layers (PSR-11 DI, Slim, Symfony Console) are not provided — each project re-glues its own.
 - Cross-cutting needs (projection by *skin*, *edges* and *joins* with permission gating, Casbin adapter, *signals* for relation cascade) are absent and everyone re-implements them.
 
-`oihana/arango` addresses all four points. The [`client/`](../../../api/src/oihana/arango/client/) folder is itself a fork of the official driver, kept as-is and just patched to work on PHP 8.4 — it is slated to be replaced with a modern client rewritten to the library's standards.
+`oihana/php-arango` addresses all four points. The [`client/`](../../src/oihana/arango/client/) folder is itself a fork of the official driver, kept as-is and just patched to work on PHP 8.4 — it is slated to be replaced with a modern client rewritten to the library's standards.
 
 ## Audience and prerequisites
 
@@ -65,7 +65,7 @@ Knowledge of Slim or Symfony Console is not required: these two integrations are
 |---|---|---|---|---|---|
 | [`triagens/ArangoDb`](https://github.com/arangodb/arangodb-php) (official) | minimal maintenance | no | no | no | no |
 | Various community drivers | sporadic | no | no | no | no |
-| `oihana/arango` | active | yes | yes | yes (`Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`) | yes (`ArangoCasbinAdapter`) |
+| `oihana/php-arango` | active | yes | yes | yes (`Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`) | yes (`ArangoCasbinAdapter`) |
 
 The table is not an exhaustive review but summarizes the observation that motivates the project: no PHP alternative covers the whole spectrum of needs, and many teams end up writing their own layer.
 

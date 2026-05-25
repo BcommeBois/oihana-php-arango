@@ -1,6 +1,6 @@
 # Adaptateur Casbin RBAC
 
-Le dossier [`api/src/oihana/arango/casbin/`](../../../api/src/oihana/arango/casbin/) contient une seule classe : `ArangoCasbinAdapter`. Elle adapte le moteur [Casbin](https://casbin.org/) (RBAC / ABAC) à une collection ArangoDB en passant par un modèle [`Documents`](models.md) standard du framework.
+Le dossier [`src/oihana/arango/casbin/`](../../src/oihana/arango/casbin/) contient une seule classe : `ArangoCasbinAdapter`. Elle adapte le moteur [Casbin](https://casbin.org/) (RBAC / ABAC) à une collection ArangoDB en passant par un modèle [`Documents`](models.md) standard du framework.
 
 ## Pourquoi un adaptateur dédié
 
@@ -129,7 +129,7 @@ if ( $enforcer->enforce( $userKey , 'users' , 'read' ) )
 
 ## Synchronisation des *policies* depuis les *edges*
 
-Convention dans `oihana-odbc-php` : les *policies* Casbin sont **dérivées** d'un état canonique stocké en *edges* (relations entre `users` ↔ `roles`, `roles` ↔ `permissions`, etc.). Une commande dédiée matérialise les *edges* en *policies* :
+Convention typique : les *policies* Casbin sont **dérivées** d'un état canonique stocké en *edges* (relations entre `users` ↔ `roles`, `roles` ↔ `permissions`, etc.). Une commande dédiée matérialise les *edges* en *policies* :
 
 ```bash
 bun auth:sync:policies

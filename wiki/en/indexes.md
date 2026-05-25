@@ -17,11 +17,11 @@ ArangoDB exposes six index types usable by the framework. The right choice depen
 | `vector` | Similarity search (*embeddings*, *cosine*). ArangoDB 3.12+. | float-array field | Requires Enterprise edition for some Faiss features. |
 | `fulltext` *(deprecated)* | Simple text search. | one string field | Replaced by ArangoSearch views — avoid for new features. |
 
-For advanced text search (linguistic analyzers, BM25, facets), prefer **ArangoSearch views** rather than a `fulltext` index. These views are not wrapped by `oihana/arango` to date — they are used directly through an `aqlSearch()` clause in a custom AQL query.
+For advanced text search (linguistic analyzers, BM25, facets), prefer **ArangoSearch views** rather than a `fulltext` index. These views are not wrapped by `oihana/php-arango` to date — they are used directly through an `aqlSearch()` clause in a custom AQL query.
 
 ## Management methods
 
-`ArangoDB` exposes four methods for indexes, via [`CollectionManagementTrait`](../../../api/src/oihana/arango/db/traits/CollectionManagementTrait.php).
+`ArangoDB` exposes four methods for indexes, via [`CollectionManagementTrait`](../../src/oihana/arango/db/traits/CollectionManagementTrait.php).
 
 | Method | Description |
 |---|---|

@@ -1,6 +1,6 @@
 # Enums reference
 
-The [`api/src/oihana/arango/db/enums/`](../../../api/src/oihana/arango/db/enums/) folder groups **28 enums and traits** that expose the framework's typed constants. All follow the `oihana/php-enums` convention (`ConstantsTrait` for `keys()` / `values()` / introspection), making them registries consultable at runtime.
+The [`src/oihana/arango/db/enums/`](../../src/oihana/arango/db/enums/) folder groups **28 enums and traits** that expose the framework's typed constants. All follow the `oihana/php-enums` convention (`ConstantsTrait` for `keys()` / `values()` / introspection), making them registries consultable at runtime.
 
 > Cross-cutting convention: no raw string in application code. Every configuration key, AQL operator, index type goes through an enum constant — discipline detailed in the [Introduction](introduction.md#the-oihanaarango-philosophy).
 

@@ -35,7 +35,7 @@ Pour la **projection des champs** à proprement parler (comment `Field::SKINS` e
 
 ## Catalogue des *skins* canoniques
 
-L'enum [`oihana\controllers\enums\Skin`](../../../../api/vendor/oihana/php-system/src/oihana/controllers/enums/Skin.php) fournit 12 valeurs canoniques. Les contrôleurs et modèles métier peuvent en réutiliser librement, et ajouter leurs propres *skins* via l'enum local (`fr\bouney\enums\Skin` étend `SkinTrait`).
+L'enum [`oihana\controllers\enums\Skin`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/enums/Skin.php) fournit 12 valeurs canoniques. Les contrôleurs et modèles métier peuvent en réutiliser librement, et ajouter leurs propres *skins* via l'enum local (`Acme\enums\Skin` étend `SkinTrait`).
 
 | `Skin::*` | Sémantique typique |
 |---|---|
@@ -54,7 +54,7 @@ Les valeurs `AUDIOS`/`PHOTOS`/`VIDEOS`/`MAP` ont du sens uniquement sur les ress
 
 ## Configuration côté contrôleur
 
-Trois clés dans la définition DI du contrôleur, toutes consommées par le trait [`PrepareSkin`](../../../../api/vendor/oihana/php-system/src/oihana/controllers/traits/prepare/PrepareSkin.php) :
+Trois clés dans la définition DI du contrôleur, toutes consommées par le trait [`PrepareSkin`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/prepare/PrepareSkin.php) :
 
 | Clé | Type | Rôle |
 |---|---|---|
@@ -107,7 +107,7 @@ Sur un champ individuel de `AQL::FIELDS`, le marqueur `Field::SKINS` déclare la
 use oihana\arango\enums\AQL    ;
 use oihana\arango\enums\Field  ;
 use oihana\arango\enums\Filter ;
-use fr\bouney\enums\Skin       ;
+use Acme\enums\Skin       ;
 
 Models::USERS => fn( Container $c ) => new Documents( $c ,
 [
@@ -244,7 +244,7 @@ Pour le détail complet du pattern et la liste des champs `INTERNAL` aujourd'hui
 Définition complète pour la ressource `users`, avec un *skin* métier ajouté en plus des canoniques :
 
 ```php
-use fr\bouney\enums\Skin ;     // étend SkinTrait — expose les valeurs métier
+use Acme\enums\Skin ;     // étend SkinTrait — expose les valeurs métier
 
 Controllers::USERS => fn( Container $c ) => new DocumentsController( $c ,
 [

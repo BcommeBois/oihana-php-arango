@@ -122,7 +122,7 @@ ControllerParam::FILTER =>
 
 ## The 7 Capability traits
 
-Enforcement is implemented by seven traits in [`api/src/oihana/controllers/traits/`](../../../../api/src/oihana/controllers/traits/). Depending on the need, you consume a single specialized trait or the `CapabilityGuardTrait` facade that bundles everything.
+Enforcement is implemented by seven traits exposed by [`oihana/php-auth`](https://github.com/BcommeBois/oihana-php-auth/tree/main/src/oihana/auth/controllers/traits). Depending on the need, you consume a single specialized trait or the `CapabilityGuardTrait` facade that bundles everything.
 
 | Trait | Role | When to use |
 |---|---|---|
@@ -177,7 +177,7 @@ $init[ Arango::AUTHORIZER ] = fn( string $subject ) : bool
 
 `CapabilityAuthorizerTrait::buildAuthorizer( $request )` automatically produces this request-scoped *callable* based on the Casbin `CapabilityEnforcer`. The model then filters its `AQL::REQUIRES`-annotated *edges* and *joins* by consulting that *callable* — without ever having to understand Casbin itself.
 
-This is the **separation-of-concerns contract** between `oihana/arango` (which knows nothing about auth) and the host project's controller layer (which implements Casbin). When `oihana/arango` is one day extracted as a standalone library, the *authorizer* remains injectable from the outside — see the [`oihana/arango` ↔ `oihana/api` decoupling chantier](../dependencies.md#local-couplings-to-the-host-project).
+This is the **separation-of-concerns contract** between `oihana/php-arango` (which knows nothing about auth) and the host project's controller layer (which implements Casbin). When `oihana/php-arango` is one day extracted as a standalone library, the *authorizer* remains injectable from the outside — see the [`oihana/php-arango` ↔ `oihana/api` decoupling chantier](../dependencies.md#local-couplings-to-the-host-project).
 
 ## Complete example — `/products?skin=offers.full`
 
@@ -190,7 +190,7 @@ Real case on the `products` resource. Three *skins* exposed on the product catal
 Controller definition:
 
 ```php
-use fr\bouney\enums\Skin ;
+use Acme\enums\Skin ;
 use oihana\arango\enums\Arango ;
 use oihana\auth\enums\Capability ;
 use oihana\auth\enums\CapabilityPolicy ;
@@ -240,4 +240,4 @@ The client never needs to request a different URL depending on their role. The s
 - [Edge and join projection — `AQL::REQUIRES`](../edges-joins-projection.md#restrict-edge-or-join-projection-to-a-permission--aqlrequires) — *capability* at the model level (edge/join).
 - [HTTP filters `?filter=`](../filter.md) — parameter covered by `CapabilityFilterKeysTrait`.
 - [Casbin RBAC adapter](../casbin.md) — underlying authorization system.
-- [Dependencies — Local couplings](../dependencies.md#local-couplings-to-the-host-project) — the *authorizer* injection contract that keeps `oihana/arango` independent.
+- [Dependencies — Local couplings](../dependencies.md#local-couplings-to-the-host-project) — the *authorizer* injection contract that keeps `oihana/php-arango` independent.

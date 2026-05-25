@@ -1,6 +1,6 @@
 # *Legacy* ArangoDB client
 
-The [`api/src/oihana/arango/client/`](../../../api/src/oihana/arango/client/) folder is a **fork** of the [official ArangoDB PHP driver](https://github.com/arangodb/arangodb-php) (`triagens/ArangoDb`). It was absorbed as-is for two reasons:
+The [`src/oihana/arango/client/`](../../src/oihana/arango/client/) folder is a **fork** of the [official ArangoDB PHP driver](https://github.com/arangodb/arangodb-php) (`triagens/ArangoDb`). It was absorbed as-is for two reasons:
 
 1. **The official driver has not received a major update for several years** and doesn't support PHP 8.4 without patches.
 2. No replacement community client covers the whole need (full driver compatibility + framework integration).

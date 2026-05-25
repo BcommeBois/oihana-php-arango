@@ -1,12 +1,12 @@
 # Dependencies
 
-`oihana/arango` relies on a small set of `oihana/php-*` packages that cover the building blocks (enums, exceptions, reflection, files) and cross-cutting layers (system, signals, commands). This page lists the exact dependencies observed in the code, their role, and provides a minimal `composer require` snippet according to the sub-modules actually used.
+`oihana/php-arango` relies on a small set of `oihana/php-*` packages that cover the building blocks (enums, exceptions, reflection, files) and cross-cutting layers (system, signals, commands). This page lists the exact dependencies observed in the code, their role, and provides a minimal `composer require` snippet according to the sub-modules actually used.
 
 > All `oihana/*` dependencies are currently versioned as `dev-main`. Stabilization will happen by cascade once the whole graph is ready for tagging. See the final note.
 
 ## Overview
 
-The table below reflects the `use oihana\...` *imports* actually present in the code of `api/src/oihana/arango/` at the time of writing. The number of imports gives an idea of each package's centrality.
+The table below reflects the `use oihana\...` *imports* actually present in the code of `src/oihana/arango/` at the time of writing. The number of imports gives an idea of each package's centrality.
 
 | Package | Root namespace | Imports | Role |
 |---|---|---|---|
@@ -27,7 +27,7 @@ The table below reflects the `use oihana\...` *imports* actually present in the 
 
 - Namespace: `oihana\enums\`
 - Role: provides `ConstantsTrait` (introspection `keys()` / `values()`) and the framework's common enum convention. All `AQL`, `Arango`, `Filter`, `Operator`, `Comparator`, `Skin`, etc. classes are based on this trait.
-- Centrality: **maximum**. No `oihana/arango` module works without this package.
+- Centrality: **maximum**. No `oihana/php-arango` module works without this package.
 
 ### `oihana/php-exceptions`
 
@@ -68,12 +68,12 @@ The table below reflects the `use oihana\...` *imports* actually present in the 
 ### `oihana/php-signals`
 
 - Namespace: `oihana\signals\`
-- Role: lightweight application signal bus. `oihana/arango` uses it for the **automatic cascade of relations**: a `Documents::delete()` emits an `afterDelete` signal that `EdgesFromTrait` and `EdgesToTrait` intercept to purge related edges.
+- Role: lightweight application signal bus. `oihana/php-arango` uses it for the **automatic cascade of relations**: a `Documents::delete()` emits an `afterDelete` signal that `EdgesFromTrait` and `EdgesToTrait` intercept to purge related edges.
 - Centrality: **low on imports** (2) but **functionally critical** as soon as `AQL::EDGES` is declared on a model.
 
 ## Cross-cutting dependencies (non `oihana/*`)
 
-`oihana/arango` does not pull any heavy dependency on its own, but some sub-modules integrate with third-party frameworks that the host project must provide:
+`oihana/php-arango` does not pull any heavy dependency on its own, but some sub-modules integrate with third-party frameworks that the host project must provide:
 
 | Sub-module | Expected external dependency | Notes |
 |---|---|---|
@@ -82,24 +82,22 @@ The table below reflects the `use oihana\...` *imports* actually present in the 
 | `arango/casbin/` | `casbin/casbin` | `ArangoCasbinAdapter` implements `Casbin\Persist\Adapter`, `BatchAdapter`, `FilteredAdapter`. |
 | `arango/client/` | none (the code is embedded) | *Legacy* fork of the official ArangoDB PHP driver. |
 
-The PSR-11 container used throughout the examples is PHP-DI; nothing in `oihana/arango` is however tied to that implementation — any `Psr\Container\ContainerInterface` implementation works.
+The PSR-11 container used throughout the examples is PHP-DI; nothing in `oihana/php-arango` is however tied to that implementation — any `Psr\Container\ContainerInterface` implementation works.
 
-## Local couplings to the host project
+## Integration with `oihana/php-auth`
 
-Four remaining imports target an `oihana\api\*` namespace that does not belong to any vendor package: it lives under `api/src/oihana/api/` in `oihana-odbc-php`. These imports must be addressed before `oihana/arango` is extracted as a standalone library.
+The *capabilities* chain (Casbin permission gating) found in `arango/auth/` and `arango/casbin/` builds on the public contracts exposed by the separate [`oihana/php-auth`](https://github.com/BcommeBois/oihana-php-auth) package:
 
-| Imported symbol | Location | Status |
-|---|---|---|
-| `oihana\api\auth\CapabilityEnforcer` | local `api/src/oihana/api/auth/` | to be abstracted or removed |
-| `oihana\api\auth\PermissionSubjectResolver` | local `api/src/oihana/api/auth/` | to be abstracted or removed |
-| `oihana\api\controllers\traits\DocumentsControllerCapabilitiesTrait` | local `api/src/oihana/api/controllers/traits/` | to be extracted or made optional |
-| `oihana\api\controllers\traits\PermissionAuthorizerTrait` | local `api/src/oihana/api/controllers/traits/` | to be extracted or made optional |
+- `oihana\auth\CapabilityEnforcerInterface` — executes a Casbin decision on a subject.
+- `oihana\auth\PermissionSubjectResolverInterface` — resolves the current Casbin subject from the request / JWT.
+- `oihana\auth\controllers\traits\DocumentsControllerCapabilitiesTrait` — opt-in HTTP controller entry point to enable fine-grained access control.
+- `oihana\auth\controllers\traits\PermissionAuthorizerTrait` — builds the request-scoped `Closure(string $subject): bool`.
 
-These couplings are concentrated on the *capabilities* chain (Casbin permission gating). Three options to weigh at extraction time: (1) extract these traits into a dedicated `oihana/php-api-auth` package; (2) inject the authorization callable via the existing `Closure(string $subject): bool` contract and move these traits into the host project; (3) accept the dependency and publish `oihana/arango` with a Composer `suggest`.
+`oihana/php-auth` is declared as a direct dependency in `composer.json`: no action is required on the consumer side to benefit from these traits.
 
 ## Minimal `composer require` snippet
 
-For **full** use of `oihana/arango` (AQL layer + models + Slim controllers + CLI commands + Casbin):
+For **full** use of `oihana/php-arango` (AQL layer + models + Slim controllers + CLI commands + Casbin):
 
 ```bash
 composer require \
@@ -137,7 +135,7 @@ composer require symfony/console:^6.0
 composer require casbin/casbin:^3.0
 ```
 
-> `oihana/arango` itself is not yet published as a standalone package. Until the extraction takes place, the code lives under `api/src/oihana/arango/` in `oihana-odbc-php`. The `composer require oihana/arango:dev-main` snippet will become valid at that point.
+> `oihana/php-arango` itself is not yet published as a standalone package. Until the extraction takes place, the code lives under `src/oihana/arango/` in a host application. The `composer require oihana/php-arango:dev-main` snippet will become valid at that point.
 
 ## Note on versions
 

@@ -35,7 +35,7 @@ For the actual **field projection** (how `Field::SKINS` and `AQL::SKIN_FIELDS` f
 
 ## Canonical *skin* catalog
 
-The [`oihana\controllers\enums\Skin`](../../../../api/vendor/oihana/php-system/src/oihana/controllers/enums/Skin.php) enum provides 12 canonical values. Business controllers and models can reuse them freely, and add their own *skins* through the local enum (`fr\bouney\enums\Skin` extends `SkinTrait`).
+The [`oihana\controllers\enums\Skin`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/enums/Skin.php) enum provides 12 canonical values. Business controllers and models can reuse them freely, and add their own *skins* through the local enum (`Acme\enums\Skin` extends `SkinTrait`).
 
 | `Skin::*` | Typical semantics |
 |---|---|
@@ -54,7 +54,7 @@ The [`oihana\controllers\enums\Skin`](../../../../api/vendor/oihana/php-system/s
 
 ## Controller-side configuration
 
-Three keys in the controller's DI definition, all consumed by the [`PrepareSkin`](../../../../api/vendor/oihana/php-system/src/oihana/controllers/traits/prepare/PrepareSkin.php) trait:
+Three keys in the controller's DI definition, all consumed by the [`PrepareSkin`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/prepare/PrepareSkin.php) trait:
 
 | Key | Type | Role |
 |---|---|---|
@@ -107,7 +107,7 @@ On an individual field of `AQL::FIELDS`, the `Field::SKINS` marker declares the 
 use oihana\arango\enums\AQL    ;
 use oihana\arango\enums\Field  ;
 use oihana\arango\enums\Filter ;
-use fr\bouney\enums\Skin       ;
+use Acme\enums\Skin       ;
 
 Models::USERS => fn( Container $c ) => new Documents( $c ,
 [
@@ -244,7 +244,7 @@ For the full pattern detail and the list of `INTERNAL` fields currently in place
 Complete definition for the `users` resource, with a business *skin* added next to the canonicals:
 
 ```php
-use fr\bouney\enums\Skin ;     // extends SkinTrait — exposes business values
+use Acme\enums\Skin ;     // extends SkinTrait — exposes business values
 
 Controllers::USERS => fn( Container $c ) => new DocumentsController( $c ,
 [

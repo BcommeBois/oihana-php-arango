@@ -122,7 +122,7 @@ ControllerParam::FILTER =>
 
 ## Les 7 traits Capability
 
-L'enforcement est implémenté par sept traits dans [`api/src/oihana/controllers/traits/`](../../../../api/src/oihana/controllers/traits/). Selon le besoin, on consomme un seul trait spécialisé ou la façade `CapabilityGuardTrait` qui bundle tout.
+L'enforcement est implémenté par sept traits exposés par [`oihana/php-auth`](https://github.com/BcommeBois/oihana-php-auth/tree/main/src/oihana/auth/controllers/traits). Selon le besoin, on consomme un seul trait spécialisé ou la façade `CapabilityGuardTrait` qui bundle tout.
 
 | Trait | Rôle | Quand l'utiliser |
 |---|---|---|
@@ -177,7 +177,7 @@ $init[ Arango::AUTHORIZER ] = fn( string $subject ) : bool
 
 `CapabilityAuthorizerTrait::buildAuthorizer( $request )` fabrique automatiquement ce *callable* request-scoped basé sur le `CapabilityEnforcer` Casbin. Le modèle filtre alors ses *edges* et *joins* annotés `AQL::REQUIRES` en consultant ce *callable* — sans avoir à comprendre Casbin lui-même.
 
-C'est le contrat de **séparation des responsabilités** entre `oihana/arango` (qui ne sait rien d'auth) et la couche contrôleur du projet hôte (qui implémente Casbin). Quand un jour `oihana/arango` est extrait en lib autonome, l'*authorizer* reste injectable depuis l'extérieur — voir le chantier [découplage `oihana/arango` ↔ `oihana/api`](../../../../docs/fr/arango/dependencies.md#couplages-locaux-au-projet-hôte).
+C'est le contrat de **séparation des responsabilités** entre `oihana/php-arango` (qui ne sait rien d'auth) et la couche contrôleur du projet hôte (qui implémente Casbin). Quand un jour `oihana/php-arango` est extrait en lib autonome, l'*authorizer* reste injectable depuis l'extérieur — voir le chantier [découplage `oihana/php-arango` ↔ `oihana/api`](../../../../docs/fr/arango/dependencies.md#couplages-locaux-au-projet-hôte).
 
 ## Exemple complet — `/products?skin=offers.full`
 
@@ -190,7 +190,7 @@ Cas réel sur la ressource `products`. Trois *skins* exposés au catalogue produ
 Définition du contrôleur :
 
 ```php
-use fr\bouney\enums\Skin ;
+use Acme\enums\Skin ;
 use oihana\arango\enums\Arango ;
 use oihana\auth\enums\Capability ;
 use oihana\auth\enums\CapabilityPolicy ;
@@ -240,4 +240,4 @@ Le client n'a jamais besoin de demander une URL différente selon son rôle. Le 
 - [Projection des edges et joins — `AQL::REQUIRES`](../edges-joins-projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires) — *capability* au niveau modèle (edge/join).
 - [Filtres HTTP `?filter=`](../filter.md) — paramètre couvert par `CapabilityFilterKeysTrait`.
 - [Adaptateur Casbin RBAC](../casbin.md) — système d'autorisation sous-jacent.
-- [Dépendances — Couplages locaux](../dependencies.md#couplages-locaux-au-projet-hôte) — le contrat d'injection d'*authorizer* qui garde `oihana/arango` indépendant.
+- [Dépendances — Couplages locaux](../dependencies.md#couplages-locaux-au-projet-hôte) — le contrat d'injection d'*authorizer* qui garde `oihana/php-arango` indépendant.

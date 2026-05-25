@@ -1,6 +1,6 @@
 # Document and check functions
 
-This page groups **28 functions** spread between the root of [`db/functions/`](../../../../api/src/oihana/arango/db/functions/) (24 cross-cutting functions) and the [`db/functions/documents/`](../../../../api/src/oihana/arango/db/functions/documents/) sub-folder (4 document functions). You'll find the *type checks*, the *casts*, the document operations and the database information functions.
+This page groups **28 functions** spread between the root of [`db/functions/`](../../../src/oihana/arango/db/functions/) (24 cross-cutting functions) and the [`db/functions/documents/`](../../../src/oihana/arango/db/functions/documents/) sub-folder (4 document functions). You'll find the *type checks*, the *casts*, the document operations and the database information functions.
 
 ## Summary
 

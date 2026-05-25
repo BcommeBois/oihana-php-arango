@@ -1,6 +1,6 @@
 # Fonctions de tableaux `db/functions/arrays/`
 
-Le sous-dossier [`api/src/oihana/arango/db/functions/arrays/`](../../../../api/src/oihana/arango/db/functions/arrays/) regroupe **19 fonctions** qui correspondent aux *array functions* natives d'AQL — comptage, accès indexé, manipulation d'ordre, modification, suppression.
+Le sous-dossier [`src/oihana/arango/db/functions/arrays/`](../../../src/oihana/arango/db/functions/arrays/) regroupe **19 fonctions** qui correspondent aux *array functions* natives d'AQL — comptage, accès indexé, manipulation d'ordre, modification, suppression.
 
 > Les fonctions d'agrégation numérique sur tableau (`SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `PERCENTILE`, `PRODUCT`) vivent dans [Fonctions numériques](aql-functions-numerics.md) — historiquement classées par ArangoDB côté *numeric*.
 

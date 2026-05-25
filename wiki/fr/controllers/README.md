@@ -1,6 +1,6 @@
 # Contrôleurs Slim
 
-Le dossier [`api/src/oihana/arango/controllers/`](../../../../api/src/oihana/arango/controllers/) fournit trois contrôleurs HTTP prêts à l'emploi qui exposent un [modèle `Documents` ou `Edges`](../models.md) sous forme de routes RESTful. La couche est conçue pour Slim 4 et un conteneur PSR-11, mais ne dépend d'aucune implémentation spécifique au-delà des contrats PSR.
+Le dossier [`src/oihana/arango/controllers/`](../../../src/oihana/arango/controllers/) fournit trois contrôleurs HTTP prêts à l'emploi qui exposent un [modèle `Documents` ou `Edges`](../models.md) sous forme de routes RESTful. La couche est conçue pour Slim 4 et un conteneur PSR-11, mais ne dépend d'aucune implémentation spécifique au-delà des contrats PSR.
 
 | Contrôleur | Rôle | Routes typiques |
 |---|---|---|
@@ -157,7 +157,7 @@ final class MyUsersController extends DocumentsController
 
 ## Hooks de cycle de vie
 
-`DocumentsController` consomme [`ModelCallTrait`](../../../../api/vendor/oihana/php-system/src/oihana/controllers/traits/ModelCallTrait.php), qui pose deux *hooks* automatiquement invoqués autour de chaque opération CRUD : `beforeModelCall` et `afterModelCall`.
+`DocumentsController` consomme [`ModelCallTrait`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/ModelCallTrait.php), qui pose deux *hooks* automatiquement invoqués autour de chaque opération CRUD : `beforeModelCall` et `afterModelCall`.
 
 ```php
 final class UsersController extends DocumentsController

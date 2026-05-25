@@ -1,11 +1,11 @@
 # AQL helpers `db/helpers/`
 
-The [`api/src/oihana/arango/db/helpers/`](../../../api/src/oihana/arango/db/helpers/) folder gathers the standalone functions that compose **AQL text fragments**: value encoding, inline document construction, expression serialization, sub-expressions of modification operations, and *field builders* for `RETURN { ... }`.
+The [`src/oihana/arango/db/helpers/`](../../src/oihana/arango/db/helpers/) folder gathers the standalone functions that compose **AQL text fragments**: value encoding, inline document construction, expression serialization, sub-expressions of modification operations, and *field builders* for `RETURN { ... }`.
 
 > Not to be confused with two other namesake folders:
 >
-> - [`db/operations/`](../../../api/src/oihana/arango/db/operations/) — full AQL operations (`aqlFor`, `aqlFilter`, `aqlReturn`, ...), documented in [Building an AQL query step by step](aql/aql-building-queries.md).
-> - [`db/functions/`](../../../api/src/oihana/arango/db/functions/) — AQL functions on the value side (`CONCAT`, `LOWER`, `DATE_NOW`, ...), documented in the [String functions](aql/aql-functions-strings.md) and following pages.
+> - [`db/operations/`](../../src/oihana/arango/db/operations/) — full AQL operations (`aqlFor`, `aqlFilter`, `aqlReturn`, ...), documented in [Building an AQL query step by step](aql/aql-building-queries.md).
+> - [`db/functions/`](../../src/oihana/arango/db/functions/) — AQL functions on the value side (`CONCAT`, `LOWER`, `DATE_NOW`, ...), documented in the [String functions](aql/aql-functions-strings.md) and following pages.
 >
 > The helpers on this page work on **AQL text**: they produce strings ready to be injected into a query.
 
@@ -171,7 +171,7 @@ These functions are consumed by the CRUD *traits* of models (`DocumentsInsertTra
 
 ## *Field builders* — `fields/` sub-folder
 
-The [`fields/`](../../../api/src/oihana/arango/db/helpers/fields/) sub-folder contains 12 *builders* that produce typed `key: doc.value` sub-expressions of a `RETURN { ... }`. Each handles a field type and applies the appropriate projection (cast, access, transformation).
+The [`fields/`](../../src/oihana/arango/db/helpers/fields/) sub-folder contains 12 *builders* that produce typed `key: doc.value` sub-expressions of a `RETURN { ... }`. Each handles a field type and applies the appropriate projection (cast, access, transformation).
 
 ### Entry point — `aqlFields()`
 

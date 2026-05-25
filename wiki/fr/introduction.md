@@ -26,9 +26,9 @@ ArangoDB tient les deux promesses dans un seul moteur :
 - **Performance compétitive** sur les deux modèles, sans la dette d'une couche d'abstraction.
 - **Schéma optionnel** : on peut commencer sans schéma puis introduire des validateurs JSON Schema progressivement.
 
-Le compromis : la communauté est plus restreinte que celles de MongoDB ou PostgreSQL, et l'écosystème de clients officiels n'est pas aussi soigné — ce qui motive entre autres l'existence de `oihana/arango`.
+Le compromis : la communauté est plus restreinte que celles de MongoDB ou PostgreSQL, et l'écosystème de clients officiels n'est pas aussi soigné — ce qui motive entre autres l'existence de `oihana/php-arango`.
 
-## La philosophie d'`oihana/arango`
+## La philosophie d'`oihana/php-arango`
 
 Le framework suit cinq principes qui se déclinent dans tout le code :
 
@@ -47,7 +47,7 @@ Le besoin est né d'un constat simple : **l'écosystème PHP autour d'ArangoDB e
 - Les couches d'intégration usuelles (DI PSR-11, Slim, Symfony Console) ne sont pas fournies — chaque projet refait sa colle.
 - Les besoins transverses (projection par *skin*, *edges* et *joins* avec gating par permission, adaptateur Casbin, *signals* pour la cascade des relations) sont absents et chacun les ré-implémente.
 
-`oihana/arango` adresse les quatre points. Le dossier [`client/`](../../../api/src/oihana/arango/client/) est lui-même un fork du driver officiel, conservé tel quel et juste patché pour fonctionner en PHP 8.4 — il est appelé à être remplacé par un client moderne réécrit aux standards de la bibliothèque.
+`oihana/php-arango` adresse les quatre points. Le dossier [`client/`](../../src/oihana/arango/client/) est lui-même un fork du driver officiel, conservé tel quel et juste patché pour fonctionner en PHP 8.4 — il est appelé à être remplacé par un client moderne réécrit aux standards de la bibliothèque.
 
 ## Public et prérequis
 
@@ -65,7 +65,7 @@ La connaissance de Slim ou Symfony Console n'est pas requise : ces deux intégra
 |---|---|---|---|---|---|
 | [`triagens/ArangoDb`](https://github.com/arangodb/arangodb-php) (officiel) | maintenance minimale | non | non | non | non |
 | Drivers communautaires divers | sporadiques | non | non | non | non |
-| `oihana/arango` | actif | oui | oui | oui (`Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`) | oui (`ArangoCasbinAdapter`) |
+| `oihana/php-arango` | actif | oui | oui | oui (`Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`) | oui (`ArangoCasbinAdapter`) |
 
 Le tableau n'est pas une revue exhaustive mais résume le constat qui motive le projet : aucune alternative PHP ne couvre l'ensemble des besoins, et beaucoup d'équipes finissent par écrire leur propre couche.
 

@@ -1,6 +1,6 @@
 # Opérateurs `db/operators/`
 
-Le dossier [`api/src/oihana/arango/db/operators/`](../../../../api/src/oihana/arango/db/operators/) fournit les **42 fonctions** qui produisent un **prédicat** AQL — une chaîne du type `'doc.x == doc.y'` qui s'insère dans un `aqlFilter()`, un `aqlReturn()`, ou tout endroit où une expression booléenne est attendue.
+Le dossier [`src/oihana/arango/db/operators/`](../../../src/oihana/arango/db/operators/) fournit les **42 fonctions** qui produisent un **prédicat** AQL — une chaîne du type `'doc.x == doc.y'` qui s'insère dans un `aqlFilter()`, un `aqlReturn()`, ou tout endroit où une expression booléenne est attendue.
 
 Toutes les fonctions partagent la même signature de base `(mixed $leftOperand, mixed $rightOperand) : string`, à l'exception des opérateurs logiques unaires (`logicalNot`) et de quelques opérateurs spéciaux (`ternary`, `nullish`, `rangeOperator`).
 

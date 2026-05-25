@@ -1,6 +1,6 @@
 # String functions `db/functions/strings/`
 
-The [`api/src/oihana/arango/db/functions/strings/`](../../../../api/src/oihana/arango/db/functions/strings/) sub-folder groups **37 functions** that match the native AQL *string functions*. Each PHP function returns the string `AQL_FUNCTION(args)` ready to be inserted in a predicate or projection.
+The [`src/oihana/arango/db/functions/strings/`](../../../src/oihana/arango/db/functions/strings/) sub-folder groups **37 functions** that match the native AQL *string functions*. Each PHP function returns the string `AQL_FUNCTION(args)` ready to be inserted in a predicate or projection.
 
 > Important distinction: the functions on this page produce AQL `LOWER(doc.name)` from the PHP code `lower('doc.name')`. They have **no relationship** with the `alt` transformations exposed on the HTTP URL side (`?filter={"alt":"lower"}`) documented in [`filter.md`](../filter.md) — these are two parallel worlds despite similar-sounding names.
 

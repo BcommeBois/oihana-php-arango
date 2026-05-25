@@ -1,6 +1,6 @@
 # Slim controllers
 
-The [`api/src/oihana/arango/controllers/`](../../../../api/src/oihana/arango/controllers/) folder provides three ready-to-use HTTP controllers that expose a [`Documents` or `Edges` model](../models.md) as RESTful routes. The layer is designed for Slim 4 and a PSR-11 container, but does not depend on any specific implementation beyond the PSR contracts.
+The [`src/oihana/arango/controllers/`](../../../src/oihana/arango/controllers/) folder provides three ready-to-use HTTP controllers that expose a [`Documents` or `Edges` model](../models.md) as RESTful routes. The layer is designed for Slim 4 and a PSR-11 container, but does not depend on any specific implementation beyond the PSR contracts.
 
 | Controller | Role | Typical routes |
 |---|---|---|
@@ -157,7 +157,7 @@ final class MyUsersController extends DocumentsController
 
 ## Lifecycle hooks
 
-`DocumentsController` consumes [`ModelCallTrait`](../../../../api/vendor/oihana/php-system/src/oihana/controllers/traits/ModelCallTrait.php), which sets two *hooks* automatically invoked around every CRUD operation: `beforeModelCall` and `afterModelCall`.
+`DocumentsController` consumes [`ModelCallTrait`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/ModelCallTrait.php), which sets two *hooks* automatically invoked around every CRUD operation: `beforeModelCall` and `afterModelCall`.
 
 ```php
 final class UsersController extends DocumentsController

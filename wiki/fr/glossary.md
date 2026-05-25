@@ -38,7 +38,7 @@ Document spécial stocké dans une **collection d'arêtes**, qui contient obliga
 
 ### Foxx
 
-Microservices JavaScript embarqués dans la base, exécutés par le moteur V8 d'ArangoDB. Permet d'exposer une API HTTP directement depuis le serveur sans couche applicative externe. `oihana/arango` ne s'appuie pas sur Foxx.
+Microservices JavaScript embarqués dans la base, exécutés par le moteur V8 d'ArangoDB. Permet d'exposer une API HTTP directement depuis le serveur sans couche applicative externe. `oihana/php-arango` ne s'appuie pas sur Foxx.
 
 ### Graph
 
@@ -84,7 +84,7 @@ Clé primaire interne d'un document dans sa collection. Soit fournie à l'insert
 
 Identifiant de révision MVCC d'un document. Change à chaque écriture. Permet la détection optimiste des conflits (`If-Match` HTTP, ou clause `OPTIONS { ignoreRevs: false }` en AQL).
 
-## Vocabulaire `oihana/arango`
+## Vocabulaire `oihana/php-arango`
 
 ### Alteration (`alt`)
 
@@ -96,7 +96,7 @@ Fonction de transformation appliquée à la valeur d'un champ **avant** comparai
 
 ### Capability
 
-Permission fine portée par une valeur de paramètre URL (par exemple `?skin=full`) ou par une clé de champ, plutôt que par un verbe HTTP. Le framework expose le pattern `Capability::PARAMS` pour rattacher une permission Casbin à une valeur. Voir [`CapabilityGuardTrait`](../../../api/src/oihana/api/controllers/traits/CapabilityGuardTrait.php).
+Permission fine portée par une valeur de paramètre URL (par exemple `?skin=full`) ou par une clé de champ, plutôt que par un verbe HTTP. Le framework expose le pattern `Capability::PARAMS` pour rattacher une permission Casbin à une valeur. Voir `CapabilityGuardTrait`.
 
 ### Cascade
 
@@ -112,7 +112,7 @@ Conteneur d'injection de dépendances conforme à PSR-11 (`Psr\Container\Contain
 
 ### Definition
 
-Fichier PHP qui retourne un tableau de définitions DI consommé par le conteneur. Sous `oihana-odbc-php`, les *definitions* `oihana/arango` vivent sous `api/definitions/@arango/`. Convention : un fichier par modèle, un fichier par contrôleur.
+Fichier PHP qui retourne un tableau de définitions DI consommé par le conteneur. Dans une application hôte, les *definitions* `oihana/php-arango` vivent sous `api/definitions/@arango/`. Convention : un fichier par modèle, un fichier par contrôleur.
 
 ### Facet
 

@@ -1,6 +1,6 @@
 # Fonctions numériques `db/functions/numerics/`
 
-Le sous-dossier [`api/src/oihana/arango/db/functions/numerics/`](../../../../api/src/oihana/arango/db/functions/numerics/) regroupe **31 fonctions** qui correspondent aux *numeric functions* natives d'AQL — calculs scalaires, trigonométrie, logarithmes, agrégations sur tableau, génération de plages.
+Le sous-dossier [`src/oihana/arango/db/functions/numerics/`](../../../src/oihana/arango/db/functions/numerics/) regroupe **31 fonctions** qui correspondent aux *numeric functions* natives d'AQL — calculs scalaires, trigonométrie, logarithmes, agrégations sur tableau, génération de plages.
 
 ## Sommaire
 

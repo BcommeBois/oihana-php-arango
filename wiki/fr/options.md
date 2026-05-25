@@ -1,6 +1,6 @@
 # Référence des options AQL
 
-Le dossier [`api/src/oihana/arango/db/options/`](../../../api/src/oihana/arango/db/options/) regroupe **15 classes** qui modélisent les options de chaque opération AQL et de chaque type d'index. Ce sont des objets hydratables, validés et sérialisables — produits intermédiaires entre la déclaration applicative (un tableau PHP) et la clause `OPTIONS { ... }` AQL générée par [`aqlOptions()`](aql/aql-operations.md#aqloptions).
+Le dossier [`src/oihana/arango/db/options/`](../../src/oihana/arango/db/options/) regroupe **15 classes** qui modélisent les options de chaque opération AQL et de chaque type d'index. Ce sont des objets hydratables, validés et sérialisables — produits intermédiaires entre la déclaration applicative (un tableau PHP) et la clause `OPTIONS { ... }` AQL générée par [`aqlOptions()`](aql/aql-operations.md#aqloptions).
 
 ## Le pattern
 

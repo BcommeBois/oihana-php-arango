@@ -38,7 +38,7 @@ Special document stored in an **edge collection**, which must contain the `_from
 
 ### Foxx
 
-JavaScript microservices embedded in the database, executed by ArangoDB's V8 engine. Lets you expose an HTTP API directly from the server without an external application layer. `oihana/arango` does not rely on Foxx.
+JavaScript microservices embedded in the database, executed by ArangoDB's V8 engine. Lets you expose an HTTP API directly from the server without an external application layer. `oihana/php-arango` does not rely on Foxx.
 
 ### Graph
 
@@ -84,7 +84,7 @@ Internal primary key of a document within its collection. Either provided at ins
 
 MVCC revision identifier of a document. Changes at every write. Enables optimistic conflict detection (`If-Match` HTTP header, or `OPTIONS { ignoreRevs: false }` AQL clause).
 
-## `oihana/arango` vocabulary
+## `oihana/php-arango` vocabulary
 
 ### Alteration (`alt`)
 
@@ -96,7 +96,7 @@ Transformation function applied to a field's value **before** comparison in a fi
 
 ### Capability
 
-Fine-grained permission carried by a URL parameter value (e.g. `?skin=full`) or by a field key, rather than by an HTTP verb. The framework exposes the `Capability::PARAMS` pattern to tie a Casbin permission to a value. See [`CapabilityGuardTrait`](../../../api/src/oihana/api/controllers/traits/CapabilityGuardTrait.php).
+Fine-grained permission carried by a URL parameter value (e.g. `?skin=full`) or by a field key, rather than by an HTTP verb. The framework exposes the `Capability::PARAMS` pattern to tie a Casbin permission to a value. See `CapabilityGuardTrait`.
 
 ### Cascade
 
@@ -108,7 +108,7 @@ Dependency injection container compliant with PSR-11 (`Psr\Container\ContainerIn
 
 ### Definition
 
-PHP file returning an array of DI definitions consumed by the container. Inside `oihana-odbc-php`, the `oihana/arango` *definitions* live under `api/definitions/@arango/`. Convention: one file per model, one file per controller.
+PHP file returning an array of DI definitions consumed by the container. In a host application, the `oihana/php-arango` *definitions* live under `api/definitions/@arango/`. Convention: one file per model, one file per controller.
 
 ### Facet
 

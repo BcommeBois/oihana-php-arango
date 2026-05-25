@@ -29,11 +29,11 @@ Before a *payload* can be passed to the [`Documents` model](../models.md) for da
 2. **Typing** — convert an HTTP value (always string or JSON array) into a native PHP / AQL type: `int`, `bool`, `array`, or a typed `i18n` object.
 3. **Transformation** — apply default values (`level: 0` if absent), forced values (`system: false` regardless of body), normalization functions (lowercase, *trim*, `_key` generation...).
 
-As long as these three things are written as imperative code scattered across every controller, you have two problems: it's verbose, and it's easy to forget a step on a newly added endpoint. The `oihana/arango` framework groups them into a single **declarative structure** — a PHP array — in the controller's DI definition. The entire extraction, shape validation, typing and transformation machinery runs automatically off that declaration.
+As long as these three things are written as imperative code scattered across every controller, you have two problems: it's verbose, and it's easy to forget a step on a newly added endpoint. The `oihana/php-arango` framework groups them into a single **declarative structure** — a PHP array — in the controller's DI definition. The entire extraction, shape validation, typing and transformation machinery runs automatically off that declaration.
 
 ## What this page covers
 
-The whole mechanism lives in [`PayloadsTrait`](../../../../api/src/oihana/arango/controllers/traits/PayloadsTrait.php), consumed by `DocumentsController`, `EdgesController` and `PropertyController`. The application configuration goes through the [`Arango::PAYLOAD`](../enums.md#aql) key in the controller's DI definition.
+The whole mechanism lives in [`PayloadsTrait`](../../../src/oihana/arango/controllers/traits/PayloadsTrait.php), consumed by `DocumentsController`, `EdgesController` and `PropertyController`. The application configuration goes through the [`Arango::PAYLOAD`](../enums.md#aql) key in the controller's DI definition.
 
 This page documents:
 
@@ -99,7 +99,7 @@ HttpMethod::POST => [
 
 ## `AQLType` catalog
 
-The [`AQLType`](../../../../api/src/oihana/arango/controllers/enums/AQLType.php) enum declares the types recognized by `preparePayload`. The type controls two things: extraction (which `getParam*()` HTTP call to use) and typing on the output payload side.
+The [`AQLType`](../../../src/oihana/arango/controllers/enums/AQLType.php) enum declares the types recognized by `preparePayload`. The type controls two things: extraction (which `getParam*()` HTTP call to use) and typing on the output payload side.
 
 | `AQLType::*` | Semantics | HTTP extractor used |
 |---|---|---|

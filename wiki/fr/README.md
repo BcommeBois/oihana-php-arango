@@ -1,8 +1,8 @@
-# oihana/arango — Framework ArangoDB pour PHP
+# oihana/php-arango — Framework ArangoDB pour PHP
 
 ![Langue](https://img.shields.io/badge/langue-Français-blue)
 
-`oihana/arango` est un framework PHP qui industrialise le travail avec [ArangoDB](https://arangodb.com) : client natif, *builder* AQL composable, modèles haut-niveau (`Documents`, `Edges`) par composition de traits, contrôleurs Slim CRUD, adaptateur Casbin RBAC et commandes Symfony Console.
+`oihana/php-arango` est un framework PHP qui industrialise le travail avec [ArangoDB](https://arangodb.com) : client natif, *builder* AQL composable, modèles haut-niveau (`Documents`, `Edges`) par composition de traits, contrôleurs Slim CRUD, adaptateur Casbin RBAC et commandes Symfony Console.
 
 > Cette documentation est **en construction active**. Le sommaire ci-dessous reflète l'avancement réel : les pages marquées *prévu* sont planifiées mais pas encore rédigées. Voir la section [Statut du chantier](#statut-du-chantier).
 
@@ -108,11 +108,9 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 
 ## Code source
 
-Le code du framework vit sous [`api/src/oihana/arango/`](../../../api/src/oihana/arango/).
-
-> `oihana/arango` est destiné à être extrait en bibliothèque open-source autonome. Sa documentation est aujourd'hui hébergée dans `oihana-odbc-php` et déménagera lors de l'extraction.
+Le code du framework vit sous [`src/oihana/arango/`](../../src/oihana/arango/).
 
 ## Voir aussi
 
-- [Tips d'authentification](../auth/tips.md) — conventions Casbin `safeSubject` consommées par `ArangoCasbinAdapter`.
-- [`CLAUDE.md`](../../../CLAUDE.md) — conventions générales du projet.
+- [Packagist `oihana/php-arango`](https://packagist.org/packages/oihana/php-arango) — page du package.
+- [Tips & best practices](tips.md) — conventions et pièges courants.

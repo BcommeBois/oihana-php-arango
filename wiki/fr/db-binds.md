@@ -1,6 +1,6 @@
 # Bind variables `db/binds/`
 
-Le dossier [`api/src/oihana/arango/db/binds/`](../../../api/src/oihana/arango/db/binds/) regroupe les cinq fonctions qui assurent l'**injection sûre** des valeurs et des noms de collection dans une requête AQL.
+Le dossier [`src/oihana/arango/db/binds/`](../../src/oihana/arango/db/binds/) regroupe les cinq fonctions qui assurent l'**injection sûre** des valeurs et des noms de collection dans une requête AQL.
 
 C'est la première brique de défense du framework contre l'injection AQL : aucune valeur dynamique ne devrait jamais être concaténée directement dans une requête. Toute valeur passe par `aqlBind()` ou `aqlBindCollection()`, qui retournent un *placeholder* sûr (`@var` ou `@@coll`) et stockent la valeur dans un tableau `bindVars` transmis séparément à ArangoDB.
 

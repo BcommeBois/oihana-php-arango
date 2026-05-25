@@ -63,11 +63,11 @@ Field::SKINS => 'main,full'                       // comma-separated string
 Field::SKINS => null                              // equivalent to no marker
 ```
 
-Skins are opaque strings. Any skin defined in `fr\bouney\enums\Skin` (which extends the `oihana\controllers\enums\traits\SkinTrait` trait) can be used freely, including business skins like `Skin::IMAGE`, `Skin::OFFERS`, `Skin::EMPLOYEE`.
+Skins are opaque strings. Any skin defined in `Acme\enums\Skin` (which extends the `oihana\controllers\enums\traits\SkinTrait` trait) can be used freely, including business skins like `Skin::IMAGE`, `Skin::OFFERS`, `Skin::EMPLOYEE`.
 
 ## Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition
 
-When an edge points to a complex document, declare its projection by composing `AQL::FIELDS` and `AQL::EDGES` directly on the edge definition inside `AQL::EDGES`. The pattern is illustrated by [employeeEdge.php](../../../api/src/fr/bouney/definitions/edges/customers/employeeEdge.php):
+When an edge points to a complex document, declare its projection by composing `AQL::FIELDS` and `AQL::EDGES` directly on the edge definition inside `AQL::EDGES`. The pattern is illustrated by `employeeEdge.php`:
 
 ```php
 function employeeEdge( ?string $employeePath = Paths::PEOPLE ) :array
@@ -240,9 +240,9 @@ When `AQL::REQUIRES` is absent, no check is performed — default behaviour, no 
 
 ### Wiring on the controller side — recommended pattern
 
-`oihana/arango` knows nothing of the authorization layer in use (Casbin, OPA, custom, ...). The controller provides a `Closure(string $subject): bool` that the framework will call for every declared subject.
+`oihana/php-arango` knows nothing of the authorization layer in use (Casbin, OPA, custom, ...). The controller provides a `Closure(string $subject): bool` that the framework will call for every declared subject.
 
-`DocumentsController` exposes two lifecycle hooks from [`ModelCallTrait`](../../../api/vendor/oihana/php-system/src/oihana/controllers/traits/ModelCallTrait.php) — `beforeModelCall( ?Request , array &$init )` and `afterModelCall( ?Request , array &$init , mixed &$result )` — automatically invoked around every primary CRUD operation (`list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete`). The recommended pattern is to override `beforeModelCall` once to enable access control on every HTTP verb of the controller:
+`DocumentsController` exposes two lifecycle hooks from [`ModelCallTrait`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/ModelCallTrait.php) — `beforeModelCall( ?Request , array &$init )` and `afterModelCall( ?Request , array &$init , mixed &$result )` — automatically invoked around every primary CRUD operation (`list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete`). The recommended pattern is to override `beforeModelCall` once to enable access control on every HTTP verb of the controller:
 
 ```php
 use oihana\api\controllers\traits\CapabilityAuthorizerTrait;
@@ -267,13 +267,13 @@ final class UsersController extends DocumentsController
 }
 ```
 
-[`CapabilityAuthorizerTrait`](../../../api/src/oihana/api/controllers/traits/CapabilityAuthorizerTrait.php) — bundled in the [`CapabilityGuardTrait`](../../../api/src/oihana/api/controllers/traits/CapabilityGuardTrait.php) facade — builds a request-scoped `Closure(string): bool` against the Casbin `CapabilityEnforcer` and the current Zitadel `userId`. It applies `safeSubject` automatically (see [auth code tips](../auth/tips.md)). When the enforcer is unavailable or the request carries no authenticated user, `buildAuthorizer` returns `null` — the `if` short-circuits and the framework falls back on its default behaviour (fail open, see next section).
+`CapabilityAuthorizerTrait` — bundled in the `CapabilityGuardTrait` facade — builds a request-scoped `Closure(string): bool` against the Casbin `CapabilityEnforcer` and the current Zitadel `userId`. It applies `safeSubject` automatically (see [auth code tips](../auth/tips.md)). When the enforcer is unavailable or the request carries no authenticated user, `buildAuthorizer` returns `null` — the `if` short-circuits and the framework falls back on its default behaviour (fail open, see next section).
 
 Benefit: the override is **a single line per controller**, not per HTTP verb. The wiring covers `list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete` automatically.
 
 ### Variant — request-agnostic pattern with `InjectAuthorizerTrait`
 
-When the callable is known at controller construction time (unit test, callable resolved straight from the DI container without depending on the request, CLI batch mode, ...), an alternative trait [`InjectAuthorizerTrait`](../../../api/src/oihana/arango/controllers/traits/inject/InjectAuthorizerTrait.php) (on the `oihana/arango` side, agnostic of Casbin) lets a controller store a stable callable at construction and pose it on every `$init`:
+When the callable is known at controller construction time (unit test, callable resolved straight from the DI container without depending on the request, CLI batch mode, ...), an alternative trait [`InjectAuthorizerTrait`](../../src/oihana/arango/controllers/traits/inject/InjectAuthorizerTrait.php) (on the `oihana/php-arango` side, agnostic of Casbin) lets a controller store a stable callable at construction and pose it on every `$init`:
 
 ```php
 use oihana\arango\controllers\traits\inject\InjectAuthorizerTrait;

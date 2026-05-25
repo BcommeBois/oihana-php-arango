@@ -55,7 +55,7 @@ bun arango:test:clients --no-cleanup      # garde la base éphémère
 bun arango:test:clients --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
 ```
 
-Code : [api/src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php](../../../api/src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php).
+Code : [src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php](../../src/oihana/arango/clients/commands/tests/ArangoTestClientsCommand.php).
 
 ## `arango:test:facade`
 
@@ -87,11 +87,11 @@ bun arango:test:facade --no-cleanup
 bun arango:test:facade --endpoint=tcp://127.0.0.1:8529 --user=root --password=…
 ```
 
-Code : [api/src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php](../../../api/src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php).
+Code : [src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php](../../src/oihana/arango/db/commands/tests/ArangoFacadeTestCommand.php).
 
 ## Options communes
 
-Les deux commandes partagent le trait [`ArangoClientTestTrait`](../../../api/src/oihana/arango/clients/commands/tests/traits/ArangoClientTestTrait.php), qui définit les options de connexion (avec *override* CLI) :
+Les deux commandes partagent le trait [`ArangoClientTestTrait`](../../src/oihana/arango/clients/commands/tests/traits/ArangoClientTestTrait.php), qui définit les options de connexion (avec *override* CLI) :
 
 | Option | Effet | Default |
 |---|---|---|
@@ -114,14 +114,13 @@ Le `config.toml` du projet sert uniquement à fournir le **serveur** et les **cr
 
 ## Pour les contributeurs
 
-Les deux commandes sont **wirées via PHP-DI** côté projet :
+Les deux commandes sont **wirées via PHP-DI** dans la bibliothèque, prêtes à être exécutées avec `bin/console.php` :
 
-- Enum : `fr\bouney\enums\Commands::ARANGO_TEST_CLIENTS` / `ARANGO_TEST_FACADE`.
-- DI : [`api/definitions/@commands/tests/testArangoClients.php`](../../../api/definitions/@commands/tests/testArangoClients.php) + [`testArangoFacade.php`](../../../api/definitions/@commands/tests/testArangoFacade.php).
-- Registry : [`api/definitions/commands.php`](../../../api/definitions/commands.php).
-- Alias `bun` : [`package.json`](../../../package.json).
+- Bootstrap CLI : [`bin/console.php`](../../bin/console.php) — entry point Symfony Console.
+- Définitions DI : [`definitions/commands.php`](../../definitions/commands.php) (registre + factories) + [`definitions/config.php`](../../definitions/config.php) (clé `arango.config`) + [`definitions/application.php`](../../definitions/application.php) (`Application::class`).
+- Configuration : [`configs/config.example.toml`](../../configs/config.example.toml) (à copier en `configs/config.toml` localement avant la première exécution).
 
-Une commande de test ajoutée ultérieurement doit suivre la même chaîne (4 modifications, dont aucune ne doit être oubliée — un oubli sur le registry produit un *404 silencieux* côté Symfony Console).
+Une commande de test ajoutée ultérieurement doit suivre la même chaîne : ajouter sa factory dans `definitions/commands.php` puis l'enregistrer dans `definitions/application.php` via `$application->add(...)`.
 
 > Note transition `oihana/php-arango`. Au moment de l'extraction opensource (Phase 8), ces commandes suivront dans la lib mais avec leur propre mini-conteneur DI standalone, indépendant des dépendances du projet (Slim, Casbin, etc.). Cf. la mémoire de chantier interne pour les détails.
 

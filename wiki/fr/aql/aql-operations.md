@@ -1,6 +1,6 @@
 # Opérations AQL `db/operations/`
 
-Le dossier [`api/src/oihana/arango/db/operations/`](../../../../api/src/oihana/arango/db/operations/) fournit les **21 opérations** qui correspondent aux *high-level operations* du langage AQL. Chaque fonction produit le fragment de texte AQL correspondant et peut se concaténer librement avec les autres pour former une requête complète.
+Le dossier [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) fournit les **21 opérations** qui correspondent aux *high-level operations* du langage AQL. Chaque fonction produit le fragment de texte AQL correspondant et peut se concaténer librement avec les autres pour former une requête complète.
 
 Pour la vue d'ensemble pédagogique de la composition, voir [Construire une requête AQL pas à pas](aql-building-queries.md). Cette page est la **référence** de chacune des opérations.
 

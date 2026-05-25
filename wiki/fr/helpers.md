@@ -1,10 +1,10 @@
 # Helpers `oihana\arango\helpers`
 
 Petits utilitaires fonctionnels (une fonction = un fichier) qui vivent
-sous [`api/src/oihana/arango/helpers/`](../../../api/src/oihana/arango/helpers/).
+sous [`src/oihana/arango/helpers/`](../../src/oihana/arango/helpers/).
 
-À ne pas confondre avec [`oihana\arango\db\helpers`](../../../api/src/oihana/arango/db/helpers/)
-ni [`oihana\arango\db\operations`](../../../api/src/oihana/arango/db/operations/),
+À ne pas confondre avec [`oihana\arango\db\helpers`](../../src/oihana/arango/db/helpers/)
+ni [`oihana\arango\db\operations`](../../src/oihana/arango/db/operations/),
 qui produisent l'**output AQL** (`"FOR doc IN ..."`, `"doc.name DESC"`, etc.).
 Les helpers de cette page travaillent côté **entrée** : grammaire textuelle
 HTTP, identifiants de documents, formats de révision.
@@ -86,7 +86,7 @@ sortKeys( string ...$keys ) : string
 
 Compose une expression de tri en joignant les tokens avec une virgule.
 Les tokens vides sont **silencieusement écartés** via
-[`oihana\core\strings\compile()`](../../../api/vendor/oihana/php-core/src/oihana/core/strings/compile.php),
+[`oihana\core\strings\compile()`](https://github.com/BcommeBois/oihana-php-core/blob/main/src/oihana/core/strings/compile.php),
 ce qui permet de passer des tokens conditionnels sans `array_filter()`
 au call-site.
 
@@ -126,7 +126,7 @@ Arango::SORT      => sortKeys( descKey( Prop::CREATED ) , descKey( Prop::NAME ) 
 ### Distinction avec `aqlAsc` / `aqlDesc` / `aqlSort`
 
 Il existe aussi dans le framework un trio **homonyme mais différent**
-qui vit dans [`oihana\arango\db\operations`](../../../api/src/oihana/arango/db/operations/) :
+qui vit dans [`oihana\arango\db\operations`](../../src/oihana/arango/db/operations/) :
 
 | Helper                                       | Dossier         | Émet                              | Quand l'utiliser |
 |----------------------------------------------|-----------------|-----------------------------------|------------------|

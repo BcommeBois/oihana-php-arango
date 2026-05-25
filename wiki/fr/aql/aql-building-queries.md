@@ -1,10 +1,10 @@
 # Construire une requête AQL pas à pas
 
-Cette page explique comment composer une requête AQL en utilisant les fonctions standalone du dossier [`api/src/oihana/arango/db/operations/`](../../../../api/src/oihana/arango/db/operations/) et les opérateurs de [`db/operators/`](../../../../api/src/oihana/arango/db/operators/). C'est le point d'entrée pédagogique de la couche `db/` ; les catalogues complets sont dans les pages [Opérations AQL](aql-operations.md), [Opérateurs](aql-operators.md) et [Fonctions de chaînes](aql-functions-strings.md) et suivantes.
+Cette page explique comment composer une requête AQL en utilisant les fonctions standalone du dossier [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) et les opérateurs de [`db/operators/`](../../../src/oihana/arango/db/operators/). C'est le point d'entrée pédagogique de la couche `db/` ; les catalogues complets sont dans les pages [Opérations AQL](aql-operations.md), [Opérateurs](aql-operators.md) et [Fonctions de chaînes](aql-functions-strings.md) et suivantes.
 
 ## Le modèle mental
 
-`oihana/arango` ne fournit pas de *query builder* objet à la `$qb->from(...)->where(...)->select(...)`. Une requête AQL est ici un **texte construit par concaténation** de fragments produits par des fonctions namespace.
+`oihana/php-arango` ne fournit pas de *query builder* objet à la `$qb->from(...)->where(...)->select(...)`. Une requête AQL est ici un **texte construit par concaténation** de fragments produits par des fonctions namespace.
 
 Chaque opération AQL (`FOR`, `FILTER`, `SORT`, `LIMIT`, `RETURN`, ...) a sa fonction `aql*` qui produit la sous-chaîne correspondante. On assemble ces sous-chaînes manuellement via `sprintf`, `compile()`, ou simple concaténation. Les valeurs dynamiques passent par [`aqlBind()`](../db-binds.md) pour rester sûres.
 
@@ -145,7 +145,7 @@ $query = aqlTraversal
 
 ## Le rôle des opérateurs
 
-Le dossier [`db/operators/`](../../../../api/src/oihana/arango/db/operators/) fournit 42 fonctions qui produisent un **prédicat** sous forme de chaîne — `'doc.x == doc.y'`, `'doc.age > 18'`, `'doc.role IN ["admin", "owner"]'`, etc.
+Le dossier [`db/operators/`](../../../src/oihana/arango/db/operators/) fournit 42 fonctions qui produisent un **prédicat** sous forme de chaîne — `'doc.x == doc.y'`, `'doc.age > 18'`, `'doc.role IN ["admin", "owner"]'`, etc.
 
 Cinq familles :
 
@@ -159,7 +159,7 @@ Le catalogue complet est dans [Opérateurs](aql-operators.md). Tous ces opérate
 
 ## Le rôle des fonctions
 
-Le dossier [`db/functions/`](../../../../api/src/oihana/arango/db/functions/) contient 144 fonctions qui correspondent aux fonctions AQL natives — `CONCAT`, `LOWER`, `DATE_NOW`, `COUNT`, `SUM`, etc. — réparties en cinq sous-dossiers : `strings/`, `dates/`, `numerics/`, `arrays/`, `documents/`.
+Le dossier [`db/functions/`](../../../src/oihana/arango/db/functions/) contient 144 fonctions qui correspondent aux fonctions AQL natives — `CONCAT`, `LOWER`, `DATE_NOW`, `COUNT`, `SUM`, etc. — réparties en cinq sous-dossiers : `strings/`, `dates/`, `numerics/`, `arrays/`, `documents/`.
 
 Chaque fonction PHP prend un ou plusieurs arguments (typiquement une référence à un champ, par exemple `'doc.name'`) et retourne la chaîne `LOWER(doc.name)`. On les utilise dans les prédicats ou dans les projections.
 

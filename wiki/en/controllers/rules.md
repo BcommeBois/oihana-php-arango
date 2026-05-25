@@ -9,7 +9,7 @@ A *rule* is a **constraint applied to a value** to check that it matches what we
 - *"the `description` field must be a typed i18n object (`{ fr: "...", en: "..." }`), not a flat string"*;
 - *"the `level` field must be an integer between 0 and 9000"*.
 
-The `oihana/arango` framework runs these constraints **after** payload preparation (cf. [Payloads](payloads.md)) and **before** writing to the database. If a single rule fails, the request is rejected with HTTP `422 Unprocessable Entity` and a per-field error map — no invalid data ever reaches the collection.
+The `oihana/php-arango` framework runs these constraints **after** payload preparation (cf. [Payloads](payloads.md)) and **before** writing to the database. If a single rule fails, the request is rejected with HTTP `422 Unprocessable Entity` and a per-field error map — no invalid data ever reaches the collection.
 
 ## Why a dedicated layer
 
@@ -47,7 +47,7 @@ This page documents:
 - The **position** of rules in the controller pipeline (after payload, before model).
 - The **format** of both keys and the *custom rule* activation pattern.
 - The **vendor catalog** `Rules::*` (the standard rules shipped by Somnambulist).
-- The **project catalog** of `CustomRules::*` (the business rules specific to `oihana-odbc-php`).
+- The **project catalog** of `CustomRules::*` (the business rules specific to the host application).
 - The **422 error format** returned to the client.
 
 ## Position in the pipeline
@@ -166,7 +166,7 @@ Each Rule class extends `Somnambulist\Components\Validation\Rule` and exposes a 
 
 ## Vendor `Rules::*` catalog
 
-The [`oihana\validations\enums\Rules`](../../../../api/vendor/oihana/php-system/src/oihana/validations/enums/Rules.php) enum lists every standard rule shipped by the Somnambulist library. The most common:
+The [`oihana\validations\enums\Rules`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/validations/enums/Rules.php) enum lists every standard rule shipped by the Somnambulist library. The most common:
 
 | Constant | Effect |
 |---|---|
@@ -200,7 +200,7 @@ The full enum contains around fifty constants. See the [Somnambulist docs](https
 
 ## Project `CustomRules::*` catalog
 
-The [`fr\bouney\enums\CustomRules`](../../../../api/src/fr/bouney/enums/CustomRules.php) enum lists the business rules specific to `oihana-odbc-php`. All extend `Somnambulist\Components\Validation\Rule` and are registered in the DI container.
+The `Acme\enums\CustomRules` enum lists the business rules specific to the host application. All extend `Somnambulist\Components\Validation\Rule` and are registered in the DI container.
 
 | Constant | DI identifier | Underlying class | Role |
 |---|---|---|---|
@@ -228,7 +228,7 @@ The [`fr\bouney\enums\CustomRules`](../../../../api/src/fr/bouney/enums/CustomRu
 ### Writing a custom rule
 
 ```php
-namespace fr\bouney\rules ;
+namespace Acme\rules ;
 
 use Somnambulist\Components\Validation\Rule ;
 

@@ -1,6 +1,6 @@
 # Fonctions de dates `db/functions/dates/`
 
-Le sous-dossier [`api/src/oihana/arango/db/functions/dates/`](../../../../api/src/oihana/arango/db/functions/dates/) regroupe **30 fonctions** qui correspondent aux *date functions* natives d'AQL. Toutes manipulent des dates au format ISO 8601 (`'2026-05-17T14:30:00.000Z'`) ou des *timestamps* Unix en millisecondes.
+Le sous-dossier [`src/oihana/arango/db/functions/dates/`](../../../src/oihana/arango/db/functions/dates/) regroupe **30 fonctions** qui correspondent aux *date functions* natives d'AQL. Toutes manipulent des dates au format ISO 8601 (`'2026-05-17T14:30:00.000Z'`) ou des *timestamps* Unix en millisecondes.
 
 > Convention de format : la plupart des fonctions acceptent `null|string|int` pour `$date` — soit une chaîne ISO 8601, soit un *timestamp* Unix en millisecondes, soit `null` (équivalent à `DATE_NOW()`). L'enum `DateUnit` fournit les constantes pour les unités (`YEAR`, `MONTH`, `WEEK`, `DAY`, `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`).
 

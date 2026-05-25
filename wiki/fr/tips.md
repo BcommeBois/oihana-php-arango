@@ -1,7 +1,7 @@
-# Tips & pièges ArangoDB / `oihana/arango`
+# Tips & pièges ArangoDB / `oihana/php-arango`
 
 Recueil des règles d'or à respecter quand on touche aux models, projections,
-ou contrôleurs documents/edges du framework `oihana/arango`. Toute violation
+ou contrôleurs documents/edges du framework `oihana/php-arango`. Toute violation
 découverte (avec son incident associé) doit venir grossir cette page plutôt
 que rester dans la mémoire d'une session.
 
@@ -27,7 +27,7 @@ qu'elle expose.
 
 ### Pourquoi
 
-`Skin::INTERNAL` ([`SkinTrait.php`](../../../api/vendor/oihana/php-system/src/oihana/controllers/enums/traits/SkinTrait.php))
+`Skin::INTERNAL` ([`SkinTrait.php`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/enums/traits/SkinTrait.php))
 est la projection qui rend visibles les champs sensibles d'un document — ceux
 qu'on a besoin de lire côté serveur mais qui ne doivent jamais sortir par la
 surface HTTP, y compris pour un superadmin. Exemples typiques :
@@ -38,7 +38,7 @@ surface HTTP, y compris pour un superadmin. Exemples typiques :
 
 La garantie de sécurité repose sur **une seule règle** : tant que `INTERNAL`
 n'est pas listé dans la `Arango::SKINS` du contrôleur, le filtre
-[`PrepareSkin::isValidSkin()`](../../../api/vendor/oihana/php-system/src/oihana/controllers/traits/prepare/PrepareSkin.php)
+[`PrepareSkin::isValidSkin()`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/prepare/PrepareSkin.php)
 rejette `?skin=internal` et tombe sur la projection par défaut. Aucun appelant
 HTTP ne peut donc forcer cette projection.
 
@@ -69,9 +69,9 @@ d'un input utilisateur.
 
 | Endroit | Champ INTERNAL lu | Pourquoi |
 |---|---|---|
-| [`CheckJwtAuthentication`](../../../api/src/oihana/api/middlewares/CheckJwtAuthentication.php) | `tokensInvalidBefore` | Valider que le JWT n'a pas été révoqué par un force-logout admin |
-| [`EmailChangeTrait`](../../../api/src/oihana/api/controllers/auth/traits/EmailChangeTrait.php) | hash du code email pending | Comparer le code confirmé par l'utilisateur au hash stocké |
-| [`AuthTestUsersSessionsRevokeCommand`](../../../api/src/oihana/api/commands/tests/auth/AuthTestUsersSessionsRevokeCommand.php) | `tokensInvalidBefore` | Vérifie justement que `?skin=full` n'expose **pas** ce champ |
+| `CheckJwtAuthentication` | `tokensInvalidBefore` | Valider que le JWT n'a pas été révoqué par un force-logout admin |
+| `EmailChangeTrait` | hash du code email pending | Comparer le code confirmé par l'utilisateur au hash stocké |
+| `AuthTestUsersSessionsRevokeCommand` | `tokensInvalidBefore` | Vérifie justement que `?skin=full` n'expose **pas** ce champ |
 
 ### Ajouter un nouveau champ INTERNAL
 
@@ -89,7 +89,7 @@ Trois questions à se poser dans l'ordre :
 ### Si un jour on doit vraiment l'exposer en HTTP
 
 Cas d'usage hypothétique : page d'audit admin, outil de debug interne, etc.
-La règle vendor (voir PHPDoc de [`SkinTrait::INTERNAL`](../../../api/vendor/oihana/php-system/src/oihana/controllers/enums/traits/SkinTrait.php))
+La règle vendor (voir PHPDoc de [`SkinTrait::INTERNAL`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/enums/traits/SkinTrait.php))
 est explicite — il faut **les trois couches**, pas une seule :
 
 1. Une permission Casbin dédiée (par exemple `users:skin.internal`)

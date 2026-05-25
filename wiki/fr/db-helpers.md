@@ -1,11 +1,11 @@
 # Helpers AQL `db/helpers/`
 
-Le dossier [`api/src/oihana/arango/db/helpers/`](../../../api/src/oihana/arango/db/helpers/) rassemble les fonctions standalone qui composent les **fragments de texte AQL** : encodage d'une valeur, construction d'un document inline, sérialisation d'expressions, sous-expressions des opérations de modification, et *field builders* pour les `RETURN { ... }`.
+Le dossier [`src/oihana/arango/db/helpers/`](../../src/oihana/arango/db/helpers/) rassemble les fonctions standalone qui composent les **fragments de texte AQL** : encodage d'une valeur, construction d'un document inline, sérialisation d'expressions, sous-expressions des opérations de modification, et *field builders* pour les `RETURN { ... }`.
 
 > Ne pas confondre avec deux autres dossiers homonymes :
 >
-> - [`db/operations/`](../../../api/src/oihana/arango/db/operations/) — opérations AQL complètes (`aqlFor`, `aqlFilter`, `aqlReturn`, ...), documentées en [Construire une requête AQL pas à pas](aql/aql-building-queries.md).
-> - [`db/functions/`](../../../api/src/oihana/arango/db/functions/) — fonctions AQL côté valeur (`CONCAT`, `LOWER`, `DATE_NOW`, ...), documentées dans les pages [Fonctions de chaînes](aql/aql-functions-strings.md) et suivantes.
+> - [`db/operations/`](../../src/oihana/arango/db/operations/) — opérations AQL complètes (`aqlFor`, `aqlFilter`, `aqlReturn`, ...), documentées en [Construire une requête AQL pas à pas](aql/aql-building-queries.md).
+> - [`db/functions/`](../../src/oihana/arango/db/functions/) — fonctions AQL côté valeur (`CONCAT`, `LOWER`, `DATE_NOW`, ...), documentées dans les pages [Fonctions de chaînes](aql/aql-functions-strings.md) et suivantes.
 >
 > Les helpers de cette page travaillent sur le **texte AQL** : ils produisent des chaînes prêtes à être injectées dans une requête.
 
@@ -171,7 +171,7 @@ Ces fonctions sont consommées par les *traits* CRUD des modèles (`DocumentsIns
 
 ## *Field builders* — sous-dossier `fields/`
 
-Le sous-dossier [`fields/`](../../../api/src/oihana/arango/db/helpers/fields/) contient 12 *builders* qui produisent les sous-expressions `key: doc.value` typées d'un `RETURN { ... }`. Chacun prend en charge un type de champ et applique la projection appropriée (cast, accès, transformation).
+Le sous-dossier [`fields/`](../../src/oihana/arango/db/helpers/fields/) contient 12 *builders* qui produisent les sous-expressions `key: doc.value` typées d'un `RETURN { ... }`. Chacun prend en charge un type de champ et applique la projection appropriée (cast, accès, transformation).
 
 ### Point d'entrée — `aqlFields()`
 

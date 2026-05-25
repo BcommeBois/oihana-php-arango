@@ -29,11 +29,11 @@ Avant qu'un *payload* puisse être passé au [modèle `Documents`](../models.md)
 2. **Typage** — convertir une valeur HTTP (toujours chaîne ou tableau JSON) en type PHP / AQL natif : `int`, `bool`, `array`, ou un objet `i18n` typé.
 3. **Transformation** — appliquer des valeurs par défaut (`level: 0` si absent), des valeurs forcées (`system: false` quoi que dise le body), des fonctions de normalisation (lowercase, *trim*, génération de `_key`...).
 
-Tant qu'on écrit ces trois choses en code impératif éparpillé dans chaque contrôleur, on a deux problèmes : c'est verbeux, et c'est facile d'oublier une étape sur un endpoint nouvellement ajouté. Le framework `oihana/arango` les regroupe en une **structure déclarative** unique — un tableau PHP — dans la définition DI du contrôleur. Toute la mécanique d'extraction, validation de forme, typage et transformation tourne automatiquement à partir de cette déclaration.
+Tant qu'on écrit ces trois choses en code impératif éparpillé dans chaque contrôleur, on a deux problèmes : c'est verbeux, et c'est facile d'oublier une étape sur un endpoint nouvellement ajouté. Le framework `oihana/php-arango` les regroupe en une **structure déclarative** unique — un tableau PHP — dans la définition DI du contrôleur. Toute la mécanique d'extraction, validation de forme, typage et transformation tourne automatiquement à partir de cette déclaration.
 
 ## De quoi parle cette page
 
-Toute la mécanique vit dans [`PayloadsTrait`](../../../../api/src/oihana/arango/controllers/traits/PayloadsTrait.php), consommé par `DocumentsController`, `EdgesController` et `PropertyController`. La configuration applicative se fait via la clé [`Arango::PAYLOAD`](../enums.md#aql) dans la définition DI du contrôleur.
+Toute la mécanique vit dans [`PayloadsTrait`](../../../src/oihana/arango/controllers/traits/PayloadsTrait.php), consommé par `DocumentsController`, `EdgesController` et `PropertyController`. La configuration applicative se fait via la clé [`Arango::PAYLOAD`](../enums.md#aql) dans la définition DI du contrôleur.
 
 Ce qu'on documente ici :
 
@@ -99,7 +99,7 @@ HttpMethod::POST => [
 
 ## Catalogue `AQLType`
 
-L'enum [`AQLType`](../../../../api/src/oihana/arango/controllers/enums/AQLType.php) déclare les types reconnus par `preparePayload`. Le type contrôle deux choses : l'extraction (quel `getParam*()` HTTP appeler) et le typage côté payload de sortie.
+L'enum [`AQLType`](../../../src/oihana/arango/controllers/enums/AQLType.php) déclare les types reconnus par `preparePayload`. Le type contrôle deux choses : l'extraction (quel `getParam*()` HTTP appeler) et le typage côté payload de sortie.
 
 | `AQLType::*` | Sémantique | Extracteur HTTP utilisé |
 |---|---|---|

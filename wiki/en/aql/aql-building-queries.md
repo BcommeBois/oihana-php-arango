@@ -1,10 +1,10 @@
 # Building an AQL query step by step
 
-This page explains how to compose an AQL query using the standalone functions of the [`api/src/oihana/arango/db/operations/`](../../../../api/src/oihana/arango/db/operations/) folder and the operators in [`db/operators/`](../../../../api/src/oihana/arango/db/operators/). It is the pedagogical entry point for the `db/` layer; the full catalogs are in the [AQL operations](aql-operations.md), [Operators](aql-operators.md), [String functions](aql-functions-strings.md) and following pages.
+This page explains how to compose an AQL query using the standalone functions of the [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) folder and the operators in [`db/operators/`](../../../src/oihana/arango/db/operators/). It is the pedagogical entry point for the `db/` layer; the full catalogs are in the [AQL operations](aql-operations.md), [Operators](aql-operators.md), [String functions](aql-functions-strings.md) and following pages.
 
 ## The mental model
 
-`oihana/arango` does not provide an object *query builder* like `$qb->from(...)->where(...)->select(...)`. An AQL query here is a **text built by concatenation** of fragments produced by namespace functions.
+`oihana/php-arango` does not provide an object *query builder* like `$qb->from(...)->where(...)->select(...)`. An AQL query here is a **text built by concatenation** of fragments produced by namespace functions.
 
 Each AQL operation (`FOR`, `FILTER`, `SORT`, `LIMIT`, `RETURN`, ...) has its `aql*` function that produces the corresponding substring. You assemble these substrings manually via `sprintf`, `compile()`, or simple concatenation. Dynamic values go through [`aqlBind()`](../db-binds.md) to stay safe.
 
@@ -145,7 +145,7 @@ $query = aqlTraversal
 
 ## The role of operators
 
-The [`db/operators/`](../../../../api/src/oihana/arango/db/operators/) folder provides 42 functions that produce a **predicate** as a string — `'doc.x == doc.y'`, `'doc.age > 18'`, `'doc.role IN ["admin", "owner"]'`, etc.
+The [`db/operators/`](../../../src/oihana/arango/db/operators/) folder provides 42 functions that produce a **predicate** as a string — `'doc.x == doc.y'`, `'doc.age > 18'`, `'doc.role IN ["admin", "owner"]'`, etc.
 
 Five families:
 
@@ -159,7 +159,7 @@ The full catalog is in [Operators](aql-operators.md). All these operators simply
 
 ## The role of functions
 
-The [`db/functions/`](../../../../api/src/oihana/arango/db/functions/) folder contains 144 functions that match the native AQL functions — `CONCAT`, `LOWER`, `DATE_NOW`, `COUNT`, `SUM`, etc. — distributed across five sub-folders: `strings/`, `dates/`, `numerics/`, `arrays/`, `documents/`.
+The [`db/functions/`](../../../src/oihana/arango/db/functions/) folder contains 144 functions that match the native AQL functions — `CONCAT`, `LOWER`, `DATE_NOW`, `COUNT`, `SUM`, etc. — distributed across five sub-folders: `strings/`, `dates/`, `numerics/`, `arrays/`, `documents/`.
 
 Each PHP function takes one or more arguments (typically a reference to a field, e.g. `'doc.name'`) and returns the string `LOWER(doc.name)`. They are used in predicates or projections.
 

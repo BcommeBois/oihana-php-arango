@@ -1,6 +1,6 @@
 # Array functions `db/functions/arrays/`
 
-The [`api/src/oihana/arango/db/functions/arrays/`](../../../../api/src/oihana/arango/db/functions/arrays/) sub-folder groups **19 functions** that match the native AQL *array functions* — counting, indexed access, ordering, modification, removal.
+The [`src/oihana/arango/db/functions/arrays/`](../../../src/oihana/arango/db/functions/arrays/) sub-folder groups **19 functions** that match the native AQL *array functions* — counting, indexed access, ordering, modification, removal.
 
 > Numeric aggregation functions on arrays (`SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `PERCENTILE`, `PRODUCT`) live in [Numeric functions](aql-functions-numerics.md) — historically classified by ArangoDB on the *numeric* side.
 

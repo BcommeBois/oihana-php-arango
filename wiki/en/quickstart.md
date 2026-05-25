@@ -1,6 +1,6 @@
 # Quickstart `ArangoDB`
 
-The [`ArangoDB`](../../../api/src/oihana/arango/db/ArangoDB.php) class is the entry point of the framework's whole low-level layer. It wraps a connection to the server, exposes collection and index management via the [`CollectionManagementTrait`](../../../api/src/oihana/arango/db/traits/CollectionManagementTrait.php) trait, and provides raw AQL query execution.
+The [`ArangoDB`](../../src/oihana/arango/db/ArangoDB.php) class is the entry point of the framework's whole low-level layer. It wraps a connection to the server, exposes collection and index management via the [`CollectionManagementTrait`](../../src/oihana/arango/db/traits/CollectionManagementTrait.php) trait, and provides raw AQL query execution.
 
 The high-level models (`Documents`, `Edges`) and the Slim controllers all build on this class. Understanding `ArangoDB` is therefore a prerequisite for everything else.
 
@@ -43,7 +43,7 @@ The connection is established in the constructor. Network and server errors are 
 
 ## Instantiation via the DI container
 
-In production, `ArangoDB` is almost always registered as a service in a PSR-11 container. The convention in `oihana-odbc-php` is one definition file per *database* under `api/definitions/@arango/`.
+In production, `ArangoDB` is almost always registered as a service in a PSR-11 container. The convention in a host application is one definition file per *database* under `api/definitions/@arango/`.
 
 ```php
 // api/definitions/@arango/databases.php
@@ -129,13 +129,13 @@ $first = $db->getFirstResult( fn( $d ) =>          // dynamic dispatch
 
 After `execute()`, three *getters* expose the metadata:
 
-- `getCursor()` — direct access to the underlying [`Cursor`](../../../api/src/oihana/arango/client/Cursor.php).
+- `getCursor()` — direct access to the underlying [`Cursor`](../../src/oihana/arango/client/Cursor.php).
 - `getFoundRows()` — *total count* (equivalent to AQL `FULL COUNT`). Requires the query to have been prepared with `fullCount: true`.
 - `getExtra()` — additional metadata returned by the server (statistics, *warnings*, *plan*).
 
 ## Manage collections
 
-`ArangoDB` consumes [`CollectionManagementTrait`](../../../api/src/oihana/arango/db/traits/CollectionManagementTrait.php), which exposes six idempotent methods for collections:
+`ArangoDB` consumes [`CollectionManagementTrait`](../../src/oihana/arango/db/traits/CollectionManagementTrait.php), which exposes six idempotent methods for collections:
 
 | Method | Description |
 |---|---|
