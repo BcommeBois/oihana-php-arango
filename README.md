@@ -54,7 +54,7 @@ Run a specific test file:
 composer test ./tests/oihana/arango/SomeTest.php
 ```
 
-### Live smoke tests against a real arangod
+### Live smoke tests against a real arango database
 
 The package ships with two end-to-end smoke tests that exercise every public surface against a live ArangoDB server. They operate on an ephemeral database that is created and dropped per run, so production data is never touched.
 
