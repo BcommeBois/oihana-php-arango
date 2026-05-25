@@ -91,13 +91,15 @@ Licensed under the [Mozilla Public License 2.0 (MPL‑2.0)](https://www.mozilla.
 
 ## 🔗 Related packages
 
-- `oihana/php-auth` – Casbin RBAC + JWT/OIDC authorization toolkit: `https://github.com/BcommeBois/oihana-php-auth`
-- `oihana/php-commands` – Symfony Console kernel + traits: `https://github.com/BcommeBois/oihana-php-commands`
-- `oihana/php-core` – core helpers and utilities: `https://github.com/BcommeBois/oihana-php-core`
-- `oihana/php-enums` – typed constants & enums: `https://github.com/BcommeBois/oihana-php-enums`
-- `oihana/php-exceptions` – framework exceptions: `https://github.com/BcommeBois/oihana-php-exceptions`
-- `oihana/php-files` – file system helpers: `https://github.com/BcommeBois/oihana-php-files`
-- `oihana/php-reflect` – reflection and hydration utilities: `https://github.com/BcommeBois/oihana-php-reflect`
-- `oihana/php-schema` – Schema.org constants and vocabulary: `https://github.com/BcommeBois/oihana-php-schema`
-- `oihana/php-signals` – signal/slot dispatcher: `https://github.com/BcommeBois/oihana-php-signals`
-- `oihana/php-system` – framework helpers (controllers, models, request handling): `https://github.com/BcommeBois/oihana-php-system`
+| Package | Description |
+| --- | --- |
+| [oihana/php-auth](https://github.com/BcommeBois/oihana-php-auth) | Casbin RBAC + JWT/OIDC authorization toolkit. |
+| [oihana/php-commands](https://github.com/BcommeBois/oihana-php-commands) | Symfony Console kernel and reusable command traits. |
+| [oihana/php-core](https://github.com/BcommeBois/oihana-php-core) | Core helpers and utilities shared across the ecosystem. |
+| [oihana/php-enums](https://github.com/BcommeBois/oihana-php-enums) | Typed constants and enums — no more magic strings. |
+| [oihana/php-exceptions](https://github.com/BcommeBois/oihana-php-exceptions) | Framework exceptions with consistent semantics. |
+| [oihana/php-files](https://github.com/BcommeBois/oihana-php-files) | File system helpers (paths, readers, writers). |
+| [oihana/php-reflect](https://github.com/BcommeBois/oihana-php-reflect) | Reflection and object hydration utilities. |
+| [oihana/php-schema](https://github.com/BcommeBois/oihana-php-schema) | Schema.org constants and vocabulary. |
+| [oihana/php-signals](https://github.com/BcommeBois/oihana-php-signals) | Signal/slot dispatcher for decoupled events. |
+| [oihana/php-system](https://github.com/BcommeBois/oihana-php-system) | Framework helpers — controllers, models, request handling. |
