@@ -23,7 +23,6 @@ use oihana\files\openssl\OpenSSLFileEncryption;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ChoiceQuestion;
-use Symfony\Component\Filesystem\Exception\FileNotFoundException;
 use Symfony\Component\Uid\Uuid;
 
 use function oihana\files\archive\tar\untar;
@@ -164,7 +163,7 @@ trait ArangoRestoreAction
 
             if ( empty( $files ) )
             {
-                throw new FileNotFoundException( 'No matching file found.' ) ;
+                throw new FileException( 'No matching file found.' ) ;
             }
 
             sort( $files );
