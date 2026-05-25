@@ -1,93 +1,168 @@
-# Client ArangoDB *legacy*
+# Le client HTTP ArangoDB
 
-Le dossier [`src/oihana/arango/client/`](../../src/oihana/arango/client/) est un **fork** du [driver PHP officiel ArangoDB](https://github.com/arangodb/arangodb-php) (`triagens/ArangoDb`). Il a été aspiré tel quel pour deux raisons :
+`oihana/php-arango` expose deux couches d'API pour parler à ArangoDB :
 
-1. **Le driver officiel n'a plus reçu de mise à jour majeure depuis plusieurs années** et ne supporte pas PHP 8.4 sans patches.
-2. Aucun client communautaire de remplacement ne couvre l'ensemble des besoins (compatibilité driver complète + intégration framework).
+| Couche | Dossier | Quoi |
+|---|---|---|
+| **Client HTTP bas niveau** | [`src/oihana/arango/clients/`](../../src/oihana/arango/clients/) | Transport Guzzle, authentification, retry, gestion de cluster, requêtes brutes contre l'API REST d'arangod. |
+| **Façade haut niveau** | [`src/oihana/arango/db/`](../../src/oihana/arango/db/) ([`ArangoDB`](quickstart.md)) | Hydratation, exception wrapping, `prepare/execute`, helpers AQL — bâtie sur le client. |
 
-Le fork a été **patché *a minima*** pour fonctionner en PHP 8.4. Il n'a **pas** été refactoré, modernisé, ou aligné sur les conventions du reste du framework. Il vit dans le dossier `client/` et est consommé exclusivement par la classe [`ArangoDB`](quickstart.md) en interface.
+Cette page documente la couche **client**. Pour le quickstart côté façade, voir [Quickstart `ArangoDB`](quickstart.md). Pour les modèles métier (`Documents`, `Edges`), voir [Modèles](models.md).
 
-> Cette page est volontairement courte. Le code du dossier `client/` est *legacy* et destiné à être remplacé — il n'a pas vocation à devenir une référence d'API stable.
+> Le client est conçu **autonome** — pas de dépendance sur la couche `db/`, ni sur Slim, ni sur Symfony Console. On peut l'utiliser tel quel pour un script CLI, un *worker*, ou une suite de tests d'intégration. Il s'inspire de la lib JavaScript officielle [`arangojs`](https://github.com/arangodb/arangojs).
 
-## Ne pas l'utiliser directement
+## Architecture
 
-Le contrat du framework est clair : **toute interaction avec ArangoDB passe par [`ArangoDB`](quickstart.md), les [modèles `Documents` / `Edges`](models.md), ou les [contrôleurs](controllers/README.md) / [commandes](commands.md)**. Les classes du dossier `client/` sont des détails d'implémentation.
-
-Code applicatif **incorrect** :
-
-```php
-use oihana\arango\client\Connection ;
-use oihana\arango\client\DocumentHandler ;
-
-$conn = new Connection( $options ) ;
-$dh   = new DocumentHandler( $conn ) ;
-$doc  = $dh->get( 'users' , 'abc' ) ;  // à éviter
+```
+ArangoClient ─────► HttpTransport (Guzzle) ───► arangod
+     │                    │
+     │                    ├─► RetryPolicy   (1209 conflict, 3002 maintenance)
+     │                    └─► HostRing      (round-robin failover cluster)
+     │
+     └──► Database (hub par database)
+              ├─► Collection / EdgeCollection (CRUD + indexes + batch)
+              ├─► Cursor             (Iterator + map/forEach/reduce/flatMap)
+              ├─► Transaction        (streaming, withTransaction auto-commit/abort)
+              ├─► Graph / GraphVertex/EdgeCollection
+              ├─► Analyzer           (identity, text, norm, stem)
+              └─► View               (arangosearch — SEARCH, PHRASE, BM25)
 ```
 
-Forme **canonique** :
+## Démarrage
 
 ```php
-$users = $container->get( Models::USERS ) ;
-$doc   = $users->get( [ Arango::ID => 'abc' ] ) ;
+use oihana\arango\clients\ArangoClient ;
+use oihana\arango\clients\options\ClientOptions ;
+use oihana\arango\clients\enums\AuthType ;
+
+$client = new ArangoClient( new ClientOptions(
+    endpoints : [ 'tcp://127.0.0.1:8529' ] ,
+    database  : 'my_database' ,
+    authType  : AuthType::BASIC ,
+    user      : 'root' ,
+    password  : 'secret' ,
+) ) ;
+
+$db = $client->database() ;                          // factory Database
+$users = $db->collection( 'users' ) ;                // factory Collection
+$doc = $users->document( 'abc' ) ;                   // GET /_api/document/users/abc
+$count = $users->count() ;                           // GET /_api/collection/users/count
+
+// AQL
+use oihana\arango\clients\aql\AqlQuery ;
+use function oihana\arango\clients\aql\helpers\aql ;
+
+$cursor = $db->query( aql(
+    'FOR u IN @@coll FILTER u.active == @active RETURN u' ,
+    bindVars: [ '@coll' => 'users' , 'active' => true ] ,
+) ) ;
+
+foreach ( $cursor as $user )
+{
+    echo $user[ 'name' ] . PHP_EOL ;
+}
 ```
 
-Une dépendance directe sur `oihana\arango\client\*` dans le code applicatif sera **cassée** lors de la réécriture du client (cf. [Roadmap](#roadmap-de-réécriture)) — alors qu'un appel à travers `Documents` survivra.
+## `ArangoClient` — entry point
 
-## Classes pivots
+Une instance `ArangoClient` représente une connexion **à un cluster** (un ou plusieurs *endpoints*). Sa configuration est immutable une fois passée — elle est portée par un `ClientOptions` `readonly`.
 
-Les classes du fork sont nommées comme dans le driver officiel. Documentées ici uniquement à titre de **cartographie**, pour aider à lire les traces d'erreur ou les *stack traces*.
-
-| Classe | Rôle dans le driver |
+| Méthode | Description |
 |---|---|
-| `Connection` | Connexion HTTP au serveur ArangoDB (gestion *keep-alive*, retry). |
-| `ConnectionOptions` | Tableau d'options de connexion (`OPTION_DATABASE`, `OPTION_ENDPOINT`, `OPTION_AUTH_TYPE`, ...). |
-| `Statement` | Requête AQL préparée — combine texte de requête + bind variables. |
-| `Cursor` | Itérateur sur le résultat d'un `Statement::execute()`. |
-| `DocumentHandler` | CRUD bas niveau sur des documents (`get`, `save`, `update`, `remove`). |
-| `EdgeHandler` | Idem pour les *edges* (avec validation `_from`/`_to`). |
-| `CollectionHandler` | CRUD bas niveau sur les collections (création, *drop*, *truncate*, *rename*, indexes). |
-| `Document` | Représentation d'un document (avec `_key`, `_id`, `_rev`). |
-| `Edge` | Représentation d'une *edge* (étend `Document`, ajoute `_from`, `_to`). |
-| `EdgeDefinition` | Description d'une *edge collection* dans un *graph*. |
-| `Graph` | Représentation d'un *graph* nommé (collections de sommets + edges). |
-| `BindVars` | Conteneur typé pour les *bind variables* d'un `Statement`. |
-| `Batch` / `BatchPart` | Mode *batch* HTTP (multi-requêtes en une transaction réseau). |
-| `Export` / `ExportCursor` | API d'export en masse (lecture séquentielle d'une collection complète). |
-| `Transaction` | Transaction JavaScript embarquée — déprécié au profit des *stream transactions*. |
-| `StreamingTransaction` / `StreamingTransactionHandler` | Transactions multi-documents standard. |
-| `Exception` (et `ClientException`, `ServerException`, `ConnectException`, `FailoverException`) | Famille d'exceptions du driver. |
-| `AdminHandler` | Endpoints d'administration (`/_admin/*`). |
-| `FoxxHandler` | Gestion des microservices Foxx. |
-| `AqlUserFunction` | Définition de fonctions AQL côté utilisateur. |
-| `Analyzer` / `AnalyzerHandler` | Analyseurs linguistiques pour les vues ArangoSearch. |
-| `View` / `ViewHandler` | Vues ArangoSearch. |
+| `database( ?string $name = null ) : Database` | Factory `Database` pour le nom donné (ou celui passé dans `ClientOptions::$database`). |
+| `createDatabase( string $name ) : void` | `POST /_api/database`. |
+| `dropDatabase( string $name ) : void` | `DELETE /_api/database/{name}`. |
+| `listDatabases() : array` | `GET /_api/database`. |
+| `version() : array` | `GET /_api/version`. |
+| `time() : float` | `GET /_admin/time` — horloge serveur en secondes flottantes. |
+| `availability( bool $graceful = true ) : string\|false` | `GET /_admin/server/availability` — retourne le mode serveur (`default` / `readonly`) ou `false`. |
+| `login( string $user , string $password ) : string` | `POST /_open/auth` — récupère un JWT. Bascule automatiquement le transport en Bearer. |
+| `useBearerAuth( ?string $token ) : void` | Force un token Bearer (ou revient en Basic avec `null`). |
+| `useBasicAuth( string $user , string $password ) : void` | Force des creds Basic. |
+| `request( string $method , string $path , …)` | Requête brute (à utiliser pour des endpoints non encore wrappés). |
 
-Total : **56 classes** dans le fork. Aucune n'est documentée page par page — pour le détail de leurs API, se reporter à la [documentation officielle du driver](https://docs.arangodb.com/3.10/drivers/php/) (versions 3.10 / 3.11 — la dernière à avoir été mise à jour).
+## `Database` — hub
 
-## Roadmap de réécriture
+Toutes les opérations propres à une *database* passent par un `Database`. Une instance est obtenue via `$client->database( 'name' )`.
 
-À terme, le dossier `client/` sera remplacé par un client autonome écrit aux standards du framework :
+| Méthode | Quoi |
+|---|---|
+| `collection( string $name ) : Collection` | Factory document collection. |
+| `edgeCollection( string $name ) : EdgeCollection` | Factory edge collection. |
+| `collections( bool $includeSystem = false ) : array` | Liste typée. |
+| `query( AqlQuery\|string $query ) : Cursor` | Exécute une requête AQL, retourne un `Cursor` lazy. |
+| `explain( ... )` / `parse( ... )` | Diagnostic AQL (plan d'exécution + parsing). |
+| `beginTransaction( ... ) : Transaction` / `transaction( string $id ) : Transaction` / `withTransaction( callable $fn , ... )` | Transactions *streaming* (multi-document). `withTransaction` gère le commit/abort automatiquement via `try / finally`. |
+| `listTransactions() : array` | Transactions actives sur cette database. |
+| `graph( string $name )` / `graphs()` / `listGraphs()` / `createGraph( ... )` | Gestion *gharial*. |
+| `analyzer( string $name )` / `analyzers()` / `listAnalyzers()` / `createAnalyzer( ... )` | Analyzers ArangoSearch. |
+| `view( string $name )` / `views()` / `listViews()` / `createView( ... )` | Views ArangoSearch. |
+| `exists()` / `create()` / `drop()` | Lifecycle de la database. |
 
-- **Architecture moderne** alignée sur la dernière version d'ArangoDB.
-- **Zéro *magic string*** — toutes les options et URLs passent par des enums.
-- **Restructuration des classes** — séparation propre entre connexion HTTP, *statement*, sérialisation.
-- **Refonte des handlers** sur le modèle des `Documents` / `Edges` haut niveau.
-- **Interfaces explicites** pour permettre les *mocks* en test.
-- **Compatibilité PHP ≥ 8.4** native.
-- **Tests** unitaires + intégration complets.
+## Authentification
 
-Aucune date n'est fixée — la réécriture interviendra quand les autres pièces du framework seront stabilisées et qu'on aura le temps de mener un chantier autonome de cette ampleur.
+Trois modes pris en charge par `ClientOptions::$authType` :
 
-## Que faire en attendant
+- `AuthType::BASIC` — credentials passés en `Authorization: Basic …` sur chaque requête. Mode par défaut.
+- `AuthType::JWT` (alias `BEARER`) — token passé en `Authorization: Bearer …`. Le token peut être obtenu via `$client->login( $user , $password )` qui le bascule automatiquement.
+- **Auto-refresh sur 401**. Si une requête en Bearer reçoit un 401, le transport tente un seul `login` puis rejoue la requête. Le flag est porté par `HttpTransport` (et non par `ClientOptions`, qui reste *readonly*).
 
-Trois règles pour la période de transition :
+```php
+// Démarrage en Basic, puis échange contre un JWT
+$token = $client->login( 'root' , 'secret' ) ;
+// Le client est maintenant en Bearer automatiquement.
 
-1. **Toujours passer par `ArangoDB` ou un modèle** — jamais d'import direct de `oihana\arango\client\*`.
-2. **Signaler tout bug du fork** dans une issue dédiée. Un correctif *upstream* sur le projet officiel ne sera pas appliqué automatiquement.
-3. **Ne pas s'attacher aux signatures du fork** — elles changeront lors de la réécriture, et l'objectif est qu'aucun code applicatif n'ait à être modifié pour autant (le contrat public reste celui de `ArangoDB` et des modèles).
+// Revenir en Basic explicitement
+$client->useBasicAuth( 'root' , 'secret' ) ;
+```
+
+## Résilience : retry et failover cluster
+
+`ClientOptions::$endpoints` accepte **plusieurs URLs** — la classe [`HostRing`](https://github.com/BcommeBois/oihana-php-arango/blob/main/src/oihana/arango/clients/http/HostRing.php) sélectionne un hôte en *round-robin* et bascule sur le suivant en cas d'échec réseau.
+
+`RetryPolicy` est invoquée pour les **codes d'erreur Arango** *safe-to-retry* :
+
+- `1209` — `ERROR_ARANGO_CONFLICT` (write-write conflict, le moteur peut être re-tenté).
+- `3002` — `ERROR_CLUSTER_AGENCY_*` / maintenance — typiquement transient pendant un *leader switch*.
+
+```php
+$client = new ArangoClient( new ClientOptions(
+    endpoints : [ 'tcp://node-1:8529' , 'tcp://node-2:8529' , 'tcp://node-3:8529' ] ,
+    database  : 'app' ,
+    user      : 'root' ,
+    password  : 'secret' ,
+    reconnect : true ,        // garde le keep-alive sur reconnexion
+) ) ;
+```
+
+## Lecture dirty (replicas)
+
+Sur cluster, on peut autoriser la lecture sur replicas en activant le flag global `allowDirtyRead` — il injecte le header `x-arango-allow-dirty-read: true` sur **toutes** les requêtes :
+
+```php
+$client = new ArangoClient( new ClientOptions(
+    endpoints       : [ ... ] ,
+    database        : 'app' ,
+    user            : 'root' ,
+    password        : 'secret' ,
+    allowDirtyRead  : true ,    // OPT-IN
+) ) ;
+```
+
+Le serveur reste libre de servir la requête depuis un follower ; à utiliser uniquement pour des opérations de lecture tolérantes à un léger *lag* de réplication.
+
+## Quand utiliser le client direct vs la façade
+
+| Besoin | Choisir |
+|---|---|
+| Script CLI dédié, test d'intégration, *worker* | Client direct (`ArangoClient` + `Database`). |
+| Application avec PSR-11 DI, modèles `Documents` réutilisables, signals before/after, exceptions wrappées en `oihana\arango\client\Exception` legacy | Façade `ArangoDB` ([Quickstart](quickstart.md)). |
+| Une seule requête AQL ponctuelle dans une appli qui consomme déjà la façade | Récupérer le client via `$arangoDB->getClient()` (déconseillé sauf cas spéciaux — préférer `prepare/execute` côté façade). |
 
 ## Voir aussi
 
-- [Quickstart `ArangoDB`](quickstart.md) — l'API publique stable au-dessus de ce fork.
-- [Modèles `Documents` et `Edges`](models.md) — la couche métier au-dessus.
-- [Documentation officielle du driver ArangoDB PHP](https://docs.arangodb.com/3.10/drivers/php/) — référence du driver origine.
+- [Quickstart `ArangoDB`](quickstart.md) — la façade haut niveau.
+- [Modèles `Documents` et `Edges`](models.md) — la couche métier.
+- [Indexes](indexes.md) — catalogue d'indexes typés.
+- [Testing](testing.md) — les deux commandes live `arango:test:clients` et `arango:test:facade`.
+- [arangojs (lib officielle JS)](https://github.com/arangodb/arangojs) — référence architecturale.
