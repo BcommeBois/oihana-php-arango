@@ -1,0 +1,120 @@
+<?php
+
+namespace oihana\arango\models\traits\aql\facets;
+
+use ReflectionException;
+
+use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Comparator;
+use oihana\arango\db\enums\Logic;
+use oihana\enums\Char;
+
+use oihana\exceptions\BindException;
+
+use org\schema\constants\Prop;
+
+use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\operations\aqlFilter;
+use function oihana\arango\db\operations\aqlFor;
+use function oihana\arango\db\operations\aqlReturn;
+use function oihana\arango\db\operators\greaterThan;
+use function oihana\core\strings\key;
+use function oihana\core\strings\predicate;
+use function oihana\core\strings\predicates;
+
+/**
+ * This trait defines all facet helpers in the Model class.
+ */
+trait HasFacetArrayComplex
+{
+    /**
+     * @throws BindException // TODO verify the value must be an array or a string expression ? see doc
+     * @throws ReflectionException
+     * @example
+     * Set the facetable definition in the model :
+     * ```
+     * AQL::FACETABLE =>
+     * [
+     *     Prop::WORKSHOPS =>
+     *     [
+     *         Facet::TYPE => Facet::ARRAY_COMPLEX
+     *     ]
+     * ]
+     * ```
+     * Use the facet :
+     * ```
+     * ?facets={"workshops":{"breeding.alternateName":"pig"}} // TODO test and fix it
+     * ?facets={"workshops":{"breeding.alternateName":["pig","cattle"]}}
+     * ?facets={"workshops":{"breeding.alternateName":["-pig","cattle"]}}
+     * ```
+     */
+    protected function prepareFacetArrayComplex( string $key , mixed $value , array &$binds ) :string
+    {
+        $filter = [] ;
+        foreach( $value as $subKey => $s )
+        {
+            $search = preg_replace( '/\./' , Char::UNDERLINE , $key . Char::UNDERLINE . $subKey ) ;
+            if( is_array( $s ) && !empty( $s ) ) // test negative and multiple
+            {
+                $i = 0 ;
+                $subFilter = [] ;
+                $negative  = false ;
+                foreach( $s as $si )
+                {
+                    // test negative
+                    if( is_string( $si ) && $si[0] == Char::HYPHEN )
+                    {
+                        $si = substr( $si , 1 ) ;
+                        $negative = true ;
+                    }
+                    elseif( is_int( $si ) && $si < 0 )
+                    {
+                        $si = abs( $si ) ;
+                        $negative = true ;
+                    }
+                    $subSearch = $search . $i ;
+                    $binds[ $subSearch ] = $si ;
+                    $subFilter[] = predicate
+                    (
+                        key( $subKey , AQL::DOC_PREFIX . $key ) , // doc_$key.$subKey
+                        $negative ? Comparator::NOT_EQUAL : Comparator::EQUAL ,
+                        $this->bind( $si , $binds , $subSearch )
+                    ) ;
+                    $i++ ;
+                }
+                $filter[] = predicates( $subFilter , $negative ? Logic::AND : Logic::OR ) ;
+            }
+            else
+            {
+                if( is_string( $s ) && $s[0] == Char::HYPHEN ) // test negative
+                {
+                    $s = substr( $s ,1 ) ;
+                    $comparator = Comparator::NOT_EQUAL ;
+                }
+                elseif( is_int( $s ) && $s < 0 )
+                {
+                    $s = abs( $s ) ;
+                    $comparator = Comparator::NOT_EQUAL ;
+                }
+                else
+                {
+                    $comparator = Comparator::EQUAL ;
+                }
+
+                $filter[] = predicate
+                (
+                    key( $subKey , AQL::DOC_PREFIX . $key ) ,
+                    $comparator ,
+                    $this->bind( $s , $binds , $search )
+                ) ;
+            }
+        }
+        // LENGTH( FOR doc_$key IN result.$key FILTER cond1 && ... RETURN doc_$key._key) > 0
+        return greaterThan( length
+        ([
+            aqlFor    ( [ AQL::DOC_REF => AQL::DOC_PREFIX . $key , AQL::IN => Prop::RESULT . $key  ] )    ,
+            aqlFilter ( predicates( $filter ,  Logic::AND ) ) ,
+            aqlReturn ( key( Prop::_KEY , AQL::DOC_PREFIX . $key ) )
+        ]) , 0 ) ;
+    }
+}

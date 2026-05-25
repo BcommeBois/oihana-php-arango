@@ -1,0 +1,228 @@
+<?php
+
+namespace oihana\arango\models\traits\aql\filters;
+
+use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Comparator;
+use oihana\arango\db\enums\Operator;
+use oihana\arango\models\enums\filters\FilterArrayComparator;
+use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\models\enums\filters\FilterParam;
+use oihana\exceptions\BindException;
+
+use oihana\exceptions\UnsupportedOperationException;
+use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\helpers\buildCombinedInlineFilter;
+use function oihana\arango\db\helpers\buildInlineFilterCondition;
+use function oihana\core\strings\betweenBrackets;
+use function oihana\core\strings\key;
+use function oihana\core\strings\predicate;
+
+/**
+ * This trait defines the array filter helpers.
+ *
+ * ### Config
+ * Defines the 'filters' property in the model (Documents) definition.
+ * ```
+ * Models::PLACES => fn( ContainerInterface $container ) => new Documents
+ * (
+ *     $container ,
+ *     Collections::PLACES ,
+ *     [
+ *         ...
+ *         AQL::FILTERS =>
+ *         [
+ *              Prop::EVENTS => FilterType::ARRAY ,
+ *              ...
+ *         ]
+ *         ...
+ * ```
+ * @example
+ * ```
+ * ?filter={ "key":"events" , "at"=>"0" , "op":"eq" , "val":100 }
+ * ?filter={ "key":"events" , "op":"ge" , "alt"=>"count" , "val":100  }
+ * ```
+ *
+ * **Comparators**
+ *
+ * *ALL operator*
+ * ```
+ * ?filter={ "key":"values" , "op":"all.eq" , "val":4 } -> FILTER doc.values ALL == 4
+ * ?filter={ "key":"values" , "op":"all.ne" , "val":4 } -> FILTER doc.values ALL != 4
+ * ?filter={ "key":"values" , "op":"all.gt" , "val":4 } -> FILTER doc.values ALL >  4
+ * ?filter={ "key":"values" , "op":"all.ge" , "val":4 } -> FILTER doc.values ALL >= 4
+ * ?filter={ "key":"values" , "op":"all.lt" , "val":4 } -> FILTER doc.values ALL <  4
+ * ?filter={ "key":"values" , "op":"all.le" , "val":4 } -> FILTER doc.values ALL <= 4
+ * ?filter={ "key":"values" , "op":"all.in" , "val":[2,3,4] } -> FILTER doc.values ALL IN [2,3,4]
+ * ?filter={ "key":"values" , "op":"all.nin" , "val":[2,3,4] } -> FILTER doc.values ALL NOT IN [2,3,4]
+ * ```
+ *
+ * *ANY operator*
+ * ```
+ * ?filter={ "key":"values" , "op":"any.eq" , "val":4 } -> FILTER doc.values ANY == 4
+ * ?filter={ "key":"values" , "op":"any.ne" , "val":4 } -> FILTER doc.values ANY != 4
+ * ?filter={ "key":"values" , "op":"any.gt" , "val":4 } -> FILTER doc.values ANY >  4
+ * ?filter={ "key":"values" , "op":"any.ge" , "val":4 } -> FILTER doc.values ANY >= 4
+ * ?filter={ "key":"values" , "op":"any.lt" , "val":4 } -> FILTER doc.values ANY <  4
+ * ?filter={ "key":"values" , "op":"any.le" , "val":4 } -> FILTER doc.values ANY <= 4
+ * ?filter={ "key":"values" , "op":"any.in" , "val":[2,3,4] } -> FILTER doc.values ANY IN [2,3,4]
+ * ?filter={ "key":"values" , "op":"any.nin" , "val":[2,3,4] } -> FILTER doc.values ANY NOT IN [2,3,4]
+ * ```
+ *
+ * *NONE operator*
+ * ```
+ * ?filter={ "key":"values" , "op":"none.eq" , "val":4 } -> FILTER doc.values NONE == 4
+ * ?filter={ "key":"values" , "op":"none.ne" , "val":4 } -> FILTER doc.values NONE != 4
+ * ?filter={ "key":"values" , "op":"none.gt" , "val":4 } -> FILTER doc.values NONE >  4
+ * ?filter={ "key":"values" , "op":"none.ge" , "val":4 } -> FILTER doc.values NONE >= 4
+ * ?filter={ "key":"values" , "op":"none.lt" , "val":4 } -> FILTER doc.values NONE <  4
+ * ?filter={ "key":"values" , "op":"none.le" , "val":4 } -> FILTER doc.values NONE <= 4
+ * ?filter={ "key":"values" , "op":"none.in" , "val":[2,3,4] } -> FILTER doc.values NONE IN [2,3,4]
+ * ?filter={ "key":"values" , "op":"none.nin" , "val":[2,3,4] } -> FILTER doc.values NONE NOT IN [2,3,4]
+ * ```
+ *
+ * **Functions**
+ * ```
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"avg"    } -> FILTER AVERAGE(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"count"  } -> FILTER LENGTH(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"first"  } -> FILTER FIRST(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"last"   } -> FILTER LAST(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"max"    } -> FILTER MAX(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"median" } -> FILTER MEDIAN(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"min"    } -> FILTER MIN(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"sum"    } -> FILTER SUM(doc.values) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"nth" , "pos":2 } -> FILTER NTH(doc.values,2) >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"percentile" , "pos":20 , "method":"interpolation" } -> FILTER PERCENTILE(doc.values,20,"interpolation") >= 10
+ * ?filter={ "key":"values" , "op":"ge" , "val":10 , "alt":"product" } -> FILTER PRODUCT(doc.values) >= 10
+ * ```
+ */
+trait HasFilterArray
+{
+    /**
+     * Prepares the filter clause with a string attribute.
+     *
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     */
+    protected function prepareFilterArray
+    (
+         array $init   = [] ,
+        ?array &$binds = null ,
+        string $docRef = AQL::DOC
+    )
+    :string
+    {
+        $operator = $init[ FilterParam::OP    ] ?? FilterComparator::EQ ;
+        $value    = $init[ FilterParam::VAL   ] ?? null ;
+        $match    = $init[ FilterParam::MATCH ] ?? null ;
+        $key      = $this->prepareFilterArrayKey( $init , $docRef ) ;
+
+        // Check if this is an array expansion filter (contains [*])
+        if ( str_contains( $key , Operator::ARRAY_EXPANSION ) )
+        {
+            // Extract base array from key
+            if ( preg_match( '/^(.+)\[\*]$/' , $key , $matches ) )
+            {
+                $baseKey = $matches[1] ;
+
+                // Handle combined match conditions
+                if ( $match !== null )
+                {
+                    // Extract clean base key (remove docRef prefix)
+                    // "doc.additionalProperty" → "additionalProperty"
+                    // "v1.contactPoint" → "contactPoint"
+                    $cleanBaseKey = preg_replace('/^[a-z0-9_]+\./', '', $baseKey);
+
+                    $filterConfig  = $this->filters[ $cleanBaseKey ] ?? null;
+                    $allowedFields = [];
+
+                    if ( is_array( $filterConfig ) && isset( $filterConfig[ AQL::FILTERS ] ) )
+                    {
+                        $allowedFields = $filterConfig[ AQL::FILTERS ] ;
+                    }
+
+                    $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields ) ;
+
+                    return predicate
+                    (
+                        leftOperand  : length( "{$baseKey}[* FILTER $inlineCondition]" ) ,
+                        operator     : Comparator::GREATER_THAN ,
+                        rightOperand : '0' ,
+                    ) ;
+                }
+            }
+
+            // Extract field from key (e.g., "doc.contactPoint[*].email" → "email")
+            if ( preg_match( '/^(.+)\[\*]\.(\w+)$/' , $key , $matches ) )
+            {
+                $baseKey = $matches[1] ; // "doc.contactPoint"
+                $field   = $matches[2] ; // "email"
+
+                // Determine the inline filter condition
+                $inlineCondition = buildInlineFilterCondition
+                (
+                    field    : $field    ,
+                    operator : $operator ,
+                    value    : $value    ,
+                    binds  : $binds ,
+                ) ;
+
+                // Generate: LENGTH(array[* FILTER CURRENT.field <op> value]) > 0
+                return predicate
+                (
+                    leftOperand  : length( "{$baseKey}[* FILTER $inlineCondition]" ) ,
+                    operator     : Comparator::GREATER_THAN ,
+                    rightOperand : '0' ,
+                ) ;
+            }
+        }
+
+        return predicate
+        (
+            $this->prepareFilterArrayKey( $init , $docRef ) ,
+            $this->prepareFilterArrayComparator( $init ) ,
+            $this->prepareFilterValue( $init , $binds ) ,
+        ) ;
+    }
+
+    /**
+     * Prepares the filter clause with a specific operator.
+     * @param array $init
+     * @return string
+     */
+    protected function prepareFilterArrayComparator( array $init = [] ):string
+    {
+        return FilterArrayComparator::getAlias
+        (
+            $init[ FilterParam::OP ] ?? null
+        )
+        ?? $this->prepareFilterComparator( $init ) ;
+    }
+
+    /**
+     * Prepares the filter clause of a string attribute with a specific key and document.
+     *
+     * @param string|array|null $init
+     * @param string $docRef
+     * @return string
+     *
+     * @throws UnsupportedOperationException
+     */
+    protected function prepareFilterArrayKey
+    (
+        string|array|null $init   = [] ,
+        string            $docRef = AQL::DOC
+    )
+    :string
+    {
+        $keyStr = key( $init[ FilterParam::KEY ] ?? null , $docRef ) ;
+
+        $at = $init[ FilterParam::AT ] ?? null ;
+        if ( is_int( $at ) )
+        {
+            $keyStr .= betweenBrackets( (string) $at ) ;
+        }
+
+        return $this->alterFilterKey( $keyStr , $init ) ;
+    }
+}
