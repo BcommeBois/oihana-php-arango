@@ -143,4 +143,4 @@ L'ensemble des packages `oihana/*` est actuellement versionné en `dev-main`. Ta
 
 - [Introduction](introduction.md) — pourquoi cette bibliothèque existe.
 - [Glossaire](glossary.md) — termes du framework.
-- [Quickstart `ArangoDB`](quickstart.md) — premier exemple opérationnel.
+- [Quickstart `ArangoDB`](../db/quickstart.md) — premier exemple opérationnel.

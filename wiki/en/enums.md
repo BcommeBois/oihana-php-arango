@@ -40,7 +40,7 @@ Constants used in many framework examples — see [Building an AQL query step by
 
 ### `ArangoConfig`
 
-Configuration keys for the [`ArangoDB`](getting-started/quickstart.md#configuration--arangoconfig-keys) constructor. Around twenty constants that map to the connection options: `ENDPOINT`, `DATABASE`, `TYPE`, `USER`, `PASSWORD`, `CONNECTION`, `TIMEOUT`, `CREATE`, `RECONNECT`, `DEBUG`, `BATCH_SIZE`, `MAX_RUNTIME`.
+Configuration keys for the [`ArangoDB`](db/quickstart.md#configuration--arangoconfig-keys) constructor. Around twenty constants that map to the connection options: `ENDPOINT`, `DATABASE`, `TYPE`, `USER`, `PASSWORD`, `CONNECTION`, `TIMEOUT`, `CREATE`, `RECONNECT`, `DEBUG`, `BATCH_SIZE`, `MAX_RUNTIME`.
 
 ## AQL grammar
 
@@ -106,7 +106,7 @@ Faiss parameters consumed by `VectorIndexOptions`:
 
 ## Statistics and execution plan
 
-Three enums describe the structure of the metadata returned by the server after a query execution. They allow analyzing `cursor->getExtra()` (see [Quickstart — cursor metadata](getting-started/quickstart.md#cursor-metadata)).
+Three enums describe the structure of the metadata returned by the server after a query execution. They allow analyzing `cursor->getExtra()` (see [Quickstart — cursor metadata](db/quickstart.md#cursor-metadata)).
 
 | Enum | Role |
 |---|---|

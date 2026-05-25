@@ -46,14 +46,14 @@ $users = new Documents( $container ,
 ]) ;
 ```
 
-Le conteneur est utilisé pour résoudre les dépendances déclarées par identifiant de service : la `DATABASE` est résolue en une instance [`ArangoDB`](getting-started/quickstart.md), le `SCHEMA` désigne une classe de mapping, etc.
+Le conteneur est utilisé pour résoudre les dépendances déclarées par identifiant de service : la `DATABASE` est résolue en une instance [`ArangoDB`](db/quickstart.md), le `SCHEMA` désigne une classe de mapping, etc.
 
 ### Catalogue complet des clés `AQL::*`
 
 | Clé | Type | Rôle |
 |---|---|---|
 | `AQL::COLLECTION` | `string` | Nom de la collection ArangoDB cible. |
-| `AQL::DATABASE` | `string` | Identifiant DI du service [`ArangoDB`](getting-started/quickstart.md). |
+| `AQL::DATABASE` | `string` | Identifiant DI du service [`ArangoDB`](db/quickstart.md). |
 | `AQL::SCHEMA` | `class-string` | Classe schéma pour l'hydratation (`Thing` ou hydratable). |
 | `AQL::FIELDS` | `array` | Champs exposés et leur [`Filter::*`](enums.md#types) (cf. [Field](getting-started/glossary.md#field)). |
 | `AQL::FILTERS` | `array` | Champs filtrables depuis l'URL et leur `FilterType::*` (cf. [filter.md](db/filter.md)). |
@@ -277,6 +277,6 @@ Les hooks `beforeModelCall`/`afterModelCall` viennent du trait `ModelCallTrait` 
 - [Filtrage interne](db/filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` pour les conditions serveur-only.
 - [Contrôleurs Slim](controllers/README.md) — exposition HTTP du modèle.
 - [Référence des enums](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consommés ici.
-- [Quickstart `ArangoDB`](getting-started/quickstart.md) — la couche bas niveau sous-jacente.
+- [Quickstart `ArangoDB`](db/quickstart.md) — la couche bas niveau sous-jacente.
 - [CRUD côté client](clients/documents.md) — la couche bas niveau sur laquelle ce modèle est bâti.
 - [AQL côté client](clients/aql.md) — helper `aql()` et sémantique paresseuse du `Cursor` sous `prepare/execute`.

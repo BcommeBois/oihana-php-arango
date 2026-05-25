@@ -73,5 +73,5 @@ Le tableau n'est pas une revue exhaustive mais résume le constat qui motive le 
 
 - [Dépendances](dependencies.md) — packages `oihana/php-*` requis et snippet `composer require`.
 - [Glossaire](glossary.md) — termes clés (*bind variable*, *skin*, *facet*, *traversal*, *edge*).
-- [Quickstart `ArangoDB`](quickstart.md) — instancier le client et exécuter une première requête.
+- [Quickstart `ArangoDB`](../db/quickstart.md) — instancier le client et exécuter une première requête.
 - [Documentation officielle ArangoDB](https://docs.arangodb.com/stable/) — référence pour AQL, indexes, cluster.

@@ -1,8 +1,8 @@
 # Quickstart `ArangoDB`
 
-The [`ArangoDB`](../../../src/oihana/arango/db/ArangoDB.php) class is the entry point of the framework's whole low-level layer. It wraps a connection to the server, exposes collection and index management via the [`CollectionManagementTrait`](../../../src/oihana/arango/db/traits/CollectionManagementTrait.php) trait, and provides raw AQL query execution.
+The [`ArangoDB`](../../../src/oihana/arango/db/ArangoDB.php) class is the framework's **high-level façade** over the [HTTP client](../clients/README.md). It wraps a connection to the server, hydrates result rows into typed objects, exposes collection and index management via the [`CollectionManagementTrait`](../../../src/oihana/arango/db/traits/CollectionManagementTrait.php) trait, and provides AQL query execution through `prepare/execute`.
 
-The high-level models (`Documents`, `Edges`) and the Slim controllers all build on this class. Understanding `ArangoDB` is therefore a prerequisite for everything else.
+The business models (`Documents`, `Edges`) and the Slim controllers all build on this class. Understanding `ArangoDB` is therefore a prerequisite for everything else in the `db/` layer.
 
 ## Direct instantiation
 
@@ -181,7 +181,7 @@ The second constructor argument accepts a `Psr\Log\LoggerInterface`. All network
 
 ## See also
 
-- [AQL helpers `db/helpers/`](../db/helpers.md) — build composable AQL expressions without `sprintf`.
-- [Bind variables `db/binds/`](../db/binds.md) — inject values safely.
+- [AQL helpers `db/helpers/`](helpers.md) — build composable AQL expressions without `sprintf`.
+- [Bind variables `db/binds/`](binds.md) — inject values safely.
 - [`Documents` and `Edges` models](../models.md) — high-level layer that consumes `ArangoDB` to expose full CRUD.
-- [Glossary](glossary.md) — framework terms.
+- [Glossary](../getting-started/glossary.md) — framework terms.

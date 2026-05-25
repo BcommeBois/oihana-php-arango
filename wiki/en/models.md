@@ -46,14 +46,14 @@ $users = new Documents( $container ,
 ]) ;
 ```
 
-The container is used to resolve dependencies declared by service identifier: `DATABASE` resolves to an [`ArangoDB`](getting-started/quickstart.md) instance, `SCHEMA` designates a mapping class, etc.
+The container is used to resolve dependencies declared by service identifier: `DATABASE` resolves to an [`ArangoDB`](db/quickstart.md) instance, `SCHEMA` designates a mapping class, etc.
 
 ### Full `AQL::*` key catalog
 
 | Key | Type | Role |
 |---|---|---|
 | `AQL::COLLECTION` | `string` | Target ArangoDB collection name. |
-| `AQL::DATABASE` | `string` | DI identifier of the [`ArangoDB`](getting-started/quickstart.md) service. |
+| `AQL::DATABASE` | `string` | DI identifier of the [`ArangoDB`](db/quickstart.md) service. |
 | `AQL::SCHEMA` | `class-string` | Schema class for hydration (`Thing` or hydratable). |
 | `AQL::FIELDS` | `array` | Exposed fields and their [`Filter::*`](enums.md#types) (see [Field](getting-started/glossary.md#field)). |
 | `AQL::FILTERS` | `array` | Fields filterable from URL and their `FilterType::*` (see [filter.md](db/filter.md)). |
@@ -279,4 +279,4 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 - [Enums reference](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consumed here.
 - [Client-side CRUD](clients/documents.md) — the lower-level layer this model is built on.
 - [Client-side AQL](clients/aql.md) — `aql()` helper and lazy `Cursor` semantics underneath `prepare/execute`.
-- [Quickstart `ArangoDB`](getting-started/quickstart.md) — the underlying low-level layer.
+- [Quickstart `ArangoDB`](db/quickstart.md) — the underlying low-level layer.

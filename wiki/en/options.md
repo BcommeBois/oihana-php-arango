@@ -110,7 +110,7 @@ aqlTraversal
 
 ## Index options — `options/indexes/`
 
-Six classes model the index creation options, consumed by [`CollectionManagementTrait::createIndex()`](getting-started/quickstart.md#manage-indexes).
+Six classes model the index creation options, consumed by [`CollectionManagementTrait::createIndex()`](db/quickstart.md#manage-indexes).
 
 | Class | Index type | Main options |
 |---|---|---|
@@ -194,7 +194,7 @@ The internal `aqlOptions()` does this `json_encode` then wraps the result in `OP
 
 - [Building an AQL query step by step](aql/aql-building-queries.md).
 - [AQL operations `db/operations/`](aql/aql-operations.md) — each operation mentions its associated options class.
-- [Quickstart `ArangoDB` — Indexes](getting-started/quickstart.md#manage-indexes) — usage of `*IndexOptions` classes.
+- [Quickstart `ArangoDB` — Indexes](db/quickstart.md#manage-indexes) — usage of `*IndexOptions` classes.
 - [Client-side indexes](clients/indexes.md) — typed `readonly` index classes (`PersistentIndex`, `GeoIndex`, etc.) used directly against `/_api/index`.
 - [Enums reference](enums.md) — `OverwriteMode`, `TraversalOrder`, `IndexType`, etc. consumed by these options.
 - [Official AQL documentation — options per operation](https://docs.arangodb.com/stable/aql/operations/) (each operation page lists its options).

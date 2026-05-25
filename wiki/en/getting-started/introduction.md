@@ -73,5 +73,5 @@ The table is not an exhaustive review but summarizes the observation that motiva
 
 - [Dependencies](dependencies.md) — required `oihana/php-*` packages and `composer require` snippet.
 - [Glossary](glossary.md) — key terms (*bind variable*, *skin*, *facet*, *traversal*, *edge*).
-- [Quickstart `ArangoDB`](quickstart.md) — instantiate the client and execute a first query.
+- [Quickstart `ArangoDB`](../db/quickstart.md) — instantiate the client and execute a first query.
 - [Official ArangoDB documentation](https://docs.arangodb.com/stable/) — reference for AQL, indexes, cluster.

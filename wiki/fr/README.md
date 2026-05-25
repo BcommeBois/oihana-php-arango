@@ -46,7 +46,6 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 
 - [Introduction](getting-started/introduction.md) — qu'est-ce qu'ArangoDB, l'intérêt de la technologie, la philosophie `oihana`, et pourquoi cette bibliothèque existe.
 - [Dépendances](getting-started/dependencies.md) — packages `oihana/php-*` requis, mapping *namespace* → package, snippet `composer require` minimal pour un usage autonome.
-- [Quickstart `ArangoDB`](getting-started/quickstart.md) — instancier le client, exécuter une requête AQL brute, traits de base (`ArangoTrait`).
 - [Glossaire](getting-started/glossary.md) — termes clés du framework : *bind variable*, *document reference*, *skin*, *facet*, *traversal*, *edge*.
 
 ### Client HTTP — [`clients/`](clients/)
@@ -74,6 +73,8 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 
 ### Couche db — [`db/`](db/)
 
+- [Vue d'ensemble de la couche db](db/README.md) — la façade `ArangoDB`, quand l'utiliser vs le client HTTP, cartographie du dossier `db/`.
+- [Quickstart `ArangoDB`](db/quickstart.md) — instancier la façade, configurer (clés `ArangoConfig`, DI), exécuter AQL, hydrater les résultats, gérer collections et indexes.
 - [Helpers AQL `db/helpers/`](db/helpers.md) — `aqlExpression`, `aqlDocument`, `aqlValue`, *field builders* et compagnie.
 - [Bind variables `db/binds/`](db/binds.md) — `aqlBind`, validation et formatage des valeurs injectées.
 - [Filtres HTTP `?filter=`](db/filter.md) — syntaxe `?filter=`, opérateurs (`eq`, `ne`, `like`, `in`, ...), transformations `alt`, chaînage, `FilterType::*`.

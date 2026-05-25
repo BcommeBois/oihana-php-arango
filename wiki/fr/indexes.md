@@ -2,7 +2,7 @@
 
 Cette page couvre la **gestion des collections et des index** côté framework : comment créer, supprimer, inspecter ; quel type d'index choisir selon le besoin ; et le pattern recommandé de déclaration *lazy* via `AQL::INDEXES` sur un modèle.
 
-Le détail des **propriétés** de chaque classe `*IndexOptions` est dans la [Référence des options AQL](options.md#options-dindex--optionsindexes). Le détail des **méthodes** `collection*` et `*Index` est dans le [Quickstart `ArangoDB`](getting-started/quickstart.md#gérer-les-collections). Cette page se concentre sur le **comment choisir** et le **comment déployer**.
+Le détail des **propriétés** de chaque classe `*IndexOptions` est dans la [Référence des options AQL](options.md#options-dindex--optionsindexes). Le détail des **méthodes** `collection*` et `*Index` est dans le [Quickstart `ArangoDB`](db/quickstart.md#gérer-les-collections). Cette page se concentre sur le **comment choisir** et le **comment déployer**.
 
 ## Choisir un type d'index
 
@@ -220,7 +220,7 @@ Utile pour les commandes de *doctor* ou les rapports d'admin. La liste inclut sy
 
 ## Voir aussi
 
-- [Quickstart `ArangoDB`](getting-started/quickstart.md#gérer-les-index) — méthodes `createIndex` / `dropIndex` / `getIndex` / `getIndexes`.
+- [Quickstart `ArangoDB`](db/quickstart.md#gérer-les-index) — méthodes `createIndex` / `dropIndex` / `getIndex` / `getIndexes`.
 - [Référence des options AQL — Options d'index](options.md#options-dindex--optionsindexes) — détail des propriétés par classe.
 - [Modèles `Documents` et `Edges`](models.md) — clé `AQL::INDEXES` pour la déclaration *lazy*.
 - [Indexes côté client](clients/indexes.md) — les classes d'index typées `readonly` (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `MDIIndex`, `VectorIndex`, `InvertedIndex`, `FulltextIndex`) utilisées directement contre `/_api/index`.

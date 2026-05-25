@@ -192,7 +192,7 @@ $db
 $results = $db->getDocuments() ;
 ```
 
-See [Quickstart `ArangoDB`](../getting-started/quickstart.md) for the detail of execution and hydration methods.
+See [Quickstart `ArangoDB`](../db/quickstart.md) for the detail of execution and hydration methods.
 
 ## Beyond *manual* — high-level models
 

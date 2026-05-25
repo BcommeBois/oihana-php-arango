@@ -1,8 +1,8 @@
 # Quickstart `ArangoDB`
 
-La classe [`ArangoDB`](../../../src/oihana/arango/db/ArangoDB.php) est le point d'entrée de toute la couche bas-niveau du framework. Elle encapsule une connexion au serveur, expose la gestion des collections et des index via le trait [`CollectionManagementTrait`](../../../src/oihana/arango/db/traits/CollectionManagementTrait.php), et fournit l'exécution de requêtes AQL brutes.
+La classe [`ArangoDB`](../../../src/oihana/arango/db/ArangoDB.php) est la **façade haut-niveau** du framework au-dessus du [client HTTP](../clients/README.md). Elle encapsule une connexion au serveur, hydrate les résultats en objets typés, expose la gestion des collections et des index via le trait [`CollectionManagementTrait`](../../../src/oihana/arango/db/traits/CollectionManagementTrait.php), et fournit l'exécution AQL via `prepare/execute`.
 
-Les modèles haut-niveau (`Documents`, `Edges`) et les contrôleurs Slim s'appuient tous sur cette classe. Comprendre `ArangoDB` est donc le préalable à tout le reste.
+Les modèles métier (`Documents`, `Edges`) et les contrôleurs Slim s'appuient tous sur cette classe. Comprendre `ArangoDB` est donc le préalable à tout le reste de la couche `db/`.
 
 ## Instanciation directe
 
@@ -181,7 +181,7 @@ Le second argument du constructeur accepte un `Psr\Log\LoggerInterface`. Toutes 
 
 ## Voir aussi
 
-- [Helpers AQL `db/helpers/`](../db/helpers.md) — construire des expressions AQL composables sans `sprintf`.
-- [Bind variables `db/binds/`](../db/binds.md) — injecter des valeurs en toute sécurité.
+- [Helpers AQL `db/helpers/`](helpers.md) — construire des expressions AQL composables sans `sprintf`.
+- [Bind variables `db/binds/`](binds.md) — injecter des valeurs en toute sécurité.
 - [Modèles `Documents` et `Edges`](../models.md) — couche haut-niveau qui consomme `ArangoDB` pour exposer le CRUD complet.
-- [Glossaire](glossary.md) — termes du framework.
+- [Glossaire](../getting-started/glossary.md) — termes du framework.

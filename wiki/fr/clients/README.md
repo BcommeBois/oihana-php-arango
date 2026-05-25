@@ -5,9 +5,9 @@
 | Couche | Dossier | Quoi |
 |---|---|---|
 | **Client HTTP bas niveau** | [`src/oihana/arango/clients/`](../../../src/oihana/arango/clients/) | Transport Guzzle, authentification, retry, gestion de cluster, requêtes brutes contre l'API REST d'arangod. |
-| **Façade haut niveau** | [`src/oihana/arango/db/`](../../../src/oihana/arango/db/) ([`ArangoDB`](../getting-started/quickstart.md)) | Hydratation, exception wrapping, `prepare/execute`, helpers AQL — bâtie sur le client. |
+| **Façade haut niveau** | [`src/oihana/arango/db/`](../../../src/oihana/arango/db/) ([`ArangoDB`](../db/quickstart.md)) | Hydratation, exception wrapping, `prepare/execute`, helpers AQL — bâtie sur le client. |
 
-Cette page documente la couche **client**. Pour le quickstart côté façade, voir [Quickstart `ArangoDB`](../getting-started/quickstart.md). Pour les modèles métier (`Documents`, `Edges`), voir [Modèles](../models.md).
+Cette page documente la couche **client**. Pour le quickstart côté façade, voir [Quickstart `ArangoDB`](../db/quickstart.md). Pour les modèles métier (`Documents`, `Edges`), voir [Modèles](../models.md).
 
 > Le client est conçu **autonome** — pas de dépendance sur la couche `db/`, ni sur Slim, ni sur Symfony Console. On peut l'utiliser tel quel pour un script CLI, un *worker*, ou une suite de tests d'intégration. Il s'inspire de la lib JavaScript officielle [`arangojs`](https://github.com/arangodb/arangojs).
 
@@ -125,12 +125,12 @@ Les modes d'authentification (Basic, JWT avec auto-refresh sur 401), la politiqu
 | Besoin | Choisir |
 |---|---|
 | Script CLI dédié, test d'intégration, *worker* | Client direct (`ArangoClient` + `Database`). |
-| Application avec PSR-11 DI, modèles `Documents` réutilisables, signals before/after, exceptions wrappées en `oihana\arango\client\Exception` legacy | Façade `ArangoDB` ([Quickstart](../getting-started/quickstart.md)). |
+| Application avec PSR-11 DI, modèles `Documents` réutilisables, signals before/after, exceptions wrappées en `oihana\arango\client\Exception` legacy | Façade `ArangoDB` ([Quickstart](../db/quickstart.md)). |
 | Une seule requête AQL ponctuelle dans une appli qui consomme déjà la façade | Récupérer le client via `$arangoDB->getClient()` (déconseillé sauf cas spéciaux — préférer `prepare/execute` côté façade). |
 
 ## Voir aussi
 
-- [Quickstart `ArangoDB`](../getting-started/quickstart.md) — la façade haut niveau.
+- [Quickstart `ArangoDB`](../db/quickstart.md) — la façade haut niveau.
 - [Modèles `Documents` et `Edges`](../models.md) — la couche métier.
 - [Indexes](../indexes.md) — catalogue d'indexes typés.
 - [Testing](../testing.md) — les deux commandes live `arango:test:clients` et `arango:test:facade`.
