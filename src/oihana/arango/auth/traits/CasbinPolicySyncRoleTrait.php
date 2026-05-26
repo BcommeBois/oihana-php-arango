@@ -30,7 +30,7 @@ use function oihana\auth\helpers\casbinSafeSubject;
  * stable `identifier` (Zitadel role key, pinned at POST time and never
  * mutated). Legacy roles created before the pin convention fall back to
  * `name`, which is also their current Zitadel key — once
- * `bun auth:roles:backfill-identifiers` has run, the fallback becomes
+ * `php bin/console.php auth:roles:backfill-identifiers` has run, the fallback becomes
  * dead code.
  *
  * The trait expects the consumer class to expose the following protected
@@ -88,7 +88,7 @@ trait CasbinPolicySyncRoleTrait
      * convention landed (typically the 3 seeded ones: admin/guest/superadmin
      * when not yet backfilled) we fall back to `$role->name`, which **is**
      * their current Zitadel key. Backfill command:
-     * `bun auth:roles:backfill-identifiers`.
+     * `php bin/console.php auth:roles:backfill-identifiers`.
      *
      * @param string $roleKey
      * @param string $permissionKey
@@ -318,7 +318,7 @@ trait CasbinPolicySyncRoleTrait
      * Legacy roles (admin / guest / superadmin seeded before the pin
      * landed, not yet backfilled) fall back to `name`, which **is** their
      * current Zitadel key — safe for Casbin. Once the backfill command
-     * `bun auth:roles:backfill-identifiers` has run, every role has an
+     * `php bin/console.php auth:roles:backfill-identifiers` has run, every role has an
      * identifier and the fallback becomes dead code.
      *
      * @param string $roleKey The ArangoDB `_key` of the role vertex.

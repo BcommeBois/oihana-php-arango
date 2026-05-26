@@ -33,33 +33,30 @@ use function oihana\files\getDirectory;
 use function oihana\files\getTimestampedFile;
 use function oihana\files\makeTemporaryDirectory;
 
-// List all files in the dump folder and select a file
-// bun arangodb restore
+// Interactive selection across the dump folder
+// $ composer arango:restore
+// $ php bin/console.php command:arangodb restore
 
-// List only the dump files.
-// $ bun arangodb restore --list
-// $ bun arangodb dumpList
+// List the dumps instead of restoring
+// $ composer arango:list
+// $ php bin/console.php command:arangodb restore --list
 
-// Inject the passphrase of the encrypted archive
-// bun arangodb restore --p mysecretpassword
-// bun arangodb restore --passphrase mysecretpassword
-// bun arangodb restore --passphrase mysecretpassword --encrypted
+// Inject the passphrase for an encrypted archive
+// $ composer arango:restore -- -p mysecretpassword
+// $ composer arango:restore -- --passphrase mysecretpassword
+// $ composer arango:restore -- --encrypt --passphrase mysecretpassword
 
-// Inject the passphrase in the command
-// bun arangodb restore --p mysecretpassphrase
-// bun arangodb restore --passphrase mysecretpassphrase
+// Pick the most recent archive in the dump folder
+// $ composer arango:restore -- -la
+// $ composer arango:restore -- --last
 
-// Search the last file in the dump folder.
-// bun arangodb restore -l
-// bun arangodb restore --last
+// Pick by date
+// $ composer arango:restore -- -d 2025-07-05T18:14:22
+// $ composer arango:restore -- --date 2025-07-05T18:14:22
 
-// By date:
-// bun arangodb restore -d 2025-07-05T18:14:22
-// bun arangodb restore -date 2025-07-05T18:14:22
-
-// By file:
-// bun arangodb restore -f /Users/ooop/projects/oihana/oihana-odbc-php/api/backups/2025-07-05T18:14:22-xyz.tar.gz.enc
-// bun arangodb restore -file /Users/ooop/projects/oihana/oihana-odbc-php/api/backups/2025-07-05T18:14:22-xyz.tar.gz.enc
+// Pick by explicit file
+// $ composer arango:restore -- -f /var/data/arango/dumps/2025-07-05T18:14:22-mydb.tar.gz.enc
+// $ composer arango:restore -- --file /var/data/arango/dumps/2025-07-05T18:14:22-mydb.tar.gz.enc
 
 /**
  * The command to manage an ArangoDB database.

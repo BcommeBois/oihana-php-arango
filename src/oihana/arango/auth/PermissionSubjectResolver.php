@@ -35,7 +35,7 @@ use Throwable;
  *   explicit invalidation point is ever missed.
  * - **Surgical invalidation**: the catalog only changes through three paths,
  *   and each one calls {@see invalidate()}:
- *     1. `bun auth:materialize` (and `bun auth:import`)
+ *     1. `php bin/console.php auth:materialize` (and `php bin/console.php auth:import`)
  *     2. `POST /permissions`
  *     3. `DELETE /permissions/{key}`
  *

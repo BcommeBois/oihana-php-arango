@@ -72,10 +72,13 @@ use function oihana\core\strings\parseSteps ;
  *
  * Usage:
  * ```shell
- * bun arango:test:facade
- * bun arango:test:facade --step=1-3
- * bun arango:test:facade --step=6
- * bun arango:test:facade --no-cleanup --endpoint=tcp://127.0.0.1:8529
+ * composer test:facade
+ * composer test:facade -- --step=1-3
+ * composer test:facade -- --step=6
+ * composer test:facade -- --no-cleanup --endpoint=tcp://127.0.0.1:8529
+ *
+ * # Long form (equivalent — bypasses Composer):
+ * php bin/console.php command:arango:test:facade --step=6
  * ```
  *
  * @package oihana\arango\db\commands\tests
@@ -102,6 +105,11 @@ class ArangoFacadeTestCommand extends Kernel
      * Total number of business steps exposed by the `--step` option.
      */
     public const int MAX_STEP = 8 ;
+
+    /**
+     * The default name of the command.
+     */
+    public const string NAME = 'command:arango:test:facade' ;
 
     /**
      * Name of the `--step` option used to select a subset of steps to run.

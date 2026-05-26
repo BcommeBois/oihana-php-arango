@@ -24,7 +24,7 @@ use function oihana\core\strings\compile;
  *
  * @example
  * ```php
- * use fr\bouney\enums\Prop;
+ * use App\Enums\Prop;
  * use oihana\arango\enums\Arango;
  *
  * use function oihana\arango\helpers\descKey;

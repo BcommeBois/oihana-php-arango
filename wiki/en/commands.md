@@ -219,10 +219,6 @@ php api/bin/console.php users truncate
 
 # Bypass confirmation
 php api/bin/console.php users truncate --force
-
-# bun alias (host project side)
-bun users list --limit=20
-bun users count
 ```
 
 ### Global options
@@ -246,7 +242,7 @@ For *seeding* in development, the recommended pattern is a JSON *fixture* consum
 
 ```bash
 jq -c '.[]' fixtures/users.json | while read -r doc; do
-    bun users insert --data="$doc"
+    php api/bin/console.php users insert --data="$doc"
 done
 ```
 
@@ -259,11 +255,11 @@ A native `import` action (consuming a JSON array in a single command, with trans
 Typical use case:
 
 ```bash
-# Harvest products from the external ERP (ODBC)
-bun proginov:harvest:products
+# Harvest products from an external source (e.g. ERP via ODBC)
+php api/bin/console.php proginov:harvest:products
 
 # Harvest pricing offers
-bun proginov:harvest:products:offers
+php api/bin/console.php proginov:harvest:products:offers
 ```
 
 See the `Acme\commands\proginov\*` commands for complete implementations on the project side.

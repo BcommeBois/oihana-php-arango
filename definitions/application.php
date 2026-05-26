@@ -2,8 +2,10 @@
 
 use DI\Container;
 
+use oihana\arango\clients\commands\tests\ArangoTestClientsCommand;
 use oihana\arango\commands\ArangoCommand;
 
+use oihana\arango\db\commands\tests\ArangoFacadeTestCommand;
 use Symfony\Component\Console\Application;
 
 /**
@@ -27,8 +29,8 @@ return
         $application = new Application( 'oihana/php-arango — console runner' );
 
         $application->addCommand( $container->get( ArangoCommand::NAME            ) );
-        $application->addCommand( $container->get( 'command:arango:test:clients'  ) );
-        $application->addCommand( $container->get( 'command:arango:test:facade'   ) );
+        $application->addCommand( $container->get( ArangoTestClientsCommand::NAME ) );
+        $application->addCommand( $container->get( ArangoFacadeTestCommand::NAME  ) );
 
         return $application ;
     }

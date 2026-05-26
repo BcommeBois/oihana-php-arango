@@ -90,10 +90,13 @@ use function oihana\core\strings\parseSteps ;
  *
  * Usage:
  * ```shell
- * bun arango:test:clients
- * bun arango:test:clients --step=1-3
- * bun arango:test:clients --step=4
- * bun arango:test:clients --no-cleanup --endpoint=tcp://127.0.0.1:8529
+ * composer test:clients
+ * composer test:clients -- --step=1-3
+ * composer test:clients -- --step=4
+ * composer test:clients -- --no-cleanup --endpoint=tcp://127.0.0.1:8529
+ *
+ * # Long form (equivalent — bypasses Composer):
+ * php bin/console.php command:arango:test:clients --step=4
  * ```
  *
  * @package oihana\arango\clients\commands\tests
@@ -115,6 +118,11 @@ class ArangoTestClientsCommand extends Kernel
     }
 
     use ArangoClientTestTrait ;
+
+    /**
+     * The default name of the command.
+     */
+    public const string NAME = 'command:arango:test:clients' ;
 
     /**
      * Total number of business steps exposed by the `--step` option.

@@ -15,7 +15,8 @@ use function oihana\files\findFiles;
 use function oihana\files\getDirectory;
 
 // List all dump files
-// $ bun arangodb dump --list
+// $ composer arango:list
+// $ php bin/console.php command:arangodb dump --list
 
 /**
  * List all dumps files in the dump directory.

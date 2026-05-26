@@ -31,7 +31,7 @@ use oihana\commands\options\CommandOption;
  */
 return
 [
-    'command:arangodb' => function( Container $container ) :ArangoCommand
+    ArangoCommand::NAME => function( Container $container ) :ArangoCommand
     {
         $arango = $container->get( 'arango.config' ) ;
 
@@ -64,9 +64,9 @@ return
         ) ;
     } ,
 
-    'command:arango:test:clients' => fn( Container $container ) => new ArangoTestClientsCommand
+    ArangoTestClientsCommand::NAME => fn( Container $container ) => new ArangoTestClientsCommand
     (
-        name      : 'arango:test:clients' ,
+        name      : ArangoTestClientsCommand::NAME ,
         container : $container ,
         init      :
         [
@@ -76,9 +76,9 @@ return
         ]
     ) ,
 
-    'command:arango:test:facade' => fn( Container $container ) => new ArangoFacadeTestCommand
+    ArangoFacadeTestCommand::NAME => fn( Container $container ) => new ArangoFacadeTestCommand
     (
-        name      : 'arango:test:facade' ,
+        name      : ArangoFacadeTestCommand::NAME ,
         container : $container ,
         init      :
         [
