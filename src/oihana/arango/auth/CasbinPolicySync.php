@@ -91,7 +91,7 @@ class CasbinPolicySync
 
     /**
      * Initialization key for the Casbin domain (e.g. the active API identifier
-     * `bouney-api`). Forwarded to every implicit-permission lookup performed
+     * such as `my-api`). Forwarded to every implicit-permission lookup performed
      * by the per-domain sync traits.
      */
     public const string DOMAIN = 'domain' ;

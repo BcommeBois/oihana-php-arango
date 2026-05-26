@@ -398,7 +398,7 @@ trait CasbinPolicySyncPolicyTrait
      *
      * Without this propagation, an admin attaching a permission to a policy
      * would only update the rbac collection at the next full materialization
-     * (`bun auth:materialize`) — subjects already attached to the policy
+     * (`php bin/console.php auth:materialize`) — subjects already attached to the policy
      * would keep operating on a stale permission set until then.
      *
      * Casbin's `addPolicy` is idempotent (returns false on duplicates) so a
@@ -465,7 +465,7 @@ trait CasbinPolicySyncPolicyTrait
      * via a sibling policy or a direct `*_has_permissions` edge will
      * lose the row here — this is a known limitation shared with the
      * existing `removeService*` / `removeRole*` handlers (no overlap
-     * audit). A full reseed (`bun auth:materialize`) restores the
+     * audit). A full reseed (`php bin/console.php auth:materialize`) restores the
      * rows from any remaining source.
      *
      * @param string $policyKey The policy ArangoDB `_key`.

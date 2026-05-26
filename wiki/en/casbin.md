@@ -132,7 +132,7 @@ if ( $enforcer->enforce( $userKey , 'users' , 'read' ) )
 A typical convention: Casbin *policies* are **derived** from a canonical state stored in *edges* (relations between `users` ↔ `roles`, `roles` ↔ `permissions`, etc.). A dedicated command materializes the *edges* into *policies*:
 
 ```bash
-bun auth:sync:policies
+php bin/console.php auth:sync:policies
 ```
 
 The flow:

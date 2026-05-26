@@ -23,7 +23,7 @@ use oihana\enums\Char;
  *
  * @example
  * ```php
- * use fr\bouney\enums\Prop;
+ * use App\Enums\Prop;
  * use oihana\arango\db\enums\AQL;
  * use oihana\arango\enums\Arango;
  *

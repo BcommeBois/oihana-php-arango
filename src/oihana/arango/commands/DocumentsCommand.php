@@ -69,65 +69,65 @@ use function oihana\commands\helpers\clearConsole;
  *
  * List all documents
  * ```shell
- * $ bun places -v
- * $ bun places list
- * $ bun places list -v
+ * $ php bin/console.php places -v
+ * $ php bin/console.php places list
+ * $ php bin/console.php places list -v
  * ```
  *
  * Calculates the number of documents in the collection
  * ```shell
- * $ bun places count
- * $ bun places count --optimized
- * $ bun places count -o
+ * $ php bin/console.php places count
+ * $ php bin/console.php places count --optimized
+ * $ php bin/console.php places count -o
  * ```
  *
  * Get a specific document
  * ```shell
- * $ bun places get 59943726 -v
- * $ bun places get 59943726 --verbose
+ * $ php bin/console.php places get 59943726 -v
+ * $ php bin/console.php places get 59943726 --verbose
  * ```
  *
  * Get the last document in the collection (by default with the property 'modified')
  * ```shell
- * $ bun places last
- * $ bun places last created
+ * $ php bin/console.php places last
+ * $ php bin/console.php places last created
  * ```
  *
  *
  * Check if a document or a set of documents exists.
  * ```shell
- * $ bun places exist 59918826
- * $ bun places exist 59918826 59943726 555 60280105
+ * $ php bin/console.php places exist 59918826
+ * $ php bin/console.php places exist 59918826 59943726 555 60280105
  * ```
  *
  * Insert a new document in the collection
  * ```shell
- * $ bun places insert '{"id":"55525","name":"Marseille","path":"places","address":{"postalCode":"13013"}}' -v
+ * $ php bin/console.php places insert '{"id":"55525","name":"Marseille","path":"places","address":{"postalCode":"13013"}}' -v
  * ```
  *
  * Update an existing document in the collection
  * ```shell
- * $ bun places update 55525 '{"name":"Marseille !"}'
+ * $ php bin/console.php places update 55525 '{"name":"Marseille !"}'
  * ```
  *
  * Replace an existing document in the collection
  * ```shell
- * $ bun places replace 55525 '{"id":"55525",name":"Marseille !","path":"places","address":{"postalCode":"13012"}}' -v
+ * $ php bin/console.php places replace 55525 '{"id":"55525",name":"Marseille !","path":"places","address":{"postalCode":"13012"}}' -v
  * ```
  *
  * Delete a document in the collection
  * ```shell
- * $ bun places delete 60280116
+ * $ php bin/console.php places delete 60280116
  * ```
  *
  * Delete a set of documents in the collection
  * ```shell
- * $ bun places delete 60280116 60280105
+ * $ php bin/console.php places delete 60280116 60280105
  * ```
  *
  * [warning] Remove all documents in the collection
  * ```shell
- * $ bun places truncate --accept true
+ * $ php bin/console.php places truncate --accept true
  * ```
  */
 class DocumentsCommand extends Kernel

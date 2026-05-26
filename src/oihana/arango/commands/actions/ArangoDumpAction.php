@@ -34,11 +34,12 @@ use function oihana\files\makeTemporaryDirectory;
 use function oihana\files\makeTimestampedDirectory;
 
 // Basic command :
-// $ bun arangodb dump
+// $ composer arango:dump
+// $ php bin/console.php command:arangodb dump
 
 // List all dump files
-// $ bun arangodb dump --list
-// $ bun arangodb dumpList
+// $ composer arango:list
+// $ php bin/console.php command:arangodb dump --list
 
 /**
  * The command to manage an ArangoDB database.
