@@ -2,19 +2,46 @@
 # oihana/php-arango — example configuration
 #
 # Copy this file to `configs/config.toml` and adjust the values for your
-# local ArangoDB instance. Only the [arango] section is consumed by the
-# library's `bin/console.php` smoke-test runner.
+# local ArangoDB instance. Two sections are consumed by the library's
+# `bin/console.php` runner: [app] for the dump/restore directory and
+# [arango] for the database connection.
 # ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# [app] — runtime paths for the bundled `command:arangodb` (dump/restore).
+#
+# `dumps` is the directory where dump archives are written and read.
+#
+#   - Absolute path  ("/var/data/arango/dumps")  → used as-is.
+#   - Relative path  ("dumps", "var/dumps")      → resolved against the
+#                                                  library root (the parent
+#                                                  of `configs/`).
+#   - Key absent / commented                     → defaults to
+#                                                  "<library-root>/dumps".
+#
+# When integrating the library inside your own application, wire your own
+# DI definition for `ArangoCommandParam::DIRECTORY` and ignore this key —
+# see wiki/{fr,en}/commands.md for the host-project pattern.
+# ----------------------------------------------------------------------------
+
+[app]
+# dumps = "/var/data/arango/dumps"
 
 [arango]
 database   = "your_database"
 endpoint   = "tcp://127.0.0.1:8529"
 user       = "root"
 password   = ""
+# Default passphrase used by `command:arangodb dump --encrypt` and
+# `restore` when the archive is encrypted. Override on the CLI with
+# `--passphrase <value>` (or `-p`). Leave empty to prompt interactively.
+passphrase = ""
 batchSize  = 20000
 connection = "Keep-Alive"
 create     = true
 debug      = false
+# `encrypt = true` turns on archive encryption by default for `dump`.
+# Override per-run with `--encrypt` (force on) or `--encrypt=0` (off).
 encrypt    = false
 lazy       = true
 reconnect  = true

@@ -3,23 +3,67 @@
 use DI\Container;
 
 use oihana\arango\clients\commands\tests\ArangoTestClientsCommand;
+use oihana\arango\commands\ArangoCommand;
+use oihana\arango\commands\enums\ArangoAction;
+use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\db\commands\tests\ArangoFacadeTestCommand;
+use oihana\arango\db\enums\ArangoConfig;
 
 use oihana\commands\enums\CommandParam;
+use oihana\commands\options\CommandOption;
 
 /**
- * DI definitions for the two live smoke-test commands shipped with the library.
+ * DI definitions for the commands shipped with the library.
  *
- *   - arango:test:clients   ArangoTestClientsCommand — exercises the new
- *                           clients/ HTTP library against a real arangod.
+ *   - command:arangodb       ArangoCommand — generic dump/restore/listDumps
+ *                            runner for an ArangoDB database. Reads
+ *                            connection settings from the [arango] section
+ *                            of configs/config.toml and the dumps directory
+ *                            from the `app.dumps` definition (see config.php).
  *
- *   - arango:test:facade    ArangoFacadeTestCommand — exercises the high-level
- *                           ArangoDB façade against a real arangod.
+ *   - arango:test:clients    ArangoTestClientsCommand — exercises the new
+ *                            clients/ HTTP library against a real arangod.
  *
- * Both commands read the same `arango.config` definition (see config.php).
+ *   - arango:test:facade     ArangoFacadeTestCommand — exercises the high-level
+ *                            ArangoDB façade against a real arangod.
+ *
+ * All three commands share the same `arango.config` definition (see config.php).
  */
 return
 [
+    'command:arangodb' => function( Container $container ) :ArangoCommand
+    {
+        $arango = $container->get( 'arango.config' ) ;
+
+        return new ArangoCommand
+        (
+            name      : ArangoCommand::NAME ,
+            container : $container ,
+            init      :
+            [
+                CommandParam::DESCRIPTION    => 'Manage the ArangoDB database (dump / restore / list dumps).' ,
+                CommandParam::HELP           => 'Generic dump and restore runner for an ArangoDB database. Connection settings come from the [arango] section of configs/config.toml ; the dumps directory comes from [app].dumps (see config.example.toml). Override any field on the CLI: --endpoint, --user, --password, --database, --directory, --passphrase, --encrypt. Action is the first positional argument: dump, restore, listDumps. Examples: `php bin/console.php command:arangodb dump`, `php bin/console.php command:arangodb dump --list`, `php bin/console.php command:arangodb restore --last`.' ,
+                CommandParam::ACTIONS        =>
+                [
+                    ArangoAction::DUMP    ,
+                    ArangoAction::RESTORE ,
+                ] ,
+                ArangoCommandParam::DIRECTORY => $container->get( 'app.dumps' ) ,
+
+                // Default encryption flag + passphrase fall back on the
+                // [arango] section ; both can be overridden per run via
+                // --encrypt and --passphrase.
+                CommandOption::ENCRYPT     => (bool) ( $arango[ ArangoConfig::ENCRYPT ] ?? false ) ,
+                CommandOption::PASS_PHRASE => $arango[ 'passphrase' ] ?? null ,
+
+                // Connection settings — spread the [arango] section so the
+                // ArangoConfigTrait keys (database, endpoint, user, password)
+                // are picked up by the command at boot.
+                ...$arango ,
+            ]
+        ) ;
+    } ,
+
     'command:arango:test:clients' => fn( Container $container ) => new ArangoTestClientsCommand
     (
         name      : 'arango:test:clients' ,

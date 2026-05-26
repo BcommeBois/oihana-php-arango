@@ -6,58 +6,153 @@ Two pivot classes:
 
 | Class | Role | Exposed actions |
 |---|---|---|
-| `ArangoCommand` | Database maintenance (dump, restore, list dumps). | `dump`, `restore`, `list-dumps` |
+| `ArangoCommand` | Database maintenance: dump, restore, list dumps. | `dump`, `restore`, `dump --list` |
 | `DocumentsCommand` | Full CRUD on a collection. | `get`, `list`, `count`, `exist`, `last`, `insert`, `update`, `replace`, `upsert`, `delete`, `truncate`, `harvest` |
 
 Both inherit from the [`oihana/php-commands`](getting-started/dependencies.md#oihanaphp-commands) skeleton, which provides argument handling, options, output formats (JSON, table, raw) and return codes.
 
 ## `ArangoCommand`
 
+`ArangoCommand` is shipped pre-wired by the library and registered under the name `command:arangodb` by [`definitions/commands.php`](../../definitions/commands.php). It is immediately usable via `php bin/console.php command:arangodb …` once `configs/config.toml` has been created.
+
 ### Available actions
 
-| Action | Class | Typical output |
+| Action | Trait | Typical output |
 |---|---|---|
-| `dump` | `ArangoDumpAction` | Export of one or several collections to an *archives* folder (`.dump.json`). |
-| `restore` | `ArangoRestoreAction` | Reinjection of a previous dump into the database. |
-| `list-dumps` | `ArangoListDumpsAction` | List of dumps available in the archives folder. |
+| `dump` | [`ArangoDumpAction`](../../src/oihana/arango/commands/actions/ArangoDumpAction.php) | Timestamped `arangodump` archive (`YYYY-MM-DDTHH:MM:SS-<db>.tar.gz`), AES-encrypted when `--encrypt`. |
+| `restore` | [`ArangoRestoreAction`](../../src/oihana/arango/commands/actions/ArangoRestoreAction.php) | Reinjection via `arangorestore` from an archive selected by file, date, or interactively. |
+| `listDumps` (`--list`) | [`ArangoListDumpsAction`](../../src/oihana/arango/commands/actions/ArangoListDumpsAction.php) | Lists dumps available in the dumps directory. |
 
-Configured via the option arrays [`ArangoDumpOption`](../../src/oihana/arango/commands/options/ArangoDumpOption.php), [`ArangoRestoreOption`](../../src/oihana/arango/commands/options/ArangoRestoreOption.php), and the common [`ArangoCommonOption`](../../src/oihana/arango/commands/options/ArangoCommonOption.php) (folder path, verbosity, `--dry-run` mode, ...).
+> The `arangodump` / `arangorestore` binaries (shipped with ArangoDB) must be on the PHP process `$PATH`. On macOS via Homebrew: `brew install arangodb`.
 
-### DI definition
+### Configuration
+
+Two sources feed the command:
+
+| Source | Keys consumed | Read by |
+|---|---|---|
+| `[arango]` of `configs/config.toml` | `database`, `endpoint`, `user`, `password`, `encrypt`, `passphrase` | [`definitions/config.php`](../../definitions/config.php) → `arango.config` |
+| `[app].dumps` of `configs/config.toml` | Dumps directory | [`definitions/config.php`](../../definitions/config.php) → `app.dumps` |
+
+Dumps directory resolution:
+
+- **absolute** path (`/var/data/arango/dumps`) → used as-is;
+- **relative** path (`dumps`, `var/dumps`) → resolved against the library root (`__LIB__`);
+- **missing or empty** key → defaults to `<library-root>/dumps`.
+
+> The [`dumps/`](../../dumps/) directory ships tracked with an internal `.gitignore` that excludes archives — the default works out of the box (`--list` returns a clean empty message, and the first `dump` does not need to create the directory).
+
+Minimal `configs/config.toml`:
+
+```toml
+[app]
+# dumps = "/var/data/arango/dumps"   # absolute — otherwise resolved against the library root
+
+[arango]
+database   = "my_db"
+endpoint   = "tcp://127.0.0.1:8529"
+user       = "root"
+password   = "secret"
+passphrase = ""                       # default passphrase for --encrypt
+encrypt    = false                    # flip to true to encrypt by default
+```
+
+### CLI usage (lib standalone)
+
+```bash
+# Dump (defaults: [arango] section, [app].dumps directory)
+php bin/console.php command:arangodb dump
+
+# List the present dumps
+php bin/console.php command:arangodb dump --list
+
+# Encrypted dump (interactive passphrase prompt if not provided)
+php bin/console.php command:arangodb dump --encrypt
+php bin/console.php command:arangodb dump --encrypt --passphrase mysecret
+
+# Override the database or endpoint
+php bin/console.php command:arangodb dump --database other_db --endpoint tcp://10.0.0.5:8529
+
+# Override the output directory
+php bin/console.php command:arangodb dump --directory /tmp/snapshots
+
+# Restore — interactive selection across present archives
+php bin/console.php command:arangodb restore
+
+# Restore — latest archive
+php bin/console.php command:arangodb restore --last
+
+# Restore — by date
+php bin/console.php command:arangodb restore --date 2026-05-17T18:14:22
+
+# Restore — explicit file
+php bin/console.php command:arangodb restore --file /var/data/arango/dumps/2026-05-17T18:14:22-my_db.tar.gz.enc
+
+# Restore an encrypted archive
+php bin/console.php command:arangodb restore --last --encrypt --passphrase mysecret
+```
+
+### DI definition (host-project integration)
+
+The lib exposes the command under the name `ArangoCommand::NAME` (= `command:arangodb`). When integrating in **your own** application, ignore the lib's `[app].dumps` key and wire your own `directory`:
 
 ```php
+// api/definitions/commands.php  (host project)
 use DI\Container ;
 use oihana\arango\commands\ArangoCommand ;
+use oihana\arango\commands\enums\ArangoAction ;
+use oihana\arango\commands\enums\ArangoCommandParam ;
+use oihana\commands\enums\CommandParam ;
+use oihana\commands\options\CommandOption ;
 
 return
 [
-    Commands::ARANGODB => fn( Container $c ) => new ArangoCommand( $c ,
-    [
-        ArangoCommandParam::NAME    => 'arangodb' ,
-        ArangoCommandParam::OPTIONS =>
+    ArangoCommand::NAME => fn( Container $c ) => new ArangoCommand
+    (
+        name      : ArangoCommand::NAME ,
+        container : $c ,
+        init      :
         [
-            ArangoCommonOption::DUMPS_DIR => '/var/data/arango/dumps' ,
-            // ...
-        ] ,
-    ]) ,
+            CommandParam::DESCRIPTION    => 'Manage the project ArangoDB database.' ,
+            CommandParam::ACTIONS        =>
+            [
+                ArangoAction::DUMP ,
+                ArangoAction::RESTORE ,
+            ] ,
+            ArangoCommandParam::DIRECTORY => $c->get( 'paths.dumps' ) , // your own definition
+            CommandOption::ENCRYPT        => true ,
+            CommandOption::PASS_PHRASE    => $c->get( 'arango.config' )[ 'passphrase' ] ?? null ,
+
+            // Spread the [arango] section (database, endpoint, user, password).
+            ...$c->get( 'arango.config' ) ,
+        ]
+    ) ,
 ] ;
 ```
 
-### CLI usage
+Then add the command to your Symfony Console `Application`:
 
-```bash
-# Dump
-php api/bin/console.php arangodb dump --collection=users --collection=roles
-
-# Restore
-php api/bin/console.php arangodb restore --dump=users-2026-05-17.json
-
-# List dumps
-php api/bin/console.php arangodb list-dumps
-
-# bun alias (host project side)
-bun arangodb dump --collection=users
+```php
+$application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 ```
+
+> **Note** — the open-source lib performs **no** `{{{projectPath}}}`-style token substitution in the TOML. If your project needs such injection, the host project's own `paths.dumps` definition is responsible for assembling the final path (from PHP constants, env vars, or `realpath`) — not the library.
+
+### CLI options
+
+| Option | Short | Description |
+|---|---|---|
+| `--directory` | `-dir` | Override the dump/restore directory. |
+| `--encrypt` | `-e` | Enable AES encryption of the archive (dump) or decrypt it (restore). |
+| `--passphrase` | `-p` | Passphrase for `--encrypt` / encrypted-archive restore. Interactive prompt otherwise. |
+| `--list` | `-l` | On `dump` or `restore`: list present archives instead of running the action. |
+| `--last` | `-la` | On `restore`: automatically pick the most recent archive. |
+| `--date` | `-d` | On `restore`: pick the archive matching an ISO 8601 date. |
+| `--file` | `-f` | On `restore`: explicit path to an archive (short-circuits selection). |
+| `--database` | — | Override `[arango].database`. |
+| `--endpoint` | — | Override `[arango].endpoint`. |
+| `--user` | — | Override `[arango].user`. |
+| `--password` | — | Override `[arango].password`. |
 
 ## `DocumentsCommand`
 

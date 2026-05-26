@@ -1,0 +1,6 @@
+# Default dumps directory for `command:arangodb dump` (see definitions/config.php).
+# Ignore every archive landing here, but keep the directory tracked so the
+# command works out of the box without manual `mkdir` and so `--list` returns
+# the expected empty-state message instead of erroring on a missing directory.
+*
+!.gitignore
