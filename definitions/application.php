@@ -2,24 +2,33 @@
 
 use DI\Container;
 
+use oihana\arango\commands\ArangoCommand;
+
 use Symfony\Component\Console\Application;
 
 /**
- * Build the Symfony Console application and register the two bundled
- * smoke-test commands defined in commands.php.
+ * Build the Symfony Console application and register the commands
+ * defined in commands.php.
  *
- * The library deliberately ships only the two `arango:test:*` commands —
- * everything else (harvesting, integrity checks, etc.) lives in the
- * consuming host application's own console.
+ * The library ships three commands :
+ *
+ *   - command:arangodb       Generic dump/restore runner for ArangoDB
+ *                            (uses configs/config.toml).
+ *   - arango:test:clients    Live smoke test for the clients/ HTTP library.
+ *   - arango:test:facade     Live smoke test for the high-level façade.
+ *
+ * Everything else (harvesting, integrity checks, project-specific tooling)
+ * lives in the consuming host application's own console.
  */
 return
 [
     Application::class => function( Container $container ) :Application
     {
-        $application = new Application( 'oihana/php-arango — live smoke-test runner' );
+        $application = new Application( 'oihana/php-arango — console runner' );
 
-        $application->addCommand( $container->get( 'command:arango:test:clients' ) );
-        $application->addCommand( $container->get( 'command:arango:test:facade'  ) );
+        $application->addCommand( $container->get( ArangoCommand::NAME            ) );
+        $application->addCommand( $container->get( 'command:arango:test:clients'  ) );
+        $application->addCommand( $container->get( 'command:arango:test:facade'   ) );
 
         return $application ;
     }

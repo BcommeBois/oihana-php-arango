@@ -34,8 +34,20 @@
         "source" : "https://github.com/BcommeBois/oihana-php-arango"
     } ,
     "scripts" : {
-        "doc"  : "rm -rf docs && mkdir docs && cp -r assets docs/assets && ./vendor/bin/phpdoc -c phpdoc.xml -v" ,
-        "test" : "./vendor/bin/phpunit"
+        "doc"             : "rm -rf docs && mkdir docs && cp -r assets docs/assets && ./vendor/bin/phpdoc -c phpdoc.xml -v" ,
+        "test"            : "./vendor/bin/phpunit" ,
+        "arango"          : "php bin/console.php command:arangodb" ,
+        "arango:dump"     : "php bin/console.php command:arangodb dump" ,
+        "arango:restore"  : "php bin/console.php command:arangodb restore" ,
+        "arango:list"     : "php bin/console.php command:arangodb dump --list"
+    } ,
+    "scripts-descriptions" : {
+        "doc"             : "Generate the phpDocumentor API documentation under docs/." ,
+        "test"            : "Run the PHPUnit test suite." ,
+        "arango"          : "Proxy to bin/console.php command:arangodb (pass action + flags after `--`)." ,
+        "arango:dump"     : "Dump the ArangoDB database (flags after `--`, e.g. `composer arango:dump -- --encrypt --passphrase X`)." ,
+        "arango:restore"  : "Restore the ArangoDB database (flags after `--`, e.g. `composer arango:restore -- --last`)." ,
+        "arango:list"     : "List existing dump archives in the configured dumps directory."
     } ,
     "autoload" : {
         "psr-4" : {
