@@ -26,11 +26,11 @@ return
 [
     Application::class => function( Container $container ) :Application
     {
-        $application = new Application( 'oihana/php-arango — console runner' );
+        $application = new Application( 'oihana/php-arango — console runner' ) ;
 
-        $application->addCommand( $container->get( ArangoCommand::NAME            ) );
-        $application->addCommand( $container->get( ArangoTestClientsCommand::NAME ) );
-        $application->addCommand( $container->get( ArangoFacadeTestCommand::NAME  ) );
+        $application->addCommand( $container->get( ArangoCommand::NAME            ) ) ;
+        $application->addCommand( $container->get( ArangoTestClientsCommand::NAME ) ) ;
+        $application->addCommand( $container->get( ArangoFacadeTestCommand::NAME  ) ) ;
 
         return $application ;
     }
