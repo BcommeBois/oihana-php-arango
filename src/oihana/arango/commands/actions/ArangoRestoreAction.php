@@ -139,7 +139,7 @@ trait ArangoRestoreAction
                 (
                     date       : $date ,
                     basePath   : $inputDirectory ,
-                    suffix     : Char::DASH . $database . $shouldEncrypt ? FileExtension::TAR_GZ_ENCRYPTED : FileExtension::TAR ,
+                    suffix     : static::getArchiveFileSuffix( $database , $shouldEncrypt ) ,
                     timezone   : $this->timezone   ?? self::DEFAULT_TIMEZONE ,
                     format     : $this->dateFormat ?? self::DEFAULT_DATE_FORMAT ,
                     // assertable : true -> default
@@ -256,5 +256,21 @@ trait ArangoRestoreAction
         $io->success( 'The database is restored successfully.' ) ;
 
         return ExitCode::SUCCESS ;
+    }
+
+    /**
+     * Builds the archive file name suffix used to locate a dump by date.
+     *
+     * The dump action always produces a gzip-compressed tarball
+     * (`{date}-{database}.tar.gz`), optionally AES-encrypted
+     * (`{date}-{database}.tar.gz.enc`). This helper mirrors that naming.
+     *
+     * @param string $database The database name embedded in the suffix.
+     * @param bool   $encrypt  Whether the archive is encrypted.
+     * @return string e.g. `-mydb.tar.gz` or `-mydb.tar.gz.enc`.
+     */
+    protected static function getArchiveFileSuffix( string $database , bool $encrypt = false ) :string
+    {
+        return Char::DASH . $database . ( $encrypt ? FileExtension::TAR_GZ_ENCRYPTED : FileExtension::TAR_GZ ) ;
     }
 }
