@@ -88,12 +88,14 @@ class ArangoCommand extends Kernel
 
         $this->addOption   ( CommandOption::PASS_PHRASE  , 'p'   , InputOption::VALUE_OPTIONAL  , 'The encryption passphrase to dump/restore the database.' ) ;
 
-        $this->addOption   ( ArangoCommandOption::DATE      , 'd'   , InputOption::VALUE_OPTIONAL  , 'The Date of the dump to backup or restore.' ) ;
-        $this->addOption   ( ArangoCommandOption::DIRECTORY , 'dir' , InputOption::VALUE_OPTIONAL  , 'The directory to dump and restore the database.' ) ;
-        $this->addOption   ( ArangoCommandOption::ENCRYPT   , 'e'   , InputOption::VALUE_NONE      , 'Enabled the encryption to dump/restore the database.' ) ;
-        $this->addOption   ( ArangoCommandOption::FILE      , 'f'   , InputOption::VALUE_OPTIONAL  , 'The file to dump/restore.' ) ;
-        $this->addOption   ( ArangoCommandOption::LAST      , 'la'  , InputOption::VALUE_NONE      , 'Search the last dump file and restore it.' ) ;
-        $this->addOption   ( ArangoCommandOption::LIST      , 'l'   , InputOption::VALUE_NONE      , 'Display a list of files.' ) ;
+        $this->addOption   ( ArangoCommandOption::COLLECTION        , 'c'   , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Restrict the dump/restore to these collections (repeatable or comma-separated).' ) ;
+        $this->addOption   ( ArangoCommandOption::DATE              , 'd'   , InputOption::VALUE_OPTIONAL  , 'The Date of the dump to backup or restore.' ) ;
+        $this->addOption   ( ArangoCommandOption::DIRECTORY         , 'dir' , InputOption::VALUE_OPTIONAL  , 'The directory to dump and restore the database.' ) ;
+        $this->addOption   ( ArangoCommandOption::ENCRYPT           , 'e'   , InputOption::VALUE_NONE      , 'Enabled the encryption to dump/restore the database.' ) ;
+        $this->addOption   ( ArangoCommandOption::FILE              , 'f'   , InputOption::VALUE_OPTIONAL  , 'The file to dump/restore.' ) ;
+        $this->addOption   ( ArangoCommandOption::IGNORE_COLLECTION , null  , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Exclude these collections from the dump (repeatable or comma-separated, dump only).' ) ;
+        $this->addOption   ( ArangoCommandOption::LAST              , 'la'  , InputOption::VALUE_NONE      , 'Search the last dump file and restore it.' ) ;
+        $this->addOption   ( ArangoCommandOption::LIST              , 'l'   , InputOption::VALUE_NONE      , 'Display a list of files.' ) ;
 
         $this->addOption ( ArangoConfig::DATABASE , null  , InputOption::VALUE_OPTIONAL  , 'The arangoDB database name.' ) ;
         $this->addOption ( ArangoConfig::ENDPOINT , null  , InputOption::VALUE_OPTIONAL  , 'The endpoint of the arangoDB server.' ) ;

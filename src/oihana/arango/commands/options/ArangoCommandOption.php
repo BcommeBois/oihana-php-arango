@@ -8,10 +8,12 @@ class ArangoCommandOption
 {
     use ArangoConfigTrait ;
 
-    public const string DATE        = 'date' ;
-    public const string DIRECTORY   = 'directory' ;
-    public const string FILE        = 'file' ;
-    public const string LAST        = 'last' ;
-    public const string LIST        = 'list' ;
+    public const string COLLECTION        = 'collection' ;
+    public const string DATE              = 'date' ;
+    public const string DIRECTORY         = 'directory' ;
+    public const string FILE              = 'file' ;
+    public const string IGNORE_COLLECTION = 'ignore-collection' ;
+    public const string LAST              = 'last' ;
+    public const string LIST              = 'list' ;
 
 }

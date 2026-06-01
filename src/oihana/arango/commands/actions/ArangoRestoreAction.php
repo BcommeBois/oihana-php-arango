@@ -4,6 +4,7 @@ namespace oihana\arango\commands\actions;
 
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoRestoreOption;
+use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoRestoreTrait;
 
 use oihana\commands\enums\CommandArg;
@@ -63,7 +64,8 @@ use function oihana\files\makeTemporaryDirectory;
  */
 trait ArangoRestoreAction
 {
-    use ArangoListDumpsAction ,
+    use ArangoCollectionsTrait ,
+        ArangoListDumpsAction ,
         ArangoRestoreTrait ,
         EncryptTrait ;
 
@@ -118,7 +120,14 @@ trait ArangoRestoreAction
         $password = $input->getOption( ArangoCommandOption::PASSWORD ) ?? $this->getPassword() ;
         $username = $input->getOption( ArangoCommandOption::USER     ) ?? $this->getUsername() ;
 
+        $collection = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::COLLECTION ) ) ;
+
         $io->section( sprintf( "Restore the '%s' database" , $database ) ) ;
+
+        if( $collection !== [] )
+        {
+            $io->text( 'Collections : ' . implode( ', ' , $collection ) ) ;
+        }
 
         // 03 - Find the database dump file with a specific file, date
         // or in the list of all files in the input folder (or the last).
@@ -234,19 +243,23 @@ trait ArangoRestoreAction
 
         // 06 - Restore the database
 
-        $this->arangoRestore
-        (
-            [
-                ArangoRestoreOption::SERVER_DATABASE   => $database ,
-                ArangoRestoreOption::SERVER_ENDPOINT   => $endpoint ,
-                ArangoRestoreOption::SERVER_PASSWORD   => $password ,
-                ArangoRestoreOption::SERVER_USERNAME   => $username ,
-                ArangoRestoreOption::INPUT_DIRECTORY   => $inputDirectory ,
-                ArangoRestoreOption::CREATE_COLLECTION => true ,
-                ArangoRestoreOption::CREATE_DATABASE   => true
-            ]
-            , $output->isQuiet()
-        );
+        $options =
+        [
+            ArangoRestoreOption::SERVER_DATABASE   => $database ,
+            ArangoRestoreOption::SERVER_ENDPOINT   => $endpoint ,
+            ArangoRestoreOption::SERVER_PASSWORD   => $password ,
+            ArangoRestoreOption::SERVER_USERNAME   => $username ,
+            ArangoRestoreOption::INPUT_DIRECTORY   => $inputDirectory ,
+            ArangoRestoreOption::CREATE_COLLECTION => true ,
+            ArangoRestoreOption::CREATE_DATABASE   => true
+        ] ;
+
+        if( $collection !== [] )
+        {
+            $options[ ArangoRestoreOption::COLLECTION ] = $collection ;
+        }
+
+        $this->arangoRestore( $options , $output->isQuiet() );
 
         // deleteDirectory( $inputDirectory ) ;
 

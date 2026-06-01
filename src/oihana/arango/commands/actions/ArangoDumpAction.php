@@ -6,6 +6,7 @@ use oihana\commands\enums\ExitCode;
 use RuntimeException;
 
 use oihana\arango\commands\options\ArangoDumpOption;
+use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoDumpTrait;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\db\enums\ArangoConfig;
@@ -46,7 +47,8 @@ use function oihana\files\makeTimestampedDirectory;
  */
 trait ArangoDumpAction
 {
-    use ArangoDumpTrait ,
+    use ArangoCollectionsTrait ,
+        ArangoDumpTrait ,
         ArangoListDumpsAction ,
         EncryptTrait ;
 
@@ -89,7 +91,21 @@ trait ArangoDumpAction
         $password = $input->getOption( ArangoConfig::PASSWORD ) ??$this->getPassword() ;
         $username = $input->getOption( ArangoConfig::USER     ) ??$this->getUsername() ;
 
+        $collection = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::COLLECTION        ) ) ;
+        $ignore     = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::IGNORE_COLLECTION ) ) ;
+
+        $this->assertCollectionTargeting( $collection , $ignore ) ;
+
         $io->section( sprintf( "Dump the '%s' database" , $database ) ) ;
+
+        if( $collection !== [] )
+        {
+            $io->text( 'Collections : ' . implode( ', ' , $collection ) ) ;
+        }
+        elseif( $ignore !== [] )
+        {
+            $io->text( 'Ignored collections : ' . implode( ', ' , $ignore ) ) ;
+        }
 
         $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
         $tmpDirectory    = makeTemporaryDirectory( [ $this->id , $this->getName() , $action , Uuid::v4() ] ) ;
@@ -109,18 +125,25 @@ trait ArangoDumpAction
 
         // 02. Dump the ArangoDB database
 
-        $this->arangoDump
-        (
-            options :
-            [
-                ArangoDumpOption::SERVER_DATABASE  => $database ,
-                ArangoDumpOption::SERVER_ENDPOINT  => $endpoint ,
-                ArangoDumpOption::SERVER_PASSWORD  => $password ,
-                ArangoDumpOption::SERVER_USERNAME  => $username ,
-                ArangoDumpOption::OUTPUT_DIRECTORY => $timestampedDirectory
-            ]
-            , silent : $output->isQuiet()
-        ) ;
+        $options =
+        [
+            ArangoDumpOption::SERVER_DATABASE  => $database ,
+            ArangoDumpOption::SERVER_ENDPOINT  => $endpoint ,
+            ArangoDumpOption::SERVER_PASSWORD  => $password ,
+            ArangoDumpOption::SERVER_USERNAME  => $username ,
+            ArangoDumpOption::OUTPUT_DIRECTORY => $timestampedDirectory
+        ] ;
+
+        if( $collection !== [] )
+        {
+            $options[ ArangoDumpOption::COLLECTION ] = $collection ;
+        }
+        elseif( $ignore !== [] )
+        {
+            $options[ ArangoDumpOption::IGNORE_COLLECTION ] = $ignore ;
+        }
+
+        $this->arangoDump( options : $options , silent : $output->isQuiet() ) ;
 
         $io->newLine() ;
 
