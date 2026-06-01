@@ -45,8 +45,9 @@ return
                 CommandParam::HELP           => 'Generic dump and restore runner for an ArangoDB database. Connection settings come from the [arango] section of configs/config.toml ; the dumps directory comes from [app].dumps (see config.example.toml). Override any field on the CLI: --endpoint, --user, --password, --database, --directory, --passphrase, --encrypt. Action is the first positional argument: dump, restore, listDumps. Examples: `php bin/console.php command:arangodb dump`, `php bin/console.php command:arangodb dump --list`, `php bin/console.php command:arangodb restore --last`.' ,
                 CommandParam::ACTIONS        =>
                 [
-                    ArangoAction::DUMP    ,
-                    ArangoAction::RESTORE ,
+                    ArangoAction::COLLECTIONS ,
+                    ArangoAction::DUMP        ,
+                    ArangoAction::RESTORE     ,
                 ] ,
                 ArangoCommandParam::DIRECTORY => $container->get( 'app.dumps' ) ,
 

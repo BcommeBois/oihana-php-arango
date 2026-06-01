@@ -17,6 +17,11 @@ class ArangoAction
     public const string BACKUP = 'backup' ;
 
     /**
+     * List the collections of the arangodb database.
+     */
+    public const string COLLECTIONS = 'collections' ;
+
+    /**
      * The default action.
      */
     public const string DEFAULT = 'default' ;

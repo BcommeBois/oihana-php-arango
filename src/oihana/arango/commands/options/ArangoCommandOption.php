@@ -8,6 +8,7 @@ class ArangoCommandOption
 {
     use ArangoConfigTrait ;
 
+    public const string ALL               = 'all' ;
     public const string COLLECTION        = 'collection' ;
     public const string DATE              = 'date' ;
     public const string DIRECTORY         = 'directory' ;
@@ -16,5 +17,6 @@ class ArangoCommandOption
     public const string LABEL             = 'label' ;
     public const string LAST              = 'last' ;
     public const string LIST              = 'list' ;
+    public const string SYSTEM            = 'system' ;
 
 }

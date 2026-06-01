@@ -88,6 +88,7 @@ class ArangoCommand extends Kernel
 
         $this->addOption   ( CommandOption::PASS_PHRASE  , 'p'   , InputOption::VALUE_OPTIONAL  , 'The encryption passphrase to dump/restore the database.' ) ;
 
+        $this->addOption   ( ArangoCommandOption::ALL               , null  , InputOption::VALUE_NONE      , 'List every collection, including system ones (collections action).' ) ;
         $this->addOption   ( ArangoCommandOption::COLLECTION        , 'c'   , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Restrict the dump/restore to these collections (repeatable or comma-separated).' ) ;
         $this->addOption   ( ArangoCommandOption::DATE              , 'd'   , InputOption::VALUE_OPTIONAL  , 'The Date of the dump to backup or restore.' ) ;
         $this->addOption   ( ArangoCommandOption::DIRECTORY         , 'dir' , InputOption::VALUE_OPTIONAL  , 'The directory to dump and restore the database.' ) ;
@@ -97,6 +98,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::LABEL             , 'L'   , InputOption::VALUE_REQUIRED  , 'Optional label appended to the archive name (e.g. "pre-migration").' ) ;
         $this->addOption   ( ArangoCommandOption::LAST              , 'la'  , InputOption::VALUE_NONE      , 'Search the last dump file and restore it.' ) ;
         $this->addOption   ( ArangoCommandOption::LIST              , 'l'   , InputOption::VALUE_NONE      , 'Display a list of files.' ) ;
+        $this->addOption   ( ArangoCommandOption::SYSTEM            , null  , InputOption::VALUE_NONE      , 'List only system collections (collections action).' ) ;
 
         $this->addOption ( ArangoConfig::DATABASE , null  , InputOption::VALUE_OPTIONAL  , 'The arangoDB database name.' ) ;
         $this->addOption ( ArangoConfig::ENDPOINT , null  , InputOption::VALUE_OPTIONAL  , 'The endpoint of the arangoDB server.' ) ;

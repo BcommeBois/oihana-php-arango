@@ -21,6 +21,16 @@ class ArangoCollectionsTraitStub
         static::assertCollectionTargeting( $collection , $ignore ) ;
     }
 
+    public static function exclude( array $available , array $exclude ) :array
+    {
+        return static::excludeCollections( $available , $exclude ) ;
+    }
+
+    public static function isSystem( string $name ) :bool
+    {
+        return static::isSystemCollection( $name ) ;
+    }
+
     public static function label( ?string $label ) :?string
     {
         return static::sanitizeLabel( $label ) ;
@@ -170,6 +180,58 @@ class ArangoCollectionsTraitTest extends TestCase
             [ 'ghost' ] ,
             ArangoCollectionsTraitStub::missing( [ 'ghost' , 'ghost' ] , [ 'users' ] ) ,
         ) ;
+    }
+
+    // -------------------------------------------------------------------------
+    // excludeCollections
+    // -------------------------------------------------------------------------
+
+    public function testExcludeRemovesListedCollections() :void
+    {
+        $this->assertSame
+        (
+            [ 'users' , 'orders' ] ,
+            ArangoCollectionsTraitStub::exclude( [ 'users' , 'logs' , 'orders' , 'audit' ] , [ 'logs' , 'audit' ] ) ,
+        ) ;
+    }
+
+    public function testExcludeReturnsAllWhenNothingExcluded() :void
+    {
+        $this->assertSame
+        (
+            [ 'users' , 'orders' ] ,
+            ArangoCollectionsTraitStub::exclude( [ 'users' , 'orders' ] , [] ) ,
+        ) ;
+    }
+
+    public function testExcludeCanEmptyTheList() :void
+    {
+        $this->assertSame( [] , ArangoCollectionsTraitStub::exclude( [ 'users' ] , [ 'users' ] ) ) ;
+    }
+
+    public function testExcludeIsCaseSensitive() :void
+    {
+        $this->assertSame
+        (
+            [ 'Users' ] ,
+            ArangoCollectionsTraitStub::exclude( [ 'Users' ] , [ 'users' ] ) ,
+        ) ;
+    }
+
+    // -------------------------------------------------------------------------
+    // isSystemCollection
+    // -------------------------------------------------------------------------
+
+    public function testIsSystemCollectionTrueForUnderscorePrefix() :void
+    {
+        $this->assertTrue( ArangoCollectionsTraitStub::isSystem( '_jobs' ) ) ;
+        $this->assertTrue( ArangoCollectionsTraitStub::isSystem( '_apps' ) ) ;
+    }
+
+    public function testIsSystemCollectionFalseForUserCollections() :void
+    {
+        $this->assertFalse( ArangoCollectionsTraitStub::isSystem( 'users' ) ) ;
+        $this->assertFalse( ArangoCollectionsTraitStub::isSystem( 'orders_2026' ) ) ;
     }
 
     // -------------------------------------------------------------------------

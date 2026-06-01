@@ -113,15 +113,60 @@ trait ArangoDumpAction
             $io->text( 'Ignored collections : ' . implode( ', ' , $ignore ) ) ;
         }
 
-        // Validate the targeted collections against the live database
-        // (best-effort: skipped with a warning when the HTTP API is
-        // unreachable, since arangodump itself may still succeed).
+        // Resolve the effective list of collections to pass to arangodump.
+        //
+        // - --collection : validated best-effort against the live database
+        //   (skipped with a warning when the HTTP API is unreachable, since
+        //   arangodump may still succeed).
+        // - --ignore-collection : arangodump has no exclusion option, so the
+        //   complement (all user collections minus the excluded ones) is
+        //   computed client-side and passed as --collection. This REQUIRES
+        //   the HTTP API to be reachable.
 
-        if( $partial )
+        $targetCollections = $collection ;
+
+        if( $ignore !== [] )
         {
-            $requested = $collection !== [] ? $collection : $ignore ;
-            $db        = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+            $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+            if( $db === null )
+            {
+                throw new RuntimeException( '--ignore-collection requires the ArangoDB HTTP API, but no client is available (check endpoint/database).' ) ;
+            }
 
+            try
+            {
+                $available = array_map( fn( $c ) => $c->getName() , $db->collections( false ) ) ;
+            }
+            catch( ArangoException $exception )
+            {
+                throw new RuntimeException( '--ignore-collection requires the ArangoDB HTTP API, which is unreachable: ' . $exception->getMessage() , 0 , $exception ) ;
+            }
+
+            $missing = $this->missingCollections( $ignore , $available ) ;
+            if( $missing !== [] )
+            {
+                throw new RuntimeException
+                (
+                    sprintf
+                    (
+                        'Unknown collection(s): %s. Available collections: %s.' ,
+                        implode( ', ' , $missing ) ,
+                        implode( ', ' , $available )
+                    )
+                ) ;
+            }
+
+            $targetCollections = $this->excludeCollections( $available , $ignore ) ;
+            if( $targetCollections === [] )
+            {
+                throw new RuntimeException( 'Nothing to dump: every collection is excluded by --ignore-collection.' ) ;
+            }
+
+            $io->text( sprintf( '→ %d collection(s) will be dumped.' , count( $targetCollections ) ) ) ;
+        }
+        elseif( $collection !== [] )
+        {
+            $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
             if( $db === null )
             {
                 $io->warning( 'Collection validation skipped — no ArangoDB HTTP client available.' ) ;
@@ -131,7 +176,7 @@ trait ArangoDumpAction
                 try
                 {
                     $available = array_map( fn( $c ) => $c->getName() , $db->collections( true ) ) ;
-                    $missing   = $this->missingCollections( $requested , $available ) ;
+                    $missing   = $this->missingCollections( $collection , $available ) ;
 
                     if( $missing !== [] )
                     {
@@ -180,13 +225,9 @@ trait ArangoDumpAction
             ArangoDumpOption::OUTPUT_DIRECTORY => $timestampedDirectory
         ] ;
 
-        if( $collection !== [] )
+        if( $targetCollections !== [] )
         {
-            $options[ ArangoDumpOption::COLLECTION ] = $collection ;
-        }
-        elseif( $ignore !== [] )
-        {
-            $options[ ArangoDumpOption::IGNORE_COLLECTION ] = $ignore ;
+            $options[ ArangoDumpOption::COLLECTION ] = $targetCollections ;
         }
 
         $this->arangoDump( options : $options , silent : $output->isQuiet() ) ;

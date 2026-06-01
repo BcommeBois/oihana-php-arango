@@ -95,6 +95,38 @@ trait ArangoCollectionsTrait
     }
 
     /**
+     * Returns the available collection names minus the excluded ones,
+     * order-preserving (case-sensitive).
+     *
+     * Used to resolve `--ignore-collection` client-side: `arangodump` has
+     * no exclusion option, so the complement is computed here and passed
+     * back as an explicit `--collection` list.
+     *
+     * @param array<int, string> $available The collections that exist.
+     * @param array<int, string> $exclude   The collections to drop.
+     * @return array<int, string>
+     */
+    protected static function excludeCollections( array $available , array $exclude ) :array
+    {
+        return array_values
+        (
+            array_filter( $available , fn( $name ) => !in_array( $name , $exclude , true ) )
+        ) ;
+    }
+
+    /**
+     * Returns true when the given name is an ArangoDB system collection
+     * (its name starts with an underscore, e.g. `_jobs`, `_apps`).
+     *
+     * @param string $name
+     * @return bool
+     */
+    protected static function isSystemCollection( string $name ) :bool
+    {
+        return str_starts_with( $name , '_' ) ;
+    }
+
+    /**
      * Returns the requested collection names that are NOT present in the
      * available set (case-sensitive, as ArangoDB collection names are).
      *

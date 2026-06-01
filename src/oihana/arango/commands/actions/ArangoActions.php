@@ -8,6 +8,7 @@ namespace oihana\arango\commands\actions;
 trait ArangoActions
 {
     use ArangoDumpAction ,
+        ArangoListCollectionsAction ,
         ArangoListDumpsAction ,
         ArangoRestoreAction ;
 }
