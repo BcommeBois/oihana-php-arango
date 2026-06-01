@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Continuous integration (GitHub Actions): composer validation + the PHPUnit suite on PHP 8.4, on every push to `main` and pull request. The suite is server-free (Guzzle `MockHandler`), so no ArangoDB service is required.
+
 - Initial scaffold: Composer manifest, PHPUnit 12 + phpDocumentor 3 configuration, MPL-2.0 license, README, CHANGELOG, sibling-aligned folder layout (`src/`, `tests/`, `wiki/`, `assets/`, `bin/`, `configs/`, `definitions/`).
 - Source code under `src/oihana/arango/` (570 PHP files) organised as:
   - `clients/` (72 files) — modern HTTP client built on Guzzle: `ArangoClient`, `Database`, `Collection`, `EdgeCollection`, `Document`, `Edge`, `Cursor` (with `map / forEach / reduce / flatMap` pipeline), `Transaction`, `Graph`, `Analyzer`, `View`, 7 typed indexes (`PersistentIndex`, `GeoIndex`, `TtlIndex`, `FulltextIndex`, `MdiIndex`, `VectorIndex`, `InvertedIndex`), Guzzle `HttpTransport` with retry policy and cluster `HostRing`. Mirrors the public surface of [`arangojs`](https://github.com/arangodb/arangojs) v9 (documents, edges, collections, AQL, indexes, transactions, graphs, ArangoSearch views and analyzers).
