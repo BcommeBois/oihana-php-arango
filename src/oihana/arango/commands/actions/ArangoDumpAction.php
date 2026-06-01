@@ -93,8 +93,11 @@ trait ArangoDumpAction
 
         $collection = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::COLLECTION        ) ) ;
         $ignore     = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::IGNORE_COLLECTION ) ) ;
+        $label      = $this->sanitizeLabel( $input->getOption( ArangoCommandOption::LABEL ) ) ;
 
         $this->assertCollectionTargeting( $collection , $ignore ) ;
+
+        $partial = $collection !== [] || $ignore !== [] ;
 
         $io->section( sprintf( "Dump the '%s' database" , $database ) ) ;
 
@@ -110,13 +113,13 @@ trait ArangoDumpAction
         $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
         $tmpDirectory    = makeTemporaryDirectory( [ $this->id , $this->getName() , $action , Uuid::v4() ] ) ;
 
-        // 01. Creates the timestamped directory YYYY-MM-DDThh:mm:ss-{database}
+        // 01. Creates the timestamped directory YYYY-MM-DDThh:mm:ss-{database}[-partial][-{label}]
 
         $timestampedDirectory = makeTimestampedDirectory
         (
             date     : $input->getOption( ArangoCommandOption::DATE ) ,
             basePath : $tmpDirectory ,
-            suffix   : Char::DASH . $database ,
+            suffix   : static::getArchiveNameSuffix( $database , $partial , $label ) ,
             timezone : $this->timezone   ?? self::DEFAULT_TIMEZONE ,
             format   : $this->dateFormat ?? self::DEFAULT_DATE_FORMAT ,
         ) ;

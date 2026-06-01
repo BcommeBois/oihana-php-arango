@@ -17,9 +17,9 @@ class ArangoRestoreActionStub
 {
     use ArangoRestoreAction ;
 
-    public static function suffix( string $database , bool $encrypt = false ) :string
+    public static function suffix( string $database , bool $encrypt = false , bool $partial = false , ?string $label = null ) :string
     {
-        return static::getArchiveFileSuffix( $database , $encrypt ) ;
+        return static::getArchiveFileSuffix( $database , $encrypt , $partial , $label ) ;
     }
 }
 
@@ -71,5 +71,30 @@ class ArangoRestoreActionTest extends TestCase
     {
         $this->assertSame( '-mydb' . FileExtension::TAR_GZ           , ArangoRestoreActionStub::suffix( 'mydb' , false ) ) ;
         $this->assertSame( '-mydb' . FileExtension::TAR_GZ_ENCRYPTED , ArangoRestoreActionStub::suffix( 'mydb' , true  ) ) ;
+    }
+
+    public function testSuffixPartialDump() :void
+    {
+        $this->assertSame( '-mydb-partial.tar.gz'     , ArangoRestoreActionStub::suffix( 'mydb' , false , true ) ) ;
+        $this->assertSame( '-mydb-partial.tar.gz.enc' , ArangoRestoreActionStub::suffix( 'mydb' , true  , true ) ) ;
+    }
+
+    public function testSuffixPartialWithLabel() :void
+    {
+        $this->assertSame
+        (
+            '-mydb-partial-pre-migration.tar.gz' ,
+            ArangoRestoreActionStub::suffix( 'mydb' , false , true , 'pre-migration' ) ,
+        ) ;
+        $this->assertSame
+        (
+            '-mydb-partial-pre-migration.tar.gz.enc' ,
+            ArangoRestoreActionStub::suffix( 'mydb' , true , true , 'pre-migration' ) ,
+        ) ;
+    }
+
+    public function testSuffixFullWithLabel() :void
+    {
+        $this->assertSame( '-mydb-nightly.tar.gz' , ArangoRestoreActionStub::suffix( 'mydb' , false , false , 'nightly' ) ) ;
     }
 }

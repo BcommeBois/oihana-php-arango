@@ -121,6 +121,7 @@ trait ArangoRestoreAction
         $username = $input->getOption( ArangoCommandOption::USER     ) ?? $this->getUsername() ;
 
         $collection = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::COLLECTION ) ) ;
+        $label      = $this->sanitizeLabel( $input->getOption( ArangoCommandOption::LABEL ) ) ;
 
         $io->section( sprintf( "Restore the '%s' database" , $database ) ) ;
 
@@ -148,7 +149,7 @@ trait ArangoRestoreAction
                 (
                     date       : $date ,
                     basePath   : $inputDirectory ,
-                    suffix     : static::getArchiveFileSuffix( $database , $shouldEncrypt ) ,
+                    suffix     : static::getArchiveFileSuffix( $database , $shouldEncrypt , $collection !== [] , $label ) ,
                     timezone   : $this->timezone   ?? self::DEFAULT_TIMEZONE ,
                     format     : $this->dateFormat ?? self::DEFAULT_DATE_FORMAT ,
                     // assertable : true -> default
@@ -275,15 +276,21 @@ trait ArangoRestoreAction
      * Builds the archive file name suffix used to locate a dump by date.
      *
      * The dump action always produces a gzip-compressed tarball
-     * (`{date}-{database}.tar.gz`), optionally AES-encrypted
-     * (`{date}-{database}.tar.gz.enc`). This helper mirrors that naming.
+     * (`{date}-{database}[-partial][-{label}].tar.gz`), optionally
+     * AES-encrypted (`….tar.gz.enc`). This helper mirrors that naming so a
+     * targeted dump can be located by `--date` (the caller must pass the
+     * same `--collection`/`--ignore-collection` and `--label` it dumped
+     * with). The name part is delegated to {@see getArchiveNameSuffix()}.
      *
-     * @param string $database The database name embedded in the suffix.
-     * @param bool   $encrypt  Whether the archive is encrypted.
-     * @return string e.g. `-mydb.tar.gz` or `-mydb.tar.gz.enc`.
+     * @param string      $database The database name embedded in the suffix.
+     * @param bool        $encrypt  Whether the archive is encrypted.
+     * @param bool        $partial  Whether the dump targets a subset of collections.
+     * @param string|null $label    Optional label appended to the name.
+     * @return string e.g. `-mydb.tar.gz`, `-mydb-partial.tar.gz` or `-mydb-partial-pre-migration.tar.gz.enc`.
      */
-    protected static function getArchiveFileSuffix( string $database , bool $encrypt = false ) :string
+    protected static function getArchiveFileSuffix( string $database , bool $encrypt = false , bool $partial = false , ?string $label = null ) :string
     {
-        return Char::DASH . $database . ( $encrypt ? FileExtension::TAR_GZ_ENCRYPTED : FileExtension::TAR_GZ ) ;
+        return static::getArchiveNameSuffix( $database , $partial , $label )
+             . ( $encrypt ? FileExtension::TAR_GZ_ENCRYPTED : FileExtension::TAR_GZ ) ;
     }
 }

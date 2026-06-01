@@ -94,6 +94,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::ENCRYPT           , 'e'   , InputOption::VALUE_NONE      , 'Enabled the encryption to dump/restore the database.' ) ;
         $this->addOption   ( ArangoCommandOption::FILE              , 'f'   , InputOption::VALUE_OPTIONAL  , 'The file to dump/restore.' ) ;
         $this->addOption   ( ArangoCommandOption::IGNORE_COLLECTION , null  , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Exclude these collections from the dump (repeatable or comma-separated, dump only).' ) ;
+        $this->addOption   ( ArangoCommandOption::LABEL             , 'L'   , InputOption::VALUE_REQUIRED  , 'Optional label appended to the archive name (e.g. "pre-migration").' ) ;
         $this->addOption   ( ArangoCommandOption::LAST              , 'la'  , InputOption::VALUE_NONE      , 'Search the last dump file and restore it.' ) ;
         $this->addOption   ( ArangoCommandOption::LIST              , 'l'   , InputOption::VALUE_NONE      , 'Display a list of files.' ) ;
 

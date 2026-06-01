@@ -13,6 +13,7 @@ class ArangoCommandOption
     public const string DIRECTORY         = 'directory' ;
     public const string FILE              = 'file' ;
     public const string IGNORE_COLLECTION = 'ignore-collection' ;
+    public const string LABEL             = 'label' ;
     public const string LAST              = 'last' ;
     public const string LIST              = 'list' ;
 
