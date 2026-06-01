@@ -178,7 +178,7 @@ trait ArangoRestoreAction
             $last = $input->getOption( ArangoCommandOption::LAST ) ;
             if( $last )
             {
-                $inputFile = end( $files ) ;
+                $inputFile = $inputDirectory . DIRECTORY_SEPARATOR . end( $files ) ;
             }
             elseif ( $input->isInteractive() )
             {
