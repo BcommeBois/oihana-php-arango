@@ -2,17 +2,19 @@
 
 namespace oihana\arango\commands\traits;
 
-use oihana\arango\commands\options\ArangoDumpOptions;
-use oihana\enums\Char;
+use ReflectionException;
 use RuntimeException;
-use function oihana\commands\helpers\silent;
+
+use oihana\arango\commands\options\ArangoDumpOption;
+use oihana\arango\commands\options\ArangoDumpOptions;
 
 /**
  * The command to manage an ArangoDB database.
  */
 trait ArangoDumpTrait
 {
-    use ArangoConfigTrait ;
+    use ArangoConfigTrait ,
+        ArangoProcessTrait ;
 
     /**
      * The arango dump command.
@@ -21,52 +23,38 @@ trait ArangoDumpTrait
 
     /**
      * Run the 'arangodump' command to dump the ArangoDB database.
+     *
      * @param array|ArangoDumpOptions|null $options The arangodump options definition.
      * @param bool $silent Indicates if the command is invoked silently.
+     *
      * @return int
+     *
+     * @throws ReflectionException
      */
-    public function arangoDump(  array|ArangoDumpOptions|null $options = null , bool $silent = false ) :int
+    public function arangoDump( array|ArangoDumpOptions|null $options = null , bool $silent = false ) :int
     {
-        system( $this->getArangoDumpCommand( $options , $silent ) , $status ) ;
-        if( $status == 0 )
-        {
-            return $status ;
-        }
-        else
+        $status = static::runProcess( $this->getArangoDumpArguments( $options ) , $silent ) ;
+        if( $status !== 0 )
         {
             throw new RuntimeException( 'The ArangoDB database dump command failed.' , $status ) ;
         }
+        return $status ;
     }
 
     /**
-     * Generates the arangodump command expression.
+     * Builds the `arangodump` argument vector (argv[0] = binary name).
+     *
+     * The vector is executed without a shell (see {@see ArangoProcessTrait::runProcess()}),
+     * so option values are passed verbatim and never re-interpreted.
+     *
      * @param array|ArangoDumpOptions|null $options
-     * @param bool $silent
-     * @return string
+     *
+     * @return array<int, string>
+     *
+     * @throws ReflectionException
      */
-    public function getArangoDumpCommand( array|ArangoDumpOptions|null $options = null , bool $silent = false  ):string
+    public function getArangoDumpArguments( array|ArangoDumpOptions|null $options = null ) :array
     {
-        // Default command
-        $command = self::ARANGO_DUMP . Char::SPACE . ArangoDumpOptions::create( $options ) ;
-
-        // Docker command
-        // TODO special command when the arangodb use a Docker container
-        //
-        // $output       = $directory
-        // $dockerOutput = '/dumps'; // The directory in the Docker container
-        //
-        // $command = <<<CMD
-        // docker run --rm \
-        // -v {$output}:{$dockerOutput} \
-        // arangodb/arangodb \
-        // arangodump \
-        // --server.endpoint tcp://host.docker.internal:8529 \
-        // --server.database {$database} \
-        // --server.username root \
-        // --server.password {$password} \
-        // --input-directory {$dockerOutput}
-        // CMD;
-
-        return silent( $command , $silent ) ;
+        return [ self::ARANGO_DUMP , ...static::optionsToArguments( ArangoDumpOptions::create( $options ) , ArangoDumpOption::class ) ] ;
     }
 }
