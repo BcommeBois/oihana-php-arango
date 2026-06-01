@@ -123,7 +123,7 @@ class ArangoCommand extends Kernel
 
         $this->assertActions( $this->action ) ;
 
-        $this->getApplication()->setSignalsToDispatchEvent( (int) [ SIGINT , SIGTERM , SIGUSR1 , SIGUSR2 , SIGALRM ] );
+        $this->getApplication()->setSignalsToDispatchEvent( SIGINT , SIGTERM , SIGUSR1 , SIGUSR2 , SIGALRM );
 
         [ $io , $timestamp ] = $this->startCommand( $input , $output ) ;
 
