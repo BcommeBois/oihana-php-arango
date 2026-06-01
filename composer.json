@@ -345,8 +345,11 @@
         }
     } ,
     "require" : {
-        "php"                   : ">=8.4" ,
-        "ext-memcached"         : "*" ,
+        "php" : ">=8.4" ,
+        
+        "ext-memcached" : "*" ,
+        "ext-pcntl"     : "*" ,
+        
         "casbin/casbin"         : "^4.0" ,
         "guzzlehttp/guzzle"     : "^7.10" ,
         "php-di/php-di"         : "^7.0" ,
@@ -367,9 +370,9 @@
         "oihana/php-system"     : "dev-main"
     } ,
     "require-dev" : {
-        "phpunit/phpunit"        : "^12" ,
-        "nunomaduro/collision"   : "^8.8" ,
-        "phpdocumentor/shim"     : "^3.8"
+        "phpunit/phpunit"      : "^12" ,
+        "nunomaduro/collision" : "^8.8" ,
+        "phpdocumentor/shim"   : "^3.8"
     } ,
     "minimum-stability" : "dev" ,
     "prefer-stable" : true ,
