@@ -6,7 +6,7 @@ namespace tests\oihana\arango\controllers\traits;
 
 use DI\DependencyException;
 use DI\NotFoundException;
-use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\CoversTrait;
 use PHPUnit\Framework\TestCase;
 
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -31,7 +31,7 @@ class PayloadsTraitSub
     }
 }
 
-#[CoversClass(PayloadsTrait::class)]
+#[CoversTrait(PayloadsTrait::class)]
 class PayloadsTraitTest extends TestCase
 {
     // -------------------- propertyPayload --------------------
