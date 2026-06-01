@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `command:arangodb` document `upsert` now honors the `removeKeys` exclusion list: it was passed under the `excludes` key, which the upsert query never reads, so the exclusion silently had no effect.
 - `ArangoCommand` registered the wrong signals for event dispatch: it passed `(int) [SIGINT, …]` (which casts to `1`) to the variadic `setSignalsToDispatchEvent()`. The intended signal list is now passed.
 - Removed the unused `ignoreCollection` arangodump option (`ArangoDumpOptions::$ignoreCollection` / `ArangoDumpOption::IGNORE_COLLECTION`): no such flag exists in `arangodump`, and exclusion is resolved client-side as a `--collection` complement. The `--ignore-collection` CLI flag is unchanged.
 - `ArangoConfigTrait` now validates the connection settings with exceptions instead of `assert()` (which is compiled out when `zend.assertions=-1`), so a missing database/endpoint/username never silently flows on as null. Properties are initialized; an empty password remains valid.

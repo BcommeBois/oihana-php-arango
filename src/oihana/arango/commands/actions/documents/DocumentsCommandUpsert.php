@@ -25,8 +25,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 use function oihana\commands\helpers\success;
 
-// TODO finalize it
-
 trait DocumentsCommandUpsert
 {
     use DocumentsCommandTrait ;
@@ -86,7 +84,7 @@ trait DocumentsCommandUpsert
 
         $result = $this->documents->upsert
         ([
-            DocumentsCommandParam::EXCLUDES => $this->removeKeys ,
+            DocumentsCommandParam::REMOVE_KEYS => $this->removeKeys ,
             ...$option
         ]) ;
 
