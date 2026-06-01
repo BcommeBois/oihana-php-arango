@@ -17,7 +17,6 @@ class ArangoDumpOption extends Option
     public const string DUMP_DATA                  = 'dumpData';
     public const string DUMP_VIEWS                 = 'dumpViews';
     public const string DUMP_VPACK                 = 'dumpVPack';
-    public const string IGNORE_COLLECTION          = 'ignoreCollection';
     public const string INCLUDE_SYSTEM_COLLECTIONS = 'includeSystemCollections';
     public const string INITIAL_BATCH_SIZE         = 'initialBatchSize';
     public const string LOCAL_NETWORK_THREADS      = 'localNetworkThreads';

@@ -64,13 +64,6 @@ class ArangoDumpOptions extends Options
     public bool|null $dumpVPack;
 
     /**
-     * <p>Ignore and exclude this collection during the dump process (can be specified multiple times).</p>
-     * <p>Either --collection or --ignore-collection can be used at the same time.</p>
-     * @var string|array|null
-     */
-    public string|array|null $ignoreCollection;
-
-    /**
      * Include system collections.
      * This option can be specified without a value to enable it.
      * @var bool|null

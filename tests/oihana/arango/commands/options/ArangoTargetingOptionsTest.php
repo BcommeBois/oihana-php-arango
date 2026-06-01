@@ -28,17 +28,6 @@ class ArangoTargetingOptionsTest extends TestCase
         $this->assertStringContainsString( '--collection "products"' , $command ) ;
     }
 
-    public function testDumpIgnoreCollectionRendersRepeatedFlags() :void
-    {
-        $command = (string) ArangoDumpOptions::create
-        (
-            [ ArangoDumpOption::IGNORE_COLLECTION => [ 'logs' , 'audit' ] ]
-        ) ;
-
-        $this->assertStringContainsString( '--ignore-collection "logs"'  , $command ) ;
-        $this->assertStringContainsString( '--ignore-collection "audit"' , $command ) ;
-    }
-
     public function testDumpWithoutTargetingHasNoCollectionFlag() :void
     {
         $command = (string) ArangoDumpOptions::create
@@ -46,8 +35,7 @@ class ArangoTargetingOptionsTest extends TestCase
             [ ArangoDumpOption::SERVER_DATABASE => 'mydb' ]
         ) ;
 
-        $this->assertStringNotContainsString( '--collection'        , $command ) ;
-        $this->assertStringNotContainsString( '--ignore-collection' , $command ) ;
+        $this->assertStringNotContainsString( '--collection' , $command ) ;
     }
 
     public function testRestoreCollectionRendersFlag() :void
