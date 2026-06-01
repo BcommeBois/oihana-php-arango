@@ -5,7 +5,9 @@ namespace oihana\arango\commands\actions;
 use oihana\commands\enums\ExitCode;
 use RuntimeException;
 
+use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\commands\options\ArangoDumpOption;
+use oihana\arango\commands\traits\ArangoClientTrait;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoDumpTrait;
 use oihana\arango\commands\options\ArangoCommandOption;
@@ -47,7 +49,8 @@ use function oihana\files\makeTimestampedDirectory;
  */
 trait ArangoDumpAction
 {
-    use ArangoCollectionsTrait ,
+    use ArangoClientTrait ,
+        ArangoCollectionsTrait ,
         ArangoDumpTrait ,
         ArangoListDumpsAction ,
         EncryptTrait ;
@@ -108,6 +111,46 @@ trait ArangoDumpAction
         elseif( $ignore !== [] )
         {
             $io->text( 'Ignored collections : ' . implode( ', ' , $ignore ) ) ;
+        }
+
+        // Validate the targeted collections against the live database
+        // (best-effort: skipped with a warning when the HTTP API is
+        // unreachable, since arangodump itself may still succeed).
+
+        if( $partial )
+        {
+            $requested = $collection !== [] ? $collection : $ignore ;
+            $db        = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+
+            if( $db === null )
+            {
+                $io->warning( 'Collection validation skipped — no ArangoDB HTTP client available.' ) ;
+            }
+            else
+            {
+                try
+                {
+                    $available = array_map( fn( $c ) => $c->getName() , $db->collections( true ) ) ;
+                    $missing   = $this->missingCollections( $requested , $available ) ;
+
+                    if( $missing !== [] )
+                    {
+                        throw new RuntimeException
+                        (
+                            sprintf
+                            (
+                                'Unknown collection(s): %s. Available collections: %s.' ,
+                                implode( ', ' , $missing ) ,
+                                implode( ', ' , $available )
+                            )
+                        ) ;
+                    }
+                }
+                catch( ArangoException $exception )
+                {
+                    $io->warning( 'Collection validation skipped — ArangoDB HTTP API unreachable: ' . $exception->getMessage() ) ;
+                }
+            }
         }
 
         $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
