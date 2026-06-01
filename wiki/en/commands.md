@@ -15,6 +15,8 @@ Both inherit from the [`oihana/php-commands`](getting-started/dependencies.md#oi
 
 `ArangoCommand` is shipped pre-wired by the library and registered under the name `command:arangodb` by [`definitions/commands.php`](../../definitions/commands.php). It is immediately usable via `php bin/console.php command:arangodb …` once `configs/config.toml` has been created.
 
+> 📖 **Detailed documentation**: [`commands/arangodb.md`](commands/arangodb.md) — targeted dump/restore (`--collection` / `--ignore-collection` / `--label`), the `collections` sub-command, collection add/remove semantics, and the `scripts/seed-playground.php` playground database.
+
 ### Available actions
 
 | Action | Trait | Typical output |
