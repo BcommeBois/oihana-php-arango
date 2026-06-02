@@ -3,6 +3,7 @@
 namespace tests\oihana\arango\models\traits\documents\mocks;
 
 use Closure;
+use Generator;
 
 use DI\Container;
 
@@ -47,6 +48,28 @@ class MockDocuments extends Documents
 
     /** Canned value returned by {@see getDocuments()}. */
     public array $documentsResult = [] ;
+
+    /** The collection name passed to the last {@see collectionTruncate()} call. */
+    public ?string $lastTruncatedCollection = null ;
+
+    /** Canned value yielded by {@see streamDocuments()}. */
+    public array $streamResult = [] ;
+
+    /** Canned value returned by {@see collectionTruncate()}. */
+    public bool $truncateResult = true ;
+
+    /**
+     * Captures the truncated collection name and returns the canned {@see $truncateResult}.
+     *
+     * @param string $name The collection name to truncate.
+     *
+     * @return bool The canned truncate result.
+     */
+    public function collectionTruncate( string $name ) :bool
+    {
+        $this->lastTruncatedCollection = $name ;
+        return $this->truncateResult ;
+    }
 
     /**
      * Public proxy over the protected executeWriteOperation() so tests can reach
@@ -138,5 +161,31 @@ class MockDocuments extends Documents
         $this->lastQuery = $query ;
         $this->lastBinds = $bindVars ;
         return $this->documentsResult ;
+    }
+
+    /**
+     * Captures the executed query/binds and yields the canned {@see $streamResult}.
+     *
+     * @param string                             $query    The AQL query the trait built.
+     * @param array                              $bindVars The bind variables the trait built.
+     * @param array                              $options  Cursor options (ignored by the double).
+     * @param bool                               $raw      Whether to skip hydration (ignored).
+     * @param null|SchemaResolver|Closure|string $schema   Hydration schema (ignored).
+     *
+     * @return Generator The canned documents, yielded one by one.
+     */
+    public function streamDocuments
+    (
+        string                             $query    ,
+        array                              $bindVars = [] ,
+        array                              $options  = [] ,
+        bool                               $raw      = false ,
+        null|SchemaResolver|Closure|string $schema   = null ,
+    )
+    :Generator
+    {
+        $this->lastQuery = $query ;
+        $this->lastBinds = $bindVars ;
+        yield from $this->streamResult ;
     }
 }
