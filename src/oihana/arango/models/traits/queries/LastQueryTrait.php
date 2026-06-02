@@ -15,6 +15,7 @@ use oihana\arango\models\traits\aql\ActiveTrait;
 use oihana\arango\models\traits\aql\BindTrait;
 use oihana\arango\models\traits\aql\SearchTrait;
 use oihana\exceptions\BindException;
+use oihana\models\traits\ConditionsTrait;
 
 use org\schema\constants\Schema;
 
@@ -34,11 +35,12 @@ use function oihana\core\strings\compile;
  */
 trait LastQueryTrait
 {
-    use ActiveTrait ,
-        BindTrait   ,
-        DebugTrait  ,
-        FieldsTrait ,
-        SearchTrait ;
+    use ActiveTrait     ,
+        BindTrait       ,
+        ConditionsTrait ,
+        DebugTrait      ,
+        FieldsTrait     ,
+        SearchTrait     ;
 
     /**
      * Build the AQL query to fetch the last document from the collection.
