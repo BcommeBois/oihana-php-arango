@@ -71,24 +71,24 @@ trait OnDeleteVertex
      */
     public function onDeleteVertex( Payload $payload ):void
     {
-        $data    = $payload->data   ?? null ;
-        $target  = $payload->target ?? null ;
+        $data   = $payload->data   ?? null ;
+        $target = $payload->target ?? null ;
 
-        if( isset( $data ) && isset( $target ) )
+        if( !isset( $target ) )
         {
-            $edges = $this->deleteEdges
-            (
-                vertex : normalize
-                (
-                    is_array( $data )
-                        ? array_map( fn( $doc ) => $doc?->_key ?? null , $data )
-                        : $data->_key ?? null
-                ),
-                init : [ AQL::CONTEXT => $target ]
-            ) ;
-
-            $this->purgeVertices( $edges , $target ) ;
+            return ;
         }
+
+        $vertex = normalize( is_array( $data ) ? array_map( fn( $doc ) => $doc?->_key ?? null , $data ) : $data?->_key ?? null ) ;
+
+        if( $vertex === null )
+        {
+            return ;
+        }
+
+        $edges = $this->deleteEdges( vertex: $vertex , init: [ AQL::CONTEXT => $target ] ) ;
+
+        $this->purgeVertices( $edges , $target ) ;
     }
 
     /**
