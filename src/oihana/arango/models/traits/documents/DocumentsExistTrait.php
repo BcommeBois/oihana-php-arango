@@ -49,7 +49,9 @@ trait DocumentsExistTrait
      *      <li>prefix : The document alias used in the AQL query (e.g., "doc" in `doc._key`). Defaults to "doc".
      *      <li>conditions : An array of additional AQL filter conditions to append to the query.
      * </ul>
+     *
      * @return bool True of the value exist in the model.
+     *
      * @throws ArangoException If there's an issue with the ArangoDB query execution.
      * @throws BindException If there's an error binding parameters to the AQL query.
      * @throws ReflectionException If a reflection error occurs (e.g., during internal AQL building).
@@ -119,6 +121,7 @@ trait DocumentsExistTrait
 
     /**
      * Check if the given list of values exist in the collection.
+     *
      * @param array $values
      * @param string $match
      * Determines the matching strategy when multiple `value`s are provided. Uses constants from `ArrayComparator` enumeration.
@@ -127,7 +130,9 @@ trait DocumentsExistTrait
      *      <li>`ArrayComparator::ANY`: Returns `true` if *at least one* of the specified `value`s exists as a document.</li>
      *  </ul>
      * @param array $init
-     * @return int
+     *
+     * @return bool
+     *
      * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
@@ -136,7 +141,7 @@ trait DocumentsExistTrait
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
-    public function existIn( array $values , string $match = ArrayComparator::ALL , array $init = [] ):int
+    public function existIn( array $values , string $match = ArrayComparator::ALL , array $init = [] ):bool
     {
         return $this->exist( [ ...$init , Arango::VALUE => $values , Arango::MATCH => $match ] ) ;
     }
