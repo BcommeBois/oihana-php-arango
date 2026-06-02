@@ -2,7 +2,6 @@
 
 namespace oihana\arango\models\traits\documents;
 
-use oihana\arango\models\traits\queries\ExistQueryTrait;
 use ReflectionException;
 
 use DI\DependencyException;
@@ -15,6 +14,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\db\enums\ArrayComparator;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\ArangoTrait;
+use oihana\arango\models\traits\queries\ExistQueryTrait;
 use oihana\exceptions\BindException;
 
 use function oihana\core\arrays\toArray;
