@@ -148,11 +148,3 @@ function aqlFields
     }
     return null ;
 }
-
-// Filter::URL_API         => $this->fieldUrlApi( $key , $doc ) ,
-// Filter::IMAGE           => $this->fieldImage( $key , $doc , $name ) ,
-// Filter::MEDIA_SOURCE    => $this->fieldMediaSource( $key , $doc ) ,
-// Filter::MEDIA_THUMBNAIL => $this->fieldMediaThumbnail( $key , $doc ) ,
-// Filter::MEDIA_URL       => $this->fieldMediaUrl( $key , $doc ) ,
-// Filter::THESAURUS_IMAGE => $this->fieldThesaurusImage( $key , $basePath , $doc ) ,
-// Filter::THESAURUS_URL   => $this->fieldThesaurusUrl( $key , $doc )
