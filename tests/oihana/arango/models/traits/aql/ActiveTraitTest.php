@@ -15,8 +15,8 @@ use PHPUnit\Framework\TestCase;
  */
 class ActiveTraitStub
 {
-    use ActiveTrait ;
-    use BindTrait ;
+    use ActiveTrait ,
+        BindTrait ;
 
     public function __construct()
     {

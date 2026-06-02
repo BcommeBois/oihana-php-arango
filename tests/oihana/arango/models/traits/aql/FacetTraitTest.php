@@ -32,8 +32,8 @@ class FacetSpyLogger extends AbstractLogger
  */
 class FacetTraitStub
 {
-    use FacetTrait ;
-    use BindTrait ;
+    use BindTrait ,
+        FacetTrait ;
 
     public mixed    $logger     = null ;
     public ?string  $collection = 'mycol' ;
