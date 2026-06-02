@@ -6,10 +6,9 @@ use PHPUnit\Framework\TestCase;
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
 
 /**
- * Tier-2 coverage for the `_from`/`_to` filter-based methods of
- * {@see \oihana\arango\models\traits\edges\EdgesExistTrait}: existEdge,
- * existEdgeFrom and existEdgeTo (existence = COUNT > 0). The vertex-traversal
- * has*Vertex() methods need wired vertex models and are out of scope here.
+ * Tier-2 coverage for {@see \oihana\arango\models\traits\edges\EdgesExistTrait}:
+ * the `_from`/`_to` filter methods (existEdge / existEdgeFrom / existEdgeTo) and
+ * the directional vertex-neighbour checks (has*Vertex → hasVertex → countVertices > 0).
  */
 final class EdgesExistTraitTest extends TestCase
 {
@@ -60,5 +59,36 @@ final class EdgesExistTraitTest extends TestCase
             'RETURN LENGTH(FOR doc IN @@collection FILTER doc._to == @to RETURN 1)' ,
             $edges->lastQuery ,
         ) ;
+    }
+
+    public function testHasInboundVertexBuildsInboundTraversalWithIdFilter() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->firstResult = 1 ;
+
+        $this->assertTrue( $edges->hasInboundVertex( 'roles/2' , 'users/1' ) ) ;
+        $this->assertStringContainsString( 'IN INBOUND @startVertex' , $edges->lastQuery ) ;
+        $this->assertStringContainsString( 'FILTER vertex._id == @id' , $edges->lastQuery ) ;
+        $this->assertSame( 'users/1' , $edges->lastBinds[ 'id' ] ) ;
+    }
+
+    public function testHasOutboundVertexBuildsOutboundTraversal() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->firstResult = 0 ;
+
+        $this->assertFalse( $edges->hasOutboundVertex( 'users/1' , 'roles/2' ) ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND @startVertex' , $edges->lastQuery ) ;
+    }
+
+    public function testHasAnyVertexBuildsAnyTraversalWithOrFilter() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->firstResult = 1 ;
+
+        $this->assertTrue( $edges->hasAnyVertex( 'users/1' , 'roles/2' ) ) ;
+        $this->assertStringContainsString( 'IN ANY @startVertex' , $edges->lastQuery ) ;
+        // ANY builds an OR over the from/to resolved ids of the target vertex.
+        $this->assertStringContainsString( '||' , $edges->lastQuery ) ;
     }
 }
