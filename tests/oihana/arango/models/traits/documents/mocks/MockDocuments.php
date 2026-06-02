@@ -4,6 +4,8 @@ namespace tests\oihana\arango\models\traits\documents\mocks;
 
 use Closure;
 
+use DI\Container;
+
 use oihana\arango\models\Documents;
 
 use org\schema\helpers\SchemaResolver;
@@ -25,6 +27,7 @@ class MockDocuments extends Documents
     public function __construct( string $collection = 'users' )
     {
         $this->collection = $collection ;
+        $this->container  = new Container() ;
         $this->queryId    = 'q' ;
         $this->debug      = false ;
         $this->mock       = false ;
@@ -44,6 +47,20 @@ class MockDocuments extends Documents
 
     /** Canned value returned by {@see getDocuments()}. */
     public array $documentsResult = [] ;
+
+    /**
+     * Public proxy over the protected executeWriteOperation() so tests can reach
+     * its validation guard directly.
+     *
+     * @param array  $init      The write configuration.
+     * @param string $operation The write operation (UPDATE or REPLACE).
+     *
+     * @return ?object The canned object result.
+     */
+    public function callExecuteWriteOperation( array $init , string $operation ) :?object
+    {
+        return $this->executeWriteOperation( $init , $operation ) ;
+    }
 
     /**
      * Captures the executed query/binds and returns the canned {@see $firstResult}.
