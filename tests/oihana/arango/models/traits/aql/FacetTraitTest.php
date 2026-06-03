@@ -7,6 +7,7 @@ use oihana\arango\db\enums\Logic;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\exceptions\ValidationException;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
@@ -437,6 +438,38 @@ class FacetTraitTest extends TestCase
             $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => [ '459' , '-460' ] ] , $binds , [ AQL::EDGE => 'live_numbers' ] , AQL::DOC ) ,
         ) ;
         $this->assertSame( [ 'numbers_value0' => '459' , 'numbers_value1' => '460' ] , $binds ) ;
+    }
+
+    // ---------------------------------------------------------------- AQL injection guards (complex sub-fields)
+
+    public function testEdgeComplexRejectsInjectionInSubField() :void
+    {
+        $binds = [] ;
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->callEdgeComplex( 'numbers' , [ 'value == 1 || 1' => 'x' ] , $binds , [ AQL::EDGE => 'e' ] , AQL::DOC ) ;
+    }
+
+    public function testArrayComplexRejectsInjectionInSubField() :void
+    {
+        $binds = [] ;
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->callArrayComplex( 'workshops' , [ 'a)||LENGTH(FOR s IN secrets RETURN 1)>0||(b' => 'pig' ] , $binds ) ;
+    }
+
+    public function testPrepareFacetsSkipsAndLogsOnInjectionAttempt() :void
+    {
+        // Routed through the dispatcher, a malicious sub-field is swallowed: the
+        // facet is dropped and a warning is logged (no fragment reaches the AQL).
+        $stub = $this->stub() ;
+        $stub->logger = new FacetSpyLogger() ;
+        $stub->facets = [ 'numbers' => [ Facet::TYPE => Facet::EDGE_COMPLEX , AQL::EDGE => 'e' ] ] ;
+
+        $binds  = [] ;
+        $result = $stub->callPrepareFacets( [ Arango::FACETS => [ 'numbers' => [ 'a || 1==1' => 'x' ] ] ] , $binds ) ;
+
+        $this->assertNull( $result ) ;
+        $this->assertSame( [ 'warning' ] , $stub->logger->levels ) ;
+        $this->assertSame( [] , $binds ) ;
     }
 
     // ---------------------------------------------------------------- HasFacetArrayComplex

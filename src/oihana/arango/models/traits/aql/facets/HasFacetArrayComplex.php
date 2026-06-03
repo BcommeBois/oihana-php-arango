@@ -8,10 +8,11 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
 use oihana\enums\Char;
-
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
@@ -50,6 +51,7 @@ trait HasFacetArrayComplex
      *
      * @throws BindException
      * @throws ReflectionException
+     * @throws ValidationException
      *
      * @example
      * Set the facetable definition in the model :
@@ -74,6 +76,7 @@ trait HasFacetArrayComplex
         $filter = [] ;
         foreach( $value as $subKey => $s )
         {
+            assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
             $search = preg_replace( '/\./' , Char::UNDERLINE , $key . Char::UNDERLINE . $subKey ) ;
             if( is_array( $s ) && !empty( $s ) ) // test negative and multiple
             {

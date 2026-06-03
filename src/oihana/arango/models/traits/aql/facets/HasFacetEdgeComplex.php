@@ -11,8 +11,10 @@ use oihana\arango\db\enums\Logic;
 use oihana\arango\db\enums\Traversal;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
@@ -56,6 +58,7 @@ trait HasFacetEdgeComplex
      *
      * @throws BindException
      * @throws ReflectionException
+     * @throws ValidationException
      *
      * @example
      * Set the facetable definition in the model :
@@ -98,6 +101,7 @@ trait HasFacetEdgeComplex
         // traversal: a leading '-' negates that field's value with `!=`.
         foreach( $value as $subKey => $terms )
         {
+            assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
             $field = key( $subKey , $docRef ) ;
 
             if( is_array( $terms ) )

@@ -19,7 +19,7 @@ The folder counts 29 functions, organized in five categories:
 | Fragment composition | `aqlAssignments`, `aqlSerialize` | Serialize *key/value* pairs. |
 | CUD sub-expressions | `aqlInsertExpression`, `aqlUpdateExpression`, `aqlReplaceExpression`, `aqlUpsertExpression` | Build the body of `INSERT` / `UPDATE` / `REPLACE` / `UPSERT` operations. |
 | *Field builders* (`fields/`) | `aqlFields` + 12 typed `aqlField*` | Build `RETURN { key: doc.value, ... }`. |
-| Introspection and projection | `isAQLExpression`, `isAQLFunction`, `isAQLId`, `matchesSkin`, `resolveSkinFields` | Detect and route. |
+| Introspection and projection | `isAQLExpression`, `isAQLFunction`, `isAQLId`, `isAttributeName`, `assertAttributeName`, `matchesSkin`, `resolveSkinFields` | Detect, validate and route. |
 
 ## Value encoding
 
@@ -216,15 +216,36 @@ In normal use, these *builders* are not called directly: you declare a `Document
 
 ## AQL introspection
 
-Three predicates classify a string:
+Four predicates classify a string:
 
 | Function | Signature | True if... |
 |---|---|---|
 | `isAQLExpression` | `(mixed $value) : bool` | The string looks like an AQL expression (function, doc reference, bind, *handle*). |
 | `isAQLFunction` | `(string $expression) : bool` | The string is a valid and known AQL function call (`COUNT(doc)`, `DATE_NOW()`, ...). |
 | `isAQLId` | `(mixed $value) : bool` | The string matches the *document handle* format `collection/key`. |
+| `isAttributeName` | `(mixed $value) : bool` | The string is a safe attribute name — one or more identifier segments joined by dots (`value`, `_key`, `breeding.alternateName`). |
 
-These predicates are consumed internally by `aqlValue()` to decide whether to escape a string. They are public for cases where you need the same heuristic on the validation side.
+The first three predicates are consumed internally by `aqlValue()` to decide whether to escape a string. They are public for cases where you need the same heuristic on the validation side.
+
+### Injection guard — `isAttributeName` / `assertAttributeName`
+
+An untrusted **value** always goes behind a *bind* (see [Bind variables](binds.md)), so it can never be injected. But an **attribute name** (a key) coming from user input and concatenated into a `doc.<name>` accessor **cannot** be a bind — it is an identifier, not a value. That is what this pair guards (the attribute counterpart of `isBindVariable` / `assertBindVariable`):
+
+| Function | Signature | Role |
+|---|---|---|
+| `isAttributeName` | `(mixed $value) : bool` | Predicate: `true` when the string is a safe attribute name (or dotted path). |
+| `assertAttributeName` | `(mixed $value) : void` | Throws `ValidationException` when the name is unsafe. |
+
+The accepted pattern is `^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`: any character able to break out of an attribute path (space, `(`, `||`, `"`, `;`, `-`, ...) is rejected.
+
+```php
+use function oihana\arango\db\helpers\assertAttributeName;
+
+assertAttributeName( 'breeding.alternateName' ); // ok (nested path)
+assertAttributeName( 'a || 1==1' );              // throws ValidationException
+```
+
+Used by the complex facets (`Facet::ARRAY_COMPLEX`, `Facet::EDGE_COMPLEX`) to validate the **sub-field names** supplied in `?facets=` before interpolating them into the query: a malicious sub-field makes the facet fail (dropped + warning logged), and no fragment ever reaches the AQL. See [Facets](facets.md).
 
 ## *Skin* projection helpers
 

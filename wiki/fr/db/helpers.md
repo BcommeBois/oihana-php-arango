@@ -19,7 +19,7 @@ Le dossier compte 29 fonctions, organisées en cinq catégories :
 | Composition de fragments | `aqlAssignments`, `aqlSerialize` | Sérialiser des paires *key/value*. |
 | Sous-expressions CUD | `aqlInsertExpression`, `aqlUpdateExpression`, `aqlReplaceExpression`, `aqlUpsertExpression` | Construire le corps des opérations `INSERT` / `UPDATE` / `REPLACE` / `UPSERT`. |
 | *Field builders* (`fields/`) | `aqlFields` + 12 `aqlField*` typés | Construire les `RETURN { key: doc.value, ... }`. |
-| Introspection et projection | `isAQLExpression`, `isAQLFunction`, `isAQLId`, `matchesSkin`, `resolveSkinFields` | Détecter et router. |
+| Introspection et projection | `isAQLExpression`, `isAQLFunction`, `isAQLId`, `isAttributeName`, `assertAttributeName`, `matchesSkin`, `resolveSkinFields` | Détecter, valider et router. |
 
 ## Encodage de valeurs
 
@@ -216,15 +216,36 @@ En usage normal, on n'appelle pas ces *builders* directement : on déclare un mo
 
 ## Introspection AQL
 
-Trois prédicats permettent de classifier une chaîne :
+Quatre prédicats permettent de classifier une chaîne :
 
 | Fonction | Signature | Vrai si... |
 |---|---|---|
 | `isAQLExpression` | `(mixed $value) : bool` | La chaîne ressemble à une expression AQL (fonction, référence doc, bind, *handle*). |
 | `isAQLFunction` | `(string $expression) : bool` | La chaîne est un appel de fonction AQL valide et reconnu (`COUNT(doc)`, `DATE_NOW()`, ...). |
 | `isAQLId` | `(mixed $value) : bool` | La chaîne respecte le format *document handle* `collection/key`. |
+| `isAttributeName` | `(mixed $value) : bool` | La chaîne est un nom d'attribut sûr — un ou plusieurs segments identifiant séparés par des points (`value`, `_key`, `breeding.alternateName`). |
 
-Ces prédicats sont consommés en interne par `aqlValue()` pour décider d'échapper ou non une chaîne. Ils sont publics pour les cas où l'on a besoin de la même heuristique côté validation custom.
+Les trois premiers prédicats sont consommés en interne par `aqlValue()` pour décider d'échapper ou non une chaîne. Ils sont publics pour les cas où l'on a besoin de la même heuristique côté validation custom.
+
+### Garde anti-injection — `isAttributeName` / `assertAttributeName`
+
+Une **valeur** non fiable est toujours placée derrière un *bind* (voir [Bind variables](binds.md)), donc jamais injectable. Mais un **nom d'attribut** (clé) issu d'une entrée utilisateur et concaténé dans un accesseur `doc.<nom>` ne peut **pas** être un *bind* : c'est un identifiant, pas une valeur. C'est le rôle de cette paire (le pendant, pour les attributs, de `isBindVariable` / `assertBindVariable`) :
+
+| Fonction | Signature | Rôle |
+|---|---|---|
+| `isAttributeName` | `(mixed $value) : bool` | Prédicat : `true` si la chaîne est un nom (ou chemin pointé) d'attribut sûr. |
+| `assertAttributeName` | `(mixed $value) : void` | Lève `ValidationException` si le nom n'est pas sûr. |
+
+Le motif accepté est `^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$` : tout caractère capable de s'échapper d'un chemin d'attribut (espace, `(`, `||`, `"`, `;`, `-`, ...) est rejeté.
+
+```php
+use function oihana\arango\db\helpers\assertAttributeName;
+
+assertAttributeName( 'breeding.alternateName' ); // ok (chemin imbriqué)
+assertAttributeName( 'a || 1==1' );              // throws ValidationException
+```
+
+Utilisé par les facettes complexes (`Facet::ARRAY_COMPLEX`, `Facet::EDGE_COMPLEX`) pour valider les **noms de sous-champs** fournis dans `?facets=` avant de les concaténer dans la requête : un sous-champ malveillant fait échouer la facette (ignorée + *warning* loggué), aucun fragment n'atteint l'AQL. Voir [Facettes](facets.md).
 
 ## Helpers de projection par *skin*
 
