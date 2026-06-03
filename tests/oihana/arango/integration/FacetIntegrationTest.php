@@ -4,6 +4,7 @@ namespace tests\oihana\arango\integration ;
 
 use oihana\arango\clients\Database ;
 use oihana\arango\db\enums\AQL ;
+use oihana\arango\models\enums\filters\FilterParam ;
 
 use tests\oihana\arango\models\traits\aql\FacetTraitStub ;
 
@@ -76,6 +77,14 @@ class FacetIntegrationTest extends IntegrationTestCase
         $hasNumbers->insert( [ '_from' => 'numbers/n2' , '_to' => 'livestocks/L2' ] ) ;
         $hasNumbers->insert( [ '_from' => 'numbers/n3' , '_to' => 'livestocks/L3' ] ) ;
         $hasNumbers->insert( [ '_from' => 'numbers/n4' , '_to' => 'livestocks/L4' ] ) ;
+
+        // --- Facet::IN / LIST / LIST_FIELD : array membership ---------------
+        $articles = $db->collection( 'articles' ) ;
+        $articles->create() ;
+        $articles->insert( [ '_key' => 'a1' , 'keywords' => [ 'cuisine' , 'jardin' ] ] ) ;
+        $articles->insert( [ '_key' => 'a2' , 'keywords' => [ 'cuisine' ] ] ) ;
+        $articles->insert( [ '_key' => 'a3' , 'keywords' => [ 'jardin' , 'sport' ] ] ) ;
+        $articles->insert( [ '_key' => 'a4' , 'keywords' => [] ] ) ;
     }
 
     /**
@@ -196,5 +205,37 @@ class FacetIntegrationTest extends IntegrationTestCase
         $binds = [] ;
         $filter = $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => '-459' , 'kind' => 'ear' ] , $binds , [ AQL::EDGE => 'livestocks_has_numbers' ] , AQL::DOC ) ;
         $this->assertSame( [ 'L3' , 'L4' ] , $this->keys( 'livestocks' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- IN (array membership)
+
+    public function testInDefaultAnyMatchesAtLeastOne() :void
+    {
+        $binds = [] ;
+        $filter = $this->stub()->callIn( 'keywords' , 'cuisine,jardin' , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'a1' , 'a2' , 'a3' ] , $this->keys( 'articles' , $filter , $binds ) ) ;
+    }
+
+    public function testInAllRequiresEveryValue() :void
+    {
+        $binds = [] ;
+        $filter = $this->stub()->callIn( 'keywords' , [ FilterParam::OP => 'all.in' , FilterParam::VAL => 'cuisine,jardin' ] , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'a1' ] , $this->keys( 'articles' , $filter , $binds ) ) ;
+    }
+
+    public function testInNoneExcludesMatching() :void
+    {
+        // documents having NONE of {cuisine} => a3 (jardin,sport) and a4 (empty)
+        $binds = [] ;
+        $filter = $this->stub()->callIn( 'keywords' , [ FilterParam::OP => 'none.in' , FilterParam::VAL => [ 'cuisine' ] ] , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'a3' , 'a4' ] , $this->keys( 'articles' , $filter , $binds ) ) ;
+    }
+
+    public function testListFieldAliasMatchesAny() :void
+    {
+        // the historical LIST_FIELD type is preserved as an alias (op any.in)
+        $binds = [] ;
+        $filter = $this->stub()->callListField( 'keywords' , 'sport' , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'a3' ] , $this->keys( 'articles' , $filter , $binds ) ) ;
     }
 }

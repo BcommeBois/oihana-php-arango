@@ -2,33 +2,25 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
-use ReflectionException;
-
-use oihana\arango\db\enums\AQL;
-use oihana\arango\models\enums\Facet;
-use oihana\enums\Char;
 use oihana\exceptions\BindException;
 
-use org\schema\constants\Prop;
-
-use function oihana\arango\db\functions\arrays\length;
-use function oihana\arango\db\operations\aqlFilter;
-use function oihana\arango\db\operations\aqlFor;
-use function oihana\arango\db\operations\aqlLimit;
-use function oihana\arango\db\operations\aqlReturn;
-use function oihana\arango\db\operators\equal;
-use function oihana\arango\db\operators\in;
-use function oihana\core\strings\compile;
-use function oihana\core\strings\key;
-
 /**
- * This trait defines all facet helpers in the Model class.
+ * Builds the AQL filter fragment for a {@see Facet::LIST} facet. Kept as a thin
+ * alias over the {@see HasFacetIn} primitive (operator defaults to `any.in`),
+ * preserving the historical type name. Composed into the model via
+ * {@see FacetTrait}.
+ *
+ * @see HasFacetIn::prepareFacetIn() The membership primitive this delegates to.
+ * @see FacetTrait::prepareFacets() The dispatcher that invokes this builder.
  */
 trait HasFacetList
 {
-    use HasFacetListField ;
-
     /**
+     * Prepares a list facet (array membership, `ANY IN` by default).
+     *
+     * Accepts a CSV string, a list, or an `{op, val}` object selecting the
+     * operator per request ({@see FilterArrayComparator}).
+     *
      * @param string $key
      * @param mixed $value
      * @param array $binds
@@ -38,7 +30,6 @@ trait HasFacetList
      * @return string
      *
      * @throws BindException
-     * @throws ReflectionException
      *
      * @example
      * Set the facetable definition in the model :
@@ -52,34 +43,20 @@ trait HasFacetList
      *     ]
      * ]
      * ```
-     * Use the facet :
+     * Use the facet (array membership tested against `doc.keywords`) :
      * ```
-     * ?facets={"keywords":"key1,key2"}
+     * ?facets={"keywords":"key1,key2"}                        // ANY IN  : has key1 OR key2
+     * ?facets={"keywords":["key1","key2"]}                    // ANY IN  : array form, same result
+     * ?facets={"keywords":{"op":"all.in","val":"key1,key2"}}  // ALL IN  : has BOTH
+     * ?facets={"keywords":{"op":"none.in","val":["key1"]}}    // NONE IN : has NEITHER
+     * ```
+     * Generated AQL (default `any.in`) :
+     * ```aql
+     * TO_ARRAY([@keywords_0,@keywords_1]) ANY IN doc.keywords
      * ```
      */
-    protected function prepareFacetList( string $key , mixed $value , array &$binds , array $facet , string $doc ):string
+    protected function prepareFacetList( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
-        if( is_array( $value ) && count( $value ) == 1 && array_key_exists( Prop::LENGTH , $value ) )
-        {
-            $property = $facet[ Facet::PROPERTY ] ?? Prop::_KEY ;
-            $docRef   = AQL::DOC_PREFIX . Prop::LENGTH ;
-            // LENGTH( FOR doc_length IN $this->collection FILTER $doc._id IN doc_length.$property LIMIT 1 RETURN 1 ) == $value[ Prop::LENGTH ]
-            return equal
-            (
-                length( compile
-                ([
-                    aqlFor    ( [ AQL::DOC_REF => $docRef , AQL::IN => $this->collection ] ) ,
-                    aqlFilter ( in( key( Prop::_ID , $doc ) , key( $property , $docRef ) ) ) ,
-                    aqlLimit  ( 1 ) , // TODO test it !! // Operation::LIMIT , '1' ,
-                    aqlReturn ( 1 )
-                ])) ,
-                $value[ Prop::LENGTH ]
-            );
-        }
-        else if( is_string( $value ) )
-        {
-            return $this->prepareFacetListField( $key , $value , $binds , $facet , $doc ) ;
-        }
-        return Char::EMPTY ;
+        return $this->prepareFacetIn( $key , $value , $binds , $facet , $doc ) ;
     }
 }

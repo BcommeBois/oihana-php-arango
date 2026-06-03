@@ -73,6 +73,11 @@ class FacetTraitStub
         return $this->prepareFacetList( $key , $value , $binds , $facet , $doc ) ;
     }
 
+    public function callIn( string $key , mixed $value , array &$binds , array $facet , string $doc , bool $sortable = false ) :string
+    {
+        return $this->prepareFacetIn( $key , $value , $binds , $facet , $doc , $sortable ) ;
+    }
+
     public function callThesaurus( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
         return $this->prepareFacetThesaurus( $key , $value , $binds , $facet , $doc ) ;

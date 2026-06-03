@@ -6,6 +6,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
+use oihana\arango\models\enums\filters\FilterParam;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
@@ -152,6 +153,33 @@ class FacetTraitTest extends TestCase
 
         $this->assertNull( $result ) ;
         $this->assertSame( [ 'warning' ] , $stub->logger->levels ) ;
+    }
+
+    public function testPrepareFacetsSwallowsBuilderExceptionWithoutLogger() :void
+    {
+        // Same failure, but no logger wired: the nullsafe call must not fatal —
+        // the facet is simply skipped.
+        $stub = $this->stub() ;
+        $stub->logger = null ;
+        $stub->facets = [ 'bad key' => [ Facet::TYPE => Facet::FIELD ] ] ;
+
+        $binds = [] ;
+        $this->assertNull( $stub->callPrepareFacets( [ Arango::FACETS => [ 'bad key' => 'x' ] ] , $binds ) ) ;
+    }
+
+    public function testPrepareFacetsWithoutTypeFallsBackToFieldBuilder() :void
+    {
+        // A facet definition missing Facet::TYPE resolves to null (no notice) and
+        // routes to the default FIELD builder.
+        $stub = $this->stub() ;
+        $stub->facets = [ 'withStatus' => [] ] ;
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc.withStatus =~ @withStatus_0)' ,
+            $stub->callPrepareFacets( [ Arango::FACETS => [ 'withStatus' => 'draft' ] ] , $binds ) ,
+        ) ;
     }
 
     // ---------------------------------------------------------------- HasFacetField
@@ -422,19 +450,93 @@ class FacetTraitTest extends TestCase
         ) ;
     }
 
-    // ---------------------------------------------------------------- HasFacetList
+    // ---------------------------------------------------------------- HasFacetIn (membership primitive)
 
-    public function testListLengthVariantBuildsCountComparison() :void
+    public function testInDefaultIsAnyIn() :void
     {
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_length IN mycol FILTER doc._id IN doc_length.keywords LIMIT 1 RETURN 1) == 3' ,
-            $this->stub()->callList( 'keywords' , [ 'length' => 3 ] , $binds , [ Facet::PROPERTY => 'keywords' ] , AQL::DOC ) ,
+            'TO_ARRAY([@keywords_0,@keywords_1]) ANY IN doc.keywords' ,
+            $this->stub()->callIn( 'keywords' , 'k1,k2' , $binds , [] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'keywords_0' => 'k1' , 'keywords_1' => 'k2' ] , $binds ) ;
+    }
+
+    public function testInArrayValueFormIsAccepted() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@keywords_0,@keywords_1]) ANY IN doc.keywords' ,
+            $this->stub()->callIn( 'keywords' , [ 'k1' , 'k2' ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'keywords_0' => 'k1' , 'keywords_1' => 'k2' ] , $binds ) ;
+    }
+
+    public function testInOpObjectSelectsAllIn() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@keywords_0,@keywords_1]) ALL IN doc.keywords' ,
+            $this->stub()->callIn( 'keywords' , [ FilterParam::OP => 'all.in' , FilterParam::VAL => 'k1,k2' ] , $binds , [] , AQL::DOC ) ,
         ) ;
     }
 
-    public function testListStringValueDelegatesToListField() :void
+    public function testInOpObjectSelectsNoneInWithArrayVal() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@keywords_0]) NONE IN doc.keywords' ,
+            $this->stub()->callIn( 'keywords' , [ FilterParam::OP => 'none.in' , FilterParam::VAL => [ 'k1' ] ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testInConfiguredOpFromFacetDefinition() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@keywords_0,@keywords_1]) ALL IN doc.keywords' ,
+            $this->stub()->callIn( 'keywords' , 'k1,k2' , $binds , [ Facet::OP => 'all.in' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testInSortableAppendsSortPosition() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@keywords_0,@keywords_1]) ANY IN doc.keywords SORT POSITION([@keywords_0,@keywords_1],doc.keywords,true)' ,
+            $this->stub()->callIn( 'keywords' , 'k1,k2' , $binds , [] , AQL::DOC , true ) ,
+        ) ;
+    }
+
+    public function testInPropertyOverrideAndIdAlias() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@id_0]) ANY IN doc._key' ,
+            $this->stub()->callIn( 'id' , '25' , $binds , [ Facet::PROPERTY => 'id' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testInUnknownOpFallsBackToAnyIn() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@keywords_0]) ANY IN doc.keywords' ,
+            $this->stub()->callIn( 'keywords' , [ FilterParam::OP => 'bogus' , FilterParam::VAL => 'k1' ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+    }
+
+    // ---------------------------------------------------------------- HasFacetList / HasFacetListField (aliases of HasFacetIn)
+
+    public function testListStringValueDelegatesToAnyIn() :void
     {
         $binds = [] ;
         $this->assertSame
@@ -444,11 +546,22 @@ class FacetTraitTest extends TestCase
         ) ;
     }
 
+    public function testListSupportsOpObject() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@keywords_0,@keywords_1]) ALL IN doc.keywords' ,
+            $this->stub()->callList( 'keywords' , [ FilterParam::OP => 'all.in' , FilterParam::VAL => 'k1,k2' ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+    }
+
     public function testListReturnsEmptyForUnsupportedValueShape() :void
     {
         $binds = [] ;
         $this->assertSame( '' , $this->stub()->callList( 'k' , 5 , $binds , [] , AQL::DOC ) ) ;
-        $this->assertSame( '' , $this->stub()->callList( 'k' , [ 'foo' => 1 ] , $binds , [] , AQL::DOC ) ) ;
+        // an associative object without a `val` key (e.g. the removed {length:N}) is ignored
+        $this->assertSame( '' , $this->stub()->callList( 'k' , [ 'length' => 3 ] , $binds , [] , AQL::DOC ) ) ;
     }
 
     // ---------------------------------------------------------------- HasFacetThesaurus

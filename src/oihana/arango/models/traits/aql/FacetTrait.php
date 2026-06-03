@@ -12,6 +12,7 @@ use oihana\arango\models\traits\aql\facets\HasFacetArrayComplex;
 use oihana\arango\models\traits\aql\facets\HasFacetEdge;
 use oihana\arango\models\traits\aql\facets\HasFacetEdgeComplex;
 use oihana\arango\models\traits\aql\facets\HasFacetField;
+use oihana\arango\models\traits\aql\facets\HasFacetIn;
 use oihana\arango\models\traits\aql\facets\HasFacetList;
 use oihana\arango\models\traits\aql\facets\HasFacetListField;
 use oihana\arango\models\traits\aql\facets\HasFacetThesaurus;
@@ -27,6 +28,7 @@ trait FacetTrait
         HasFacetEdge         ,
         HasFacetEdgeComplex  ,
         HasFacetField        ,
+        HasFacetIn           ,
         HasFacetList         ,
         HasFacetListField    ,
         HasFacetThesaurus    ;
@@ -81,28 +83,35 @@ trait FacetTrait
                 $facet = $this->facets[ $key ] ?? null ;
                 if( !is_null( $facet ) )
                 {
-                    $type = $facet[ Facet::TYPE ] ;
-                    try // FIXME verify if the try..catch clause is used or not ?
+                    $type = $facet[ Facet::TYPE ] ?? null ;
+
+                    // A malformed facet (invalid bind name, reflection error, …) must
+                    // never break the whole query: log it and skip this facet. This
+                    // mirrors the lenient `?filter=` behaviour.
+                    try
                     {
                         $predicates[] = match ( $type )
                         {
-                            Facet::ARRAY_COMPLEX    => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $docRef ) ,
-                            Facet::EDGE             => $this->prepareFacetEdge            ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::EDGE_COMPLEX     => $this->prepareFacetEdgeComplex     ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::LIST             => $this->prepareFacetList            ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::LIST_FIELD       => $this->prepareFacetListField       ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::LIST_FIELD_SORTED=> $this->prepareFacetListFieldSorted ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::THESAURUS        => $this->prepareFacetThesaurus       ( $key , $value , $binds , $facet , $docRef ) ,
-                            default                 => $this->prepareFacetField           ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::ARRAY_COMPLEX     => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $docRef ) ,
+                            Facet::EDGE              => $this->prepareFacetEdge            ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::EDGE_COMPLEX      => $this->prepareFacetEdgeComplex     ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::IN                => $this->prepareFacetIn              ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::LIST              => $this->prepareFacetList            ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::LIST_FIELD        => $this->prepareFacetListField       ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::LIST_FIELD_SORTED => $this->prepareFacetListFieldSorted ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::THESAURUS         => $this->prepareFacetThesaurus       ( $key , $value , $binds , $facet , $docRef ) ,
+                            default                  => $this->prepareFacetField           ( $key , $value , $binds , $facet , $docRef ) ,
                             // Facet::FIELD
+
                         };
                     }
                     catch( Exception $e )
                     {
-                        $this->logger->warning( $this . " prepareFacets failed, the '" . $key . "' facet is not valid, " . $e->getMessage() ) ;
+                        $this->logger?->warning( $this . " prepareFacets failed, the '" . $key . "' facet is not valid, " . $e->getMessage() ) ;
                     }
                 }
             }
+
             return predicates( $predicates , $logicalOperator ) ;
         }
         return Char::EMPTY ;

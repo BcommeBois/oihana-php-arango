@@ -2,81 +2,106 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
-use oihana\arango\db\enums\Comparator;
-use oihana\arango\db\enums\Operation;
-use oihana\arango\db\enums\Traversal;
-use oihana\arango\models\enums\Facet;
-use oihana\enums\Char;
 use oihana\exceptions\BindException;
 
-use org\schema\constants\Prop;
-
-use function oihana\arango\db\functions\arrays\position;
-use function oihana\arango\db\functions\toArray;
-use function oihana\core\strings\betweenBrackets;
-use function oihana\core\strings\compile;
-use function oihana\core\strings\key;
-
 /**
- * This trait defines all facet helpers in the Model class.
+ * Builds the AQL filter fragment for an {@see Facet::LIST_FIELD} (and
+ * {@see Facet::LIST_FIELD_SORTED}) facet. Kept as a thin alias over the
+ * {@see HasFacetIn} primitive (operator defaults to `any.in`), preserving the
+ * historical type names. Composed into the model via {@see FacetTrait}.
+ *
+ * @see HasFacetIn::prepareFacetIn() The membership primitive these delegate to.
+ * @see FacetTrait::prepareFacets() The dispatcher that invokes this builder.
  */
 trait HasFacetListField
 {
     /**
+     * Prepares a list field facet (array membership, `ANY IN` by default).
+     *
+     * Historical alias of {@see HasFacetIn::prepareFacetIn()} — see that method
+     * for the full operator catalogue (`any.in`, `all.in`, `none.in`, …).
+     *
      * @param string $key
      * @param mixed $value
-     * @param $binds
+     * @param array $binds
      * @param array $facet
      * @param string $doc
      * @param bool $sortable
+     *
      * @return string
+     *
      * @throws BindException
+     *
+     * @example
+     * Set the facetable definition in the model :
+     * ```php
+     * AQL::FACETABLE =>
+     * [
+     *     Prop::KEYWORDS =>
+     *     [
+     *         Facet::TYPE     => Facet::LIST_FIELD ,
+     *         Facet::PROPERTY => Prop::KEYWORDS
+     *     ]
+     * ]
+     * ```
+     * Use the facet (array membership tested against `doc.keywords`) :
+     * ```
+     * ?facets={"keywords":"cuisine,jardin"}                        // ANY IN  : has cuisine OR jardin
+     * ?facets={"keywords":["cuisine","jardin"]}                    // ANY IN  : array form, same result
+     * ?facets={"keywords":{"op":"all.in","val":"cuisine,jardin"}}  // ALL IN  : has BOTH
+     * ?facets={"keywords":{"op":"none.in","val":"cuisine"}}        // NONE IN : has NEITHER
+     * ```
+     * Generated AQL (default `any.in`) :
+     * ```aql
+     * TO_ARRAY([@keywords_0,@keywords_1]) ANY IN doc.keywords
+     * ```
      */
-    protected function prepareFacetListField( string $key , mixed $value , &$binds , array $facet , string $doc , bool $sortable = false ) :string
+    protected function prepareFacetListField( string $key , mixed $value , array &$binds , array $facet , string $doc , bool $sortable = false ) :string
     {
-        $values = explode( Char::COMMA , $value ) ;
-        if( count( $values ) > 0 )
-        {
-            $facets = [] ;
-
-            $property = $facet[ Facet::PROPERTY ] ?? $key ;
-            if( $property == Prop::ID )
-            {
-                $property = Prop::_KEY ; // Reserved keyword : id => _key
-            }
-
-            $docProp = key( $property , $doc ) ;
-
-            foreach( $values as $subKey => $value )
-            {
-                $facets[] = $this->bind( $value , $binds , $key . Char::UNDERLINE . $subKey ) ;
-            }
-
-            $facets = betweenBrackets( compile( $facets , Char::COMMA ) ) ;
-
-            // TO_ARRAY([array[0],array[1],...array[n-1]] ) ANY IN $doc.$property
-            // [ SORT POSITION([array[0],array[1],...array[n-1]] , $doc.$property , true ) ]
-            return compile
-            ([
-                toArray( $facets ) ,
-                Traversal::ANY , Comparator::IN , $docProp ,
-                $sortable ? compile( [ Operation::SORT , position( $facets , $docProp , true ) ] ) : null
-            ]);
-        }
-        return Char::EMPTY ;
+        return $this->prepareFacetIn( $key , $value , $binds , $facet , $doc , $sortable ) ;
     }
 
     /**
+     * Prepares a sortable list field facet: same membership as
+     * {@see prepareFacetListField()}, plus a `SORT POSITION(...)` clause that
+     * ranks the matched documents by the order of the requested values (a value
+     * appearing first in the request sorts first).
+     *
      * @param string $key
      * @param mixed $value
-     * @param $binds
+     * @param array $binds
      * @param array $facet
      * @param string $doc
+     *
      * @return string
+     *
      * @throws BindException
+     *
+     * @example
+     * Set the facetable definition in the model :
+     * ```php
+     * AQL::FACETABLE =>
+     * [
+     *     Prop::TAGS =>
+     *     [
+     *         Facet::TYPE     => Facet::LIST_FIELD_SORTED ,
+     *         Facet::PROPERTY => Prop::TAGS
+     *     ]
+     * ]
+     * ```
+     * Use the facet — keep articles tagged `featured`, `new` or `sale`, ranked
+     * in that priority order :
+     * ```
+     * ?facets={"tags":"featured,new,sale"}
+     * ?facets={"tags":["featured","new","sale"]}
+     * ```
+     * Generated AQL :
+     * ```aql
+     * TO_ARRAY([@tags_0,@tags_1,@tags_2]) ANY IN doc.tags SORT POSITION([@tags_0,@tags_1,@tags_2],doc.tags,true)
+     * ```
      */
-    protected function prepareFacetListFieldSorted( string $key , mixed $value , &$binds , array $facet , string $doc ):string
+    protected function prepareFacetListFieldSorted( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
-        return $this->prepareFacetListField( $key , $value , $binds , $facet , $doc , true ) ;
+        return $this->prepareFacetIn( $key , $value , $binds , $facet , $doc , true ) ;
     }
 }
