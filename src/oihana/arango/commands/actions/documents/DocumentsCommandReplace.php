@@ -4,7 +4,10 @@ namespace oihana\arango\commands\actions\documents;
 
 use DateInvalidTimeZoneException;
 use DateMalformedStringException;
+use oihana\exceptions\http\Error409;
+use oihana\exceptions\UnsupportedOperationException;
 use ReflectionException;
+use Throwable;
 use UnexpectedValueException;
 
 use DI\DependencyException;
@@ -37,15 +40,18 @@ trait DocumentsCommandReplace
      *
      * @return int The exit code for the command, typically `ExitCode::SUCCESS`.
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws DependencyException
-     * @throws ArangoException
-     * @throws NotFoundException
-     * @throws NotFoundExceptionInterface
      * @throws DateInvalidTimeZoneException
      * @throws DateMalformedStringException
+     * @throws Error409
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws Throwable
+     * @throws UnsupportedOperationException
      */
     protected function replace( InputInterface $input, OutputInterface $output , mixed $option = null ):int
     {
@@ -67,7 +73,7 @@ trait DocumentsCommandReplace
             throw new UnexpectedValueException( 'The identifier of the document to replace must be defined.') ;
         }
 
-        $document = json_decode( $document ) ;
+        $document = json_decode( $document ?? '' ) ;
 
         if( !isset( $document ) )
         {

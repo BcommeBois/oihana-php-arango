@@ -60,7 +60,7 @@ trait DocumentsCommandInsert
 
         [ $document ] = array_pad( $option , 1 , null ) ;
 
-        $document = json_decode( $document , true ) ;
+        $document = json_decode( $document ?? '' , true ) ;
 
         if( !isset( $document ) )
         {

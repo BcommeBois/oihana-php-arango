@@ -4,7 +4,10 @@ namespace oihana\arango\commands\actions\documents;
 
 use DateInvalidTimeZoneException;
 use DateMalformedStringException;
+use oihana\exceptions\http\Error409;
+use oihana\exceptions\UnsupportedOperationException;
 use ReflectionException;
+use Throwable;
 use UnexpectedValueException;
 
 use DI\DependencyException;
@@ -37,15 +40,18 @@ trait DocumentsCommandUpdate
      *
      * @return int
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
+     * @throws DateInvalidTimeZoneException
+     * @throws DateMalformedStringException
      * @throws DependencyException
-     * @throws ArangoException
+     * @throws Error409
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
-     * @throws DateInvalidTimeZoneException
-     * @throws DateMalformedStringException
+     * @throws Throwable
+     * @throws UnsupportedOperationException
      */
     protected function update( InputInterface $input, OutputInterface $output , mixed $option = null ):int
     {
@@ -67,7 +73,7 @@ trait DocumentsCommandUpdate
             throw new UnexpectedValueException( 'The identifier of the document to update must be defined.') ;
         }
 
-        $document = json_decode( $document ) ;
+        $document = json_decode( $document ?? '' ) ;
 
         if( !isset( $document ) )
         {
