@@ -13,6 +13,7 @@ class Facet
     public const string EDGE_COMPLEX      = 'facet_edge_complex' ;
     public const string FIELD             = 'facet_field' ;
     public const string IN                = 'facet_in' ;
+    public const string JOIN_COMPLEX      = 'facet_join_complex' ;
     public const string LOGIC             = 'facet_logic' ;
     public const string LIST              = 'facet_list' ;
     public const string LIST_FIELD        = 'facet_list_field' ;

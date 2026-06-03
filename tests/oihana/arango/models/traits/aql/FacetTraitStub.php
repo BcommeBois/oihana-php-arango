@@ -63,6 +63,11 @@ class FacetTraitStub
         return $this->prepareFacetEdgeComplex( $key , $value , $binds , $facet , $doc ) ;
     }
 
+    public function callJoinComplex( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    {
+        return $this->prepareFacetJoinComplex( $key , $value , $binds , $facet , $doc ) ;
+    }
+
     public function callArrayComplex( string $key , mixed $value , array &$binds , string $doc = AQL::DOC ) :string
     {
         return $this->prepareFacetArrayComplex( $key , $value , $binds , $doc ) ;

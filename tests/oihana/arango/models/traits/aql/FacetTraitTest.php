@@ -440,6 +440,78 @@ class FacetTraitTest extends TestCase
         $this->assertSame( [ 'numbers_value0' => '459' , 'numbers_value1' => '460' ] , $binds ) ;
     }
 
+    // ---------------------------------------------------------------- HasFacetJoinComplex
+
+    public function testJoinComplexReverseOneToManyMatch() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_comments IN comments FILTER doc_comments.articleId == doc._key && doc_comments.status == @comments_status RETURN 1) > 0' ,
+            $this->stub()->callJoinComplex( 'comments' , [ 'status' => 'approved' ] , $binds , [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'comments_status' => 'approved' ] , $binds ) ;
+    }
+
+    public function testJoinComplexDefaultsKeyAndProperty() :void
+    {
+        // KEY defaults to _key, PROPERTY defaults to the facet key (one-to-one).
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_place IN places FILTER doc_place._key == doc.place && doc_place.name == @place_name RETURN 1) > 0' ,
+            $this->stub()->callJoinComplex( 'place' , [ 'name' => 'Paris' ] , $binds , [ AQL::COLLECTION => 'places' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testJoinComplexMultipleFieldsAreAnded() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_comments IN comments FILTER doc_comments.articleId == doc._key && doc_comments.status == @comments_status && doc_comments.score == @comments_score RETURN 1) > 0' ,
+            $this->stub()->callJoinComplex( 'comments' , [ 'status' => 'approved' , 'score' => '5' ] , $binds , [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testJoinComplexArrayValuesAreOred() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_comments IN comments FILTER doc_comments._key == doc.comments && (doc_comments.status == @comments_status0 || doc_comments.status == @comments_status1) RETURN 1) > 0' ,
+            $this->stub()->callJoinComplex( 'comments' , [ 'status' => [ 'approved' , 'featured' ] ] , $binds , [ AQL::COLLECTION => 'comments' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testJoinComplexNegationUsesNotEqualInline() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_comments IN comments FILTER doc_comments._key == doc.comments && doc_comments.status != @comments_status RETURN 1) > 0' ,
+            $this->stub()->callJoinComplex( 'comments' , [ 'status' => '-spam' ] , $binds , [ AQL::COLLECTION => 'comments' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testJoinComplexArrayVariantUsesIn() :void
+    {
+        // AQL::ARRAY => true joins on `doc_tags._key IN doc.tagIds`.
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_tags IN tags FILTER doc_tags._key IN doc.tagIds && doc_tags.label == @tags_label RETURN 1) > 0' ,
+            $this->stub()->callJoinComplex( 'tags' , [ 'label' => 'php' ] , $binds , [ AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testJoinComplexRejectsInjectionInSubField() :void
+    {
+        $binds = [] ;
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->callJoinComplex( 'comments' , [ 'a || 1==1' => 'x' ] , $binds , [ AQL::COLLECTION => 'comments' ] , AQL::DOC ) ;
+    }
+
     // ---------------------------------------------------------------- AQL injection guards (complex sub-fields)
 
     public function testEdgeComplexRejectsInjectionInSubField() :void

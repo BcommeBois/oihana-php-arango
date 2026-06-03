@@ -4,6 +4,7 @@ namespace tests\oihana\arango\integration ;
 
 use oihana\arango\clients\Database ;
 use oihana\arango\db\enums\AQL ;
+use oihana\arango\models\enums\Facet ;
 use oihana\arango\models\enums\filters\FilterParam ;
 
 use tests\oihana\arango\models\traits\aql\FacetTraitStub ;
@@ -85,6 +86,26 @@ class FacetIntegrationTest extends IntegrationTestCase
         $articles->insert( [ '_key' => 'a2' , 'keywords' => [ 'cuisine' ] ] ) ;
         $articles->insert( [ '_key' => 'a3' , 'keywords' => [ 'jardin' , 'sport' ] ] ) ;
         $articles->insert( [ '_key' => 'a4' , 'keywords' => [] ] ) ;
+
+        // --- Facet::JOIN_COMPLEX : key-join (no edge) -----------------------
+        // posts <- comments (comment.postId == post._key) ; posts.tagIds[] -> tags._key
+        $posts = $db->collection( 'posts' ) ;
+        $posts->create() ;
+        $posts->insert( [ '_key' => 'p1' , 'tagIds' => [ 'php' ] ] ) ;
+        $posts->insert( [ '_key' => 'p2' , 'tagIds' => [ 'db' ] ] ) ;
+        $posts->insert( [ '_key' => 'p3' , 'tagIds' => [ 'php' , 'db' ] ] ) ;
+
+        $comments = $db->collection( 'comments' ) ;
+        $comments->create() ;
+        $comments->insert( [ '_key' => 'c1' , 'postId' => 'p1' , 'status' => 'approved' , 'score' => 5 ] ) ;
+        $comments->insert( [ '_key' => 'c2' , 'postId' => 'p1' , 'status' => 'spam'     , 'score' => 1 ] ) ;
+        $comments->insert( [ '_key' => 'c3' , 'postId' => 'p2' , 'status' => 'approved' , 'score' => 2 ] ) ;
+        $comments->insert( [ '_key' => 'c4' , 'postId' => 'p3' , 'status' => 'pending'  , 'score' => 3 ] ) ;
+
+        $tags = $db->collection( 'tags' ) ;
+        $tags->create() ;
+        $tags->insert( [ '_key' => 'php' , 'label' => 'PHP'      ] ) ;
+        $tags->insert( [ '_key' => 'db'  , 'label' => 'Database' ] ) ;
 
         // --- Facet::FIELD : scalar property comparison ----------------------
         $fieldDocs = $db->collection( 'fielddocs' ) ;
@@ -286,5 +307,42 @@ class FacetIntegrationTest extends IntegrationTestCase
         $binds = [] ;
         $filter = $this->stub()->callField( 'name' , [ FilterParam::OP => 'like' , FilterParam::VAL => 'Jo%' ] , $binds , [] , AQL::DOC ) ;
         $this->assertSame( [ 'f1' , 'f2' ] , $this->keys( 'fielddocs' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- JOIN_COMPLEX (key-join)
+
+    private const array JOIN_COMMENTS = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' ] ;
+
+    public function testJoinComplexReverseMatch() :void
+    {
+        // posts having an approved comment (comment.postId == post._key)
+        $binds = [] ;
+        $filter = $this->stub()->callJoinComplex( 'comments' , [ 'status' => 'approved' ] , $binds , self::JOIN_COMMENTS , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' , 'p2' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    public function testJoinComplexMultiFieldAnd() :void
+    {
+        // an approved comment with score 5 => only p1 (c1)
+        $binds = [] ;
+        $filter = $this->stub()->callJoinComplex( 'comments' , [ 'status' => 'approved' , 'score' => 5 ] , $binds , self::JOIN_COMMENTS , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    public function testJoinComplexNegationIsExistential() :void
+    {
+        // a comment whose status != spam => p1 (c1 approved), p2 (c3), p3 (c4)
+        $binds = [] ;
+        $filter = $this->stub()->callJoinComplex( 'comments' , [ 'status' => '-spam' ] , $binds , self::JOIN_COMMENTS , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' , 'p2' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    public function testJoinComplexArrayVariant() :void
+    {
+        // posts whose tagIds[] contains a tag labelled PHP => p1, p3
+        $binds = [] ;
+        $facet  = [ AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' ] ;
+        $filter = $this->stub()->callJoinComplex( 'tags' , [ 'label' => 'PHP' ] , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
     }
 }

@@ -9,19 +9,14 @@ use org\schema\constants\Prop;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\db\enums\Traversal;
-use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\arrays\length;
-use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
-use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\greaterThan;
-use function oihana\arango\db\operators\notEqual;
-use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
 use function oihana\core\strings\predicates;
@@ -37,6 +32,8 @@ use function oihana\core\strings\predicates;
  */
 trait HasFacetEdgeComplex
 {
+    use HasFacetComplexConditions ;
+
     /**
      * Prepares an edge complex facet.
      *
@@ -94,38 +91,11 @@ trait HasFacetEdgeComplex
     {
         $docRef  = AQL::DOC_PREFIX . $key ;
         $edge    = $facet[ AQL::EDGE ] ?? null ;
-        $filters = [] ;
 
         // Each field condition applies to the SAME traversed vertex, so all
         // fields (and any per-value negation) stay inside one existential
-        // traversal: a leading '-' negates that field's value with `!=`.
-        foreach( $value as $subKey => $terms )
-        {
-            assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
-            $field = key( $subKey , $docRef ) ;
-
-            if( is_array( $terms ) )
-            {
-                $conditions = [] ;
-                $logic      = Logic::OR ;
-                foreach( $terms as $index => $term )
-                {
-                    $negative     = is_string( $term ) && $term !== Char::EMPTY && $term[ 0 ] === Char::HYPHEN ;
-                    $term         = $negative ? ltrim( $term , Char::HYPHEN ) : $term ;
-                    $bind         = $this->bind( $term , $binds , $key . Char::UNDERLINE . $subKey . $index ) ;
-                    $conditions[] = $negative ? notEqual( $field , $bind ) : equal( $field , $bind ) ;
-                    if( $negative ) { $logic = Logic::AND ; }
-                }
-                $filters[] = betweenParentheses( predicates( $conditions , $logic ) ) ;
-            }
-            else
-            {
-                $negative  = is_string( $terms ) && $terms !== Char::EMPTY && $terms[ 0 ] === Char::HYPHEN ;
-                $terms     = $negative ? ltrim( $terms , Char::HYPHEN ) : $terms ;
-                $bind      = $this->bind( $terms , $binds , $key . Char::UNDERLINE . $subKey ) ;
-                $filters[] = $negative ? notEqual( $field , $bind ) : equal( $field , $bind ) ;
-            }
-        }
+        // traversal — see HasFacetComplexConditions, shared with JOIN_COMPLEX.
+        $filters = $this->prepareComplexConditions( $value , $docRef , $key , $binds ) ;
 
         // LENGTH( FOR doc_$key IN INBOUND $doc $edge FILTER ...$filters RETURN doc_$key._key ) > 0
         return greaterThan( length
