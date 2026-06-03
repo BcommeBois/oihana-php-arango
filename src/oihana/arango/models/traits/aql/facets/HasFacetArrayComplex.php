@@ -31,8 +31,26 @@ use function oihana\core\strings\predicates;
 trait HasFacetArrayComplex
 {
     /**
-     * @throws BindException // TODO verify the value must be an array or a string expression ? see doc
+     * Prepares an array complex facet.
+     *
+     * Keeps documents whose embedded array property (`$docRef.$key`) holds at
+     * least one element matching the requested sub-field conditions, expressed
+     * as an existential traversal `LENGTH(FOR e IN $docRef.$key FILTER ... ) > 0`.
+     * The value is an object of `subField: condition` pairs; each condition may
+     * be a single value or a list, and any value may be negated with a leading
+     * `-` (`!=`). Negation is inline in the existential, so it keeps documents
+     * having an element that does NOT equal the value (not "exclude the value").
+     *
+     * @param string $key The facet key, also the embedded array property name.
+     * @param mixed $value The sub-field conditions (object of value or list).
+     * @param array $binds The bind variables, populated by reference.
+     * @param string $docRef The document reference the array is read from (default `doc`).
+     *
+     * @return string
+     *
+     * @throws BindException
      * @throws ReflectionException
+     *
      * @example
      * Set the facetable definition in the model :
      * ```
@@ -46,9 +64,9 @@ trait HasFacetArrayComplex
      * ```
      * Use the facet :
      * ```
-     * ?facets={"workshops":{"breeding.alternateName":"pig"}} // TODO test and fix it
-     * ?facets={"workshops":{"breeding.alternateName":["pig","cattle"]}}
-     * ?facets={"workshops":{"breeding.alternateName":["-pig","cattle"]}}
+     * ?facets={"workshops":{"breeding.alternateName":"pig"}}            // an element with breeding.alternateName == pig
+     * ?facets={"workshops":{"breeding.alternateName":["pig","cattle"]}} // an element == pig OR == cattle
+     * ?facets={"workshops":{"breeding.alternateName":["-pig","cattle"]}}// an element != pig AND != cattle
      * ```
      */
     protected function prepareFacetArrayComplex( string $key , mixed $value , array &$binds , string $docRef = AQL::DOC ) :string
