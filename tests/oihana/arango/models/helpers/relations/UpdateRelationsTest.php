@@ -44,4 +44,25 @@ final class UpdateRelationsTest extends TestCase
         ) ;
         $this->expectNotToPerformAssertions() ;
     }
+
+    public function testDispatchesEdgeRelationsToUpdateEdgeRelation() :void
+    {
+        $spy = new EdgesSpy() ;
+
+        updateRelations
+        (
+            document  : (object) [ '_key' => 'u1' ] ,
+            relations :
+            [
+                'roles' =>
+                [
+                    Arango::TYPE  => AQLType::EDGE ,
+                    Arango::EDGES => $spy ,
+                    Arango::VALUE => 'roles/9' ,
+                ] ,
+            ] ,
+        ) ;
+
+        $this->assertSame( [ 'existFrom:u1' , 'insert:u1->roles/9' ] , $spy->calls ) ;
+    }
 }
