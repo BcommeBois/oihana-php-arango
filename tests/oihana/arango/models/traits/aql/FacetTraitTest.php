@@ -78,9 +78,9 @@ class FacetTraitStub
         return $this->prepareFacetEdgeComplex( $key , $value , $binds , $facet , $doc ) ;
     }
 
-    public function callArrayComplex( string $key , mixed $value , array &$binds ) :string
+    public function callArrayComplex( string $key , mixed $value , array &$binds , string $doc = AQL::DOC ) :string
     {
-        return $this->prepareFacetArrayComplex( $key , $value , $binds ) ;
+        return $this->prepareFacetArrayComplex( $key , $value , $binds , $doc ) ;
     }
 
     public function callList( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
@@ -325,13 +325,13 @@ class FacetTraitTest extends TestCase
 
     public function testArrayComplexMultipleValuesAreOred() :void
     {
-        // NOTE: the FOR..IN source is `Prop::RESULT . $key` => 'resultworkshops'
-        // (no separator between 'result' and the key). Frozen as current
-        // behavior; flagged to the maintainer.
+        // The FOR..IN source iterates the embedded array property of the current
+        // document (`doc.workshops`) — in scope at FILTER time — and returns 1 per
+        // matching element (LENGTH(...) > 0 = existential). Validated live.
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_workshops IN resultworkshops FILTER doc_workshops.breeding_alternateName == @workshops_breeding_alternateName0 || doc_workshops.breeding_alternateName == @workshops_breeding_alternateName1 RETURN doc_workshops._key) > 0' ,
+            'LENGTH(FOR doc_workshops IN doc.workshops FILTER doc_workshops.breeding_alternateName == @workshops_breeding_alternateName0 || doc_workshops.breeding_alternateName == @workshops_breeding_alternateName1 RETURN 1) > 0' ,
             $this->stub()->callArrayComplex( 'workshops' , [ 'breeding_alternateName' => [ 'pig' , 'cattle' ] ] , $binds ) ,
         ) ;
         $this->assertSame
@@ -346,7 +346,7 @@ class FacetTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_workshops IN resultworkshops FILTER doc_workshops.breeding_alternateName == @workshops_breeding_alternateName RETURN doc_workshops._key) > 0' ,
+            'LENGTH(FOR doc_workshops IN doc.workshops FILTER doc_workshops.breeding_alternateName == @workshops_breeding_alternateName RETURN 1) > 0' ,
             $this->stub()->callArrayComplex( 'workshops' , [ 'breeding_alternateName' => 'pig' ] , $binds ) ,
         ) ;
     }
@@ -356,7 +356,7 @@ class FacetTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_w IN resultw FILTER doc_w.p != @w_p RETURN doc_w._key) > 0' ,
+            'LENGTH(FOR doc_w IN doc.w FILTER doc_w.p != @w_p RETURN 1) > 0' ,
             $this->stub()->callArrayComplex( 'w' , [ 'p' => '-pig' ] , $binds ) ,
         ) ;
         $this->assertSame( [ 'w_p' => 'pig' ] , $binds ) ;
@@ -367,7 +367,7 @@ class FacetTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_w IN resultw FILTER doc_w.p != @w_p RETURN doc_w._key) > 0' ,
+            'LENGTH(FOR doc_w IN doc.w FILTER doc_w.p != @w_p RETURN 1) > 0' ,
             $this->stub()->callArrayComplex( 'w' , [ 'p' => -5 ] , $binds ) ,
         ) ;
         $this->assertSame( [ 'w_p' => 5 ] , $binds ) ;
@@ -380,7 +380,7 @@ class FacetTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_w IN resultw FILTER doc_w.p != @w_p0 && doc_w.p != @w_p1 RETURN doc_w._key) > 0' ,
+            'LENGTH(FOR doc_w IN doc.w FILTER doc_w.p != @w_p0 && doc_w.p != @w_p1 RETURN 1) > 0' ,
             $this->stub()->callArrayComplex( 'w' , [ 'p' => [ '-pig' , 'cattle' ] ] , $binds ) ,
         ) ;
         $this->assertSame( [ 'w_p0' => 'pig' , 'w_p1' => 'cattle' ] , $binds ) ;
@@ -391,10 +391,22 @@ class FacetTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_w IN resultw FILTER doc_w.p != @w_p0 && doc_w.p != @w_p1 RETURN doc_w._key) > 0' ,
+            'LENGTH(FOR doc_w IN doc.w FILTER doc_w.p != @w_p0 && doc_w.p != @w_p1 RETURN 1) > 0' ,
             $this->stub()->callArrayComplex( 'w' , [ 'p' => [ -5 , 10 ] ] , $binds ) ,
         ) ;
         $this->assertSame( [ 'w_p0' => 5 , 'w_p1' => 10 ] , $binds ) ;
+    }
+
+    public function testArrayComplexHonorsCustomDocReference() :void
+    {
+        // The base array is iterated off the supplied docRef, so a non-'doc'
+        // reference (e.g. a joined alias) flows through to the FOR..IN source.
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_w IN p.w FILTER doc_w.q == @w_q RETURN 1) > 0' ,
+            $this->stub()->callArrayComplex( 'w' , [ 'q' => 'x' ] , $binds , 'p' ) ,
+        ) ;
     }
 
     // ---------------------------------------------------------------- HasFacetList

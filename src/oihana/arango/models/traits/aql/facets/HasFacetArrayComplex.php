@@ -11,8 +11,6 @@ use oihana\enums\Char;
 
 use oihana\exceptions\BindException;
 
-use org\schema\constants\Prop;
-
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
@@ -48,7 +46,7 @@ trait HasFacetArrayComplex
      * ?facets={"workshops":{"breeding.alternateName":["-pig","cattle"]}}
      * ```
      */
-    protected function prepareFacetArrayComplex( string $key , mixed $value , array &$binds ) :string
+    protected function prepareFacetArrayComplex( string $key , mixed $value , array &$binds , string $docRef = AQL::DOC ) :string
     {
         $filter = [] ;
         foreach( $value as $subKey => $s )
@@ -109,12 +107,12 @@ trait HasFacetArrayComplex
                 ) ;
             }
         }
-        // LENGTH( FOR doc_$key IN result.$key FILTER cond1 && ... RETURN doc_$key._key) > 0
+        // LENGTH( FOR doc_$key IN $docRef.$key FILTER cond1 && ... RETURN 1 ) > 0
         return greaterThan( length
         ([
-            aqlFor    ( [ AQL::DOC_REF => AQL::DOC_PREFIX . $key , AQL::IN => Prop::RESULT . $key  ] )    ,
+            aqlFor    ( [ AQL::DOC_REF => AQL::DOC_PREFIX . $key , AQL::IN => key( $key , $docRef ) ] ) ,
             aqlFilter ( predicates( $filter ,  Logic::AND ) ) ,
-            aqlReturn ( key( Prop::_KEY , AQL::DOC_PREFIX . $key ) )
+            aqlReturn ( 1 )
         ]) , 0 ) ;
     }
 }
