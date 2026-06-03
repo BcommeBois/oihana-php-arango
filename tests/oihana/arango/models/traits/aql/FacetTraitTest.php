@@ -228,10 +228,53 @@ class FacetTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_location IN INBOUND doc orgs_places FILTER doc_location._key == @location RETURN doc_location._key) > 0' ,
+            'LENGTH(FOR doc_location IN INBOUND doc orgs_places FILTER doc_location._key == @location_0 RETURN doc_location._key) > 0' ,
             $this->stub()->callEdge( 'location' , 1234 , $binds , [ AQL::EDGE => 'orgs_places' ] , AQL::DOC ) ,
         ) ;
-        $this->assertSame( [ 'location' => '1234' ] , $binds ) ;
+        $this->assertSame( [ 'location_0' => '1234' ] , $binds ) ;
+    }
+
+    public function testEdgeMultipleValuesAreOredInOneTraversal() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_location IN INBOUND doc orgs_places FILTER doc_location._key == @location_0 || doc_location._key == @location_1 RETURN doc_location._key) > 0' ,
+            $this->stub()->callEdge( 'location' , '1234,5678' , $binds , [ AQL::EDGE => 'orgs_places' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'location_0' => '1234' , 'location_1' => '5678' ] , $binds ) ;
+    }
+
+    public function testEdgeNegativeValueExcludesViaZeroLength() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_location IN INBOUND doc orgs_places FILTER doc_location._key == @location_0 RETURN doc_location._key) == 0' ,
+            $this->stub()->callEdge( 'location' , '-1234' , $binds , [ AQL::EDGE => 'orgs_places' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'location_0' => '1234' ] , $binds ) ;
+    }
+
+    public function testEdgeMixedPositiveAndNegativeAreAndedAndParenthesized() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(LENGTH(FOR doc_location IN INBOUND doc orgs_places FILTER doc_location._key == @location_0 RETURN doc_location._key) > 0 && LENGTH(FOR doc_location IN INBOUND doc orgs_places FILTER doc_location._key == @location_1 RETURN doc_location._key) == 0)' ,
+            $this->stub()->callEdge( 'location' , '5678,-1234' , $binds , [ AQL::EDGE => 'orgs_places' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'location_0' => '5678' , 'location_1' => '1234' ] , $binds ) ;
+    }
+
+    public function testEdgeCustomFieldsTargetsConfiguredVertexProperty() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_location IN INBOUND doc orgs_places FILTER doc_location.name == @location_0 RETURN doc_location._key) > 0' ,
+            $this->stub()->callEdge( 'location' , 'paris' , $binds , [ AQL::EDGE => 'orgs_places' , AQL::FIELDS => 'name' ] , AQL::DOC ) ,
+        ) ;
     }
 
     // ---------------------------------------------------------------- HasFacetEdgeComplex
