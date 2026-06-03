@@ -383,6 +383,37 @@ class FacetTraitTest extends TestCase
         ) ;
     }
 
+    public function testEdgeOpLikeOnSingleField() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_subjects IN INBOUND doc has_subject FILTER doc_subjects.name LIKE @subjects_0 RETURN doc_subjects._key) > 0' ,
+            $this->stub()->callEdge( 'subjects' , 'art' , $binds , [ AQL::EDGE => 'has_subject' , AQL::FIELDS => 'name' , Facet::OP => 'like' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testEdgeMultiFieldOrIsTheThesaurusReplacement() :void
+    {
+        // the former THESAURUS: search a term across several vertex fields (OR), with `like`
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_subjects IN INBOUND doc has_subject FILTER (doc_subjects._key LIKE @subjects_0 || doc_subjects.name LIKE @subjects_0 || doc_subjects.alternateName LIKE @subjects_0) RETURN doc_subjects._key) > 0' ,
+            $this->stub()->callEdge( 'subjects' , 'art' , $binds , [ AQL::EDGE => 'has_subject' , AQL::FIELDS => '_key,name,alternateName' , Facet::OP => 'like' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testEdgeMultiFieldMultiValue() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_subjects IN INBOUND doc has_subject FILTER (doc_subjects._key == @subjects_0 || doc_subjects.name == @subjects_0) || (doc_subjects._key == @subjects_1 || doc_subjects.name == @subjects_1) RETURN doc_subjects._key) > 0' ,
+            $this->stub()->callEdge( 'subjects' , 'art,music' , $binds , [ AQL::EDGE => 'has_subject' , AQL::FIELDS => '_key,name' ] , AQL::DOC ) ,
+        ) ;
+    }
+
     // ---------------------------------------------------------------- HasFacetEdgeComplex
 
     public function testEdgeComplexBuildsFilterPerSubKey() :void
@@ -762,16 +793,57 @@ class FacetTraitTest extends TestCase
         $this->assertSame( '' , $this->stub()->callList( 'k' , [ 'length' => 3 ] , $binds , [] , AQL::DOC ) ) ;
     }
 
-    // ---------------------------------------------------------------- HasFacetThesaurus
+    // ---------------------------------------------------------------- HasFacetJoin (simple key-join)
 
-    public function testThesaurusBuildsContainsTraversalWithPositiveAndNegativeTerms() :void
+    public function testJoinSingleFieldMatch() :void
     {
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR doc_subjects IN INBOUND doc has_subject FILTER (CONTAINS(doc_subjects._key,@subjects0) || CONTAINS(doc_subjects.name,@subjects0) || CONTAINS(doc_subjects.alternateName,@subjects0)) && (!CONTAINS(doc_subjects._key,@subjects1) && !CONTAINS(doc_subjects.name,@subjects1) && !CONTAINS(doc_subjects.alternateName,@subjects1)) RETURN doc_subjects._key) > 0' ,
-            $this->stub()->callThesaurus( 'subjects' , 'art,-music' , $binds , [ AQL::EDGE => 'has_subject' ] , AQL::DOC ) ,
+            'LENGTH(FOR doc_author IN authors FILTER doc_author._key == doc.authorId && doc_author.name == @author_0 RETURN 1) > 0' ,
+            $this->stub()->callJoin( 'author' , 'alice' , $binds , [ AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , AQL::FIELDS => 'name' ] , AQL::DOC ) ,
         ) ;
-        $this->assertSame( [ 'subjects0' => 'art' , 'subjects1' => 'music' ] , $binds ) ;
+        $this->assertSame( [ 'author_0' => 'alice' ] , $binds ) ;
+    }
+
+    public function testJoinMultipleValuesAreOredWithJoinPrefix() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_author IN authors FILTER doc_author._key == doc.authorId && (doc_author.name == @author_0 || doc_author.name == @author_1) RETURN 1) > 0' ,
+            $this->stub()->callJoin( 'author' , 'alice,bob' , $binds , [ AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , AQL::FIELDS => 'name' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testJoinNegativeExcludesViaZeroLength() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_author IN authors FILTER doc_author._key == doc.authorId && doc_author.name == @author_0 RETURN 1) == 0' ,
+            $this->stub()->callJoin( 'author' , '-spammer' , $binds , [ AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , AQL::FIELDS => 'name' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'author_0' => 'spammer' ] , $binds ) ;
+    }
+
+    public function testJoinMultiFieldOrWithLike() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_author IN authors FILTER doc_author._key == doc.authorId && (doc_author.name LIKE @author_0 || doc_author.alternateName LIKE @author_0) RETURN 1) > 0' ,
+            $this->stub()->callJoin( 'author' , 'al' , $binds , [ AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , AQL::FIELDS => 'name,alternateName' , Facet::OP => 'like' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testJoinArrayVariantUsesIn() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_tags IN tags FILTER doc_tags._key IN doc.tagIds && doc_tags.label == @tags_0 RETURN 1) > 0' ,
+            $this->stub()->callJoin( 'tags' , 'php' , $binds , [ AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' , AQL::FIELDS => 'label' ] , AQL::DOC ) ,
+        ) ;
     }
 }

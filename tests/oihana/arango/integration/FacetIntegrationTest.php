@@ -46,7 +46,9 @@ class FacetIntegrationTest extends IntegrationTestCase
 
         $places = $db->collection( 'places' ) ;
         $places->create() ;
-        foreach ( [ '1234' , '5678' , 'pB' ] as $k ) { $places->insert( [ '_key' => $k ] ) ; }
+        $places->insert( [ '_key' => '1234' , 'name' => 'Paris'  ] ) ;
+        $places->insert( [ '_key' => '5678' , 'name' => 'Lyon'   ] ) ;
+        $places->insert( [ '_key' => 'pB'   , 'name' => 'Berlin' ] ) ;
 
         $edges = $db->collection( 'orgs_places' ) ;
         $edges->create( [ 'type' => self::EDGE_TYPE ] ) ;
@@ -204,6 +206,15 @@ class FacetIntegrationTest extends IntegrationTestCase
         $this->assertSame( [ 'o4' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
     }
 
+    public function testEdgeMultiFieldLikeIsTheThesaurusReplacement() :void
+    {
+        // org linked to a place whose _key OR name LIKE 'Paris' => place 1234 (Paris) -> o1, o3
+        $binds = [] ;
+        $facet  = [ AQL::EDGE => 'orgs_places' , AQL::FIELDS => '_key,name' , Facet::OP => 'like' ] ;
+        $filter = $this->stub()->callEdge( 'location' , 'Paris' , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'o1' , 'o3' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
+    }
+
     // ---------------------------------------------------------------- EDGE_COMPLEX
 
     public function testEdgeComplexSingleFieldMatches() :void
@@ -343,6 +354,26 @@ class FacetIntegrationTest extends IntegrationTestCase
         $binds = [] ;
         $facet  = [ AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' ] ;
         $filter = $this->stub()->callJoinComplex( 'tags' , [ 'label' => 'PHP' ] , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- JOIN (simple key-join)
+
+    public function testJoinSimpleMatchesJoinedField() :void
+    {
+        // posts having an approved comment (comment.postId == post._key, comment.status == approved)
+        $binds = [] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' , AQL::FIELDS => 'status' ] ;
+        $filter = $this->stub()->callJoin( 'comments' , 'approved' , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' , 'p2' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    public function testJoinSimpleArrayVariant() :void
+    {
+        // posts whose tagIds[] contains a tag labelled PHP => p1, p3
+        $binds = [] ;
+        $facet  = [ AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' , AQL::FIELDS => 'label' ] ;
+        $filter = $this->stub()->callJoin( 'tags' , 'PHP' , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'p1' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
     }
 }

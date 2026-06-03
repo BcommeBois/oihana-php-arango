@@ -73,6 +73,11 @@ class FacetTraitStub
         return $this->prepareFacetArrayComplex( $key , $value , $binds , $doc ) ;
     }
 
+    public function callJoin( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    {
+        return $this->prepareFacetJoin( $key , $value , $binds , $facet , $doc ) ;
+    }
+
     public function callList( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
         return $this->prepareFacetList( $key , $value , $binds , $facet , $doc ) ;
@@ -83,8 +88,4 @@ class FacetTraitStub
         return $this->prepareFacetIn( $key , $value , $binds , $facet , $doc , $sortable ) ;
     }
 
-    public function callThesaurus( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
-    {
-        return $this->prepareFacetThesaurus( $key , $value , $binds , $facet , $doc ) ;
-    }
 }
