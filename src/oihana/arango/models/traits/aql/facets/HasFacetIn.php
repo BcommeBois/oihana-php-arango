@@ -54,7 +54,7 @@ trait HasFacetIn
      * Set the facetable definition in the model (operator optional, defaults to
      * `any.in`; it can also be overridden per request) :
      * ```php
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::KEYWORDS =>
      *     [
@@ -78,7 +78,7 @@ trait HasFacetIn
      * Property aliasing — the URL facet key is decoupled from the document
      * property via {@see Facet::PROPERTY} (e.g. expose `id` but target `_key`):
      * ```
-     * AQL::FACETABLE => [ 'id' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => '_key' ] ]
+     * Arango::FACETS => [ 'id' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => '_key' ] ]
      * ?facets={"id":"k1,k2"}   // => TO_ARRAY([@id_0,@id_1]) ANY IN doc._key
      * ```
      * Generated AQL (default `any.in`) :

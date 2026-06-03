@@ -56,7 +56,7 @@ trait HasFacetJoin
      * @example
      * Filter posts by their author's name (join authors on post.authorId == author._key) :
      * ```php
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::AUTHOR =>
      *     [

@@ -48,7 +48,7 @@ trait HasFacetEdge
      * @example
      * Set the facetable definition in the model :
      * ```php
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::LOCATION =>
      *     [

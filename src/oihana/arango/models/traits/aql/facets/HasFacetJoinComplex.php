@@ -62,7 +62,7 @@ trait HasFacetJoinComplex
      * @example
      * Reverse one-to-many — the joined documents reference the main one :
      * ```php
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::COMMENTS =>
      *     [

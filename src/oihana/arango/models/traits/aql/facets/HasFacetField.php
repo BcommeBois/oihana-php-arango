@@ -51,7 +51,7 @@ trait HasFacetField
      * Set the facetable definition in the model (operator optional, defaults to
      * `match`; it can also be overridden per request) :
      * ```php
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::WITH_STATUS => [ Facet::TYPE => Facet::FIELD ] ,                                  // =~ (default)
      *     Prop::ID          => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => '_key' , Facet::OP => FilterComparator::EQ ] , // ==

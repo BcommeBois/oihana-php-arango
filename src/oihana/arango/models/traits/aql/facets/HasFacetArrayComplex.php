@@ -56,7 +56,7 @@ trait HasFacetArrayComplex
      * @example
      * Set the facetable definition in the model :
      * ```
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::WORKSHOPS =>
      *     [

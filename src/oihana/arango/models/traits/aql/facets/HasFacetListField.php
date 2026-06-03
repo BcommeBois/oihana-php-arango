@@ -35,7 +35,7 @@ trait HasFacetListField
      * @example
      * Set the facetable definition in the model :
      * ```php
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::KEYWORDS =>
      *     [
@@ -80,7 +80,7 @@ trait HasFacetListField
      * @example
      * Set the facetable definition in the model :
      * ```php
-     * AQL::FACETABLE =>
+     * Arango::FACETS =>
      * [
      *     Prop::TAGS =>
      *     [
