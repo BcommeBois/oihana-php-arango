@@ -61,11 +61,6 @@ trait HasFacetField
 
             $property = $facet[ Facet::PROPERTY ] ?? $key ;
 
-            // if( $property == Prop::ID ) // TODO remove this condition and add an alias flag
-            // {
-            //     $property = Prop::_KEY ; // Reserved keyword : id => _key
-            // }
-
             foreach( $values as $subKey => $value )
             {
                 $negative    = !empty( $value ) && strlen( $value ) > 1 && $value[0] == Char::HYPHEN ;

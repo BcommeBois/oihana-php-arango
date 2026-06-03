@@ -11,8 +11,6 @@ use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 
-use org\schema\constants\Prop;
-
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\toArray;
 use function oihana\core\strings\betweenBrackets;
@@ -77,8 +75,10 @@ trait HasFacetIn
      * Operator codes reuse the filter vocabulary ({@see FilterArrayComparator}):
      * `any.in` (default), `all.in`, `none.in`, `any.nin`, `all.nin`, `none.nin`, …
      *
-     * Special property mapping — the reserved `id` key targets `_key` :
+     * Property aliasing — the URL facet key is decoupled from the document
+     * property via {@see Facet::PROPERTY} (e.g. expose `id` but target `_key`):
      * ```
+     * AQL::FACETABLE => [ 'id' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => '_key' ] ]
      * ?facets={"id":"k1,k2"}   // => TO_ARRAY([@id_0,@id_1]) ANY IN doc._key
      * ```
      * Generated AQL (default `any.in`) :
@@ -118,11 +118,7 @@ trait HasFacetIn
         $comparator = FilterArrayComparator::getAlias( $op , ArrayComparator::ANY . Char::SPACE . Comparator::IN ) ;
 
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
-        if( $property == Prop::ID )
-        {
-            $property = Prop::_KEY ; // Reserved keyword : id => _key
-        }
-        $docProp = key( $property , $doc ) ;
+        $docProp  = key( $property , $doc ) ;
 
         $items = [] ;
         foreach( $values as $index => $item )

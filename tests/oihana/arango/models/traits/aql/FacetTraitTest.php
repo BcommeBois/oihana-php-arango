@@ -514,13 +514,29 @@ class FacetTraitTest extends TestCase
         ) ;
     }
 
-    public function testInPropertyOverrideAndIdAlias() :void
+    public function testInPropertyAliasDecouplesUrlKeyFromDocumentProperty() :void
     {
+        // The URL facet key (`id`) stays in the bind name while the document
+        // property is taken from Facet::PROPERTY (`_key`). No magic id->_key
+        // mapping: the alias is fully explicit.
         $binds = [] ;
         $this->assertSame
         (
             'TO_ARRAY([@id_0]) ANY IN doc._key' ,
-            $this->stub()->callIn( 'id' , '25' , $binds , [ Facet::PROPERTY => 'id' ] , AQL::DOC ) ,
+            $this->stub()->callIn( 'id' , '25' , $binds , [ Facet::PROPERTY => '_key' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'id_0' => '25' ] , $binds ) ;
+    }
+
+    public function testInIdWithoutPropertyTargetsDocId() :void
+    {
+        // Without an explicit Facet::PROPERTY, `id` now targets doc.id (the magic
+        // id->_key special case was removed in favour of the PROPERTY alias).
+        $binds = [] ;
+        $this->assertSame
+        (
+            'TO_ARRAY([@id_0]) ANY IN doc.id' ,
+            $this->stub()->callIn( 'id' , '25' , $binds , [] , AQL::DOC ) ,
         ) ;
     }
 
