@@ -281,16 +281,57 @@ class FacetTraitTest extends TestCase
 
     public function testEdgeComplexBuildsFilterPerSubKey() :void
     {
-        // NOTE: docRef uses AQL::DOC_REF ('docRef') instead of AQL::DOC_PREFIX
-        // ('doc_'), so the loop variable is 'docRefnumbers' (no separator).
-        // Frozen as current behavior; flagged to the maintainer.
         $binds = [] ;
         $this->assertSame
         (
-            'LENGTH(FOR docRefnumbers IN INBOUND doc live_numbers FILTER docRefnumbers.value == @numbers_value RETURN docRefnumbers._key) > 0' ,
+            'LENGTH(FOR doc_numbers IN INBOUND doc live_numbers FILTER doc_numbers.value == @numbers_value RETURN doc_numbers._key) > 0' ,
             $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => '459' ] , $binds , [ AQL::EDGE => 'live_numbers' ] , AQL::DOC ) ,
         ) ;
         $this->assertSame( [ 'numbers_value' => '459' ] , $binds ) ;
+    }
+
+    public function testEdgeComplexMultipleFieldsAreAndedOnSameVertex() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_numbers IN INBOUND doc live_numbers FILTER doc_numbers.value == @numbers_value && doc_numbers.kind == @numbers_kind RETURN doc_numbers._key) > 0' ,
+            $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => '459' , 'kind' => 'ear' ] , $binds , [ AQL::EDGE => 'live_numbers' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'numbers_value' => '459' , 'numbers_kind' => 'ear' ] , $binds ) ;
+    }
+
+    public function testEdgeComplexArrayFieldValuesAreOred() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_numbers IN INBOUND doc live_numbers FILTER (doc_numbers.value == @numbers_value0 || doc_numbers.value == @numbers_value1) RETURN doc_numbers._key) > 0' ,
+            $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => [ '459' , '460' ] ] , $binds , [ AQL::EDGE => 'live_numbers' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'numbers_value0' => '459' , 'numbers_value1' => '460' ] , $binds ) ;
+    }
+
+    public function testEdgeComplexScalarNegationUsesNotEqualInline() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_numbers IN INBOUND doc live_numbers FILTER doc_numbers.value != @numbers_value && doc_numbers.kind == @numbers_kind RETURN doc_numbers._key) > 0' ,
+            $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => '-459' , 'kind' => 'ear' ] , $binds , [ AQL::EDGE => 'live_numbers' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'numbers_value' => '459' , 'numbers_kind' => 'ear' ] , $binds ) ;
+    }
+
+    public function testEdgeComplexArrayWithNegativeFlipsFieldGroupToAnd() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_numbers IN INBOUND doc live_numbers FILTER (doc_numbers.value == @numbers_value0 && doc_numbers.value != @numbers_value1) RETURN doc_numbers._key) > 0' ,
+            $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => [ '459' , '-460' ] ] , $binds , [ AQL::EDGE => 'live_numbers' ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'numbers_value0' => '459' , 'numbers_value1' => '460' ] , $binds ) ;
     }
 
     // ---------------------------------------------------------------- HasFacetArrayComplex

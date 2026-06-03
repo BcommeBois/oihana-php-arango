@@ -54,6 +54,28 @@ class FacetIntegrationTest extends IntegrationTestCase
         $edges->insert( [ '_from' => 'places/1234' , '_to' => 'orgs/o3' ] ) ;
         $edges->insert( [ '_from' => 'places/5678' , '_to' => 'orgs/o3' ] ) ;
         $edges->insert( [ '_from' => 'places/5678' , '_to' => 'orgs/o4' ] ) ;
+
+        // --- Facet::EDGE_COMPLEX : multi-field vertices ---------------------
+        // (number)-[livestocks_has_numbers]->(livestock), each number carries
+        // value + kind so several fields can be matched on the same vertex.
+        $live = $db->collection( 'livestocks' ) ;
+        $live->create() ;
+        foreach ( [ 'L1' , 'L2' , 'L3' , 'L4' ] as $k ) { $live->insert( [ '_key' => $k ] ) ; }
+
+        $numbers = $db->collection( 'numbers' ) ;
+        $numbers->create() ;
+        $numbers->insert( [ '_key' => 'n1' , 'value' => '459' , 'kind' => 'ear' ] ) ;
+        $numbers->insert( [ '_key' => 'n2' , 'value' => '459' , 'kind' => 'tag' ] ) ;
+        $numbers->insert( [ '_key' => 'n3' , 'value' => '999' , 'kind' => 'ear' ] ) ;
+        $numbers->insert( [ '_key' => 'n4' , 'value' => '460' , 'kind' => 'ear' ] ) ;
+
+        $hasNumbers = $db->collection( 'livestocks_has_numbers' ) ;
+        $hasNumbers->create( [ 'type' => self::EDGE_TYPE ] ) ;
+        // L1:459/ear  L2:459/tag  L3:999/ear  L4:460/ear
+        $hasNumbers->insert( [ '_from' => 'numbers/n1' , '_to' => 'livestocks/L1' ] ) ;
+        $hasNumbers->insert( [ '_from' => 'numbers/n2' , '_to' => 'livestocks/L2' ] ) ;
+        $hasNumbers->insert( [ '_from' => 'numbers/n3' , '_to' => 'livestocks/L3' ] ) ;
+        $hasNumbers->insert( [ '_from' => 'numbers/n4' , '_to' => 'livestocks/L4' ] ) ;
     }
 
     /**
@@ -142,5 +164,37 @@ class FacetIntegrationTest extends IntegrationTestCase
         $binds = [] ;
         $filter = $this->stub()->callEdge( 'location' , '5678,-1234' , $binds , [ AQL::EDGE => 'orgs_places' ] , AQL::DOC ) ;
         $this->assertSame( [ 'o4' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- EDGE_COMPLEX
+
+    public function testEdgeComplexSingleFieldMatches() :void
+    {
+        $binds = [] ;
+        $filter = $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => '459' ] , $binds , [ AQL::EDGE => 'livestocks_has_numbers' ] , AQL::DOC ) ;
+        $this->assertSame( [ 'L1' , 'L2' ] , $this->keys( 'livestocks' , $filter , $binds ) ) ;
+    }
+
+    public function testEdgeComplexMultipleFieldsAndedOnSameVertex() :void
+    {
+        // value 459 AND kind ear, on the same number => only L1
+        $binds = [] ;
+        $filter = $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => '459' , 'kind' => 'ear' ] , $binds , [ AQL::EDGE => 'livestocks_has_numbers' ] , AQL::DOC ) ;
+        $this->assertSame( [ 'L1' ] , $this->keys( 'livestocks' , $filter , $binds ) ) ;
+    }
+
+    public function testEdgeComplexArrayValuesAreOred() :void
+    {
+        $binds = [] ;
+        $filter = $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => [ '459' , '460' ] ] , $binds , [ AQL::EDGE => 'livestocks_has_numbers' ] , AQL::DOC ) ;
+        $this->assertSame( [ 'L1' , 'L2' , 'L4' ] , $this->keys( 'livestocks' , $filter , $binds ) ) ;
+    }
+
+    public function testEdgeComplexNegationIsInlineNotEqual() :void
+    {
+        // a linked number whose value != 459 AND kind == ear => L3 (999/ear), L4 (460/ear)
+        $binds = [] ;
+        $filter = $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => '-459' , 'kind' => 'ear' ] , $binds , [ AQL::EDGE => 'livestocks_has_numbers' ] , AQL::DOC ) ;
+        $this->assertSame( [ 'L3' , 'L4' ] , $this->keys( 'livestocks' , $filter , $binds ) ) ;
     }
 }
