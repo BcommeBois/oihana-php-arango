@@ -226,6 +226,83 @@ class FacetTraitTest extends TestCase
         ) ;
     }
 
+    public function testFieldOpEqUsesStrictEquality() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc.withStatus == @withStatus_0)' ,
+            $this->stub()->callField( 'withStatus' , [ FilterParam::OP => 'eq' , FilterParam::VAL => 'draft' ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'withStatus_0' => 'draft' ] , $binds ) ;
+    }
+
+    public function testFieldOpGeOnNumericValue() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc.price >= @price_0)' ,
+            $this->stub()->callField( 'price' , [ FilterParam::OP => 'ge' , FilterParam::VAL => 100 ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'price_0' => 100 ] , $binds ) ;
+    }
+
+    public function testFieldOpLikeUsesLikeOperator() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc.name LIKE @name_0)' ,
+            $this->stub()->callField( 'name' , [ FilterParam::OP => 'like' , FilterParam::VAL => 'jo%' ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testFieldOpFromFacetDefinition() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc._key == @id_0)' ,
+            $this->stub()->callField( 'id' , '25' , $binds , [ Facet::PROPERTY => '_key' , Facet::OP => 'eq' ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testFieldNegationIsGenericPerOperator() :void
+    {
+        // op=eq + leading '-' => the negative counterpart (ne), group ANDed.
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc.withStatus != @withStatus_0)' ,
+            $this->stub()->callField( 'withStatus' , [ FilterParam::OP => 'eq' , FilterParam::VAL => '-draft' ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'withStatus_0' => 'draft' ] , $binds ) ;
+    }
+
+    public function testFieldNegativeNumberKeptWhenOperatorHasNoNegation() :void
+    {
+        // A numeric scalar keeps its type (no comma split) and `ge` has no
+        // negative counterpart, so the negative number is preserved as-is.
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc.temperature >= @temperature_0)' ,
+            $this->stub()->callField( 'temperature' , [ FilterParam::OP => 'ge' , FilterParam::VAL => -5 ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'temperature_0' => -5 ] , $binds ) ;
+    }
+
+    public function testFieldUnknownOpFallsBackToMatch() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(doc.withStatus =~ @withStatus_0)' ,
+            $this->stub()->callField( 'withStatus' , [ FilterParam::OP => 'bogus' , FilterParam::VAL => 'draft' ] , $binds , [] , AQL::DOC ) ,
+        ) ;
+    }
+
     // ---------------------------------------------------------------- HasFacetListField
 
     public function testListFieldBuildsAnyInExpression() :void

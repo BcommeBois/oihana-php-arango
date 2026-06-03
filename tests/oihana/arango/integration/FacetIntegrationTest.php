@@ -85,6 +85,14 @@ class FacetIntegrationTest extends IntegrationTestCase
         $articles->insert( [ '_key' => 'a2' , 'keywords' => [ 'cuisine' ] ] ) ;
         $articles->insert( [ '_key' => 'a3' , 'keywords' => [ 'jardin' , 'sport' ] ] ) ;
         $articles->insert( [ '_key' => 'a4' , 'keywords' => [] ] ) ;
+
+        // --- Facet::FIELD : scalar property comparison ----------------------
+        $fieldDocs = $db->collection( 'fielddocs' ) ;
+        $fieldDocs->create() ;
+        $fieldDocs->insert( [ '_key' => 'f1' , 'withStatus' => 'draft'     , 'price' => 50  , 'name' => 'John'   ] ) ;
+        $fieldDocs->insert( [ '_key' => 'f2' , 'withStatus' => 'review'    , 'price' => 150 , 'name' => 'Joanna' ] ) ;
+        $fieldDocs->insert( [ '_key' => 'f3' , 'withStatus' => 'predraft'  , 'price' => 200 , 'name' => 'Bob'    ] ) ; // contains "draft"
+        $fieldDocs->insert( [ '_key' => 'f4' , 'withStatus' => 'published' , 'price' => 100 , 'name' => 'Alice'  ] ) ;
     }
 
     /**
@@ -237,5 +245,46 @@ class FacetIntegrationTest extends IntegrationTestCase
         $binds = [] ;
         $filter = $this->stub()->callListField( 'keywords' , 'sport' , $binds , [] , AQL::DOC ) ;
         $this->assertSame( [ 'a3' ] , $this->keys( 'articles' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- FIELD (scalar comparison)
+
+    public function testFieldDefaultMatchIsLooseRegex() :void
+    {
+        // default `=~` is a regex match, so "draft" also catches "predraft" (f3)
+        $binds = [] ;
+        $filter = $this->stub()->callField( 'withStatus' , 'draft' , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'f1' , 'f3' ] , $this->keys( 'fielddocs' , $filter , $binds ) ) ;
+    }
+
+    public function testFieldOpEqIsExact() :void
+    {
+        // op=eq is a strict equality, so only the real "draft" (f1) matches
+        $binds = [] ;
+        $filter = $this->stub()->callField( 'withStatus' , [ FilterParam::OP => 'eq' , FilterParam::VAL => 'draft' ] , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'f1' ] , $this->keys( 'fielddocs' , $filter , $binds ) ) ;
+    }
+
+    public function testFieldOpGeOnNumber() :void
+    {
+        $binds = [] ;
+        $filter = $this->stub()->callField( 'price' , [ FilterParam::OP => 'ge' , FilterParam::VAL => 150 ] , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'f2' , 'f3' ] , $this->keys( 'fielddocs' , $filter , $binds ) ) ;
+    }
+
+    public function testFieldOpEqNegationExcludes() :void
+    {
+        // op=eq + "-draft" => doc.withStatus != draft => everything but f1
+        $binds = [] ;
+        $filter = $this->stub()->callField( 'withStatus' , [ FilterParam::OP => 'eq' , FilterParam::VAL => '-draft' ] , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'f2' , 'f3' , 'f4' ] , $this->keys( 'fielddocs' , $filter , $binds ) ) ;
+    }
+
+    public function testFieldOpLikeMatchesPattern() :void
+    {
+        // op=like with a wildcard pattern => names starting with "Jo" (f1 John, f2 Joanna)
+        $binds = [] ;
+        $filter = $this->stub()->callField( 'name' , [ FilterParam::OP => 'like' , FilterParam::VAL => 'Jo%' ] , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'f1' , 'f2' ] , $this->keys( 'fielddocs' , $filter , $binds ) ) ;
     }
 }

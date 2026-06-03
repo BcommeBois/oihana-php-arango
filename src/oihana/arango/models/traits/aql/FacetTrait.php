@@ -92,17 +92,15 @@ trait FacetTrait
                     {
                         $predicates[] = match ( $type )
                         {
-                            Facet::ARRAY_COMPLEX     => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $docRef ) ,
-                            Facet::EDGE              => $this->prepareFacetEdge            ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::EDGE_COMPLEX      => $this->prepareFacetEdgeComplex     ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::IN                => $this->prepareFacetIn              ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::LIST              => $this->prepareFacetList            ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::LIST_FIELD        => $this->prepareFacetListField       ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::LIST_FIELD_SORTED => $this->prepareFacetListFieldSorted ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::THESAURUS         => $this->prepareFacetThesaurus       ( $key , $value , $binds , $facet , $docRef ) ,
-                            default                  => $this->prepareFacetField           ( $key , $value , $binds , $facet , $docRef ) ,
-                            // Facet::FIELD
-
+                            Facet::ARRAY_COMPLEX        => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $docRef ) ,
+                            Facet::EDGE                 => $this->prepareFacetEdge            ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::EDGE_COMPLEX         => $this->prepareFacetEdgeComplex     ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::IN                   => $this->prepareFacetIn              ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::LIST                 => $this->prepareFacetList            ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::LIST_FIELD           => $this->prepareFacetListField       ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::LIST_FIELD_SORTED    => $this->prepareFacetListFieldSorted ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::THESAURUS            => $this->prepareFacetThesaurus       ( $key , $value , $binds , $facet , $docRef ) ,
+                            /* Facet::FIELD */ default  => $this->prepareFacetField           ( $key , $value , $binds , $facet , $docRef ) ,
                         };
                     }
                     catch( Exception $e )

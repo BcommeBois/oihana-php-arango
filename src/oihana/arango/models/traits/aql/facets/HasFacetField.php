@@ -2,86 +2,156 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
+use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\models\enums\Facet;
+use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 
-use function oihana\arango\db\operators\isMatch;
-use function oihana\arango\db\operators\notMatch;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\key;
+use function oihana\core\strings\predicate;
 use function oihana\core\strings\predicates;
 
 /**
- * This trait defines all facet helpers in the Model class.
+ * Builds the AQL filter fragment for a {@see Facet::FIELD} facet: a comparison
+ * on a scalar document property `doc.<property>`, driven by an operator (`op`)
+ * that reuses the filter vocabulary ({@see FilterComparator}: `eq`, `ne`, `gt`,
+ * `ge`, `lt`, `le`, `like`, `nlike`, `match` default, `nmatch`).
+ *
+ * The compact multi-select syntax is preserved: comma-separated values are
+ * OR-ed, and a leading `-` negates a value by switching the operator to its
+ * negative counterpart (`match`→`nmatch`, `eq`→`ne`, `like`→`nlike`) — which
+ * also flips the group to AND. Composed into the model via {@see FacetTrait}.
+ *
+ * @see FacetTrait::prepareFacets() The dispatcher that invokes this builder.
  */
 trait HasFacetField
 {
     /**
-     * Prepare the facets based on specific document's properties.
-     * @param string $key
-     * @param mixed $value
-     * @param array $binds
-     * @param array $facet
-     * @param string $doc
+     * Prepares a field facet (scalar property comparison, `=~` match by default).
+     *
+     * The operator defaults to `match` (regex `=~`, backward compatible). It can
+     * be set in the facet definition ({@see Facet::OP}) or overridden per request
+     * with an `{op, val}` object. Operator codes reuse {@see FilterComparator}.
+     *
+     * @param string $key The facet key (also the default document property).
+     * @param mixed $value A CSV string, a list, or an `{op, val}` object selecting the operator per request.
+     * @param array $binds The bind variables, populated by reference.
+     * @param array $facet The facet definition (`Facet::PROPERTY`, `Facet::OP`).
+     * @param string $doc The document reference the property is read from.
+     *
      * @return string
+     *
      * @throws BindException
+     *
      * @example
-     * Set the facetable definition in the model :
-     * ```
+     * Set the facetable definition in the model (operator optional, defaults to
+     * `match`; it can also be overridden per request) :
+     * ```php
      * AQL::FACETABLE =>
      * [
-     *     Prop::ID          => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => '_key' ] ,
-     *     Prop::WITH_STATUS => [ Facet::TYPE => Facet::FIELD ]
+     *     Prop::WITH_STATUS => [ Facet::TYPE => Facet::FIELD ] ,                                  // =~ (default)
+     *     Prop::ID          => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => '_key' , Facet::OP => FilterComparator::EQ ] , // ==
+     *     Prop::PRICE       => [ Facet::TYPE => Facet::FIELD , Facet::OP => FilterComparator::GE ] // >=
      * ]
      * ```
-     * Display only the documents with the withStatus property equals to 'under_review' :
+     * Default operator — regex match, comma-separated values are OR-ed :
      * ```
-     * ?facets={"withStatus":"under_review"}
-     * ?facets={"withStatus":"draft,under_review"}
+     * ?facets={"withStatus":"under_review"}            // (doc.withStatus =~ @0)
+     * ?facets={"withStatus":"draft,under_review"}      // (doc.withStatus =~ @0 || doc.withStatus =~ @1)
      * ```
-     * Use the '-' prefix to excludes all documents with the withStatus properties :
+     * Negation — a leading `-` switches to the negative operator and ANDs the group :
      * ```
-     * ?facets={"withStatus":"-draft"} // exclude the draft value
-     * ?facets={"withStatus":"-under_review,-draft"} // exclude two negative values
+     * ?facets={"withStatus":"-draft"}                  // (doc.withStatus !~ @0)
+     * ?facets={"withStatus":"-under_review,-draft"}    // (doc.withStatus !~ @0 && doc.withStatus !~ @1)
      * ```
-     * Special case with the 'id' property :
+     * Pick the operator per request with `{op, val}` :
      * ```
-     * ?facets={"id":"25256"} // the id property target the internal '_key' document property.
+     * ?facets={"withStatus":{"op":"eq","val":"draft"}} // (doc.withStatus == @0)   exact, not regex
+     * ?facets={"price":{"op":"ge","val":100}}          // (doc.price >= @0)
+     * ?facets={"name":{"op":"like","val":"jo%"}}       // (doc.name LIKE @0)
+     * ?facets={"withStatus":{"op":"eq","val":"-draft"}}// (doc.withStatus != @0)   negation, generic
      * ```
+     * Supported operators: `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `like`, `nlike`,
+     * `match` (default), `nmatch`. An unknown op falls back to `match`.
      */
-    protected function prepareFacetField( string $key , mixed $value , array &$binds , array $facet , string $doc ):string
+    protected function prepareFacetField( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
-        $values = explode( Char::COMMA , $value ) ;
-        if( count( $values ) > 0  )
+        $op = $facet[ Facet::OP ] ?? FilterComparator::MATCH ;
+
+        // {op, val} request object overrides the configured operator.
+        if( is_array( $value ) && !array_is_list( $value ) )
         {
-            $conditions = [] ;
-            $logic      = Logic::OR ;
-
-            $property = $facet[ Facet::PROPERTY ] ?? $key ;
-
-            foreach( $values as $subKey => $value )
+            $op = $value[ FilterParam::OP ] ?? $op ;
+            if( !array_key_exists( FilterParam::VAL , $value ) )
             {
-                $negative    = !empty( $value ) && strlen( $value ) > 1 && $value[0] == Char::HYPHEN ;
-                $value       = $negative ? ltrim( $value ,Char::HYPHEN ) : $value ;
-
-                $left  = key( $property , $doc ) ;
-                $right = $this->bind( $value , $binds , $key . Char::UNDERLINE . $subKey ) ;
-
-                $conditions[] = $negative ? notMatch( $left , $right ) : isMatch( $left , $right ) ; // TODO test it
-
-                if( $negative )
-                {
-                    $logic = Logic::AND ;
-                }
+                return Char::EMPTY ;
             }
-
-            if( count( $conditions ) > 0 )
-            {
-                return betweenParentheses( predicates( $conditions , $logic ) );
-            }
+            $value = $value[ FilterParam::VAL ] ;
         }
-        return  Char::EMPTY ;
+
+        // A string is split on commas (multi-select); a scalar (int/float/bool)
+        // is kept with its type so numeric comparisons bind a number, not a
+        // string (`doc.price >= 100`, never `>= "100"` which AQL types wrong).
+        $values = match( true )
+        {
+            is_array ( $value ) => array_values( $value ) ,
+            is_string( $value ) => explode( Char::COMMA , $value ) ,
+            default             => [ $value ] ,
+        } ;
+
+        if( empty( $values ) )
+        {
+            return Char::EMPTY ;
+        }
+
+        $property = $facet[ Facet::PROPERTY ] ?? $key ;
+        $left     = key( $property , $doc ) ;
+        $negated  = $this->negatedComparator( $op ) ;
+
+        $conditions = [] ;
+        $logic      = Logic::OR ;
+
+        foreach( $values as $index => $item )
+        {
+            $operator = $op ;
+
+            // A leading `-` negates the value, but only when the operator has a
+            // negative counterpart (otherwise `-` is kept, e.g. negative numbers).
+            if( $negated !== null && is_string( $item ) && strlen( $item ) > 1 && $item[ 0 ] === Char::HYPHEN )
+            {
+                $item     = ltrim( $item , Char::HYPHEN ) ;
+                $operator = $negated ;
+                $logic    = Logic::AND ;
+            }
+
+            $comparator   = FilterComparator::getAlias( $operator , Comparator::MATCH ) ;
+            $right        = $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) ;
+            $conditions[] = predicate( $left , $comparator , $right ) ;
+        }
+
+        return betweenParentheses( predicates( $conditions , $logic ) ) ;
+    }
+
+    /**
+     * Returns the negative counterpart of an operator code, or null when it has
+     * none (ordering operators, already-negative operators, …).
+     *
+     * @param string $op
+     *
+     * @return ?string
+     */
+    private function negatedComparator( string $op ) :?string
+    {
+        return match( $op )
+        {
+            FilterComparator::MATCH => FilterComparator::NMATCH ,
+            FilterComparator::EQ    => FilterComparator::NE ,
+            FilterComparator::LIKE  => FilterComparator::NLIKE ,
+            default                 => null ,
+        } ;
     }
 }
