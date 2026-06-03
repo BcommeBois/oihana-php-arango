@@ -21,7 +21,12 @@ use function oihana\core\strings\predicate;
 use function oihana\core\strings\predicates;
 
 /**
- * This trait defines all facet helpers in the Model class.
+ * Builds the AQL filter fragment for a {@see Facet::ARRAY_COMPLEX} facet: it
+ * keeps documents whose embedded array property holds at least one element
+ * matching the requested sub-field conditions. Composed into the model via
+ * {@see FacetTrait}.
+ *
+ * @see FacetTrait::prepareFacets() The dispatcher that invokes this builder.
  */
 trait HasFacetArrayComplex
 {
