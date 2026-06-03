@@ -20,6 +20,7 @@ If you only need to **issue a query and read JSON**, use the client. If you want
 | 3 | [Bind variables `db/binds/`](binds.md) | Safe value injection — `aqlBind`, validation and formatting of placeholders. |
 | 4 | [HTTP filters `?filter=`](filter.md) | `?filter=` URL syntax, comparators, `alt` transformations, chaining, `FilterType::*`. |
 | 5 | [Internal filtering — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Server-only conditions, `FilterType::VIRTUAL`, URL vs internal decision rule. |
+| 6 | [HTTP facets `?facets=`](facets.md) | `?facets=` URL syntax, `Arango::FACETS` / `Facet::TYPE` declaration, type catalogue (FIELD, IN, EDGE, JOIN, *_COMPLEX), operators, negation, security. |
 
 ## The `db/` source map
 

@@ -20,6 +20,7 @@ Si vous avez juste besoin de **lancer une requête et lire du JSON**, prenez le 
 | 3 | [Bind variables `db/binds/`](binds.md) | Injection sûre de valeurs — `aqlBind`, validation et formatage des placeholders. |
 | 4 | [Filtres HTTP `?filter=`](filter.md) | Syntaxe URL `?filter=`, comparateurs, transformations `alt`, chaînage, `FilterType::*`. |
 | 5 | [Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Conditions serveur-only, `FilterType::VIRTUAL`, règle de choix URL vs interne. |
+| 6 | [Facettes HTTP `?facets=`](facets.md) | Syntaxe URL `?facets=`, déclaration `Arango::FACETS` / `Facet::TYPE`, catalogue des types (FIELD, IN, EDGE, JOIN, *_COMPLEX), opérateurs, négation, sécurité. |
 
 ## Cartographie du dossier `db/`
 
