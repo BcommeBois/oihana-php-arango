@@ -22,19 +22,21 @@ use function oihana\core\strings\keyValue;
  * - `$keyName` allows specifying a different property name in the document; defaults to `$key`.
  * - `$lang` is the optional language code for translation; if null, the original value is returned.
  *
+ * Note: the language is the FOURTH argument; the third is `$keyName`.
+ *
  * Example usage:
  * ```php
- * // Translate "title" field to French
- * aqlFieldTranslate('title', 'doc', 'fr');
- * // Produces: title: TRANSLATE("fr", doc.title, "")
+ * // Translate the "title" field to French (lang is the 4th argument)
+ * aqlFieldTranslate('title', 'doc', null, 'fr');
+ * // Produces: title:TRANSLATE("fr",doc.title,"")
  *
- * // No translation (lang=null)
- * aqlFieldTranslate('description', 'doc', null);
- * // Produces: description: doc.description
+ * // No translation (lang null) → original field
+ * aqlFieldTranslate('description', 'doc');
+ * // Produces: description:doc.description
  *
- * // Using a different property name in the document
- * aqlFieldTranslate('label', 'doc', 'en', 'name');
- * // Produces: label: TRANSLATE("en", doc.name, "")
+ * // Different property name ($keyName) AND a language
+ * aqlFieldTranslate('label', 'doc', 'name', 'en');
+ * // Produces: label:TRANSLATE("en",doc.name,"")
  * ```
  *
  * @param string $key The logical key to use in the AQL return object.
