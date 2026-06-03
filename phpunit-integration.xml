@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Opt-in live ArangoDB integration suite.
+
+    Runs ONLY the tests tagged `#[Group('integration')]`, which execute real
+    AQL against a disposable database built from configs/config.toml. Skipping
+    is allowed here (failOnSkipped="false") so the suite stays green on a
+    machine without a reachable ArangoDB instance.
+
+    Usage:
+        vendor/bin/phpunit -c phpunit-integration.xml
+-->
 <phpunit
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/12.0/phpunit.xsd"
@@ -15,26 +26,24 @@
     displayDetailsOnSkippedTests="true"
     displayDetailsOnTestsThatTriggerNotices="true"
     displayDetailsOnTestsThatTriggerWarnings="true"
-    executionOrder="depends,defects"
-    failOnEmptyTestSuite="true"
+    failOnEmptyTestSuite="false"
     failOnIncomplete="true"
     failOnRisky="true"
-    failOnSkipped="true"
+    failOnSkipped="false"
     failOnWarning="true"
     processIsolation="false"
     testdox="true"
 >
     <testsuites>
-        <testsuite name="Application">
+        <testsuite name="Integration">
             <directory>./tests</directory>
         </testsuite>
     </testsuites>
 
-    <!-- The live ArangoDB suite is opt-in: run it with `phpunit-integration.xml`. -->
     <groups>
-        <exclude>
+        <include>
             <group>integration</group>
-        </exclude>
+        </include>
     </groups>
 
     <source>
