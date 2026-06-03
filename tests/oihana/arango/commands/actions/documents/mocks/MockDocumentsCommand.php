@@ -5,6 +5,7 @@ namespace tests\oihana\arango\commands\actions\documents\mocks;
 use oihana\arango\commands\actions\documents\DocumentsCommandActions;
 use oihana\arango\models\Documents;
 
+use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -27,6 +28,21 @@ class MockDocumentsCommand
     public function callCount( InputInterface $input , OutputInterface $output ) :int
     {
         return $this->count( $input , $output ) ;
+    }
+
+    public function callFetchDocuments( OutputInterface $output , ?Documents $ref = null , string $name = 'documents' , array $init = [] ) :array
+    {
+        return $this->fetchDocuments( $output , $ref , $name , $init ) ;
+    }
+
+    public function callInitializeDocuments( array $init = [] , ?ContainerInterface $container = null ) :static
+    {
+        return $this->initializeDocuments( $init , $container ) ;
+    }
+
+    public function callOutputDocuments( array $documents , InputInterface $input , OutputInterface $output , ?array $fields = null ) :void
+    {
+        $this->outputDocuments( $documents , $input , $output , $fields ) ;
     }
 
     public function callExist( InputInterface $input , OutputInterface $output , mixed $option = null ) :int
