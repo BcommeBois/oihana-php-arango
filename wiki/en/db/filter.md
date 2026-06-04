@@ -482,13 +482,45 @@ Convention: `AQL::FILTERS` is a subset of `AQL::FIELDS` — only fields actually
 {"key":"scores","val":100,"op":"gt","alt":"sum"}
 ```
 
-**`AT LEAST (n)` quantifier** — "at least n elements satisfy the comparison". The operator takes the **array form `["atLeast.<cmp>", n]`** (element 0 is the code, element 1 the threshold, defaulting to 1). The `<cmp>` suffix reuses the operator vocabulary (`eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `nin`):
+**`AT LEAST (n)` quantifier** — keeps a document when **at least `n` elements** of its array satisfy the comparison. It is the middle ground between `ANY` (at least **1**) and `ALL` (**all**): you pick the exact count. The operator takes the **array form `["atLeast.<cmp>", n]`** (element 0 is the code, element 1 the threshold, defaulting to 1). The `<cmp>` suffix reuses the operator vocabulary (`eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `nin`).
+
+#### Complete example — products with their customer ratings (1 to 5 stars)
 
 ```jsonc
-// at least 2 scores >= 80
-{"key":"scores","op":["atLeast.ge",2],"val":80}
-// FILTER doc.scores AT LEAST (2) >= @value
+// "products" collection
+{ "_key":"A", "name":"Headset",  "ratings":[5,4,4,2] }
+{ "_key":"B", "name":"Keyboard", "ratings":[5,3,2]   }
+{ "_key":"C", "name":"Mouse",    "ratings":[4,4]     }
+```
 
+Need: "products that have **at least 3 ratings of 4 stars or more**".
+
+```jsonc
+?filter={"key":"ratings","op":["atLeast.ge",3],"val":4}
+// FILTER doc.ratings AT LEAST (3) >= @value   (@value = 4)
+```
+
+| Product | ratings | ratings ≥ 4 | kept? |
+|---|---|---|---|
+| **A** | `[5,4,4,2]` | 5, 4, 4 → **3** | ✅ |
+| B | `[5,3,2]` | 5 → 1 | ❌ |
+| C | `[4,4]` | 4, 4 → 2 | ❌ |
+
+→ Result: **only A**.
+
+The same filter with the other quantifiers shows why `AT LEAST` is useful:
+
+| Operator | Meaning | AQL | Result |
+|---|---|---|---|
+| `any.ge` | at least **1** rating ≥ 4 | `doc.ratings ANY >= 4` | A, B, C |
+| `all.ge` | **all** ratings ≥ 4 | `doc.ratings ALL >= 4` | C |
+| `["atLeast.ge",3]` | **at least 3** ratings ≥ 4 | `doc.ratings AT LEAST (3) >= 4` | **A** |
+
+`ANY` is too broad, `ALL` too strict: `AT LEAST (n)` expresses exactly "enough qualifying elements".
+
+Other examples:
+
+```jsonc
 // at least 3 elements in the supplied list
 {"key":"scores","op":["atLeast.in",3],"val":[1,2,3]}
 // FILTER doc.scores AT LEAST (3) IN @value
