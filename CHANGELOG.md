@@ -34,6 +34,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Development helper `scripts/seed-playground.php`: creates and seeds a disposable ArangoDB database (default `dump_playground`, collections `users` / `products` / `orders` / `customers`) so dump/restore/collections can be exercised locally without touching a real database. Idempotent; reads the connection from `[arango]` in `configs/config.toml`.
 - Bilingual per-command guide `wiki/{fr,en}/commands/arangodb.md`: full CLI examples for every option configuration, DI wiring (configs/definitions/bin) in a Symfony Console + `oihana/php-commands` context, the collection add/remove semantics on dump and restore, and the `seed-playground.php` workflow.
 
+- HTTP facets (`?facets=`) overhaul — every facetable field is declared under `Arango::FACETS` and reuses the filter operator vocabulary (`FilterComparator` / `FilterArrayComparator` + `FilterParam::OP/VAL`), with new and generalised types:
+  - `Facet::IN` — array-membership facet (op-driven, default `any.in`); the former `LIST`, `LIST_FIELD`, `LIST_FIELD_SORTED` are kept as aliases.
+  - `Facet::JOIN` — simple key-join existential facet (the join counterpart of `Facet::EDGE`): keeps documents having at least one joined document whose field matches the requested value, with multi-value OR and `-` negation.
+  - `Facet::JOIN_COMPLEX` — key-join existential facet matching SEVERAL fields (AND) on the same joined document (object `{field: condition}`), sharing the new `HasFacetComplexConditions` builder with `EDGE_COMPLEX`.
+  - `Facet::EDGE` generalised — configurable operator (`Facet::OP`) and multi-field OR (`AQL::FIELDS`), multi-value CSV (OR) and `-` negation as exclusion (`LENGTH(…) == 0`). The multi-field `like` configuration replaces the former THESAURUS facet.
+  - The URL-provided sub-field names of complex facets (interpolated into `doc.<field>`) are validated by the new `isAttributeName` / `assertAttributeName` helpers — a dangerous name fails the facet (logged and skipped), so no untrusted fragment ever reaches the AQL.
+- `alt` symmetric transformations on both `?filter=` and `?facets=` — `alt` now wraps the comparison **value** (right side), not only the **field** (left). The object form `alt:{ key:<chain>, val:<chain> }` gives one chain per side, and `val:true` mirrors the key-side chain (e.g. `LOWER(doc.email) == LOWER(@v)`); an array value maps the chain over each element (`@v[* RETURN LOWER(CURRENT)]`). On facets the chain may come from the model definition (new `Facet::ALT`, a default for every request) or from the URL request object (`{op,val,alt}`, which takes precedence); complex facets accept a global `Facet::ALT` applied to every sub-field. The legacy field-only string/list forms (`"lower"`, `["trim","lower"]`) are unchanged. Backed by the shared `HasAltExpression` engine; documented with per-case examples in `wiki/{fr,en}/db/{filter,facets}.md`.
+- Opt-in live ArangoDB integration suite (`#[Group('integration')]`, run via `vendor/bin/phpunit -c phpunit-integration.xml`): builds a disposable database from `configs/config.toml`, seeds it, executes the generated AQL for real, then drops it — and skips cleanly (never fails) when no instance is reachable. Covers the facet builders and the `alt` transformations end-to-end, complementing the server-free unit suite that only freezes the AQL string.
+
+### Changed
+
+- `Facet::FIELD` is now operator-enabled (`FilterComparator`): it accepts an `op` (in the definition via `Facet::OP`, or per request via an `{op, val}` object), defaulting to `match` (`=~`) for backward compatibility, with generic negation. Numeric scalars keep their type, so `doc.price >= 100` never binds a string.
+- The list facet family is unified under `Facet::IN` (op-driven membership); `Facet::LIST`, `LIST_FIELD` and `LIST_FIELD_SORTED` become thin aliases, and the broken `length` branch was removed. The facet dispatcher was hardened (nullable type lookup, null-safe logger).
+
+### Removed
+
+- `Facet::THESAURUS` — it was exactly an `EDGE` facet with `AQL::FIELDS = '_key,name,alternateName'` and `op = like`, so it is now expressed as that configuration rather than a dedicated type.
+- Magic `id → _key` rewriting in facets — key/property aliases are now declared explicitly via `Facet::PROPERTY` everywhere, with no hidden remapping.
+
 ### Fixed
 
 - `command:arangodb` document `upsert` now honors the `removeKeys` exclusion list: it was passed under the `excludes` key, which the upsert query never reads, so the exclusion silently had no effect.
@@ -45,3 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `command:arangodb restore --last` could never locate the archive: it set the input file to the bare filename returned by `findFiles()` (whose `FILTER` yields `$file->getFilename()`), so `assertFile()` failed unless the current working directory happened to be the dump directory. The `--last` branch now prepends the dump directory, matching the interactive branch.
 
 - `command:arangodb restore --date <date>` could never locate the archive. The by-date suffix was built as `Char::DASH . $database . $shouldEncrypt ? FileExtension::TAR_GZ_ENCRYPTED : FileExtension::TAR`, but `.` binds tighter than the ternary, so PHP evaluated `(Char::DASH . $database . $shouldEncrypt)` as the condition — always a non-empty (truthy) string. The suffix therefore always collapsed to `.tar.gz.enc` and silently dropped the `-{database}` segment, so a non-encrypted restore-by-date never matched its `{date}-{database}.tar.gz` file. The non-encrypted branch also used `FileExtension::TAR` (`.tar`) instead of `FileExtension::TAR_GZ` (`.tar.gz`), which the dump action actually produces. The suffix logic is now isolated in the testable `ArangoRestoreAction::getArchiveFileSuffix()` helper and covered by `ArangoRestoreActionTest`.
+
+- `Facet::ARRAY_COMPLEX` was broken at query time: it iterated an undefined variable (`FOR doc_workshops IN resultworkshops`, with no separator) and built its filter on the out-of-scope `result` document, so the facet never ran. It now iterates the in-scope embedded array (`doc.<key>`) and returns `1`. Confirmed against a live ArangoDB.
+- `Facet::EDGE_COMPLEX` used a malformed loop variable (`AQL::DOC_REF . $key` → e.g. `docRefnumbers`) instead of the sibling convention `doc_<key>`; it now reads `doc_<key>` like the other builders, and gained per-field multi-value (OR) plus per-value inline negation (`!=`) on the same traversed vertex.
+
+### Security
+
+- HTTP facets enforce a strict trust contract: only bound values (`@bind`) are user-controlled. Operators are whitelisted (`getAlias`, falling back to the type default), facet keys are whitelisted against the model's `Arango::FACETS` (an unknown key is ignored), and the URL-provided sub-field names of complex facets are validated by `assertAttributeName` before being interpolated — a dangerous name fails the facet (logged and skipped). `alt` function names are likewise whitelisted (an unknown function is a no-op), so no `?filter=` / `?facets=` input can inject AQL.
