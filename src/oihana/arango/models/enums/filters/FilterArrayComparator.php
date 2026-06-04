@@ -41,6 +41,18 @@ final class FilterArrayComparator
     public const string NONE_NE  = 'none.ne'  ; // none not equals
     public const string NONE_NIN = 'none.nin' ; // none not in
 
+    // AT LEAST (n) — parameterized quantifier, notation ["atLeast.ge", 2]. The
+    // threshold is dynamic, so these are not in __ALIAS__ (built in HasFilterArray).
+    public const string AT_LEAST     = 'atLeast'     ; // the prefix (op[0] = "atLeast.<cmp>")
+    public const string AT_LEAST_EQ  = 'atLeast.eq'  ; // at least n equals
+    public const string AT_LEAST_GE  = 'atLeast.ge'  ; // at least n greater than or equals
+    public const string AT_LEAST_GT  = 'atLeast.gt'  ; // at least n greater than
+    public const string AT_LEAST_IN  = 'atLeast.in'  ; // at least n in
+    public const string AT_LEAST_LE  = 'atLeast.le'  ; // at least n less than or equals
+    public const string AT_LEAST_LT  = 'atLeast.lt'  ; // at least n less than
+    public const string AT_LEAST_NE  = 'atLeast.ne'  ; // at least n not equals
+    public const string AT_LEAST_NIN = 'atLeast.nin' ; // at least n not in
+
     protected const array __ALIAS__ =
     [
         self::ALL_EQ  => ArrayComparator::ALL . Char::SPACE . Comparator::EQUAL ,

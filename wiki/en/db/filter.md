@@ -482,6 +482,20 @@ Convention: `AQL::FILTERS` is a subset of `AQL::FIELDS` — only fields actually
 {"key":"scores","val":100,"op":"gt","alt":"sum"}
 ```
 
+**`AT LEAST (n)` quantifier** — "at least n elements satisfy the comparison". The operator takes the **array form `["atLeast.<cmp>", n]`** (element 0 is the code, element 1 the threshold, defaulting to 1). The `<cmp>` suffix reuses the operator vocabulary (`eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `nin`):
+
+```jsonc
+// at least 2 scores >= 80
+{"key":"scores","op":["atLeast.ge",2],"val":80}
+// FILTER doc.scores AT LEAST (2) >= @value
+
+// at least 3 elements in the supplied list
+{"key":"scores","op":["atLeast.in",3],"val":[1,2,3]}
+// FILTER doc.scores AT LEAST (3) IN @value
+```
+
+The threshold is cast to an integer (injection-safe); the field stays `alt`-aware.
+
 ### Hash combinations
 
 ```jsonc

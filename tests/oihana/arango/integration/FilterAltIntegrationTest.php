@@ -37,9 +37,10 @@ class FilterAltIntegrationTest extends IntegrationTestCase
         // is an embedded array of objects with a mixed-case email sub-field.
         // `items` is an embedded array of objects (price per line) for the `pluck` alt.
         // `discount` is present on p1, ABSENT on p2 (null), 0 on p3 — for the coalesce alt.
-        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'discount' => 5 , 'created' => '2024-01-15' , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] , 'items' => [ [ 'price' => 50 ] , [ 'price' => 150 ] ] ] ) ; // avg 100
-        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 ,                   'created' => '2024-06-15' , 'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] , 'items' => [ [ 'price' => 10 ] ] ] ) ; // avg 10
-        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'discount' => 0 , 'created' => '2024-12-15' , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] , 'items' => [ [ 'price' => 300 ] ] ] ) ; // avg 300
+        // `scores` is an array of numbers for the AT LEAST (n) quantifier.
+        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'discount' => 5 , 'created' => '2024-01-15' , 'scores' => [ 90 , 85 ] , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] , 'items' => [ [ 'price' => 50 ] , [ 'price' => 150 ] ] ] ) ; // avg 100
+        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 ,                   'created' => '2024-06-15' , 'scores' => [ 90 , 40 ] , 'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] , 'items' => [ [ 'price' => 10 ] ] ] ) ; // avg 10
+        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'discount' => 0 , 'created' => '2024-12-15' , 'scores' => [ 30 , 20 ] , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] , 'items' => [ [ 'price' => 300 ] ] ] ) ; // avg 300
     }
 
     private function keys( string $filter , array $binds ) :array
@@ -67,8 +68,17 @@ class FilterAltIntegrationTest extends IntegrationTestCase
                 'discount' => FilterType::NUMBER ,
                 'created'  => FilterType::DATE ,
                 'items'    => FilterType::ARRAY ,
+                'scores'   => FilterType::ARRAY ,
             ]
         ]);
+    }
+
+    public function testAtLeastQuantifierMatchesWhenEnoughElementsQualify() :void
+    {
+        // at least 2 scores >= 80 → only p1 (90,85). p2 (90,40) has 1, p3 (30,20) has 0.
+        $binds  = [] ;
+        $filter = $this->model()->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.ge' , 2 ] , 'val' => 80 ] , $binds ) ;
+        $this->assertSame( [ 'p1' ] , $this->keys( $filter , $binds ) ) ;
     }
 
     public function testNumberBetweenMatchesInclusiveRange() :void

@@ -11,6 +11,7 @@ use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\buildCombinedInlineFilter;
 use function oihana\arango\db\helpers\buildInlineFilterCondition;
@@ -101,8 +102,15 @@ trait HasFilterArray
     /**
      * Prepares the filter clause with a string attribute.
      *
+     * @param array $init
+     * @param array|null $binds
+     * @param string $docRef
+     *
+     * @return string
+     *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareFilterArray
     (
@@ -117,10 +125,16 @@ trait HasFilterArray
         $match    = $init[ FilterParam::MATCH ] ?? null ;
         $alt      = $init[ FilterParam::ALT   ] ?? null ;
 
+        // AT LEAST (n) quantifier — notation ["atLeast.ge", 2] → doc.x AT LEAST (2) >= @v
+        if ( is_array( $operator ) && is_string( $operator[ 0 ] ?? null ) && str_starts_with( $operator[ 0 ] , FilterArrayComparator::AT_LEAST . '.' ) )
+        {
+            return $this->prepareFilterAtLeast( $init , $binds , $docRef ) ;
+        }
+
         // Detect array expansion on the RAW key: an `alt` here is applied inside
         // the inline condition (CURRENT.<field>), not around the whole expansion —
         // wrapping the key first would break the `[*]` parsing below.
-        $key      = key( $init[ FilterParam::KEY ] ?? null , $docRef ) ;
+        $key = key( $init[ FilterParam::KEY ] ?? null , $docRef ) ;
 
         // Check if this is an array expansion filter (contains [*])
         if ( str_contains( $key , Operator::ARRAY_EXPANSION ) )
@@ -213,6 +227,7 @@ trait HasFilterArray
      * @return string
      *
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareFilterArrayKey
     (
@@ -230,5 +245,45 @@ trait HasFilterArray
         }
 
         return $this->alterFilterKey( $keyStr , $init ) ;
+    }
+
+    /**
+     * Builds an `AT LEAST (n)` array quantifier filter: at least `n` elements of
+     * the array satisfy the comparison.
+     *
+     * The operator is the array form `["atLeast.<cmp>", n]` (element 0 is the
+     * `atLeast.<cmp>` code, element 1 the threshold, defaulting to 1). The `<cmp>`
+     * suffix reuses {@see FilterComparator} (`eq`, `ne`, `gt`, `ge`, `lt`, `le`,
+     * `in`, `nin`). The threshold is cast to an int and inlined (injection-safe);
+     * the value is bound. The compared key stays alt-aware.
+     *
+     * ```aql
+     * doc.scores AT LEAST (2) >= @value
+     * ```
+     *
+     * @param array $init The filter init (`op` = `["atLeast.<cmp>", n]`).
+     * @param array|null $binds The bind variables, populated by reference.
+     * @param string $docRef The document reference.
+     *
+     * @return string
+     *
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    protected function prepareFilterAtLeast( array $init , ?array &$binds = null , string $docRef = AQL::DOC ) :string
+    {
+        $op    = $init[ FilterParam::OP ] ;
+        $count = (int) ( $op[ 1 ] ?? 1 ) ;
+        $code  = substr( (string) $op[ 0 ] , strlen( FilterArrayComparator::AT_LEAST ) + 1 ) ; // "ge"
+
+        $comparator = Operator::AT_LEAST . ' (' . $count . ') ' . FilterComparator::getAlias( $code , Comparator::EQUAL ) ;
+
+        return predicate
+        (
+            $this->prepareFilterArrayKey( $init , $docRef ) ,
+            $comparator ,
+            $this->prepareFilterValue( $init , $binds )
+        ) ;
     }
 }
