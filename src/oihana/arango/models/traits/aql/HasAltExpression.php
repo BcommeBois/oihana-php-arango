@@ -3,6 +3,7 @@
 namespace oihana\arango\models\traits\aql;
 
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\resolveAltSides;
@@ -39,6 +40,7 @@ trait HasAltExpression
      * @return string The transformed expression.
      *
      * @throws UnsupportedOperationException
+     * @throws ValidationException When a `pluck` sub-field name is unsafe.
      */
     protected function alterExpression( string $expr , mixed $chain , array $init = [] ): string
     {

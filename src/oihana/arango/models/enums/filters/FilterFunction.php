@@ -3,6 +3,7 @@
 namespace oihana\arango\models\enums\filters;
 
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\reflect\traits\ConstantsTrait;
 
 // ---- array
@@ -14,6 +15,7 @@ use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\arrays\last;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\functions\arrays\nth;
+use function oihana\arango\db\functions\arrays\pluck;
 use function oihana\arango\db\functions\arrays\pop;
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\arrays\push;
@@ -144,6 +146,7 @@ class FilterFunction
     public const string FIRST          = 'first'         ;
     public const string LAST           = 'last'          ;
     public const string NTH            = 'nth'           ;
+    public const string PLUCK          = 'pluck'         ;
     public const string POP            = 'pop'           ;
     public const string POSITION       = 'position'      ;
     public const string PUSH           = 'push'          ;
@@ -293,6 +296,7 @@ class FilterFunction
      * @return string The key wrapped in the AQL function
      *
      * @throws UnsupportedOperationException
+     * @throws ValidationException When a `pluck` sub-field name is unsafe.
      *
      * @example
      * ```php
@@ -350,6 +354,7 @@ class FilterFunction
             self::FIRST          => first         ( $key ) ,
             self::LAST           => last          ( $key ) ,
             self::NTH            => nth           ( $key , (int) ( $params[0] ?? 0 ) ) ,
+            self::PLUCK          => pluck         ( $key , (string) ( $params[0] ?? '' ) ) , // doc.items[* RETURN CURRENT.<field>]
             self::POP            => pop           ( $key ) ,
             self::POSITION       => position      ( $key , $params[0] ?? null , (bool) ( $params[1] ?? false ) ) ,
             self::PUSH           => push          ( $key , $params[0] ?? null , (bool) ( $params[1] ?? false ) ) ,

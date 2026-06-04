@@ -76,6 +76,7 @@
             "src/oihana/arango/db/functions/arrays/last.php" ,
             "src/oihana/arango/db/functions/arrays/length.php" ,
             "src/oihana/arango/db/functions/arrays/nth.php" ,
+            "src/oihana/arango/db/functions/arrays/pluck.php" ,
             "src/oihana/arango/db/functions/arrays/pop.php" ,
             "src/oihana/arango/db/functions/arrays/position.php" ,
             "src/oihana/arango/db/functions/arrays/push.php" ,

@@ -35,9 +35,10 @@ class FilterAltIntegrationTest extends IntegrationTestCase
         $people->create() ;
         // p1/p2 are the SAME email in different cases ; p3 differs. contactPoint
         // is an embedded array of objects with a mixed-case email sub-field.
-        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] ] ) ;
-        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 , 'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] ] ) ;
-        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] ] ) ;
+        // `items` is an embedded array of objects (price per line) for the `pluck` alt.
+        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] , 'items' => [ [ 'price' => 50 ] , [ 'price' => 150 ] ] ] ) ; // avg 100
+        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 , 'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] , 'items' => [ [ 'price' => 10 ] ] ] ) ; // avg 10
+        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] , 'items' => [ [ 'price' => 300 ] ] ] ) ; // avg 300
     }
 
     private function keys( string $filter , array $binds ) :array
@@ -62,6 +63,7 @@ class FilterAltIntegrationTest extends IntegrationTestCase
                 'email'    => FilterType::STRING ,
                 'category' => FilterType::STRING ,
                 'price'    => FilterType::NUMBER ,
+                'items'    => FilterType::ARRAY ,
             ]
         ]);
     }
@@ -110,6 +112,18 @@ class FilterAltIntegrationTest extends IntegrationTestCase
             $binds
         ) ;
         $this->assertSame( [ 'p1' , 'p2' ] , $this->keys( $filter , $binds ) ) ;
+    }
+
+    public function testPluckThenAverageAggregatesEmbeddedObjects() :void
+    {
+        // AVERAGE(doc.items[* RETURN CURRENT.price]) >= 100 → p1 (avg 100) + p3 (avg 300).
+        $binds  = [] ;
+        $filter = $this->model()->prepareFilter
+        (
+            [ 'key' => 'items' , 'op' => 'ge' , 'val' => 100 , 'alt' => [ [ 'pluck' , 'price' ] , 'avg' ] ] ,
+            $binds
+        ) ;
+        $this->assertSame( [ 'p1' , 'p3' ] , $this->keys( $filter , $binds ) ) ;
     }
 
     public function testHierarchicalArrayExpansionAltMatchesCaseInsensitively() :void

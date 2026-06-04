@@ -256,12 +256,42 @@ The leaves of **edge / join / document** traversals (`seller.name`, …) already
 | `product` | Product | — |
 | `first` / `last` | First / last element | — |
 | `nth` | Element at position N | `position` |
+| `pluck` | Project an array of objects onto a single sub-field | `field` |
 | `position` | Position of a value | `search`, `returnIndex` |
 | `reverse` | Reverse order | — |
 | `sorted` | Sort | — |
 | `sortedUnique` | Sort and deduplicate | — |
 | `unique` | Deduplicate without sorting | — |
 | `slice` | Extract a portion | `start`, `length` |
+
+##### `pluck` — aggregate one field of an array of objects
+
+Aggregates (`avg`, `sum`, `min`, `max`, `count`…) operate on an array of **scalars**. But a property is often an array of **objects** (order lines, readings…). `pluck` projects that array of objects onto **a single sub-field** before the aggregate. It relies on AQL's native inline projection `array[* RETURN CURRENT.<field>]` — the read-only sibling of the inline filter `[* FILTER …]`.
+
+Chained with an aggregate, it lets you filter on, say, the **average basket** of an order whose lines are `{price, quantity}` objects:
+
+```jsonc
+// "orders whose average line price is ≥ 100"
+{"key":"items","op":"ge","val":100,"alt":[["pluck","price"],"avg"]}
+// FILTER AVERAGE(doc.items[* RETURN CURRENT.price]) >= @v
+```
+
+A few variations, to show the flexibility (`pluck` composes with any aggregate):
+
+```jsonc
+{"key":"items","op":"gt","val":1000,"alt":[["pluck","price"],"sum"]}    // total order amount > 1000
+{"key":"items","op":"le","val":5,"alt":[["pluck","quantity"],"max"]}    // no line with more than 5 units
+{"key":"readings","op":"ge","val":18,"alt":[["pluck","temp"],"median"]} // median reading temperature ≥ 18
+```
+
+The sub-field may be a **nested object path** (dotted notation), e.g. when each line carries an `offer` sub-object:
+
+```jsonc
+{"key":"items","op":"ge","val":100,"alt":[["pluck","offer.price"],"avg"]}
+// FILTER AVERAGE(doc.items[* RETURN CURRENT.offer.price]) >= @v
+```
+
+> 🔒 The sub-field name (`price`, `offer.price`…) comes from the URL: it is validated by [`assertAttributeName`](helpers.md#injection-guard--isattributename--assertattributename) before interpolation — a dangerous name fails the filter, nothing reaches the AQL. *(A sub-field that is itself an array — `offers[*].price` — is not handled yet.)*
 
 #### Dates
 

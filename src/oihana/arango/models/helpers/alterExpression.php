@@ -4,6 +4,7 @@ namespace oihana\arango\db\helpers;
 
 use oihana\arango\models\enums\filters\FilterFunction;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
 use function oihana\core\arrays\isCallableWithParams;
 
@@ -37,6 +38,7 @@ use function oihana\core\arrays\isCallableWithParams;
  * @return string The transformed expression.
  *
  * @throws UnsupportedOperationException
+ * @throws ValidationException When a `pluck` sub-field name is unsafe.
  *
  * @example
  * ```php

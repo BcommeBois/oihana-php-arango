@@ -7,6 +7,7 @@ use PHPUnit\Framework\TestCase;
 
 use oihana\arango\models\enums\filters\FilterFunction;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\exceptions\ValidationException;
 
 /**
  * Tests for FilterFunction class.
@@ -34,6 +35,7 @@ class FilterFunctionTest extends TestCase
         $this->assertSame( 'first'         , FilterFunction::FIRST          ) ;
         $this->assertSame( 'last'          , FilterFunction::LAST           ) ;
         $this->assertSame( 'nth'           , FilterFunction::NTH            ) ;
+        $this->assertSame( 'pluck'         , FilterFunction::PLUCK          ) ;
         $this->assertSame( 'pop'           , FilterFunction::POP            ) ;
         $this->assertSame( 'position'      , FilterFunction::POSITION       ) ;
         $this->assertSame( 'push'          , FilterFunction::PUSH           ) ;
@@ -158,6 +160,39 @@ class FilterFunctionTest extends TestCase
     // ========================================
     // APPLY - ARRAY FUNCTIONS
     // ========================================
+
+    public function testApplyPluckProjectsSubField(): void
+    {
+        $this->assertSame
+        (
+            'doc.items[* RETURN CURRENT.price]' ,
+            FilterFunction::apply( FilterFunction::PLUCK , 'doc.items' , [ 'price' ] )
+        ) ;
+    }
+
+    public function testApplyPluckAcceptsNestedObjectPath(): void
+    {
+        // a dotted path projects a nested object field, e.g. CURRENT.offer.price
+        $this->assertSame
+        (
+            'doc.items[* RETURN CURRENT.offer.price]' ,
+            FilterFunction::apply( FilterFunction::PLUCK , 'doc.items' , [ 'offer.price' ] )
+        ) ;
+    }
+
+    public function testApplyPluckRejectsUnsafeSubField(): void
+    {
+        $this->expectException( ValidationException::class ) ;
+        FilterFunction::apply( FilterFunction::PLUCK , 'doc.items' , [ 'x) || LENGTH(secrets' ] ) ;
+    }
+
+    public function testApplyPluckRejectsNestedArrayExpansionPath(): void
+    {
+        // nested array expansion (offers[*].price) is not supported yet — the
+        // `[*]` is rejected by the attribute-name guard (see backlog).
+        $this->expectException( ValidationException::class ) ;
+        FilterFunction::apply( FilterFunction::PLUCK , 'doc.items' , [ 'offers[*].price' ] ) ;
+    }
 
     public function testApplyFirst(): void
     {
