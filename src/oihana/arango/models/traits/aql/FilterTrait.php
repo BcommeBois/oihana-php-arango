@@ -500,78 +500,82 @@ trait FilterTrait
     }
 
     /**
-     * Apply function transformations to a key based on 'alt' parameter.
+     * Apply an `alt` transformation chain to an arbitrary AQL expression.
      *
-     * Supports multiple syntax formats:
-     * 1. Single function: "alt":"lower"
-     * → LOWER(key)
+     * This is the side-agnostic core shared by the key (left) and value (right)
+     * sides of a comparison: it wraps `$expr` — whatever it is (a field reference
+     * `doc.name`, a bind placeholder `@value`, or the loop variable `CURRENT`) —
+     * with the function(s) described by `$chain`.
      *
-     * 2. Function with params (simplified): "alt":["substring", 0, 3]
-     * → SUBSTRING(key, 0, 3)
+     * Supports multiple syntax formats for `$chain`:
+     * 1. Single function: "lower"
+     * → LOWER(expr)
      *
-     * 3. Function chain: "alt":["trim","lower"]
-     * → LOWER(TRIM(key))
+     * 2. Function with params (simplified): ["substring", 0, 3]
+     * → SUBSTRING(expr, 0, 3)
      *
-     * 4. Mixed chain: "alt":["trim",["substring",0,3],"lower"]
-     * → LOWER(SUBSTRING(TRIM(key), 0, 3))
+     * 3. Function chain: ["trim","lower"]
+     * → LOWER(TRIM(expr))
      *
-     * @param string $key  The key expression to transform
-     * @param array  $init Filter initialization array containing 'alt' parameter
+     * 4. Mixed chain: ["trim",["substring",0,3],"lower"]
+     * → LOWER(SUBSTRING(TRIM(expr), 0, 3))
      *
-     * @return string The transformed key expression
+     * @param string $expr  The expression to transform.
+     * @param mixed  $chain The transformation chain (string, list of functions, or null for a no-op).
+     * @param array  $init  Filter initialization array (forwarded to FilterFunction for boolean-return checks).
+     *
+     * @return string The transformed expression.
      *
      * @throws UnsupportedOperationException
      *
      * @example
      * ```php
      * // Single function
-     * alterFilterKey('doc.name', ['alt' => 'lower'])
+     * alterExpression('doc.name', 'lower')
      * // Returns: "LOWER(doc.name)"
      *
      * // Function chain
-     * alterFilterKey('doc.name', ['alt' => ['trim', 'lower']])
+     * alterExpression('doc.name', ['trim', 'lower'])
      * // Returns: "LOWER(TRIM(doc.name))"
      *
      * // With parameters
-     * alterFilterKey('doc.code', ['alt' => [ 'substring', 0, 3 ] ] )
+     * alterExpression('doc.code', [ 'substring', 0, 3 ] )
      * // Returns: "SUBSTRING(doc.code, 0, 3)"
      *
-     * alterFilterKey('doc.code', ['alt' => [ 'trim' , ['substring', 0, 3] ] ] )
+     * alterExpression('doc.code', [ 'trim' , ['substring', 0, 3] ] )
      * // Returns: "SUBSTRING(TRIM(doc.code), 0, 3)"
      * ```
      */
-    protected function alterFilterKey( string $key , array $init = [] ): string
+    protected function alterExpression( string $expr , mixed $chain , array $init = [] ): string
     {
-        $alt = $init[ FilterParam::ALT ] ?? null ;
-
-        if ( $alt === null )
+        if ( $chain === null )
         {
-            return $key ;
+            return $expr ;
         }
 
-        // Case 1: Single function without params → "alt":"lower"
-        if ( is_string( $alt ) )
+        // Case 1: Single function without params → "lower"
+        if ( is_string( $chain ) )
         {
-            return FilterFunction::apply( $alt , $key , [] , $init );
+            return FilterFunction::apply( $chain , $expr , [] , $init );
         }
 
         // Case 2-4: Array format
-        if ( is_array( $alt ) )
+        if ( is_array( $chain ) )
         {
             // Detect if it's a single function with params (simplified syntax)
             // Example: ['substring', 0, 3]
-            if ( isCallableWithParams( $alt , FilterFunction::enums() ) )
+            if ( isCallableWithParams( $chain , FilterFunction::enums() ) )
             {
                 // Extract function name and params
-                $funcName = $alt[0];
-                $params   = array_slice( $alt , 1 ) ;
+                $funcName = $chain[0];
+                $params   = array_slice( $chain , 1 ) ;
 
-                return FilterFunction::apply( $funcName , $key , $params , $init );
+                return FilterFunction::apply( $funcName , $expr , $params , $init );
             }
 
             // Otherwise, it's a function chain
             // Examples: ['trim', 'lower'] or ['trim', ['substring', 0, 3], 'lower']
-            foreach ( $alt as $func )
+            foreach ( $chain as $func )
             {
                 if ( is_array( $func ) )
                 {
@@ -586,14 +590,35 @@ trait FilterTrait
                     $params   = [];
                 }
 
-                $key = FilterFunction::apply( $funcName , $key , $params , $init );
+                $expr = FilterFunction::apply( $funcName , $expr , $params , $init );
             }
 
-            return $key;
+            return $expr;
         }
 
-        // Fallback: return key unchanged
-        return $key ;
+        // Fallback: return expression unchanged
+        return $expr ;
+    }
+
+    /**
+     * Apply the key-side (left) `alt` transformation to a key expression.
+     *
+     * Thin wrapper over {@see static::alterExpression()}: it resolves the `alt`
+     * parameter into its key/value sides via {@see static::resolveAltSides()} and
+     * applies the key-side chain. The three legacy `alt` forms (string, list of
+     * functions, function-with-params) keep transforming the key only, unchanged.
+     *
+     * @param string $key  The key expression to transform.
+     * @param array  $init Filter initialization array containing the 'alt' parameter.
+     *
+     * @return string The transformed key expression.
+     *
+     * @throws UnsupportedOperationException
+     */
+    protected function alterFilterKey( string $key , array $init = [] ): string
+    {
+        [ $keyChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+        return $this->alterExpression( $key , $keyChain , $init ) ;
     }
 
     /**
@@ -662,5 +687,48 @@ trait FilterTrait
     protected function prepareFilterValue( ?array $init = [] , ?array &$binds = null ):string
     {
         return $this->bind( $init[ FilterParam::VAL ] ?? null , $binds ) ;
+    }
+
+    /**
+     * Resolve the `alt` parameter into its key-side and value-side chains.
+     *
+     * Three backward-compatible forms are supported:
+     * - `"lower"` / `["trim","lower"]` (string or list) → key side only, the value is left untouched.
+     * - `{ "key":<chain>, "val":<chain> }` (object) → explicit chain per side.
+     * - `{ "key":<chain>, "val":true }` → `val:true` mirrors the key-side chain onto the value side.
+     *
+     * The object form is told apart from a plain function chain by being an
+     * associative array (a list is a function chain, an associative array is the
+     * per-side object).
+     *
+     * @param mixed $alt The raw `alt` parameter.
+     *
+     * @return array{0:mixed,1:mixed} A `[ keyChain , valChain ]` pair; either entry is null for a no-op on that side.
+     */
+    protected function resolveAltSides( mixed $alt ): array
+    {
+        if ( $alt === null )
+        {
+            return [ null , null ] ;
+        }
+
+        // Object form { key:<chain>, val:<chain|true> } — an associative array, as
+        // opposed to a plain function chain (a list).
+        if ( is_array( $alt ) && !array_is_list( $alt ) )
+        {
+            $keyChain = $alt[ FilterParam::KEY ] ?? null ;
+            $valChain = $alt[ FilterParam::VAL ] ?? null ;
+
+            // val:true → mirror the key-side chain onto the value side.
+            if ( $valChain === true )
+            {
+                $valChain = $keyChain ;
+            }
+
+            return [ $keyChain , $valChain ] ;
+        }
+
+        // String or list form → key side only, value untouched.
+        return [ $alt , null ] ;
     }
 }
