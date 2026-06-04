@@ -173,6 +173,24 @@ When the **value is an array** (e.g. `op:in`), the chain is applied to **each el
 
 100% backward compatible: the string and list forms (`"lower"`, `["trim","lower"]`) keep acting on the field only.
 
+### On nested filters (array expansion `[*]` and `match`)
+
+`alt` also applies **inside** array expansions. For a key `field[*].subField`, it wraps the inline condition `CURRENT.<subField>` (and its value):
+
+```
+?filter={"key":"contactPoint[*].email","val":"ADMIN@ACME.COM","alt":{"key":"lower","val":true}}
+// LENGTH(doc.contactPoint[* FILTER LOWER(CURRENT.email) == LOWER(@v)]) > 0
+```
+
+For a `match` condition (several sub-fields on the same element), `alt` applies **globally to every sub-field** (same rule as complex facets):
+
+```
+?filter={"key":"additionalProperty[*]","match":{"propertyID":"X","value":"Y"},"alt":{"key":"lower","val":true}}
+// LENGTH(doc.additionalProperty[* FILTER LOWER(CURRENT.propertyID) == LOWER(@0) && LOWER(CURRENT.value) == LOWER(@1)]) > 0
+```
+
+The leaves of **edge / join / document** traversals (`seller.name`, …) already inherit `alt` through the underlying flat filter. The **structural join key** (`j.id == doc.x`) stays **raw**.
+
 ### Catalog by category
 
 > For the signature and detailed semantics of each function, see [String functions](../aql/aql-functions-strings.md), [Date functions](../aql/aql-functions-dates.md), [Numeric functions](../aql/aql-functions-numerics.md), [Array functions](../aql/aql-functions-arrays.md). This page lists their URL-side exposed versions.

@@ -8,6 +8,7 @@ use Psr\Log\NullLogger ;
 
 use oihana\arango\clients\Database ;
 use oihana\arango\db\enums\AQL ;
+use oihana\arango\enums\Filter ;
 use oihana\arango\models\Documents ;
 use oihana\arango\models\enums\filters\FilterType ;
 
@@ -32,10 +33,11 @@ class FilterAltIntegrationTest extends IntegrationTestCase
     {
         $people = $db->collection( self::COLLECTION ) ;
         $people->create() ;
-        // p1/p2 are the SAME email in different cases ; p3 differs.
-        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 ] ) ;
-        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 ] ) ;
-        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 ] ) ;
+        // p1/p2 are the SAME email in different cases ; p3 differs. contactPoint
+        // is an embedded array of objects with a mixed-case email sub-field.
+        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] ] ) ;
+        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 , 'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] ] ) ;
+        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] ] ) ;
     }
 
     private function keys( string $filter , array $binds ) :array
@@ -108,5 +110,36 @@ class FilterAltIntegrationTest extends IntegrationTestCase
             $binds
         ) ;
         $this->assertSame( [ 'p1' , 'p2' ] , $this->keys( $filter , $binds ) ) ;
+    }
+
+    public function testHierarchicalArrayExpansionAltMatchesCaseInsensitively() :void
+    {
+        // LENGTH(doc.contactPoint[* FILTER LOWER(CURRENT.email) == LOWER(@v)]) > 0
+        $binds  = [] ;
+        $filter = $this->modelHier()->prepareFilter
+        (
+            [ 'key' => 'contactPoint[*].email' , 'val' => 'ADMIN@ACME.COM' , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ,
+            $binds
+        ) ;
+        $this->assertSame( [ 'p1' , 'p2' ] , $this->keys( $filter , $binds ) ) ;
+    }
+
+    private function modelHier() :Documents
+    {
+        $container = new Container() ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
+        return new Documents( $container ,
+        [
+            AQL::COLLECTION => self::COLLECTION ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'contactPoint' =>
+                [
+                    AQL::TYPE    => Filter::ARRAY_EXPANSION ,
+                    AQL::FILTERS => [ 'email' => FilterType::STRING ],
+                ],
+            ]
+        ]);
     }
 }

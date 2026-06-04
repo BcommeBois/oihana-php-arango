@@ -115,7 +115,12 @@ trait HasFilterArray
         $operator = $init[ FilterParam::OP    ] ?? FilterComparator::EQ ;
         $value    = $init[ FilterParam::VAL   ] ?? null ;
         $match    = $init[ FilterParam::MATCH ] ?? null ;
-        $key      = $this->prepareFilterArrayKey( $init , $docRef ) ;
+        $alt      = $init[ FilterParam::ALT   ] ?? null ;
+
+        // Detect array expansion on the RAW key: an `alt` here is applied inside
+        // the inline condition (CURRENT.<field>), not around the whole expansion —
+        // wrapping the key first would break the `[*]` parsing below.
+        $key      = key( $init[ FilterParam::KEY ] ?? null , $docRef ) ;
 
         // Check if this is an array expansion filter (contains [*])
         if ( str_contains( $key , Operator::ARRAY_EXPANSION ) )
@@ -141,7 +146,7 @@ trait HasFilterArray
                         $allowedFields = $filterConfig[ AQL::FILTERS ] ;
                     }
 
-                    $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields ) ;
+                    $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields , $alt ) ;
 
                     return predicate
                     (
@@ -165,6 +170,7 @@ trait HasFilterArray
                     operator : $operator ,
                     value    : $value    ,
                     binds  : $binds ,
+                    alt    : $alt   ,
                 ) ;
 
                 // Generate: LENGTH(array[* FILTER CURRENT.field <op> value]) > 0

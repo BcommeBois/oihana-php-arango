@@ -238,12 +238,14 @@ trait HasHierarchicalFilter
         $nestedPath = implode(Char::DOT , $remainingSegments ) ;
         $fullPath   = $cleanKey . Operator::ARRAY_EXPANSION . Char::DOT . $nestedPath ;
 
-        // Create init for array field
+        // Create init for array field — forward `alt` so the inline expansion
+        // condition (CURRENT.<field>) is wrapped like the flat filters.
         $arrayInit =
         [
             FilterParam::KEY => $fullPath ,
             FilterParam::VAL => $init[ FilterParam::VAL ] ?? null,
             FilterParam::OP  => $init[ FilterParam::OP  ] ?? null,
+            FilterParam::ALT => $init[ FilterParam::ALT ] ?? null,
         ];
 
         return $this->prepareFilterArray( $arrayInit , $binds , $docRef ) ;

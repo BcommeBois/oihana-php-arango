@@ -46,10 +46,12 @@ use RuntimeException;
  * @param array      $match         Match configuration
  * @param array|null &$binds        Bind variables array
  * @param array      $allowedFields Optional: List of allowed field names for validation
+ * @param mixed      $alt           Optional `alt` transformation applied to EVERY sub-field condition (field + value).
  *
  * @return string The combined inline filter condition
  *
  * @throws BindException If binding fails
+ * @throws UnsupportedOperationException If an alt chain is invalid
  *
  * @example
  * ```php
@@ -97,6 +99,7 @@ function buildCombinedInlineFilter
     array  $match  ,
     ?array &$binds ,
     array  $allowedFields = [] ,
+    mixed  $alt           = null ,
 )
 : string
 {
@@ -144,6 +147,7 @@ function buildCombinedInlineFilter
                 operator : FilterComparator::EQ  ,
                 value    : $value                ,
                 binds  : $binds                ,
+                alt    : $alt                  ,
             ) ;
         }
 
@@ -180,6 +184,7 @@ function buildCombinedInlineFilter
             operator : $operator ,
             value    : $value    ,
             binds  : $binds    ,
+            alt    : $alt      ,
         ) ;
     }
 

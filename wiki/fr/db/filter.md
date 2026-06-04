@@ -173,6 +173,24 @@ Quand la **valeur est un tableau** (ex. `op:in`), la chaîne est appliquée à *
 
 100 % rétrocompatible : les formes chaîne et tableau (`"lower"`, `["trim","lower"]`) continuent de n'agir que sur le champ.
 
+### Sur les filtres imbriqués (expansion `[*]` et `match`)
+
+`alt` s'applique aussi **à l'intérieur** des expansions de tableau. Pour une clé `champ[*].sousChamp`, il enveloppe la condition inline `CURRENT.<sousChamp>` (et sa valeur) :
+
+```
+?filter={"key":"contactPoint[*].email","val":"ADMIN@ACME.COM","alt":{"key":"lower","val":true}}
+// LENGTH(doc.contactPoint[* FILTER LOWER(CURRENT.email) == LOWER(@v)]) > 0
+```
+
+Pour une condition `match` (plusieurs sous-champs sur le même élément), `alt` s'applique **globalement à tous les sous-champs** (même règle que les facettes complexes) :
+
+```
+?filter={"key":"additionalProperty[*]","match":{"propertyID":"X","value":"Y"},"alt":{"key":"lower","val":true}}
+// LENGTH(doc.additionalProperty[* FILTER LOWER(CURRENT.propertyID) == LOWER(@0) && LOWER(CURRENT.value) == LOWER(@1)]) > 0
+```
+
+Les feuilles des traversées **edge / join / document** (`vendeur.nom`, etc.) héritent déjà de `alt` via le filtre plat sous-jacent. La **clé de jointure structurelle** (`j.id == doc.x`) reste, elle, **brute**.
+
 ### Catalogue par catégorie
 
 > Pour la signature et la sémantique détaillée de chaque fonction, voir les pages [Fonctions de chaînes](../aql/aql-functions-strings.md), [Fonctions de dates](../aql/aql-functions-dates.md), [Fonctions numériques](../aql/aql-functions-numerics.md), [Fonctions de tableaux](../aql/aql-functions-arrays.md). Cette page liste leurs versions exposées côté URL.
