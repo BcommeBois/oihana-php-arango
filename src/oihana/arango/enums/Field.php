@@ -9,6 +9,7 @@ class Field
     use ConstantsTrait ;
 
     public const string ALIAS    = 'alias'    ;
+    public const string ALTERS   = 'alters'   ;
     public const null   DEFAULT  = null       ;
     public const string EDGES    = 'edges'    ;
     public const string FIELDS   = 'fields'   ;

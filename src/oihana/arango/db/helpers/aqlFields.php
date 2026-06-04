@@ -31,6 +31,7 @@ use function oihana\arango\db\helpers\fields\aqlFieldUrl;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\core\strings\betweenDoubleQuotes;
 use function oihana\core\strings\compile;
+use function oihana\core\strings\key;
 use function oihana\core\strings\keyValue;
 
 /**
@@ -54,6 +55,10 @@ use function oihana\core\strings\keyValue;
  * - `Field::REQUIRES` : Optional permission subject(s) — when present and the
  *                      request-scoped authorizer denies them, the field is
  *                      dropped from the projection (read-side gating).
+ * - `Field::ALTERS`   : Optional `alt` transformation chain wrapping the projected
+ *                      value (e.g. `["trim","lower"]` => `name: LOWER(TRIM(doc.name))`).
+ *                      Applied only to the default scalar projection (`key: doc.key`);
+ *                      ignored on typed/structural filters (BOOL, DATETIME, EDGE, JOIN, …).
  *
  * @param array|null              $fields    Array of fields definitions to filter.
  *                                           The array keys are the field identifiers, and the values are
@@ -91,6 +96,7 @@ function aqlFields
 
         foreach( $fields as $key => $options )
         {
+            $alters  = $options[ Field::ALTERS  ] ?? null ;
             $default = $options[ Field::DEFAULT ] ?? null ;
             $filter  = $options[ Field::FILTER  ] ?? null ;
             $format  = $options[ Field::FORMAT  ] ?? null ;
@@ -98,6 +104,10 @@ function aqlFields
             $path    = $options[ Field::PATH    ] ?? null ;
             $quoted  = $options[ Field::QUOTED  ] ?? null ;
             $value   = $options[ Field::UNIQUE  ] ?? $key ;
+
+            // Field reference captured before `$key` is (possibly) quoted, so the
+            // output-side `alters` chain always wraps the real `doc.<field>`.
+            $fieldRef = key( $keyName ?? $key , $docRef ) ;
 
             // Field-level gating: when the field declares `Field::REQUIRES`
             // and the request-scoped authorizer denies it, the field is
@@ -116,6 +126,16 @@ function aqlFields
             if( $quoted === true )
             {
                 $key = betweenDoubleQuotes( $key , trim: false ) ; // TODO test it
+            }
+
+            // Output-side `alters` (Field::ALTERS): wrap the projected value with
+            // the alt chain — `name: LOWER(TRIM(doc.name))`. Applied only to the
+            // default scalar projection; typed/structural filters keep their own
+            // shape (a scalar alt chain has no meaning on a sub-object).
+            if( $alters !== null && $filter === Field::DEFAULT )
+            {
+                $filters[] = keyValue( $key , alterExpression( $fieldRef , $alters ) ) ;
+                continue ;
             }
 
             $filters[] = match ( $filter )

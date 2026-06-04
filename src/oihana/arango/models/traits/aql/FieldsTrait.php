@@ -131,7 +131,7 @@ trait FieldsTrait
      *     Schema::NAME                  => null , // Filter::DEFAULT ,
      *     Schema::URL                   => Filter::URL ,
      *     Schema::CREATED               => Filter::DATETIME ,
-     *     Schema::MODIFIED              => [ Field::FILTER => Filter::DATETIME    ] ,
+     *     Schema::MODIFIED              => [ Field::FILTER => Filter::DATETIME ] ,
      *     Schema::IMAGE                 => [ Field::FILTER => Filter::EDGE ] ,
      *     Schema::ALTERNATIVE_HEADLINE  => Filter::TRANSLATE ,
      *     Schema::ALTERNATE_NAME        => Filter::TRANSLATE ,
@@ -436,6 +436,7 @@ trait FieldsTrait
         $definition = clean
         ([
             Field::FILTER   => $filter ,
+            Field::ALTERS   => $options[ Field::ALTERS   ] ?? null ,
             Field::DEFAULT  => $options[ Field::DEFAULT  ] ?? null ,
             Field::FORMAT   => $options[ Field::FORMAT   ] ?? null ,
             Field::NAME     => $options[ Field::NAME     ] ?? null ,

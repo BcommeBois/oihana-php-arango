@@ -10,7 +10,8 @@
 6. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
 7. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
 8. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
-9. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
+9. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
+10. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
 
 ## Vue d'ensemble
 
@@ -321,6 +322,62 @@ function isAuthorized( array $definition , array $init = [] ) : bool
 - Une chaîne ou un tableau → `true` dès qu'**au moins un** sujet est accordé par le callable. Seul `true` strict compte comme un grant (un truthy `1`, `'yes'` etc. n'autorise pas la projection).
 
 La fonction se trouve dans `oihana\arango\models\helpers\isAuthorized`.
+
+## Transformer la valeur projetée — `Field::ALTERS`
+
+`Field::ALTERS` applique une **chaîne de transformations AQL** à la valeur d'un champ **au moment du `RETURN`**, exactement comme les transformations [`alt`](db/filter.md#transformations-alt) des filtres — mais côté **sortie**. C'est le pendant en projection : ce que `alt` fait pour comparer (`LOWER(doc.x) == LOWER(@v)`), `ALTERS` le fait pour renvoyer (`name: LOWER(doc.name)`).
+
+La chaîne réutilise le même vocabulaire que `alt` (le registre `FilterFunction`) :
+
+- une **fonction simple** : `'lower'` → `LOWER(doc.x)` ;
+- une **chaîne de fonctions** : `['trim','lower']` → `LOWER(TRIM(doc.x))` (appliquée de gauche à droite, la dernière englobe) ;
+- une **fonction avec paramètres** : `['substring', 0, 3]` → `SUBSTRING(doc.x, 0, 3)` ;
+- une **chaîne mixte** : on peut panacher fonctions simples et fonctions-avec-paramètres dans la même liste — `['trim', ['substring',0,3], 'lower']` → `LOWER(SUBSTRING(TRIM(doc.x), 0, 3))`.
+
+### Déclaration
+
+```php
+Arango::FIELDS =>
+[
+    // name renvoyé normalisé : sans espaces superflus et en minuscules
+    'name'  => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ,
+
+    // un alias de sortie (slug) calculé à partir d'un autre champ (title)
+    'slug'  => [ Field::NAME => 'title' , Field::ALTERS => 'lower' ] ,
+
+    // un code tronqué aux 3 premiers caractères
+    'code'  => [ Field::NAME => 'reference' , Field::ALTERS => [ 'substring' , 0 , 3 ] ] ,
+] ,
+```
+
+Génère la projection :
+
+```aql
+RETURN {
+    name : LOWER(TRIM(doc.name)) ,
+    slug : LOWER(doc.title) ,
+    code : SUBSTRING(doc.reference, 0, 3)
+}
+```
+
+### Exemples concrets
+
+| Intention | Déclaration | AQL projeté |
+|---|---|---|
+| Email normalisé en minuscules | `'email' => [ Field::ALTERS => 'lower' ]` | `email: LOWER(doc.email)` |
+| Titre détouré (espaces) | `'title' => [ Field::ALTERS => 'trim' ]` | `title: TRIM(doc.title)` |
+| Slug minuscule depuis `title` | `'slug' => [ Field::NAME => 'title', Field::ALTERS => 'lower' ]` | `slug: LOWER(doc.title)` |
+| Nom propre nettoyé | `'name' => [ Field::ALTERS => ['trim','lower'] ]` | `name: LOWER(TRIM(doc.name))` |
+| Initiales (3 car.) | `'code' => [ Field::ALTERS => ['substring',0,3] ]` | `code: SUBSTRING(doc.code,0,3)` |
+
+Sur la donnée `{ name: "  Jean DUPONT  ", title: "Hello World" }`, la projection ci-dessus renvoie `{ name: "jean dupont", slug: "hello world" }`.
+
+### Portée et règles
+
+- **Opt-in par champ** : un champ sans `Field::ALTERS` est projeté à l'identique (aucun changement de comportement existant).
+- **Projection scalaire par défaut uniquement** (`clé: doc.clé`). Sur un champ portant un **`Field::FILTER` typé** (`BOOL`, `DATETIME`, `NUMBER`…) ou **structurel** (`EDGE`, `JOIN`, `MAP`, `DOCUMENT`…), `Field::ALTERS` est **ignoré** : une chaîne scalaire (`LOWER`, `TRIM`…) n'a pas de sens sur un sous-objet ou une conversion de type. Utilisez l'un **ou** l'autre.
+- **`Field::NAME`** choisit l'attribut source ; la clé de sortie reste celle de la définition (utile pour exposer un champ transformé sous un autre nom, type `slug`).
+- Aucun risque d'injection : les noms de fonctions sont sur **liste blanche** (`FilterFunction`) — une fonction inconnue est sans effet.
 
 ## Référence interne — la fonction `matchesSkin`
 

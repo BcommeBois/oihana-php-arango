@@ -10,7 +10,8 @@
 6. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
 7. [Which mechanism to use?](#which-mechanism-to-use)
 8. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
-9. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
+9. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
+10. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
 
 ## Overview
 
@@ -321,6 +322,62 @@ function isAuthorized( array $definition , array $init = [] ) : bool
 - A string or array → `true` as soon as **at least one** subject is granted by the callable. Only strict `true` counts as a grant (a truthy `1`, `'yes'`, etc. does not allow the projection).
 
 The helper lives at `oihana\arango\models\helpers\isAuthorized`.
+
+## Transforming the projected value — `Field::ALTERS`
+
+`Field::ALTERS` applies an **AQL transformation chain** to a field's value at **`RETURN` time**, exactly like the filters' [`alt`](db/filter.md#alt-transformations) transformations — but on the **output** side. It is the projection counterpart: what `alt` does to compare (`LOWER(doc.x) == LOWER(@v)`), `ALTERS` does to return (`name: LOWER(doc.name)`).
+
+The chain reuses the same vocabulary as `alt` (the `FilterFunction` registry):
+
+- a **single function**: `'lower'` → `LOWER(doc.x)`;
+- a **function chain**: `['trim','lower']` → `LOWER(TRIM(doc.x))` (applied left to right, the last one wraps);
+- a **function with parameters**: `['substring', 0, 3]` → `SUBSTRING(doc.x, 0, 3)`;
+- a **mixed chain**: bare functions and parameterized functions can be combined in the same list — `['trim', ['substring',0,3], 'lower']` → `LOWER(SUBSTRING(TRIM(doc.x), 0, 3))`.
+
+### Declaration
+
+```php
+Arango::FIELDS =>
+[
+    // name returned normalized: trimmed and lower-cased
+    'name'  => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ,
+
+    // an output alias (slug) computed from another field (title)
+    'slug'  => [ Field::NAME => 'title' , Field::ALTERS => 'lower' ] ,
+
+    // a code truncated to the first 3 characters
+    'code'  => [ Field::NAME => 'reference' , Field::ALTERS => [ 'substring' , 0 , 3 ] ] ,
+] ,
+```
+
+Produces the projection:
+
+```aql
+RETURN {
+    name : LOWER(TRIM(doc.name)) ,
+    slug : LOWER(doc.title) ,
+    code : SUBSTRING(doc.reference, 0, 3)
+}
+```
+
+### Worked examples
+
+| Intent | Declaration | Projected AQL |
+|---|---|---|
+| Email normalized to lower case | `'email' => [ Field::ALTERS => 'lower' ]` | `email: LOWER(doc.email)` |
+| Trimmed title | `'title' => [ Field::ALTERS => 'trim' ]` | `title: TRIM(doc.title)` |
+| Lower-case slug from `title` | `'slug' => [ Field::NAME => 'title', Field::ALTERS => 'lower' ]` | `slug: LOWER(doc.title)` |
+| Cleaned proper name | `'name' => [ Field::ALTERS => ['trim','lower'] ]` | `name: LOWER(TRIM(doc.name))` |
+| Initials (3 chars) | `'code' => [ Field::ALTERS => ['substring',0,3] ]` | `code: SUBSTRING(doc.code,0,3)` |
+
+On the data `{ name: "  Jean DUPONT  ", title: "Hello World" }`, the projection above returns `{ name: "jean dupont", slug: "hello world" }`.
+
+### Scope and rules
+
+- **Opt-in per field**: a field without `Field::ALTERS` is projected unchanged (no change to existing behaviour).
+- **Default scalar projection only** (`key: doc.key`). On a field carrying a **typed `Field::FILTER`** (`BOOL`, `DATETIME`, `NUMBER`…) or a **structural** one (`EDGE`, `JOIN`, `MAP`, `DOCUMENT`…), `Field::ALTERS` is **ignored**: a scalar chain (`LOWER`, `TRIM`…) makes no sense on a sub-object or a type conversion. Use one **or** the other.
+- **`Field::NAME`** selects the source attribute; the output key stays the one from the definition (handy to expose a transformed field under another name, e.g. `slug`).
+- No injection risk: function names are **whitelisted** (`FilterFunction`) — an unknown function is a no-op.
 
 ## Internal reference — the `matchesSkin` helper
 
