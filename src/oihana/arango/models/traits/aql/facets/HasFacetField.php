@@ -7,10 +7,14 @@ use oihana\arango\db\enums\Logic;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
+
 use oihana\enums\Char;
+
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
+use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\key;
 use function oihana\core\strings\predicate;
@@ -48,6 +52,7 @@ trait HasFacetField
      *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      *
      * @example
      * Set the facetable definition in the model (operator optional, defaults to
@@ -90,6 +95,13 @@ trait HasFacetField
         {
             $op  = $value[ FilterParam::OP  ] ?? $op ;
             $alt = $value[ FilterParam::ALT ] ?? $alt ;
+
+            // `between` carries min/max instead of val — handle it before the val guard.
+            if( $op === FilterComparator::BETWEEN )
+            {
+                return $this->prepareFacetFieldBetween( $key , $value , $binds , $facet , $doc , $alt ) ;
+            }
+
             if( !array_key_exists( FilterParam::VAL , $value ) )
             {
                 return Char::EMPTY ;
@@ -161,5 +173,36 @@ trait HasFacetField
             FilterComparator::LIKE  => FilterComparator::NLIKE ,
             default                 => null ,
         } ;
+    }
+
+    /**
+     * Builds an inclusive `between` (range) field facet: `(LEFT >= @min && LEFT <= @max)`.
+     *
+     * The compared property is alt-aware (the key-side chain wraps `doc.<property>`).
+     * An omitted bound drops its side (one-sided range), mirroring the number/string
+     * `?filter=` semantics; both omitted yields an empty fragment.
+     *
+     * @param string $key The facet key.
+     * @param array $value The request object (`min`, `max`).
+     * @param array $binds The bind variables, populated by reference.
+     * @param array $facet The facet definition (`Facet::PROPERTY`).
+     * @param string $doc The document reference.
+     * @param mixed $alt The resolved `alt` parameter (request over definition).
+     *
+     * @return string
+     *
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    private function prepareFacetFieldBetween( string $key , array $value , array &$binds , array $facet , string $doc , mixed $alt ) :string
+    {
+        [ $keyChain ] = $this->resolveAltSides( $alt ) ;
+        $left = $this->alterExpression( key( $facet[ Facet::PROPERTY ] ?? $key , $doc ) , $keyChain ) ;
+
+        $min = array_key_exists( FilterParam::MIN , $value ) ? $this->bind( $value[ FilterParam::MIN ] , $binds , $key . Char::UNDERLINE . FilterParam::MIN ) : null ;
+        $max = array_key_exists( FilterParam::MAX , $value ) ? $this->bind( $value[ FilterParam::MAX ] , $binds , $key . Char::UNDERLINE . FilterParam::MAX ) : null ;
+
+        return buildBetweenClauses( $left , $min , $max ) ;
     }
 }

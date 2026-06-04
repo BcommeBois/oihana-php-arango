@@ -49,9 +49,19 @@ class FilterParam
     public const string MATCH = 'match' ;
 
     /**
+     * The upper bound of a `between` range filter.
+     */
+    public const string MAX = 'max' ;
+
+    /**
      * The method attribute.
      */
     public const string METHOD = 'method' ;
+
+    /**
+     * The lower bound of a `between` range filter.
+     */
+    public const string MIN = 'min' ;
 
     /**
      * The operator of the condition.

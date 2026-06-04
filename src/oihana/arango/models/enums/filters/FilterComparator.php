@@ -9,18 +9,19 @@ class FilterComparator
 {
     use ConstantsTrait ;
 
-    public const string EQ     = 'eq'    ; // equals (default)
-    public const string GE     = 'ge'    ; // greater than or equals
-    public const string GT     = 'gt'    ; // greater than
-    public const string IN     = 'in'    ; // in
-    public const string LE     = 'le'    ; // less than or equals
-    public const string LT     = 'lt'    ; // less than
-    public const string LIKE   = 'like'  ; // like
-    public const string MATCH  = 'match' ; // not like
-    public const string NE     = 'ne'    ; // not equals
-    public const string NIN    = 'nin'   ; // not in
-    public const string NLIKE  = 'nlike' ; // not like
-    public const string NMATCH = 'nmatch' ; // not like
+    public const string BETWEEN = 'between' ; // range: key >= min && key <= max (no single AQL alias)
+    public const string EQ      = 'eq'      ; // equals (default)
+    public const string GE      = 'ge'      ; // greater than or equals
+    public const string GT      = 'gt'      ; // greater than
+    public const string IN      = 'in'      ; // in
+    public const string LE      = 'le'      ; // less than or equals
+    public const string LT      = 'lt'      ; // less than
+    public const string LIKE    = 'like'    ; // like
+    public const string MATCH   = 'match'   ; // not like
+    public const string NE      = 'ne'      ; // not equals
+    public const string NIN     = 'nin'     ; // not in
+    public const string NLIKE   = 'nlike'   ; // not like
+    public const string NMATCH  = 'nmatch'  ; // not like
 
     protected const array __ALIAS__ =
     [

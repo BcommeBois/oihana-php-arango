@@ -78,6 +78,7 @@ Les valeurs de `op` sont définies par l'enum `FilterComparator`.
 | `like` | Correspondance avec *wildcards* (`%`, `_`) | `LIKE(doc.x, @val, false)` |
 | `in` | Dans la liste fournie | `doc.x IN @val` |
 | `nin` | Pas dans la liste | `doc.x NOT IN @val` |
+| `between` | Plage inclusive (clés `min`/`max` au lieu de `val`) | `(doc.x >= @min && doc.x <= @max)` |
 
 Exemples :
 
@@ -87,6 +88,35 @@ Exemples :
 ?filter={"key":"name","val":"%john%","op":"like"}
 ?filter={"key":"role","val":["admin","owner"],"op":"in"}
 ```
+
+### Opérateur `between` (plage)
+
+`between` compare un champ à une **plage inclusive** via les clés **`min`** et **`max`** (pas de `val`). Disponible pour les types **number**, **string** et **date** :
+
+```jsonc
+{"key":"price","op":"between","min":10,"max":50}
+// FILTER (doc.price >= @min && doc.price <= @max)
+```
+
+**Omission de borne — la sémantique dépend du type :**
+- **number / string** : la borne omise est **abandonnée** → comparaison unilatérale.
+  ```jsonc
+  {"key":"price","op":"between","max":50}   // FILTER doc.price <= @max
+  {"key":"price","op":"between","min":10}   // FILTER doc.price >= @min
+  ```
+- **date** : la borne omise vaut **la date courante** (`now`) → la plage reste bilatérale.
+  ```jsonc
+  {"key":"created","op":"between","min":"2024-01-01"}
+  // FILTER (doc.created >= @min && doc.created <= DATE_ISO8601(DATE_NOW()))
+  ```
+
+**Fuseau (`tz`)** : pour une date, le `tz` du JSON s'applique **aux deux bornes** :
+```jsonc
+{"key":"created","op":"between","min":"2024-01-01","max":"2024-12-31","tz":"Europe/Paris"}
+// FILTER (doc.created >= DATE_LOCALTOUTC(@min,@tz) && doc.created <= DATE_LOCALTOUTC(@max,@tz))
+```
+
+Le champ comparé reste compatible `alt` (ex. `"alt":"abs"` → `(ABS(doc.price) >= @min && …)`).
 
 ## Types de filtres
 

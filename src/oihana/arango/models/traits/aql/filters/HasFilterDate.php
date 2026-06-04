@@ -3,10 +3,12 @@
 namespace oihana\arango\models\traits\aql\filters;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterDate;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use function oihana\arango\db\functions\dates\dateISO8601;
 use function oihana\arango\db\functions\dates\dateLocalToUTC;
 use function oihana\arango\db\functions\dates\dateNow;
@@ -83,10 +85,6 @@ use function oihana\core\strings\predicate;
  * ?filter={ "key":"date" , "val":242 , "alt":"dy" }
  * // FILTER DATE_DAYOFYEAR(doc.date) == 242
  * ```
- *
- *
- * TODO ?filter={ "key":"created" , "from":"2024-12-21T10:00:00" , "to":"2024-12-24T10:00:00" , "tz":"Europe/Paris" }
- * ```
  */
 trait HasFilterDate
 {
@@ -101,9 +99,22 @@ trait HasFilterDate
      *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareFilterDate( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
     {
+        if ( ( $init[ FilterParam::OP ] ?? null ) === FilterComparator::BETWEEN )
+        {
+            // Each bound flows through the date machinery; an omitted bound (null
+            // value) resolves to "now", so a date range is always two-sided.
+            return $this->prepareFilterBetween
+            (
+                $init , $binds , $doc ,
+                fn( $value , &$binds ) => $this->prepareFilterDateBound( $value , $init , $binds ) ,
+                true
+            ) ;
+        }
+
         return predicate
         (
             $this->prepareFilterKey        ( $init , $doc )  ,
@@ -115,33 +126,17 @@ trait HasFilterDate
     /**
      * Prepares the value of a date attribute in a filter clause.
      *
+     * @param string|array|null $init
+     * @param array|null $binds
+     * @return string
+     *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareFilterDateValue( string|array|null $init = [] , ?array &$binds = null ):string
     {
-        $value = $init[ FilterParam::VAL ] ?? null ;
-
-        $result = match( $value )
-        {
-            FilterDate::CURRENT_TIMESTAMP => dateNow(),
-            FilterDate::TOMORROW          => tomorrow(),
-            FilterDate::YESTERDAY         => yesterday(),
-            FilterDate::NOW , null        => dateISO8601(),
-            default                       => null,
-        };
-
-        if ( $result !== null )
-        {
-            $expr = $result ;
-        }
-        else
-        {
-            $timezone = $init[ FilterParam::TZ ] ?? null ;
-            $expr     = isValidTimezone( $timezone )
-                      ? dateLocalToUTC( $this->bind( $value , $binds ) , $this->bind( $timezone , $binds ) )
-                      : $this->bind( $value , $binds ) ;
-        }
+        $expr = $this->prepareFilterDateBound( $init[ FilterParam::VAL ] ?? null , $init , $binds ) ;
 
         // Apply the value-side (right) `alt` chain when one is set (object form
         // alt:{ key:.. , val:.. } or val:true mirror); string/list `alt` only
@@ -149,5 +144,46 @@ trait HasFilterDate
         [ , $valChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
 
         return $valChain === null ? $expr : $this->alterExpression( $expr , $valChain , $init ) ;
+    }
+
+    /**
+     * Resolves a single date bound (value or `between` min/max) to AQL.
+     *
+     * The magic values resolve to AQL date functions (`now`/null → DATE_ISO8601(DATE_NOW()),
+     * `cts` → DATE_NOW(), `tomorrow`/`yesterday`); any other value is bound, and
+     * converted from the request timezone (`tz`) to UTC when one is supplied.
+     *
+     * @param mixed      $value The bound value (null means "now").
+     * @param array      $init  The filter init (reads `tz`).
+     * @param array|null $binds The bind variables, populated by reference.
+     *
+     * @return string
+     *
+     * @throws BindException
+     */
+    protected function prepareFilterDateBound( mixed $value , array $init , ?array &$binds = null ):string
+    {
+        $result = match( $value )
+        {
+            FilterDate::CURRENT_TIMESTAMP => dateNow()     ,
+            FilterDate::TOMORROW          => tomorrow()    ,
+            FilterDate::YESTERDAY         => yesterday()   ,
+            FilterDate::NOW , null        => dateISO8601() ,
+            default                       => null,
+        };
+
+        if ( $result !== null )
+        {
+            return $result ;
+        }
+
+        $timezone = $init[ FilterParam::TZ ] ?? null ;
+
+        // The literal timezone is already validated by isValidTimezone() above;
+        // dateLocalToUTC receives bind placeholders (@tz), so its own re-validation
+        // is disabled ($throwable = false) — otherwise it would reject the @bind.
+        return isValidTimezone( $timezone )
+             ? dateLocalToUTC( $this->bind( $value , $binds ) , $this->bind( $timezone , $binds ) , false )
+             : $this->bind( $value , $binds ) ;
     }
 }

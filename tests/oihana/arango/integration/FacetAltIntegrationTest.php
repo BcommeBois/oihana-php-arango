@@ -30,9 +30,9 @@ class FacetAltIntegrationTest extends IntegrationTestCase
         // --- FIELD : scalar property, mixed-case email --------------------
         $fdocs = $db->collection( 'fdocs' ) ;
         $fdocs->create() ;
-        $fdocs->insert( [ '_key' => 'f1' , 'email' => 'Jean@X.COM' ] ) ;
-        $fdocs->insert( [ '_key' => 'f2' , 'email' => 'jean@x.com' ] ) ;
-        $fdocs->insert( [ '_key' => 'f3' , 'email' => 'bob@x.com'  ] ) ;
+        $fdocs->insert( [ '_key' => 'f1' , 'email' => 'Jean@X.COM' , 'price' => 50  ] ) ;
+        $fdocs->insert( [ '_key' => 'f2' , 'email' => 'jean@x.com' , 'price' => 150 ] ) ;
+        $fdocs->insert( [ '_key' => 'f3' , 'email' => 'bob@x.com'  , 'price' => 250 ] ) ;
 
         // --- EDGE : (place)-[orgs_places]->(org), mixed-case place name ----
         $orgs = $db->collection( 'orgs' ) ;
@@ -134,6 +134,15 @@ class FacetAltIntegrationTest extends IntegrationTestCase
         $facet  = [ Facet::OP => FilterComparator::EQ , Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
         $filter = $this->stub()->callField( 'email' , 'JEAN@X.COM' , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'f1' , 'f2' ] , $this->keys( 'fdocs' , $filter , $binds ) ) ;
+    }
+
+    public function testFieldBetweenMatchesInclusiveRange() :void
+    {
+        // 100 <= price <= 200 → only f2 (150). f1=50, f3=250 excluded.
+        $binds  = [] ;
+        $value  = [ 'op' => 'between' , 'min' => 100 , 'max' => 200 ] ;
+        $filter = $this->stub()->callField( 'price' , $value , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'f2' ] , $this->keys( 'fdocs' , $filter , $binds ) ) ;
     }
 
     public function testFieldAltFromUrlRequestMatchesCaseInsensitively() :void

@@ -318,6 +318,7 @@
             "src/oihana/arango/helpers/sortKeys.php" ,
             "src/oihana/arango/models/helpers/alterExpression.php" ,
             "src/oihana/arango/models/helpers/assertDocuments.php" ,
+            "src/oihana/arango/models/helpers/buildBetweenClauses.php" ,
             "src/oihana/arango/models/helpers/buildCombinedInlineFilter.php" ,
             "src/oihana/arango/models/helpers/buildInlineFilterCondition.php" ,
             "src/oihana/arango/models/helpers/buildVariables.php" ,

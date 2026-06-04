@@ -3,6 +3,8 @@
 namespace oihana\arango\models\traits\aql\filters;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use function oihana\core\strings\predicate;
@@ -64,6 +66,11 @@ trait HasFilterString
      */
     protected function prepareFilterString( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
     {
+        if ( ( $init[ FilterParam::OP ] ?? null ) === FilterComparator::BETWEEN )
+        {
+            return $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ;
+        }
+
         return predicate
         (
             $this->prepareFilterKey( $init , $doc ) ,

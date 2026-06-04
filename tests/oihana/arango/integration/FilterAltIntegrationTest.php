@@ -37,9 +37,9 @@ class FilterAltIntegrationTest extends IntegrationTestCase
         // is an embedded array of objects with a mixed-case email sub-field.
         // `items` is an embedded array of objects (price per line) for the `pluck` alt.
         // `discount` is present on p1, ABSENT on p2 (null), 0 on p3 — for the coalesce alt.
-        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'discount' => 5 , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] , 'items' => [ [ 'price' => 50 ] , [ 'price' => 150 ] ] ] ) ; // avg 100
-        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 ,                   'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] , 'items' => [ [ 'price' => 10 ] ] ] ) ; // avg 10
-        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'discount' => 0 , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] , 'items' => [ [ 'price' => 300 ] ] ] ) ; // avg 300
+        $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'discount' => 5 , 'created' => '2024-01-15' , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] , 'items' => [ [ 'price' => 50 ] , [ 'price' => 150 ] ] ] ) ; // avg 100
+        $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 ,                   'created' => '2024-06-15' , 'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] , 'items' => [ [ 'price' => 10 ] ] ] ) ; // avg 10
+        $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'discount' => 0 , 'created' => '2024-12-15' , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] , 'items' => [ [ 'price' => 300 ] ] ] ) ; // avg 300
     }
 
     private function keys( string $filter , array $binds ) :array
@@ -65,9 +65,34 @@ class FilterAltIntegrationTest extends IntegrationTestCase
                 'category' => FilterType::STRING ,
                 'price'    => FilterType::NUMBER ,
                 'discount' => FilterType::NUMBER ,
+                'created'  => FilterType::DATE ,
                 'items'    => FilterType::ARRAY ,
             ]
         ]);
+    }
+
+    public function testNumberBetweenMatchesInclusiveRange() :void
+    {
+        // -8 <= price <= 8 → only p3 (-5). p1=-10, p2=10 excluded.
+        $binds  = [] ;
+        $filter = $this->model()->prepareFilter( [ 'key' => 'price' , 'op' => 'between' , 'min' => -8 , 'max' => 8 ] , $binds ) ;
+        $this->assertSame( [ 'p3' ] , $this->keys( $filter , $binds ) ) ;
+    }
+
+    public function testDateBetweenMatchesInclusiveRange() :void
+    {
+        // 2024-03-01 <= created <= 2024-09-01 → only p2 (2024-06-15).
+        $binds  = [] ;
+        $filter = $this->model()->prepareFilter( [ 'key' => 'created' , 'op' => 'between' , 'min' => '2024-03-01' , 'max' => '2024-09-01' ] , $binds ) ;
+        $this->assertSame( [ 'p2' ] , $this->keys( $filter , $binds ) ) ;
+    }
+
+    public function testDateBetweenOmittedMaxIsBoundedByNow() :void
+    {
+        // created >= 2024-01-01 && created <= now → all three (seed dates are in the past).
+        $binds  = [] ;
+        $filter = $this->model()->prepareFilter( [ 'key' => 'created' , 'op' => 'between' , 'min' => '2024-01-01' ] , $binds ) ;
+        $this->assertSame( [ 'p1' , 'p2' , 'p3' ] , $this->keys( $filter , $binds ) ) ;
     }
 
     public function testMirrorLowerMatchesCaseInsensitively() :void

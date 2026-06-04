@@ -244,6 +244,14 @@ Facets **reuse the filter vocabulary** — no bespoke codes:
 `{ "op": "…", "val": … }` object. An unknown `op` falls back to the type default
 (never an injection — see below).
 
+The `FIELD` facet also accepts the **`between`** operator (inclusive range), with
+`min`/`max` keys instead of `val`; an omitted bound drops its side (one-sided):
+
+```
+?facets={"price":{"op":"between","min":100,"max":200}}
+// (doc.price >= @price_min && doc.price <= @price_max)
+```
+
 ## `alt` transformations
 
 Like [filters](filter.md#alt-transformations), a facet can wrap the comparison with AQL functions (`lower`, `trim`, `abs`, `dateDay`…). `alt` acts on the **compared field** (left) and/or the **value** (right):

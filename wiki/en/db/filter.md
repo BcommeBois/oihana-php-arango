@@ -78,6 +78,7 @@ The `op` values are defined by the `FilterComparator` enum.
 | `like` | *Wildcard* match (`%`, `_`) | `LIKE(doc.x, @val, false)` |
 | `in` | In the supplied list | `doc.x IN @val` |
 | `nin` | Not in the list | `doc.x NOT IN @val` |
+| `between` | Inclusive range (`min`/`max` keys instead of `val`) | `(doc.x >= @min && doc.x <= @max)` |
 
 Examples:
 
@@ -87,6 +88,35 @@ Examples:
 ?filter={"key":"name","val":"%john%","op":"like"}
 ?filter={"key":"role","val":["admin","owner"],"op":"in"}
 ```
+
+### The `between` operator (range)
+
+`between` compares a field to an **inclusive range** via the **`min`** and **`max`** keys (no `val`). Available for the **number**, **string** and **date** types:
+
+```jsonc
+{"key":"price","op":"between","min":10,"max":50}
+// FILTER (doc.price >= @min && doc.price <= @max)
+```
+
+**Bound omission — the semantics depend on the type:**
+- **number / string**: an omitted bound is **dropped** → one-sided comparison.
+  ```jsonc
+  {"key":"price","op":"between","max":50}   // FILTER doc.price <= @max
+  {"key":"price","op":"between","min":10}   // FILTER doc.price >= @min
+  ```
+- **date**: an omitted bound resolves to **now** → the range stays two-sided.
+  ```jsonc
+  {"key":"created","op":"between","min":"2024-01-01"}
+  // FILTER (doc.created >= @min && doc.created <= DATE_ISO8601(DATE_NOW()))
+  ```
+
+**Timezone (`tz`)**: for a date, the JSON `tz` applies to **both bounds**:
+```jsonc
+{"key":"created","op":"between","min":"2024-01-01","max":"2024-12-31","tz":"Europe/Paris"}
+// FILTER (doc.created >= DATE_LOCALTOUTC(@min,@tz) && doc.created <= DATE_LOCALTOUTC(@max,@tz))
+```
+
+The compared field stays `alt`-aware (e.g. `"alt":"abs"` → `(ABS(doc.price) >= @min && …)`).
 
 ## Filter types
 

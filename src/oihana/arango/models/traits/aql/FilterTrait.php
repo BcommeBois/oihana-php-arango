@@ -2,6 +2,9 @@
 
 namespace oihana\arango\models\traits\aql;
 
+use DI\DependencyException;
+use DI\NotFoundException;
+use oihana\exceptions\ValidationException;
 use ReflectionException;
 
 use Psr\Container\ContainerExceptionInterface;
@@ -27,6 +30,7 @@ use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\reflect\exceptions\ConstantException;
 
+use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\key;
@@ -420,9 +424,12 @@ trait FilterTrait
      * @throws BindException
      * @throws ConstantException
      * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function prepareFilter
     (
@@ -507,17 +514,52 @@ trait FilterTrait
      * applies the key-side chain. The three legacy `alt` forms (string, list of
      * functions, function-with-params) keep transforming the key only, unchanged.
      *
-     * @param string $key  The key expression to transform.
-     * @param array  $init Filter initialization array containing the 'alt' parameter.
+     * @param string $key The key expression to transform.
+     * @param array $init Filter initialization array containing the 'alt' parameter.
      *
      * @return string The transformed key expression.
      *
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function alterFilterKey( string $key , array $init = [] ): string
     {
         [ $keyChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
         return $this->alterExpression( $key , $keyChain , $init ) ;
+    }
+
+    /**
+     * Prepares an inclusive `between` (range) clause: `key >= @min && key <= @max`.
+     *
+     * The compared key is alt-aware (it flows through {@see static::alterFilterKey()}).
+     * Each bound is resolved by `$resolve`, which differs per filter type — a raw
+     * bind for numbers/strings, the date machinery (now / timezone) for dates.
+     *
+     * Bound omission is type-driven:
+     * - `$defaultBounds = false` (number/string): an omitted bound drops its side,
+     *   yielding a one-sided range (`key >= @min` or `key <= @max`).
+     * - `$defaultBounds = true` (date): an omitted bound still emits a clause; the
+     *   resolver maps the null value to "now", so the range is always two-sided.
+     *
+     * @param array $init The filter init (reads `min` / `max`).
+     * @param ?array $binds The bind variables, populated by reference.
+     * @param string $docRef The document reference.
+     * @param callable $resolve fn(mixed $value, ?array &$binds): string — resolves a bound to AQL.
+     * @param bool $defaultBounds Whether an omitted bound still emits a clause (dates) or is dropped.
+     *
+     * @return string
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    protected function prepareFilterBetween( array $init , ?array &$binds , string $docRef , callable $resolve , bool $defaultBounds ) :string
+    {
+        $left = $this->prepareFilterKey( $init , $docRef ) ;
+
+        $min = ( array_key_exists( FilterParam::MIN , $init ) || $defaultBounds ) ? $resolve( $init[ FilterParam::MIN ] ?? null , $binds ) : null ;
+        $max = ( array_key_exists( FilterParam::MAX , $init ) || $defaultBounds ) ? $resolve( $init[ FilterParam::MAX ] ?? null , $binds ) : null ;
+
+        return buildBetweenClauses( $left , $min , $max ) ;
     }
 
     /**
@@ -539,12 +581,13 @@ trait FilterTrait
      * - Multiple functions: "alt":["trim","lower"]
      * - Functions with params: "alt":[["trim",1],"lower"]
      *
-     * @param string|array|null $init   Filter initialization array
-     * @param string            $docRef Document reference (default: AQL::DOC)
+     * @param string|array|null $init Filter initialization array
+     * @param string $docRef Document reference (default: AQL::DOC)
      *
      * @return string The transformed key expression
      *
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      *
      * @example
      * ```php
@@ -593,6 +636,7 @@ trait FilterTrait
      *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareFilterValue( ?array $init = [] , ?array &$binds = null ):string
     {

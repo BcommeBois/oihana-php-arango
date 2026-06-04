@@ -212,6 +212,13 @@ Les facettes **réutilisent le vocabulaire des filtres** — aucun code maison :
 
 L'`op` se déclare soit en config (`Facet::OP`), soit par requête dans un objet `{ "op": "…", "val": … }`. Un `op` inconnu retombe sur le défaut du type (jamais d'injection — voir plus bas).
 
+La facette `FIELD` accepte aussi l'opérateur **`between`** (plage inclusive), avec les clés `min`/`max` au lieu de `val` ; une borne omise abandonne son côté (comparaison unilatérale) :
+
+```
+?facets={"price":{"op":"between","min":100,"max":200}}
+// (doc.price >= @price_min && doc.price <= @price_max)
+```
+
 ## Transformations `alt`
 
 Comme les [filtres](filter.md#transformations-alt), une facette peut envelopper la comparaison par des fonctions AQL (`lower`, `trim`, `abs`, `dateDay`…). `alt` agit sur le **champ comparé** (gauche) et/ou la **valeur** (droite) :
