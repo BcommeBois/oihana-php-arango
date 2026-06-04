@@ -9,6 +9,7 @@ use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
 
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\key;
@@ -46,6 +47,7 @@ trait HasFacetField
      * @return string
      *
      * @throws BindException
+     * @throws UnsupportedOperationException
      *
      * @example
      * Set the facetable definition in the model (operator optional, defaults to
@@ -80,12 +82,14 @@ trait HasFacetField
      */
     protected function prepareFacetField( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
-        $op = $facet[ Facet::OP ] ?? FilterComparator::MATCH ;
+        $op  = $facet[ Facet::OP  ] ?? FilterComparator::MATCH ;
+        $alt = $facet[ Facet::ALT ] ?? null ;
 
-        // {op, val} request object overrides the configured operator.
+        // {op, val, alt} request object overrides the configured operator / alt.
         if( is_array( $value ) && !array_is_list( $value ) )
         {
-            $op = $value[ FilterParam::OP ] ?? $op ;
+            $op  = $value[ FilterParam::OP  ] ?? $op ;
+            $alt = $value[ FilterParam::ALT ] ?? $alt ;
             if( !array_key_exists( FilterParam::VAL , $value ) )
             {
                 return Char::EMPTY ;
@@ -109,8 +113,12 @@ trait HasFacetField
         }
 
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
-        $left     = key( $property , $doc ) ;
         $negated  = $this->negatedComparator( $op ) ;
+
+        // `alt` wraps the compared field (left) and/or the bound value (right):
+        // alt:{ key:.. , val:.. } or val:true mirror. Legacy string/list = key only.
+        [ $keyChain , $valChain ] = $this->resolveAltSides( $alt ) ;
+        $left = $this->alterExpression( key( $property , $doc ) , $keyChain ) ;
 
         $conditions = [] ;
         $logic      = Logic::OR ;
@@ -129,7 +137,7 @@ trait HasFacetField
             }
 
             $comparator   = FilterComparator::getAlias( $operator , Comparator::MATCH ) ;
-            $right        = $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) ;
+            $right        = $this->alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
             $conditions[] = predicate( $left , $comparator , $right ) ;
         }
 

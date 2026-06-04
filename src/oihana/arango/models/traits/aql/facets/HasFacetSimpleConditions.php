@@ -10,6 +10,7 @@ use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
 
 use org\schema\constants\Prop;
 
@@ -62,6 +63,7 @@ trait HasFacetSimpleConditions
      * @return string
      *
      * @throws BindException
+     * @throws UnsupportedOperationException
      */
     protected function prepareSimpleConditions
     (
@@ -76,12 +78,14 @@ trait HasFacetSimpleConditions
     )
     :string
     {
-        $op = $facet[ Facet::OP ] ?? FilterComparator::EQ ;
+        $op  = $facet[ Facet::OP  ] ?? FilterComparator::EQ ;
+        $alt = $facet[ Facet::ALT ] ?? null ;
 
-        // {op, val} request object overrides the configured operator.
+        // {op, val, alt} request object overrides the configured operator / alt.
         if( is_array( $value ) && !array_is_list( $value ) )
         {
-            $op = $value[ FilterParam::OP ] ?? $op ;
+            $op  = $value[ FilterParam::OP  ] ?? $op ;
+            $alt = $value[ FilterParam::ALT ] ?? $alt ;
             if( !array_key_exists( FilterParam::VAL , $value ) )
             {
                 return Char::EMPTY ;
@@ -90,6 +94,10 @@ trait HasFacetSimpleConditions
         }
 
         $comparator = FilterComparator::getAlias( $op , Comparator::EQUAL ) ;
+
+        // `alt` wraps the compared field (left) and/or the bound value (right):
+        // alt:{ key:.. , val:.. } or val:true mirror. Legacy string/list = key only.
+        [ $keyChain , $valChain ] = $this->resolveAltSides( $alt ) ;
 
         $fields = $facet[ AQL::FIELDS ] ?? Prop::_KEY ;
         $fields = is_array( $fields ) ? $fields : explode( Char::COMMA , (string) $fields ) ;
@@ -105,12 +113,12 @@ trait HasFacetSimpleConditions
         {
             $negative = is_string( $item ) && strlen( $item ) > 1 && $item[ 0 ] === Char::HYPHEN ;
             $item     = $negative ? ltrim( $item , Char::HYPHEN ) : $item ;
-            $bind     = $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) ;
+            $bind     = $this->alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
 
             $group = [] ;
             foreach( $fields as $field )
             {
-                $group[] = predicate( key( $field , $docRef ) , $comparator , $bind ) ;
+                $group[] = predicate( $this->alterExpression( key( $field , $docRef ) , $keyChain ) , $comparator , $bind ) ;
             }
             $term = count( $group ) > 1 ? betweenParentheses( predicates( $group , Logic::OR ) ) : $group[ 0 ] ;
 

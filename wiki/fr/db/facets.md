@@ -212,6 +212,63 @@ Les facettes **réutilisent le vocabulaire des filtres** — aucun code maison :
 
 L'`op` se déclare soit en config (`Facet::OP`), soit par requête dans un objet `{ "op": "…", "val": … }`. Un `op` inconnu retombe sur le défaut du type (jamais d'injection — voir plus bas).
 
+## Transformations `alt`
+
+Comme les [filtres](filter.md#transformations-alt), une facette peut envelopper la comparaison par des fonctions AQL (`lower`, `trim`, `abs`, `dateDay`…). `alt` agit sur le **champ comparé** (gauche) et/ou la **valeur** (droite) :
+
+- `alt:"lower"` / `alt:["trim","lower"]` → **champ seul** (`LOWER(doc.x) == @v`).
+- `alt:{ "key":<chaîne>, "val":<chaîne> }` → une chaîne par côté.
+- `alt:{ "key":<chaîne>, "val":true }` → `val:true` = **miroir** (même chaîne des deux côtés), pour une comparaison symétrique (ex. égalité insensible à la casse).
+
+### Deux endroits, l'URL l'emporte
+
+`alt` se déclare **soit dans la définition du modèle** (`Facet::ALT`, défaut pour toutes les requêtes), **soit dans la requête URL** (`{op,val,alt}`, au cas par cas). Si les deux sont présents, **l'URL gagne** — exactement comme `op`.
+
+**① Figé dans la définition** — l'email est insensible à la casse pour tout le monde ; le client envoie une valeur brute :
+```php
+Arango::FACETS => [
+    Prop::EMAIL => [
+        Facet::TYPE => Facet::FIELD ,
+        Facet::OP   => FilterComparator::EQ ,
+        Facet::ALT  => [ 'key' => 'lower' , 'val' => true ] , // défaut appliqué à chaque requête
+    ] ,
+]
+```
+```
+?facets={"email":"JEAN@X.COM"}
+// (LOWER(doc.email) == LOWER(@0))
+```
+
+**② Fourni par l'URL** — aucun `alt` en définition, le client décide :
+```
+?facets={"email":{"op":"eq","val":"JEAN@X.COM","alt":{"key":"lower","val":true}}}
+// (LOWER(doc.email) == LOWER(@0))
+```
+
+**③ L'URL surcharge la définition** — définition `upper`, requête `lower` ⇒ c'est `lower` :
+```
+?facets={"email":{"val":"jean@x.com","alt":{"key":"lower","val":true}}}
+// (LOWER(doc.email) == LOWER(@0))
+```
+
+### Sur les facettes liées (EDGE / JOIN)
+
+`alt` enveloppe le **champ du document lié** et la valeur, à l'intérieur du `LENGTH(…)` :
+```php
+Prop::LOCATION => [
+    Facet::TYPE => Facet::EDGE , Facet::EDGE => 'orgs_places' ,
+    AQL::FIELDS => 'name' , Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ,
+]
+```
+```
+?facets={"location":"paris"}
+// LENGTH(FOR v IN INBOUND doc orgs_places FILTER LOWER(v.name) == LOWER(@0) RETURN …) > 0
+```
+
+> ⚠️ **Extracteurs vs normaliseurs** — même règle que les filtres : pour un **extracteur** (`dateYear`, `count`…) la valeur fournie est *déjà* la cible, gardez la forme chaîne `alt:"dateYear"` (champ seul) ; pour un **normaliseur symétrique** (`lower`, `abs`…), utilisez la forme objet ou `val:true`.
+
+Couvert : **`FIELD`, `EDGE`, `JOIN`**. Aucun risque d'injection : les noms de fonctions sont sur liste blanche (une fonction inconnue est sans effet), seules les valeurs sont liées.
+
 ## Négation
 
 La sémantique du préfixe `-` **dépend du type**, et c'est volontaire :
@@ -229,10 +286,10 @@ La sémantique du préfixe `-` **dépend du type**, et c'est volontaire :
 
 | Type | `op` défaut | Champ(s) défaut | Forme de valeur |
 |---|---|---|---|
-| `FIELD` | `match` (`=~`) | la clé (ou `Facet::PROPERTY`) | scalaire / CSV / `{op,val}` |
+| `FIELD` | `match` (`=~`) | la clé (ou `Facet::PROPERTY`) | scalaire / CSV / `{op,val,alt}` |
 | `IN` (+ alias) | `any.in` | la clé (ou `Facet::PROPERTY`) | CSV / liste / `{op,val}` |
-| `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val}` |
-| `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val}` |
+| `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val,alt}` |
+| `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val,alt}` |
 | `EDGE_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` |
 | `JOIN_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` |
 | `ARRAY_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` |

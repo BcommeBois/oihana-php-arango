@@ -244,6 +244,63 @@ Facets **reuse the filter vocabulary** — no bespoke codes:
 `{ "op": "…", "val": … }` object. An unknown `op` falls back to the type default
 (never an injection — see below).
 
+## `alt` transformations
+
+Like [filters](filter.md#alt-transformations), a facet can wrap the comparison with AQL functions (`lower`, `trim`, `abs`, `dateDay`…). `alt` acts on the **compared field** (left) and/or the **value** (right):
+
+- `alt:"lower"` / `alt:["trim","lower"]` → **field only** (`LOWER(doc.x) == @v`).
+- `alt:{ "key":<chain>, "val":<chain> }` → one chain per side.
+- `alt:{ "key":<chain>, "val":true }` → `val:true` = **mirror** (same chain on both sides), for a symmetric comparison (e.g. case-insensitive equality).
+
+### Two places, the URL wins
+
+`alt` is declared **either in the model definition** (`Facet::ALT`, a default for every request), **or in the URL request** (`{op,val,alt}`, per request). When both are present, **the URL wins** — exactly like `op`.
+
+**① Frozen in the definition** — the email is case-insensitive for everyone; the client sends a raw value:
+```php
+Arango::FACETS => [
+    Prop::EMAIL => [
+        Facet::TYPE => Facet::FIELD ,
+        Facet::OP   => FilterComparator::EQ ,
+        Facet::ALT  => [ 'key' => 'lower' , 'val' => true ] , // default applied to every request
+    ] ,
+]
+```
+```
+?facets={"email":"JEAN@X.COM"}
+// (LOWER(doc.email) == LOWER(@0))
+```
+
+**② Provided by the URL** — no `alt` in the definition, the client decides:
+```
+?facets={"email":{"op":"eq","val":"JEAN@X.COM","alt":{"key":"lower","val":true}}}
+// (LOWER(doc.email) == LOWER(@0))
+```
+
+**③ The URL overrides the definition** — definition `upper`, request `lower` ⇒ it is `lower`:
+```
+?facets={"email":{"val":"jean@x.com","alt":{"key":"lower","val":true}}}
+// (LOWER(doc.email) == LOWER(@0))
+```
+
+### On linked facets (EDGE / JOIN)
+
+`alt` wraps the **linked-document field** and the value, inside the `LENGTH(…)`:
+```php
+Prop::LOCATION => [
+    Facet::TYPE => Facet::EDGE , Facet::EDGE => 'orgs_places' ,
+    AQL::FIELDS => 'name' , Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ,
+]
+```
+```
+?facets={"location":"paris"}
+// LENGTH(FOR v IN INBOUND doc orgs_places FILTER LOWER(v.name) == LOWER(@0) RETURN …) > 0
+```
+
+> ⚠️ **Extractors vs normalizers** — same rule as filters: for an **extractor** (`dateYear`, `count`…) the supplied value is *already* the target, keep the string form `alt:"dateYear"` (field only); for a **symmetric normalizer** (`lower`, `abs`…), use the object form or `val:true`.
+
+Covered: **`FIELD`, `EDGE`, `JOIN`**. No injection risk: function names are whitelisted (an unknown function is a no-op), only values are bound.
+
 ## Negation
 
 The `-` prefix semantics **depend on the type**, deliberately:
@@ -263,10 +320,10 @@ The `-` prefix semantics **depend on the type**, deliberately:
 
 | Type | default `op` | default field(s) | value shape |
 |---|---|---|---|
-| `FIELD` | `match` (`=~`) | the key (or `Facet::PROPERTY`) | scalar / CSV / `{op,val}` |
+| `FIELD` | `match` (`=~`) | the key (or `Facet::PROPERTY`) | scalar / CSV / `{op,val,alt}` |
 | `IN` (+ aliases) | `any.in` | the key (or `Facet::PROPERTY`) | CSV / list / `{op,val}` |
-| `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val}` |
-| `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val}` |
+| `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val,alt}` |
+| `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val,alt}` |
 | `EDGE_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` |
 | `JOIN_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` |
 | `ARRAY_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` |
