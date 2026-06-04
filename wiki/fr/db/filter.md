@@ -319,6 +319,24 @@ Le sous-champ peut être un **chemin d'objets imbriqués** (notation pointée), 
 
 Unités acceptées par `dateAdd`, `dateSubtract`, `dateDiff`, `dateTrunc` : `year`, `month`, `week`, `day`, `hour`, `minute`, `second`, `millisecond` (correspondent à l'enum `DateUnit`).
 
+#### Conditionnelles
+
+| `alt` | Effet | Paramètres |
+|---|---|---|
+| `coalesce` / `notNull` | Première valeur non `null` (= `COALESCE` SQL) | `...valeurs par défaut` |
+
+`coalesce` (alias `notNull`) enveloppe le champ d'un `NOT_NULL(...)` AQL pour **substituer une valeur par défaut quand le champ est absent ou `null`**, avant la comparaison :
+
+```jsonc
+// "remise == 0" en traitant un champ absent comme 0
+{"key":"discount","op":"eq","val":0,"alt":[["coalesce",0]]}
+// FILTER NOT_NULL(doc.discount, 0) == @v   →  les documents sans `discount` matchent 0
+```
+
+On peut fournir **plusieurs** valeurs de repli (la première non-`null` gagne) : `alt:[["coalesce", "doc.fallback", "N/A"]]`… mais attention :
+
+> 🔒 Les valeurs par défaut viennent de l'URL : elles sont **toujours inlinées comme littéraux AQL stricts** (via `json_encode` — chaînes quotées/échappées, jamais de passthrough brut). Une valeur par défaut **ne peut donc pas** référencer un autre champ (`doc.autre`) ni une fonction : elle est traitée comme une donnée littérale. C'est volontaire (anti-injection).
+
 ## Conditions complexes
 
 ### Tableau de conditions (AND par défaut)

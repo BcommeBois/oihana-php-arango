@@ -28,6 +28,7 @@ use function oihana\arango\db\functions\arrays\sorted;
 use function oihana\arango\db\functions\arrays\sortedUnique;
 use function oihana\arango\db\functions\arrays\unique;
 use function oihana\arango\db\functions\arrays\unshift;
+use function oihana\arango\db\functions\notNull;
 use function oihana\arango\db\helpers\aqlArray;
 
 // ---- dates
@@ -138,6 +139,11 @@ class FilterFunction
 
     public const string COUNT  = 'count'  ;
     public const string LENGTH = 'length' ;
+
+    // ------- conditional
+
+    public const string COALESCE = 'coalesce' ; // alias of notNull (SQL COALESCE)
+    public const string NOT_NULL = 'notNull'  ;
 
     // ------- array
 
@@ -335,6 +341,14 @@ class FilterFunction
 
         return match ( $funcName )
         {
+            // Conditional functions
+            // The default value(s) come from the URL, so they are inlined as
+            // strict AQL literals via json_encode (always quoted/escaped, never
+            // the raw passthrough aqlValue() does) — injection-safe.
+
+            self::COALESCE   ,
+            self::NOT_NULL   => notNull   ( $key , ...array_map( fn( $v ) => json_encode( $v , JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) , $params ) ) ,
+
             // Misc functions
 
             self::AVG        => average   ( $key ) ,

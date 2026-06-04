@@ -319,6 +319,24 @@ The sub-field may be a **nested object path** (dotted notation), e.g. when each 
 
 Units accepted by `dateAdd`, `dateSubtract`, `dateDiff`, `dateTrunc`: `year`, `month`, `week`, `day`, `hour`, `minute`, `second`, `millisecond` (match the `DateUnit` enum).
 
+#### Conditional
+
+| `alt` | Effect | Parameters |
+|---|---|---|
+| `coalesce` / `notNull` | First non-`null` value (= SQL `COALESCE`) | `...default values` |
+
+`coalesce` (alias `notNull`) wraps the field in an AQL `NOT_NULL(...)` to **substitute a default value when the field is missing or `null`**, before the comparison:
+
+```jsonc
+// "discount == 0" treating a missing field as 0
+{"key":"discount","op":"eq","val":0,"alt":[["coalesce",0]]}
+// FILTER NOT_NULL(doc.discount, 0) == @v   →  documents with no `discount` match 0
+```
+
+You may pass **several** fallbacks (first non-`null` wins): `alt:[["coalesce", "doc.fallback", "N/A"]]`… but note:
+
+> 🔒 The default values come from the URL: they are **always inlined as strict AQL literals** (via `json_encode` — quoted/escaped strings, never the raw passthrough). A default therefore **cannot** reference another field (`doc.other`) or a function: it is treated as literal data. This is deliberate (injection-safe).
+
 ## Complex conditions
 
 ### Condition array (AND by default)

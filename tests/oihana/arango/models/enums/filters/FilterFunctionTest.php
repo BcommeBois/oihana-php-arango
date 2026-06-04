@@ -194,6 +194,32 @@ class FilterFunctionTest extends TestCase
         FilterFunction::apply( FilterFunction::PLUCK , 'doc.items' , [ 'offers[*].price' ] ) ;
     }
 
+    // ========================================
+    // CONDITIONAL (coalesce / notNull)
+    // ========================================
+
+    public function testConditionalConstantsAreDefined(): void
+    {
+        $this->assertSame( 'coalesce' , FilterFunction::COALESCE ) ;
+        $this->assertSame( 'notNull'  , FilterFunction::NOT_NULL ) ;
+    }
+
+    public function testApplyCoalesceInlinesADefaultLiteral(): void
+    {
+        $this->assertSame( 'NOT_NULL(doc.discount,0)'      , FilterFunction::apply( FilterFunction::COALESCE , 'doc.discount' , [ 0 ] ) ) ;
+        $this->assertSame( 'NOT_NULL(doc.status,"N/A")'    , FilterFunction::apply( FilterFunction::COALESCE , 'doc.status'   , [ 'N/A' ] ) ) ;
+        $this->assertSame( 'NOT_NULL(doc.flag,false)'      , FilterFunction::apply( FilterFunction::NOT_NULL , 'doc.flag'     , [ false ] ) ) ;
+        $this->assertSame( 'NOT_NULL(doc.x)'               , FilterFunction::apply( FilterFunction::COALESCE , 'doc.x'        , [] ) ) ;
+    }
+
+    public function testApplyCoalesceEscapesUntrustedDefaultAsAStringLiteral(): void
+    {
+        // a hostile default is fully quoted/escaped — it becomes an inert string
+        // literal, never raw AQL (json_encode, not the passthrough aqlValue()).
+        $result = FilterFunction::apply( FilterFunction::COALESCE , 'doc.x' , [ 'a") || LENGTH(secrets) || ("' ] ) ;
+        $this->assertSame( 'NOT_NULL(doc.x,"a\\") || LENGTH(secrets) || (\\"")' , $result ) ;
+    }
+
     public function testApplyFirst(): void
     {
         $this->assertSame( 'FIRST(doc.items)' , FilterFunction::apply( FilterFunction::FIRST , 'doc.items' ) ) ;
