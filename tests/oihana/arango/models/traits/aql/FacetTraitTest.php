@@ -659,7 +659,7 @@ class FacetTraitTest extends TestCase
         $this->assertSame
         (
             'LENGTH(FOR doc_w IN p.w FILTER doc_w.q == @w_q RETURN 1) > 0' ,
-            $this->stub()->callArrayComplex( 'w' , [ 'q' => 'x' ] , $binds , 'p' ) ,
+            $this->stub()->callArrayComplex( 'w' , [ 'q' => 'x' ] , $binds , [] , 'p' ) ,
         ) ;
     }
 

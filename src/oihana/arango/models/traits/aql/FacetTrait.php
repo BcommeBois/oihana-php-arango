@@ -95,7 +95,7 @@ trait FacetTrait
                     {
                         $predicates[] = match ( $type )
                         {
-                            Facet::ARRAY_COMPLEX        => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $docRef ) ,
+                            Facet::ARRAY_COMPLEX        => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::EDGE                 => $this->prepareFacetEdge            ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::EDGE_COMPLEX         => $this->prepareFacetEdgeComplex     ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::IN                   => $this->prepareFacetIn              ( $key , $value , $binds , $facet , $docRef ) ,

@@ -7,8 +7,10 @@ use ReflectionException;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
+use oihana\arango\models\enums\Facet;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\arrays\length;
@@ -42,9 +44,10 @@ trait HasFacetArrayComplex
      * `-` (`!=`). Negation is inline in the existential, so it keeps documents
      * having an element that does NOT equal the value (not "exclude the value").
      *
-     * @param string $key The facet key, also the embedded array property name.
-     * @param mixed $value The sub-field conditions (object of value or list).
-     * @param array $binds The bind variables, populated by reference.
+     * @param string $key    The facet key, also the embedded array property name.
+     * @param mixed  $value  The sub-field conditions (object of value or list).
+     * @param array  $binds  The bind variables, populated by reference.
+     * @param array  $facet  The facet definition (reads a facet-wide `Facet::ALT`, applied to every sub-field).
      * @param string $docRef The document reference the array is read from (default `doc`).
      *
      * @return string
@@ -52,6 +55,7 @@ trait HasFacetArrayComplex
      * @throws BindException
      * @throws ReflectionException
      * @throws ValidationException
+     * @throws UnsupportedOperationException
      *
      * @example
      * Set the facetable definition in the model :
@@ -71,13 +75,18 @@ trait HasFacetArrayComplex
      * ?facets={"workshops":{"breeding.alternateName":["-pig","cattle"]}}// an element != pig AND != cattle
      * ```
      */
-    protected function prepareFacetArrayComplex( string $key , mixed $value , array &$binds , string $docRef = AQL::DOC ) :string
+    protected function prepareFacetArrayComplex( string $key , mixed $value , array &$binds , array $facet = [] , string $docRef = AQL::DOC ) :string
     {
+        // A facet-wide Facet::ALT wraps every sub-field (left) and bound value
+        // (right) symmetrically; legacy string/list alt wraps the field only.
+        [ $keyChain , $valChain ] = $this->resolveAltSides( $facet[ Facet::ALT ] ?? null ) ;
+
         $filter = [] ;
         foreach( $value as $subKey => $s )
         {
             assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
             $search = preg_replace( '/\./' , Char::UNDERLINE , $key . Char::UNDERLINE . $subKey ) ;
+            $field  = $this->alterExpression( key( $subKey , AQL::DOC_PREFIX . $key ) , $keyChain ) ; // [alt] doc_$key.$subKey
             if( is_array( $s ) && !empty( $s ) ) // test negative and multiple
             {
                 $i = 0 ;
@@ -100,9 +109,9 @@ trait HasFacetArrayComplex
                     $binds[ $subSearch ] = $si ;
                     $subFilter[] = predicate
                     (
-                        key( $subKey , AQL::DOC_PREFIX . $key ) , // doc_$key.$subKey
+                        $field ,
                         $negative ? Comparator::NOT_EQUAL : Comparator::EQUAL ,
-                        $this->bind( $si , $binds , $subSearch )
+                        $this->alterExpression( $this->bind( $si , $binds , $subSearch ) , $valChain )
                     ) ;
                     $i++ ;
                 }
@@ -127,9 +136,9 @@ trait HasFacetArrayComplex
 
                 $filter[] = predicate
                 (
-                    key( $subKey , AQL::DOC_PREFIX . $key ) ,
+                    $field ,
                     $comparator ,
-                    $this->bind( $s , $binds , $search )
+                    $this->alterExpression( $this->bind( $s , $binds , $search ) , $valChain )
                 ) ;
             }
         }

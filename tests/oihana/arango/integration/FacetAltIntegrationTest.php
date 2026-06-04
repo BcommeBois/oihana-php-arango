@@ -63,6 +63,37 @@ class FacetAltIntegrationTest extends IntegrationTestCase
         $posts->insert( [ '_key' => 'po1' , 'authorId' => 'a1' ] ) ;
         $posts->insert( [ '_key' => 'po2' , 'authorId' => 'a2' ] ) ;
         $posts->insert( [ '_key' => 'po3' , 'authorId' => 'a3' ] ) ;
+
+        // --- JOIN_COMPLEX : comments referencing posts (comment.postId==post._key)
+        $comments = $db->collection( 'comments' ) ;
+        $comments->create() ;
+        $comments->insert( [ '_key' => 'c1' , 'postId' => 'po1' , 'status' => 'Approved' ] ) ;
+        $comments->insert( [ '_key' => 'c2' , 'postId' => 'po2' , 'status' => 'approved' ] ) ;
+        $comments->insert( [ '_key' => 'c3' , 'postId' => 'po3' , 'status' => 'Spam'     ] ) ;
+
+        // --- EDGE_COMPLEX : (number)-[has_numbers]->(livestock), mixed case -----
+        $live = $db->collection( 'livestocks' ) ;
+        $live->create() ;
+        foreach ( [ 'L1' , 'L2' , 'L3' ] as $k ) { $live->insert( [ '_key' => $k ] ) ; }
+
+        $numbers = $db->collection( 'numbers' ) ;
+        $numbers->create() ;
+        $numbers->insert( [ '_key' => 'n1' , 'value' => 'EAR459' , 'kind' => 'EAR' ] ) ;
+        $numbers->insert( [ '_key' => 'n2' , 'value' => 'ear459' , 'kind' => 'ear' ] ) ;
+        $numbers->insert( [ '_key' => 'n3' , 'value' => 'TAG999' , 'kind' => 'tag' ] ) ;
+
+        $hasNumbers = $db->collection( 'has_numbers' ) ;
+        $hasNumbers->create( [ 'type' => 3 ] ) ;
+        $hasNumbers->insert( [ '_from' => 'numbers/n1' , '_to' => 'livestocks/L1' ] ) ;
+        $hasNumbers->insert( [ '_from' => 'numbers/n2' , '_to' => 'livestocks/L2' ] ) ;
+        $hasNumbers->insert( [ '_from' => 'numbers/n3' , '_to' => 'livestocks/L3' ] ) ;
+
+        // --- ARRAY_COMPLEX : embedded array with mixed-case sub-field ----------
+        $things = $db->collection( 'things' ) ;
+        $things->create() ;
+        $things->insert( [ '_key' => 't1' , 'workshops' => [ [ 'breeding' => [ 'alternateName' => 'PIG'    ] ] ] ] ) ;
+        $things->insert( [ '_key' => 't2' , 'workshops' => [ [ 'breeding' => [ 'alternateName' => 'pig'    ] ] ] ] ) ;
+        $things->insert( [ '_key' => 't3' , 'workshops' => [ [ 'breeding' => [ 'alternateName' => 'Cattle' ] ] ] ] ) ;
     }
 
     /**
@@ -136,5 +167,32 @@ class FacetAltIntegrationTest extends IntegrationTestCase
         $value  = [ 'val' => 'alice' , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ;
         $filter = $this->stub()->callJoin( 'author' , $value , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'po1' , 'po2' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- complex (Facet::ALT global)
+
+    public function testEdgeComplexAltAppliesToEverySubField() :void
+    {
+        // both value AND kind compared case-insensitively on the same vertex.
+        $binds  = [] ;
+        $facet  = [ AQL::EDGE => 'has_numbers' , Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $filter = $this->stub()->callEdgeComplex( 'numbers' , [ 'value' => 'ear459' , 'kind' => 'ear' ] , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'L1' , 'L2' ] , $this->keys( 'livestocks' , $filter , $binds ) ) ;
+    }
+
+    public function testJoinComplexAltAppliesToEverySubField() :void
+    {
+        $binds  = [] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' , Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $filter = $this->stub()->callJoinComplex( 'comments' , [ 'status' => 'approved' ] , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'po1' , 'po2' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    public function testArrayComplexAltAppliesToSubField() :void
+    {
+        $binds  = [] ;
+        $facet  = [ Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $filter = $this->stub()->callArrayComplex( 'workshops' , [ 'breeding.alternateName' => 'pig' ] , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 't1' , 't2' ] , $this->keys( 'things' , $filter , $binds ) ) ;
     }
 }

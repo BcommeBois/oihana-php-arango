@@ -299,7 +299,25 @@ Prop::LOCATION => [
 
 > ⚠️ **Extractors vs normalizers** — same rule as filters: for an **extractor** (`dateYear`, `count`…) the supplied value is *already* the target, keep the string form `alt:"dateYear"` (field only); for a **symmetric normalizer** (`lower`, `abs`…), use the object form or `val:true`.
 
-Covered: **`FIELD`, `EDGE`, `JOIN`**. No injection risk: function names are whitelisted (an unknown function is a no-op), only values are bound.
+### On complex facets (`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`)
+
+For complex facets, `alt` is declared **in the definition only** (`Facet::ALT`) and applies **globally to every sub-field** of the `{sub-field : condition}` object:
+
+```php
+Prop::NUMBERS => [
+    Facet::TYPE => Facet::EDGE_COMPLEX , Facet::EDGE => 'has_numbers' ,
+    Facet::ALT  => [ 'key' => 'lower' , 'val' => true ] , // applies to EVERY sub-field
+]
+```
+```
+?facets={"numbers":{"value":"459","kind":"EAR"}}
+// LENGTH(FOR v IN … FILTER LOWER(v.value) == LOWER(@0) && LOWER(v.kind) == LOWER(@1) RETURN …) > 0
+```
+The structural join key (`doc_x.<KEY> == doc.<PROPERTY>` of a `JOIN_COMPLEX`) is **never** wrapped — only the sub-field conditions are.
+
+> **Limitation (deliberate, Option A).** On complex facets `alt` is **global**: you cannot (yet) target a single sub-field, nor provide it per request from the URL. This covers the main use case ("this linked facet is case-insensitive"). **Per-sub-field** granularity (a `{sub-field:{val,alt}}` form in the URL) is technically possible but **not planned at this stage** — it can be added later if a concrete need arises.
+
+Covered: **`FIELD`, `EDGE`, `JOIN`** (field + value, from the definition **or** the URL) and **`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`** (global, from the definition). No injection risk: function names are whitelisted (an unknown function is a no-op), only values are bound.
 
 ## Negation
 
@@ -324,9 +342,9 @@ The `-` prefix semantics **depend on the type**, deliberately:
 | `IN` (+ aliases) | `any.in` | the key (or `Facet::PROPERTY`) | CSV / list / `{op,val}` |
 | `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val,alt}` |
 | `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val,alt}` |
-| `EDGE_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` |
-| `JOIN_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` |
-| `ARRAY_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` |
+| `EDGE_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` *(+ global `Facet::ALT`)* |
+| `JOIN_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` *(+ global `Facet::ALT`)* |
+| `ARRAY_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` *(+ global `Facet::ALT`)* |
 
 Several facets in one request are joined with `&&`.
 

@@ -2,6 +2,7 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
+use oihana\exceptions\UnsupportedOperationException;
 use ReflectionException;
 
 use org\schema\constants\Prop;
@@ -9,6 +10,7 @@ use org\schema\constants\Prop;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\db\enums\Traversal;
+use oihana\arango\models\enums\Facet;
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
 
@@ -55,6 +57,7 @@ trait HasFacetEdgeComplex
      *
      * @throws BindException
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
      * @throws ValidationException
      *
      * @example
@@ -95,7 +98,8 @@ trait HasFacetEdgeComplex
         // Each field condition applies to the SAME traversed vertex, so all
         // fields (and any per-value negation) stay inside one existential
         // traversal — see HasFacetComplexConditions, shared with JOIN_COMPLEX.
-        $filters = $this->prepareComplexConditions( $value , $docRef , $key , $binds ) ;
+        // A facet-wide Facet::ALT wraps every sub-field comparison symmetrically.
+        $filters = $this->prepareComplexConditions( $value , $docRef , $key , $binds , $facet[ Facet::ALT ] ?? null ) ;
 
         // LENGTH( FOR doc_$key IN INBOUND $doc $edge FILTER ...$filters RETURN doc_$key._key ) > 0
         return greaterThan( length

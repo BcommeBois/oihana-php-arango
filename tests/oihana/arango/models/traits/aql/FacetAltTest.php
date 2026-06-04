@@ -103,4 +103,41 @@ class FacetAltTest extends TestCase
 
         $this->assertMatchesRegularExpression( '/FILTER doc_author\._key == doc\.authorId && LOWER\(doc_author\.name\) == LOWER\(@\S+\)/' , $result ) ;
     }
+
+    // ========================================
+    // COMPLEX (facet-wide Facet::ALT on every sub-field)
+    // ========================================
+
+    public function testEdgeComplexAltWrapsEverySubField(): void
+    {
+        $facet  = [ AQL::EDGE => 'has_numbers' , Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $result = $this->stub->callEdgeComplex( 'numbers' , [ 'value' => '459' , 'kind' => 'EAR' ] , $this->binds , $facet , AQL::DOC ) ;
+
+        $this->assertMatchesRegularExpression( '/LOWER\(doc_numbers\.value\) == LOWER\(@\S+\) && LOWER\(doc_numbers\.kind\) == LOWER\(@\S+\)/' , $result ) ;
+    }
+
+    public function testJoinComplexAltWrapsConditionsButNotTheJoinKey(): void
+    {
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' , Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $result = $this->stub->callJoinComplex( 'comments' , [ 'status' => 'APPROVED' ] , $this->binds , $facet , AQL::DOC ) ;
+
+        // the structural join key stays raw, only the field condition is wrapped.
+        $this->assertMatchesRegularExpression( '/FILTER doc_comments\.postId == doc\._key && LOWER\(doc_comments\.status\) == LOWER\(@\S+\)/' , $result ) ;
+    }
+
+    public function testArrayComplexAltWrapsSubFieldAndValueAcrossAList(): void
+    {
+        $facet  = [ Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $result = $this->stub->callArrayComplex( 'workshops' , [ 'breeding.alternateName' => [ 'PIG' , 'Cattle' ] ] , $this->binds , $facet , AQL::DOC ) ;
+
+        $this->assertMatchesRegularExpression( '/LOWER\(doc_workshops\.breeding\.alternateName\) == LOWER\(@\S+\) \|\| LOWER\(doc_workshops\.breeding\.alternateName\) == LOWER\(@\S+\)/' , $result ) ;
+    }
+
+    public function testArrayComplexNoAltIsUnchanged(): void
+    {
+        $result = $this->stub->callArrayComplex( 'workshops' , [ 'breeding.alternateName' => 'pig' ] , $this->binds , [] , AQL::DOC ) ;
+
+        $this->assertStringContainsString( 'doc_workshops.breeding.alternateName == @' , $result ) ;
+        $this->assertStringNotContainsString( 'LOWER' , $result ) ;
+    }
 }

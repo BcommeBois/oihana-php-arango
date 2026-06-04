@@ -2,6 +2,7 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
+use oihana\exceptions\UnsupportedOperationException;
 use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
@@ -57,6 +58,7 @@ trait HasFacetJoinComplex
      *
      * @throws BindException
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
      * @throws ValidationException
      *
      * @example
@@ -103,7 +105,7 @@ trait HasFacetJoinComplex
         $match     = $isArray ? in( $joinLeft , $joinRight ) : equal( $joinLeft , $joinRight ) ;
 
         // Sub-field conditions, shared with EDGE_COMPLEX.
-        $filters = $this->prepareComplexConditions( $value , $docRef , $key , $binds ) ;
+        $filters = $this->prepareComplexConditions( $value , $docRef , $key , $binds , $facet[ Facet::ALT ] ?? null ) ;
 
         // LENGTH( FOR doc_$key IN <collection> FILTER <match> && ...filters RETURN 1 ) > 0
         return greaterThan( length

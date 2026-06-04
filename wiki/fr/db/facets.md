@@ -267,7 +267,25 @@ Prop::LOCATION => [
 
 > ⚠️ **Extracteurs vs normaliseurs** — même règle que les filtres : pour un **extracteur** (`dateYear`, `count`…) la valeur fournie est *déjà* la cible, gardez la forme chaîne `alt:"dateYear"` (champ seul) ; pour un **normaliseur symétrique** (`lower`, `abs`…), utilisez la forme objet ou `val:true`.
 
-Couvert : **`FIELD`, `EDGE`, `JOIN`**. Aucun risque d'injection : les noms de fonctions sont sur liste blanche (une fonction inconnue est sans effet), seules les valeurs sont liées.
+### Sur les facettes complexes (`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`)
+
+Pour les facettes complexes, `alt` se déclare **uniquement dans la définition** (`Facet::ALT`) et s'applique **globalement à tous les sous-champs** de l'objet `{sous-champ : condition}` :
+
+```php
+Prop::NUMBERS => [
+    Facet::TYPE => Facet::EDGE_COMPLEX , Facet::EDGE => 'has_numbers' ,
+    Facet::ALT  => [ 'key' => 'lower' , 'val' => true ] , // s'applique à CHAQUE sous-champ
+]
+```
+```
+?facets={"numbers":{"value":"459","kind":"EAR"}}
+// LENGTH(FOR v IN … FILTER LOWER(v.value) == LOWER(@0) && LOWER(v.kind) == LOWER(@1) RETURN …) > 0
+```
+La clé structurelle de jointure (`doc_x.<KEY> == doc.<PROPERTY>` d'un `JOIN_COMPLEX`) n'est **jamais** enveloppée — seules les conditions de sous-champs le sont.
+
+> **Limite (volontaire, Option A).** Pour les complexes, `alt` est **global** : on ne peut pas (encore) cibler un seul sous-champ, ni le fournir par l'URL au cas par cas. C'est le cas d'usage principal (« cette facette liée est insensible à la casse »). La granularité **par sous-champ** (forme `{sous-champ:{val,alt}}` dans l'URL) est possible techniquement mais **non prévue à ce stade** — elle pourra être ajoutée si un besoin concret apparaît.
+
+Couvert : **`FIELD`, `EDGE`, `JOIN`** (champ + valeur, définition **ou** URL) et **`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`** (global via la définition). Aucun risque d'injection : les noms de fonctions sont sur liste blanche (une fonction inconnue est sans effet), seules les valeurs sont liées.
 
 ## Négation
 
@@ -290,9 +308,9 @@ La sémantique du préfixe `-` **dépend du type**, et c'est volontaire :
 | `IN` (+ alias) | `any.in` | la clé (ou `Facet::PROPERTY`) | CSV / liste / `{op,val}` |
 | `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val,alt}` |
 | `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val,alt}` |
-| `EDGE_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` |
-| `JOIN_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` |
-| `ARRAY_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` |
+| `EDGE_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` *(+ `Facet::ALT` global)* |
+| `JOIN_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` *(+ `Facet::ALT` global)* |
+| `ARRAY_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` *(+ `Facet::ALT` global)* |
 
 Plusieurs facettes d'une même requête sont jointes par `&&`.
 
