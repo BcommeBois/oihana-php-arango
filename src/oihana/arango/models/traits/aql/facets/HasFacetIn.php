@@ -3,6 +3,7 @@
 namespace oihana\arango\models\traits\aql\facets;
 
 use oihana\arango\db\enums\ArrayComparator;
+use oihana\arango\db\enums\Clause;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Operation;
 use oihana\arango\models\enums\Facet;
@@ -10,6 +11,7 @@ use oihana\arango\models\enums\filters\FilterArrayComparator;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
 
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\toArray;
@@ -49,6 +51,7 @@ trait HasFacetIn
      * @return string
      *
      * @throws BindException
+     * @throws UnsupportedOperationException
      *
      * @example
      * Set the facetable definition in the model (operator optional, defaults to
@@ -93,12 +96,14 @@ trait HasFacetIn
      */
     protected function prepareFacetIn( string $key , mixed $value , array &$binds , array $facet , string $doc , bool $sortable = false ) :string
     {
-        $op = $facet[ Facet::OP ] ?? FilterArrayComparator::ANY_IN ;
+        $op  = $facet[ Facet::OP  ] ?? FilterArrayComparator::ANY_IN ;
+        $alt = $facet[ Facet::ALT ] ?? null ;
 
-        // {op, val} request object overrides the configured operator.
+        // {op, val, alt} request object overrides the configured operator / alt.
         if( is_array( $value ) && !array_is_list( $value ) )
         {
-            $op = $value[ FilterParam::OP ] ?? $op ;
+            $op  = $value[ FilterParam::OP  ] ?? $op ;
+            $alt = $value[ FilterParam::ALT ] ?? $alt ;
             if( !array_key_exists( FilterParam::VAL , $value ) )
             {
                 return Char::EMPTY ;
@@ -117,13 +122,26 @@ trait HasFacetIn
 
         $comparator = FilterArrayComparator::getAlias( $op , ArrayComparator::ANY . Char::SPACE . Comparator::IN ) ;
 
+        // `alt` wraps each requested value (val side) and the compared document
+        // property (key side). Applying valChain to the items before they are
+        // bracketed keeps the membership test and the SORT POSITION(...) clause
+        // consistent.
+        [ $keyChain , $valChain ] = $this->resolveAltSides( $alt ) ;
+
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
         $docProp  = key( $property , $doc ) ;
+
+        // doc.<property> is an ARRAY: a field-side alt must map over each element
+        // (LOWER(doc.tags) would be null; doc.tags[* RETURN LOWER(CURRENT)] is right).
+        if( $keyChain !== null )
+        {
+            $docProp .= '[* RETURN ' . $this->alterExpression( Clause::CURRENT , $keyChain ) . ']' ;
+        }
 
         $items = [] ;
         foreach( $values as $index => $item )
         {
-            $items[] = $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) ;
+            $items[] = $this->alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
         }
         $array = betweenBrackets( compile( $items , Char::COMMA ) ) ;
 

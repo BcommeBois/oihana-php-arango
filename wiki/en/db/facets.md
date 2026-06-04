@@ -317,7 +317,16 @@ The structural join key (`doc_x.<KEY> == doc.<PROPERTY>` of a `JOIN_COMPLEX`) is
 
 > **Limitation (deliberate, Option A).** On complex facets `alt` is **global**: you cannot (yet) target a single sub-field, nor provide it per request from the URL. This covers the main use case ("this linked facet is case-insensitive"). **Per-sub-field** granularity (a `{sub-field:{val,alt}}` form in the URL) is technically possible but **not planned at this stage** — it can be added later if a concrete need arises.
 
-Covered: **`FIELD`, `EDGE`, `JOIN`** (field + value, from the definition **or** the URL) and **`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`** (global, from the definition). No injection risk: function names are whitelisted (an unknown function is a no-op), only values are bound.
+### On the `Facet::IN` facet (array membership)
+
+`Facet::IN` (and its `LIST` / `LIST_FIELD` / `LIST_FIELD_SORTED` aliases) accepts `alt` from the definition **and** the URL, like FIELD/EDGE/JOIN. One specificity: the compared property is an **array**, so the field side is **projected element-wise** (`doc.tags[* RETURN LOWER(CURRENT)]`) — a plain `LOWER(doc.tags)` would return `null`. The value side wraps each requested value, and any `SORT POSITION(...)` stays consistent:
+
+```
+?facets={"tags":{"val":["TECH","News"],"alt":{"key":"lower","val":true}}}
+// TO_ARRAY([LOWER(@0),LOWER(@1)]) ANY IN doc.tags[* RETURN LOWER(CURRENT)]
+```
+
+Covered: **`FIELD`, `EDGE`, `JOIN`, `IN`** (+ `LIST*` aliases) — field + value, from the definition **or** the URL — and **`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`** (global, from the definition). No injection risk: function names are whitelisted (an unknown function is a no-op), only values are bound.
 
 ## Negation
 
@@ -339,7 +348,7 @@ The `-` prefix semantics **depend on the type**, deliberately:
 | Type | default `op` | default field(s) | value shape |
 |---|---|---|---|
 | `FIELD` | `match` (`=~`) | the key (or `Facet::PROPERTY`) | scalar / CSV / `{op,val,alt}` |
-| `IN` (+ aliases) | `any.in` | the key (or `Facet::PROPERTY`) | CSV / list / `{op,val}` |
+| `IN` (+ aliases) | `any.in` | the key (or `Facet::PROPERTY`) | CSV / list / `{op,val,alt}` |
 | `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val,alt}` |
 | `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalar / CSV / `{op,val,alt}` |
 | `EDGE_COMPLEX` | `eq`/`!=` per field | the object keys | object `{field:cond}` *(+ global `Facet::ALT`)* |

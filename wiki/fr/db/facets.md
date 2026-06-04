@@ -285,7 +285,16 @@ La clé structurelle de jointure (`doc_x.<KEY> == doc.<PROPERTY>` d'un `JOIN_COM
 
 > **Limite (volontaire, Option A).** Pour les complexes, `alt` est **global** : on ne peut pas (encore) cibler un seul sous-champ, ni le fournir par l'URL au cas par cas. C'est le cas d'usage principal (« cette facette liée est insensible à la casse »). La granularité **par sous-champ** (forme `{sous-champ:{val,alt}}` dans l'URL) est possible techniquement mais **non prévue à ce stade** — elle pourra être ajoutée si un besoin concret apparaît.
 
-Couvert : **`FIELD`, `EDGE`, `JOIN`** (champ + valeur, définition **ou** URL) et **`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`** (global via la définition). Aucun risque d'injection : les noms de fonctions sont sur liste blanche (une fonction inconnue est sans effet), seules les valeurs sont liées.
+### Sur la facette `Facet::IN` (membership tableau)
+
+`Facet::IN` (et ses alias `LIST` / `LIST_FIELD` / `LIST_FIELD_SORTED`) accepte `alt` côté définition **et** URL, comme FIELD/EDGE/JOIN. Particularité : la propriété comparée est un **tableau**, donc le côté champ est **projeté élément par élément** (`doc.tags[* RETURN LOWER(CURRENT)]`) — un simple `LOWER(doc.tags)` renverrait `null`. Le côté valeur enveloppe chaque valeur demandée, et le `SORT POSITION(...)` éventuel reste cohérent :
+
+```
+?facets={"tags":{"val":["TECH","News"],"alt":{"key":"lower","val":true}}}
+// TO_ARRAY([LOWER(@0),LOWER(@1)]) ANY IN doc.tags[* RETURN LOWER(CURRENT)]
+```
+
+Couvert : **`FIELD`, `EDGE`, `JOIN`, `IN`** (+ alias `LIST*`) — champ + valeur, définition **ou** URL — et **`EDGE_COMPLEX` / `JOIN_COMPLEX` / `ARRAY_COMPLEX`** (global via la définition). Aucun risque d'injection : les noms de fonctions sont sur liste blanche (une fonction inconnue est sans effet), seules les valeurs sont liées.
 
 ## Négation
 
@@ -305,7 +314,7 @@ La sémantique du préfixe `-` **dépend du type**, et c'est volontaire :
 | Type | `op` défaut | Champ(s) défaut | Forme de valeur |
 |---|---|---|---|
 | `FIELD` | `match` (`=~`) | la clé (ou `Facet::PROPERTY`) | scalaire / CSV / `{op,val,alt}` |
-| `IN` (+ alias) | `any.in` | la clé (ou `Facet::PROPERTY`) | CSV / liste / `{op,val}` |
+| `IN` (+ alias) | `any.in` | la clé (ou `Facet::PROPERTY`) | CSV / liste / `{op,val,alt}` |
 | `EDGE` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val,alt}` |
 | `JOIN` | `eq` | `_key` (`AQL::FIELDS`) | scalaire / CSV / `{op,val,alt}` |
 | `EDGE_COMPLEX` | `eq`/`!=` par champ | clés de l'objet | objet `{champ:cond}` *(+ `Facet::ALT` global)* |

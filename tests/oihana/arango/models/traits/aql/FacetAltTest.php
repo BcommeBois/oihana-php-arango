@@ -140,4 +140,53 @@ class FacetAltTest extends TestCase
         $this->assertStringContainsString( 'doc_workshops.breeding.alternateName == @' , $result ) ;
         $this->assertStringNotContainsString( 'LOWER' , $result ) ;
     }
+
+    // ========================================
+    // IN (membership) — field is an array → key side maps over each element
+    // ========================================
+
+    public function testInAltMapsValuesAndProjectsTheArrayField(): void
+    {
+        $facet  = [ Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $result = $this->stub->callIn( 'tags' , [ 'TECH' , 'News' ] , $this->binds , $facet , AQL::DOC ) ;
+
+        // values lowered one by one, the array field projected element-wise.
+        $this->assertMatchesRegularExpression( '/^TO_ARRAY\(\[LOWER\(@\S+\),LOWER\(@\S+\)]\) ANY IN doc\.tags\[\* RETURN LOWER\(CURRENT\)]$/' , $result ) ;
+    }
+
+    public function testInAltFromUrlOverridesOperatorAndAlt(): void
+    {
+        $value  = [ 'op' => 'all.in' , 'val' => [ 'TECH' ] , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $result = $this->stub->callIn( 'tags' , $value , $this->binds , [] , AQL::DOC ) ;
+
+        $this->assertStringContainsString( 'ALL IN doc.tags[* RETURN LOWER(CURRENT)]' , $result ) ;
+    }
+
+    public function testInAltKeyOnlyLeavesValuesRaw(): void
+    {
+        $facet  = [ Facet::ALT => [ 'key' => 'lower' ] ] ;
+        $result = $this->stub->callIn( 'tags' , [ 'TECH' ] , $this->binds , $facet , AQL::DOC ) ;
+
+        $this->assertMatchesRegularExpression( '/^TO_ARRAY\(\[@\S+]\) ANY IN doc\.tags\[\* RETURN LOWER\(CURRENT\)]$/' , $result ) ;
+        $this->assertStringNotContainsString( 'LOWER(@' , $result ) ;
+    }
+
+    public function testInSortableKeepsPositionConsistentWithAlt(): void
+    {
+        $facet  = [ Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $result = $this->stub->callIn( 'tags' , [ 'TECH' , 'News' ] , $this->binds , $facet , AQL::DOC , true ) ;
+
+        // SORT POSITION(...) reuses the SAME altered array + projected field.
+        $this->assertStringContainsString( 'SORT POSITION([LOWER(@', $result ) ;
+        $this->assertStringContainsString( 'doc.tags[* RETURN LOWER(CURRENT)],true)' , $result ) ;
+    }
+
+    public function testInNoAltIsUnchanged(): void
+    {
+        $result = $this->stub->callIn( 'tags' , 'cuisine,jardin' , $this->binds , [] , AQL::DOC ) ;
+
+        $this->assertStringContainsString( 'ANY IN doc.tags' , $result ) ;
+        $this->assertStringNotContainsString( '[* RETURN' , $result ) ;
+        $this->assertStringNotContainsString( 'LOWER' , $result ) ;
+    }
 }

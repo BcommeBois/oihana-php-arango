@@ -88,6 +88,13 @@ class FacetAltIntegrationTest extends IntegrationTestCase
         $hasNumbers->insert( [ '_from' => 'numbers/n2' , '_to' => 'livestocks/L2' ] ) ;
         $hasNumbers->insert( [ '_from' => 'numbers/n3' , '_to' => 'livestocks/L3' ] ) ;
 
+        // --- IN : array-membership facet with mixed-case elements --------------
+        $arts = $db->collection( 'arts' ) ;
+        $arts->create() ;
+        $arts->insert( [ '_key' => 'ar1' , 'tags' => [ 'Tech' , 'NEWS' ] ] ) ;
+        $arts->insert( [ '_key' => 'ar2' , 'tags' => [ 'tech' ] ] ) ;
+        $arts->insert( [ '_key' => 'ar3' , 'tags' => [ 'sport' ] ] ) ;
+
         // --- ARRAY_COMPLEX : embedded array with mixed-case sub-field ----------
         $things = $db->collection( 'things' ) ;
         $things->create() ;
@@ -194,5 +201,24 @@ class FacetAltIntegrationTest extends IntegrationTestCase
         $facet  = [ Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
         $filter = $this->stub()->callArrayComplex( 'workshops' , [ 'breeding.alternateName' => 'pig' ] , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 't1' , 't2' ] , $this->keys( 'things' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- IN (membership)
+
+    public function testInAltFromDefinitionMatchesCaseInsensitively() :void
+    {
+        // mirror lower on both the requested values and doc.tags → ar1 (Tech/NEWS) + ar2 (tech).
+        $binds  = [] ;
+        $facet  = [ Facet::ALT => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $filter = $this->stub()->callIn( 'tags' , [ 'TECH' , 'news' ] , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'ar1' , 'ar2' ] , $this->keys( 'arts' , $filter , $binds ) ) ;
+    }
+
+    public function testInAltFromUrlRequestAllInRequiresEveryValue() :void
+    {
+        $binds  = [] ;
+        $value  = [ 'op' => 'all.in' , 'val' => [ 'TECH' , 'news' ] , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ;
+        $filter = $this->stub()->callIn( 'tags' , $value , $binds , [] , AQL::DOC ) ;
+        $this->assertSame( [ 'ar1' ] , $this->keys( 'arts' , $filter , $binds ) ) ;
     }
 }
