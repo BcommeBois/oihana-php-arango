@@ -119,6 +119,37 @@ class FacetTraitStub
     }
 
     /**
+     * @param string $key
+     * @param mixed $value
+     * @param array $binds
+     * @param array $facet
+     * @param string $doc
+     * @return string
+     * @throws BindException
+     * @throws ReflectionException
+     * @throws ValidationException
+     */
+    public function callEdgeAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    {
+        return $this->prepareFacetEdgeAggregate( $key , $value , $binds , $facet , $doc ) ;
+    }
+
+    /**
+     * @param string $key
+     * @param mixed $value
+     * @param array $binds
+     * @param array $facet
+     * @param string $doc
+     * @return string
+     * @throws BindException
+     * @throws ValidationException
+     */
+    public function callJoinAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    {
+        return $this->prepareFacetJoinAggregate( $key , $value , $binds , $facet , $doc ) ;
+    }
+
+    /**
      * @throws UnsupportedOperationException
      * @throws ValidationException
      * @throws ReflectionException

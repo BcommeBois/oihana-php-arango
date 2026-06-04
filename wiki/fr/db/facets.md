@@ -190,6 +190,87 @@ Le pendant key-join d'`EDGE_COMPLEX`. Valeur **objet** `{champ: condition}`, cha
 ```
 Topologies couvertes par `AQL::KEY` / `Facet::PROPERTY` / `AQL::ARRAY` : 1-1 (le doc porte la clé), 1-n inversé (les docs joints référencent le doc), 1-n par tableau.
 
+### `Facet::EDGE_AGGREGATE` / `Facet::JOIN_AGGREGATE` — agrégat sur les documents liés
+
+Au lieu de tester la simple **existence** d'un document lié (`EDGE`/`JOIN` ⇒ `LENGTH(…) > 0`), ces facettes **agrègent un champ numérique** sur **tous** les documents liés et comparent le résultat à un seuil :
+
+```
+AGG(FOR doc_x IN <source> [FILTER <jointure>] RETURN doc_x.<champ>) <op> @seuil
+```
+
+- `EDGE_AGGREGATE` remonte les sommets liés par traversée **`INBOUND doc <edge>`** (pas de FILTER) ;
+- `JOIN_AGGREGATE` itère une collection avec **`FILTER doc_x.<KEY> == doc.<PROPERTY>`** (ou `IN` si `AQL::ARRAY`).
+
+La valeur de requête est l'objet **`{agg, field, op, val}`** ; chaque clé est facultative côté URL et retombe sur la définition :
+
+| Clé | Rôle | Défaut |
+|---|---|---|
+| `agg` | l'agrégateur : `avg`, `sum`, `min`, `max`, `count` | `Facet::AGG`, sinon `count` |
+| `field` | le champ numérique agrégé du document lié (ignoré par `count`) | `AQL::FIELDS` |
+| `op` | le comparateur du seuil (`ge`, `gt`, `le`, `lt`, `eq`, `ne`) | `Facet::OP`, sinon `ge` |
+| `val` | le seuil (numérique) — **requis** (sinon la facette est ignorée) | — |
+
+Une valeur **scalaire** est lue comme le seuil directement (`?facets={"comments":5}` ⇒ défauts `count`/`ge`).
+
+#### Exemple 1 — `JOIN_AGGREGATE` (jointure par clé)
+
+Des **articles** et leurs **commentaires** ; un commentaire pointe son article par `articleId`. On veut *« les articles dont la note moyenne des commentaires est ≥ 4 »*.
+
+```php
+'comments' => [
+    Facet::TYPE     => Facet::JOIN_AGGREGATE ,
+    AQL::COLLECTION => 'comments' ,  // collection jointe
+    AQL::KEY        => 'articleId' , // champ côté joint     (défaut _key)
+    Facet::PROPERTY => '_key' ,      // champ côté principal (défaut = la clé de facette)
+    Facet::AGG      => 'avg' ,       // agrégateur par défaut
+    AQL::FIELDS     => 'score' ,     // champ agrégé par défaut
+    Facet::OP       => 'ge' ,        // comparateur par défaut
+] ,
+```
+```
+?facets={"comments":{"agg":"avg","field":"score","op":"ge","val":4}}
+// (LENGTH(FOR doc_comments IN comments FILTER doc_comments.articleId == doc._key RETURN 1) > 0
+//  && AVERAGE(FOR doc_comments IN comments FILTER doc_comments.articleId == doc._key RETURN doc_comments.score) >= @comments_0)
+
+?facets={"comments":{"val":4}}                       // identique (défauts de la config : avg / score / ge)
+?facets={"comments":{"agg":"count","val":3}}         // au moins 3 commentaires
+?facets={"comments":{"agg":"sum","field":"score","val":10}}    // somme des notes ≥ 10
+?facets={"comments":{"agg":"min","field":"score","val":3}}     // pire note ≥ 3
+?facets={"comments":{"agg":"count","op":"lt","val":2}}         // peu commentés (moins de 2, mais au moins 1)
+```
+`AQL::ARRAY => true` fait passer la jointure à `doc_x.<KEY> IN doc.<PROPERTY>` (le doc principal porte un tableau de clés).
+
+#### Exemple 2 — `EDGE_AGGREGATE` (graphe par arête)
+
+Des **organisations** et leurs **bilans** annuels reliés par une arête `balance_edges` (le bilan pointe l'org). On veut *« les organisations dont le CA moyen des bilans reliés ≥ 1 000 000 »*.
+
+```php
+'balanceSheets' => [
+    Facet::TYPE => Facet::EDGE_AGGREGATE ,
+    AQL::EDGE   => 'balance_edges' , // collection d'arêtes (INBOUND doc)
+    Facet::AGG  => 'avg' ,
+    AQL::FIELDS => 'revenue' ,
+    Facet::OP   => 'ge' ,
+] ,
+```
+```
+?facets={"balanceSheets":{"agg":"avg","field":"revenue","op":"ge","val":1000000}}
+// (LENGTH(FOR doc_balanceSheets IN INBOUND doc balance_edges RETURN 1) > 0
+//  && AVERAGE(FOR doc_balanceSheets IN INBOUND doc balance_edges RETURN doc_balanceSheets.revenue) >= @balanceSheets_0)
+
+?facets={"balanceSheets":{"agg":"sum","field":"revenue","val":5000000}}  // CA cumulé ≥ 5 M
+?facets={"balanceSheets":{"agg":"count","op":"ge","val":3}}              // au moins 3 bilans déposés
+?facets={"balanceSheets":{"agg":"max","field":"revenue","val":2000000}} // meilleure année ≥ 2 M
+```
+
+> **`count` généralise l'existentiel.** `{"agg":"count","op":"gt","val":0}` reproduit exactement le `LENGTH(…) > 0` des facettes `EDGE`/`JOIN`.
+
+> ⚠️ **Ensembles liés vides.** Une facette aggregate ne matche **que** les documents ayant **au moins un** document lié (d'où la garde `LENGTH(…) > 0 && …` dans l'AQL). C'est volontaire : en AQL `AVERAGE([])`/`MIN([])`/`MAX([])` valent `null` (et `SUM([])`/`COUNT([])` valent `0`), et comme `null` se trie **sous** tout nombre, un seuil `lt`/`le` ferait sinon remonter par accident les documents **sans aucun** lié.
+>
+> Exemple : avec trois orgs `o1` (bilans 1,2 M / 0,9 M), `o2` (bilan 0,2 M) et `o3` (aucun bilan), la requête `?facets={"balanceSheets":{"agg":"min","field":"revenue","op":"lt","val":500000}}` ne renvoie **que `o2`** — `o3` est exclu par la garde, alors que sans elle `MIN([]) = null < 500000` l'aurait fait remonter.
+
+> **Pas de négation `-` ni d'`alt`** sur les facettes aggregate : l'`op` porte déjà le sens (`ne`/`lt`/…), et le champ comme le seuil sont numériques. Un `field` venant de l'URL est validé (`assertAttributeName`) et un `agg` inconnu rend la facette sans effet (ignorée + logguée).
+
 ### `Facet::ARRAY_COMPLEX` — tableau d'objets embarqués *(complexe)*
 
 « Garder les documents dont une propriété **tableau embarqué** contient au moins un élément matchant les conditions ». Valeur **objet** `{sous-champ: condition}`.

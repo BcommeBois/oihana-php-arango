@@ -109,6 +109,21 @@ class FacetIntegrationTest extends IntegrationTestCase
         $tags->insert( [ '_key' => 'php' , 'label' => 'PHP'      ] ) ;
         $tags->insert( [ '_key' => 'db'  , 'label' => 'Database' ] ) ;
 
+        // --- Facet::EDGE_AGGREGATE : (balanceSheet)-[balance_edges]->(org) --
+        // Numeric revenue per linked balance sheet, aggregated per organisation.
+        $balanceSheets = $db->collection( 'balanceSheets' ) ;
+        $balanceSheets->create() ;
+        $balanceSheets->insert( [ '_key' => 'bs1' , 'revenue' => 1200000 ] ) ;
+        $balanceSheets->insert( [ '_key' => 'bs2' , 'revenue' => 900000  ] ) ;
+        $balanceSheets->insert( [ '_key' => 'bs3' , 'revenue' => 200000  ] ) ;
+
+        $balanceEdges = $db->collection( 'balance_edges' ) ;
+        $balanceEdges->create( [ 'type' => self::EDGE_TYPE ] ) ;
+        // o1: bs1+bs2 (avg 1.05M, sum 2.1M) ; o2: bs3 (200k) ; o3/o4: none
+        $balanceEdges->insert( [ '_from' => 'balanceSheets/bs1' , '_to' => 'orgs/o1' ] ) ;
+        $balanceEdges->insert( [ '_from' => 'balanceSheets/bs2' , '_to' => 'orgs/o1' ] ) ;
+        $balanceEdges->insert( [ '_from' => 'balanceSheets/bs3' , '_to' => 'orgs/o2' ] ) ;
+
         // --- Facet::FIELD : scalar property comparison ----------------------
         $fieldDocs = $db->collection( 'fielddocs' ) ;
         $fieldDocs->create() ;
@@ -375,5 +390,69 @@ class FacetIntegrationTest extends IntegrationTestCase
         $facet  = [ AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' , AQL::FIELDS => 'label' ] ;
         $filter = $this->stub()->callJoin( 'tags' , 'PHP' , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'p1' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- JOIN_AGGREGATE (key-join)
+
+    public function testJoinAggregateAverageScoreThreshold() :void
+    {
+        // avg comment score per post >= 3 : p1 (5,1 => 3), p3 (3) ; p2 (2) excluded.
+        $binds  = [] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' ] ;
+        $value  = [ 'agg' => 'avg' , 'field' => 'score' , 'op' => 'ge' , 'val' => 3 ] ;
+        $filter = $this->stub()->callJoinAggregate( 'comments' , $value , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    public function testJoinAggregateCountThreshold() :void
+    {
+        // posts with at least 2 comments : only p1 (c1, c2).
+        $binds  = [] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' ] ;
+        $value  = [ 'agg' => 'count' , 'op' => 'ge' , 'val' => 2 ] ;
+        $filter = $this->stub()->callJoinAggregate( 'comments' , $value , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'p1' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    public function testJoinAggregateMinScoreThreshold() :void
+    {
+        // worst comment score per post >= 2 : p2 (2), p3 (3) ; p1 (min 1) excluded.
+        $binds  = [] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' ] ;
+        $value  = [ 'agg' => 'min' , 'field' => 'score' , 'op' => 'ge' , 'val' => 2 ] ;
+        $filter = $this->stub()->callJoinAggregate( 'comments' , $value , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'p2' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- EDGE_AGGREGATE (inbound graph)
+
+    public function testEdgeAggregateAverageRevenueThreshold() :void
+    {
+        // avg revenue of linked balance sheets >= 1M : o1 (1.05M). o2 (200k) & o3/o4 (none) excluded.
+        $binds  = [] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $value  = [ 'agg' => 'avg' , 'field' => 'revenue' , 'op' => 'ge' , 'val' => 1000000 ] ;
+        $filter = $this->stub()->callEdgeAggregate( 'balanceSheets' , $value , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'o1' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
+    }
+
+    public function testEdgeAggregateSumRevenueThreshold() :void
+    {
+        // cumulative revenue >= 2M : o1 (2.1M) only.
+        $binds  = [] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $value  = [ 'agg' => 'sum' , 'field' => 'revenue' , 'op' => 'ge' , 'val' => 2000000 ] ;
+        $filter = $this->stub()->callEdgeAggregate( 'balanceSheets' , $value , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'o1' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
+    }
+
+    public function testEdgeAggregateMinRevenueBelowThreshold() :void
+    {
+        // floor revenue < 500k : o2 (200k). o1 (min 900k) and o3/o4 (no sheets) excluded.
+        $binds  = [] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $value  = [ 'agg' => 'min' , 'field' => 'revenue' , 'op' => 'lt' , 'val' => 500000 ] ;
+        $filter = $this->stub()->callEdgeAggregate( 'balanceSheets' , $value , $binds , $facet , AQL::DOC ) ;
+        $this->assertSame( [ 'o2' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
     }
 }

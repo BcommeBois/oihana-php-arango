@@ -8,13 +8,16 @@ class Facet
 {
     use ConstantsTrait ;
 
+    public const string AGG               = 'facet_agg' ;
     public const string ALT               = 'facet_alt' ;
     public const string ARRAY_COMPLEX     = 'facet_array_complex' ;
     public const string EDGE              = 'facet_edge' ;
+    public const string EDGE_AGGREGATE    = 'facet_edge_aggregate' ;
     public const string EDGE_COMPLEX      = 'facet_edge_complex' ;
     public const string FIELD             = 'facet_field' ;
     public const string IN                = 'facet_in' ;
     public const string JOIN              = 'facet_join' ;
+    public const string JOIN_AGGREGATE    = 'facet_join_aggregate' ;
     public const string JOIN_COMPLEX      = 'facet_join_complex' ;
     public const string LOGIC             = 'facet_logic' ;
     public const string LIST              = 'facet_list' ;

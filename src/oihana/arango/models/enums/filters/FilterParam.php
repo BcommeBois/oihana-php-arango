@@ -9,6 +9,11 @@ class FilterParam
     use ConstantsTrait ;
 
     /**
+     * The aggregator name of an aggregate facet (`avg`, `sum`, `min`, `max`, `count`).
+     */
+    public const string AGG = 'agg' ;
+
+    /**
      * The 'all' parameter or value.
      */
     public const string ALL = 'all' ;
@@ -27,6 +32,11 @@ class FilterParam
      * The exponent attribute to filter a key with the POW(base,exp) method.
      */
     public const string EXP = 'exp' ;
+
+    /**
+     * The related field aggregated by an aggregate facet.
+     */
+    public const string FIELD = 'field' ;
 
     /**
      * The format attribute.

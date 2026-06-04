@@ -10,10 +10,12 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\traits\aql\facets\HasFacetArrayComplex;
 use oihana\arango\models\traits\aql\facets\HasFacetEdge;
+use oihana\arango\models\traits\aql\facets\HasFacetEdgeAggregate;
 use oihana\arango\models\traits\aql\facets\HasFacetEdgeComplex;
 use oihana\arango\models\traits\aql\facets\HasFacetField;
 use oihana\arango\models\traits\aql\facets\HasFacetIn;
 use oihana\arango\models\traits\aql\facets\HasFacetJoin;
+use oihana\arango\models\traits\aql\facets\HasFacetJoinAggregate;
 use oihana\arango\models\traits\aql\facets\HasFacetJoinComplex;
 use oihana\arango\models\traits\aql\facets\HasFacetList;
 use oihana\arango\models\traits\aql\facets\HasFacetListField;
@@ -25,16 +27,18 @@ use function oihana\core\strings\predicates;
  */
 trait FacetTrait
 {
-    use HasAltExpression     ,
-        HasFacetArrayComplex ,
-        HasFacetEdge         ,
-        HasFacetEdgeComplex  ,
-        HasFacetField        ,
-        HasFacetIn           ,
-        HasFacetJoin         ,
-        HasFacetJoinComplex  ,
-        HasFacetList         ,
-        HasFacetListField    ;
+    use HasAltExpression      ,
+        HasFacetArrayComplex  ,
+        HasFacetEdge          ,
+        HasFacetEdgeAggregate ,
+        HasFacetEdgeComplex   ,
+        HasFacetField         ,
+        HasFacetIn            ,
+        HasFacetJoin          ,
+        HasFacetJoinAggregate ,
+        HasFacetJoinComplex   ,
+        HasFacetList          ,
+        HasFacetListField     ;
 
     /**
      * The facet settings.
@@ -97,9 +101,11 @@ trait FacetTrait
                         {
                             Facet::ARRAY_COMPLEX        => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::EDGE                 => $this->prepareFacetEdge            ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::EDGE_AGGREGATE       => $this->prepareFacetEdgeAggregate   ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::EDGE_COMPLEX         => $this->prepareFacetEdgeComplex     ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::IN                   => $this->prepareFacetIn              ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::JOIN                 => $this->prepareFacetJoin            ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::JOIN_AGGREGATE       => $this->prepareFacetJoinAggregate   ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::JOIN_COMPLEX         => $this->prepareFacetJoinComplex     ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::LIST                 => $this->prepareFacetList            ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::LIST_FIELD           => $this->prepareFacetListField       ( $key , $value , $binds , $facet , $docRef ) ,
