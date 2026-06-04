@@ -8,6 +8,7 @@ use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Clause;
 use oihana\arango\db\enums\Operator;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\filters\FilterComparator;
@@ -679,14 +680,40 @@ trait FilterTrait
 
     /**
      * Prepare the filter clause with a specific value to evaluates.
+     *
+     * Binds the raw value, then applies the value-side (right) `alt` chain when
+     * one is set (object form `alt:{ key:.. , val:.. }` or `val:true` mirror):
+     * - scalar value → the chain wraps the bind placeholder, e.g. `LOWER(@value)`.
+     * - array value (e.g. `op:in`) → the chain is mapped over each element via an
+     *   inline projection, e.g. `@value[* RETURN LOWER(CURRENT)]`. The single bind
+     *   still holds the whole array, so existing binding behavior is preserved.
+     *
      * @param array|null $init
      * @param array|null $binds
-     * @return mixed
+     *
+     * @return string
+     *
      * @throws BindException
+     * @throws UnsupportedOperationException
      */
     protected function prepareFilterValue( ?array $init = [] , ?array &$binds = null ):string
     {
-        return $this->bind( $init[ FilterParam::VAL ] ?? null , $binds ) ;
+        $value = $init[ FilterParam::VAL ] ?? null ;
+        $bound = $this->bind( $value , $binds ) ;
+
+        [ , $valChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+
+        if ( $valChain === null )
+        {
+            return $bound ;
+        }
+
+        if ( is_array( $value ) )
+        {
+            return $bound . '[* RETURN ' . $this->alterExpression( Clause::CURRENT , $valChain , $init ) . ']' ;
+        }
+
+        return $this->alterExpression( $bound , $valChain , $init ) ;
     }
 
     /**

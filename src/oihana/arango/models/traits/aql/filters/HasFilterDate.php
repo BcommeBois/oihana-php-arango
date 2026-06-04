@@ -116,6 +116,7 @@ trait HasFilterDate
      * Prepares the value of a date attribute in a filter clause.
      *
      * @throws BindException
+     * @throws UnsupportedOperationException
      */
     protected function prepareFilterDateValue( string|array|null $init = [] , ?array &$binds = null ):string
     {
@@ -132,12 +133,21 @@ trait HasFilterDate
 
         if ( $result !== null )
         {
-            return $result ;
+            $expr = $result ;
+        }
+        else
+        {
+            $timezone = $init[ FilterParam::TZ ] ?? null ;
+            $expr     = isValidTimezone( $timezone )
+                      ? dateLocalToUTC( $this->bind( $value , $binds ) , $this->bind( $timezone , $binds ) )
+                      : $this->bind( $value , $binds ) ;
         }
 
-        $timezone = $init[ FilterParam::TZ ] ?? null ;
-        return isValidTimezone( $timezone )
-               ? dateLocalToUTC( $this->bind( $value , $binds ) , $this->bind( $timezone , $binds ) )
-               : $this->bind( $value , $binds ) ;
+        // Apply the value-side (right) `alt` chain when one is set (object form
+        // alt:{ key:.. , val:.. } or val:true mirror); string/list `alt` only
+        // touches the key side, so extractor forms leave the value untouched.
+        [ , $valChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+
+        return $valChain === null ? $expr : $this->alterExpression( $expr , $valChain , $init ) ;
     }
 }

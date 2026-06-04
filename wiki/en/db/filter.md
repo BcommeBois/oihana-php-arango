@@ -24,7 +24,7 @@ Each condition is a JSON object with the following four keys:
 | `key` | yes | Name of the field to filter (must be present in the model's `AQL::FILTERS`). |
 | `val` | yes | Comparison value (scalar or array depending on operator). |
 | `op` | no | Operator (`eq` by default). |
-| `alt` | no | Transformation applied to `doc.<key>` before comparison. |
+| `alt` | no | Transformation applied to `doc.<key>` before comparison; the object form `{key,val}` also applies it to the value (see below). |
 
 ```
 ?filter={"key":"email","val":"john@example.com"}
@@ -139,6 +139,39 @@ The `alt` key applies an AQL function to `doc.<key>` **before** comparison. It i
 ```
 
 Evaluation order is **inner-to-outer**: the first array element is applied first, the last is applied last.
+
+### Applying `alt` to the value (symmetric comparison)
+
+By default `alt` wraps only the **field** (left side): `LOWER(doc.email) == @v`. The value stays raw — which prevents, for instance, a case-insensitive equality. The **object form** applies the transformation to **both sides**:
+
+```jsonc
+// Object form: one chain per side
+{"key":"email","val":"JEAN@X.COM","alt":{"key":"lower","val":"lower"}}
+// FILTER LOWER(doc.email) == LOWER(@v)
+
+// val:true → mirror: applies the field-side chain to the value side too
+{"key":"email","val":"JEAN@X.COM","alt":{"key":"lower","val":true}}
+// FILTER LOWER(doc.email) == LOWER(@v)
+
+// the mirror also works on a function chain
+{"key":"name","val":" John ","alt":{"key":["trim","lower"],"val":true}}
+// FILTER LOWER(TRIM(doc.name)) == LOWER(TRIM(@v))
+
+// each side is independent: here, only the value is transformed
+{"key":"email","val":"JEAN@X.COM","alt":{"val":"lower"}}
+// FILTER doc.email == LOWER(@v)
+```
+
+When the **value is an array** (e.g. `op:in`), the chain is applied to **each element** via an inline projection, without changing the *bind* (which still holds the whole array):
+
+```jsonc
+{"key":"category","op":"in","val":["TECH","NEWS"],"alt":{"key":"lower","val":true}}
+// FILTER LOWER(doc.category) IN @v[* RETURN LOWER(CURRENT)]
+```
+
+> ⚠️ **Extractors vs normalizers.** For an **extractor** (`dateYear`, `count`, `length`…), the supplied value is *already* the target (`val:2024`): keep the string form `alt:"dateYear"` (field side only). For a **symmetric normalizer** (`lower`, `trim`, `abs`, `dateDay`…), use the object form or `val:true`. **You** decide via the form — there is no automatic classification.
+
+100% backward compatible: the string and list forms (`"lower"`, `["trim","lower"]`) keep acting on the field only.
 
 ### Catalog by category
 

@@ -24,7 +24,7 @@ Chaque condition est un objet JSON aux quatre clés suivantes :
 | `key` | oui | Nom du champ à filtrer (doit être présent dans `AQL::FILTERS` du modèle). |
 | `val` | oui | Valeur de comparaison (scalaire ou tableau selon l'opérateur). |
 | `op` | non | Opérateur (`eq` par défaut). |
-| `alt` | non | Transformation appliquée à `doc.<key>` avant comparaison. |
+| `alt` | non | Transformation appliquée à `doc.<key>` avant comparaison ; la forme objet `{key,val}` l'applique aussi à la valeur (voir plus bas). |
 
 ```
 ?filter={"key":"email","val":"john@example.com"}
@@ -139,6 +139,39 @@ La clé `alt` applique une fonction AQL à `doc.<key>` **avant** la comparaison.
 ```
 
 L'ordre d'évaluation est **inner-to-outer** : le premier élément du tableau est appliqué en premier, le dernier en dernier.
+
+### Appliquer `alt` à la valeur (comparaison symétrique)
+
+Par défaut, `alt` n'enveloppe que le **champ** (côté gauche) : `LOWER(doc.email) == @v`. La valeur reste brute — ce qui empêche, par exemple, une égalité insensible à la casse. La **forme objet** applique la transformation des **deux côtés** :
+
+```jsonc
+// Forme objet : une chaîne par côté
+{"key":"email","val":"JEAN@X.COM","alt":{"key":"lower","val":"lower"}}
+// FILTER LOWER(doc.email) == LOWER(@v)
+
+// val:true → miroir : applique au côté valeur la même chaîne que le champ
+{"key":"email","val":"JEAN@X.COM","alt":{"key":"lower","val":true}}
+// FILTER LOWER(doc.email) == LOWER(@v)
+
+// le miroir fonctionne aussi sur une chaîne de fonctions
+{"key":"name","val":" John ","alt":{"key":["trim","lower"],"val":true}}
+// FILTER LOWER(TRIM(doc.name)) == LOWER(TRIM(@v))
+
+// chaque côté est indépendant : ici, seule la valeur est transformée
+{"key":"email","val":"JEAN@X.COM","alt":{"val":"lower"}}
+// FILTER doc.email == LOWER(@v)
+```
+
+Quand la **valeur est un tableau** (ex. `op:in`), la chaîne est appliquée à **chaque élément** via une projection inline, sans modifier le *bind* (qui reste le tableau complet) :
+
+```jsonc
+{"key":"category","op":"in","val":["TECH","NEWS"],"alt":{"key":"lower","val":true}}
+// FILTER LOWER(doc.category) IN @v[* RETURN LOWER(CURRENT)]
+```
+
+> ⚠️ **Extracteurs vs normaliseurs.** Pour un **extracteur** (`dateYear`, `count`, `length`…), la valeur fournie est *déjà* la cible (`val:2024`) : gardez la forme chaîne `alt:"dateYear"` (côté champ seul). Pour un **normaliseur symétrique** (`lower`, `trim`, `abs`, `dateDay`…), utilisez la forme objet ou `val:true`. C'est **vous** qui décidez via la forme — aucune classification automatique.
+
+100 % rétrocompatible : les formes chaîne et tableau (`"lower"`, `["trim","lower"]`) continuent de n'agir que sur le champ.
 
 ### Catalogue par catégorie
 
