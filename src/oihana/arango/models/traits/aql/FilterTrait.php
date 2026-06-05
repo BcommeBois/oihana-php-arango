@@ -30,7 +30,9 @@ use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\reflect\exceptions\ConstantException;
 
+use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\buildBetweenClauses;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\key;
@@ -379,7 +381,6 @@ use function oihana\core\strings\key;
 trait FilterTrait
 {
     use BindTrait               ,
-        HasAltExpression        ,
         HasFilterArray          ,
         HasFilterBoolean        ,
         HasFilterConditions     ,
@@ -524,8 +525,8 @@ trait FilterTrait
      */
     protected function alterFilterKey( string $key , array $init = [] ): string
     {
-        [ $keyChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
-        return $this->alterExpression( $key , $keyChain , $init ) ;
+        [ $keyChain ] = resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+        return alterExpression( $key , $keyChain , $init ) ;
     }
 
     /**
@@ -643,7 +644,7 @@ trait FilterTrait
         $value = $init[ FilterParam::VAL ] ?? null ;
         $bound = $this->bind( $value , $binds ) ;
 
-        [ , $valChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+        [ , $valChain ] = resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
 
         if ( $valChain === null )
         {
@@ -652,9 +653,9 @@ trait FilterTrait
 
         if ( is_array( $value ) )
         {
-            return $bound . '[* RETURN ' . $this->alterExpression( Clause::CURRENT , $valChain , $init ) . ']' ;
+            return $bound . '[* RETURN ' . alterExpression( Clause::CURRENT , $valChain , $init ) . ']' ;
         }
 
-        return $this->alterExpression( $bound , $valChain , $init ) ;
+        return alterExpression( $bound , $valChain , $init ) ;
     }
 }

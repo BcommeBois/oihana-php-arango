@@ -12,9 +12,12 @@ use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 
+use oihana\exceptions\ValidationException;
 use org\schema\constants\Prop;
 
 use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\helpers\alterExpression;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\greaterThan;
@@ -64,6 +67,7 @@ trait HasFacetSimpleConditions
      *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareSimpleConditions
     (
@@ -97,7 +101,7 @@ trait HasFacetSimpleConditions
 
         // `alt` wraps the compared field (left) and/or the bound value (right):
         // alt:{ key:.. , val:.. } or val:true mirror. Legacy string/list = key only.
-        [ $keyChain , $valChain ] = $this->resolveAltSides( $alt ) ;
+        [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
 
         $fields = $facet[ AQL::FIELDS ] ?? Prop::_KEY ;
         $fields = is_array( $fields ) ? $fields : explode( Char::COMMA , (string) $fields ) ;
@@ -113,12 +117,12 @@ trait HasFacetSimpleConditions
         {
             $negative = is_string( $item ) && strlen( $item ) > 1 && $item[ 0 ] === Char::HYPHEN ;
             $item     = $negative ? ltrim( $item , Char::HYPHEN ) : $item ;
-            $bind     = $this->alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
+            $bind     = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
 
             $group = [] ;
             foreach( $fields as $field )
             {
-                $group[] = predicate( $this->alterExpression( key( $field , $docRef ) , $keyChain ) , $comparator , $bind ) ;
+                $group[] = predicate( alterExpression( key( $field , $docRef ) , $keyChain ) , $comparator , $bind ) ;
             }
             $term = count( $group ) > 1 ? betweenParentheses( predicates( $group , Logic::OR ) ) : $group[ 0 ] ;
 

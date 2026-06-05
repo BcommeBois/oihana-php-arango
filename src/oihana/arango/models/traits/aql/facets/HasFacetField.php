@@ -14,7 +14,9 @@ use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
+use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\buildBetweenClauses;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\key;
 use function oihana\core\strings\predicate;
@@ -129,8 +131,8 @@ trait HasFacetField
 
         // `alt` wraps the compared field (left) and/or the bound value (right):
         // alt:{ key:.. , val:.. } or val:true mirror. Legacy string/list = key only.
-        [ $keyChain , $valChain ] = $this->resolveAltSides( $alt ) ;
-        $left = $this->alterExpression( key( $property , $doc ) , $keyChain ) ;
+        [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
+        $left = alterExpression( key( $property , $doc ) , $keyChain ) ;
 
         $conditions = [] ;
         $logic      = Logic::OR ;
@@ -149,7 +151,7 @@ trait HasFacetField
             }
 
             $comparator   = FilterComparator::getAlias( $operator , Comparator::MATCH ) ;
-            $right        = $this->alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
+            $right        = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
             $conditions[] = predicate( $left , $comparator , $right ) ;
         }
 
@@ -197,8 +199,8 @@ trait HasFacetField
      */
     private function prepareFacetFieldBetween( string $key , array $value , array &$binds , array $facet , string $doc , mixed $alt ) :string
     {
-        [ $keyChain ] = $this->resolveAltSides( $alt ) ;
-        $left = $this->alterExpression( key( $facet[ Facet::PROPERTY ] ?? $key , $doc ) , $keyChain ) ;
+        [ $keyChain ] = resolveAltSides( $alt ) ;
+        $left = alterExpression( key( $facet[ Facet::PROPERTY ] ?? $key , $doc ) , $keyChain ) ;
 
         $min = array_key_exists( FilterParam::MIN , $value ) ? $this->bind( $value[ FilterParam::MIN ] , $binds , $key . Char::UNDERLINE . FilterParam::MIN ) : null ;
         $max = array_key_exists( FilterParam::MAX , $value ) ? $this->bind( $value[ FilterParam::MAX ] , $binds , $key . Char::UNDERLINE . FilterParam::MAX ) : null ;

@@ -14,7 +14,9 @@ use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\assertAttributeName;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
@@ -79,14 +81,14 @@ trait HasFacetArrayComplex
     {
         // A facet-wide Facet::ALT wraps every sub-field (left) and bound value
         // (right) symmetrically; legacy string/list alt wraps the field only.
-        [ $keyChain , $valChain ] = $this->resolveAltSides( $facet[ Facet::ALT ] ?? null ) ;
+        [ $keyChain , $valChain ] = resolveAltSides( $facet[ Facet::ALT ] ?? null ) ;
 
         $filter = [] ;
         foreach( $value as $subKey => $s )
         {
             assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
             $search = preg_replace( '/\./' , Char::UNDERLINE , $key . Char::UNDERLINE . $subKey ) ;
-            $field  = $this->alterExpression( key( $subKey , AQL::DOC_PREFIX . $key ) , $keyChain ) ; // [alt] doc_$key.$subKey
+            $field  = alterExpression( key( $subKey , AQL::DOC_PREFIX . $key ) , $keyChain ) ; // [alt] doc_$key.$subKey
             if( is_array( $s ) && !empty( $s ) ) // test negative and multiple
             {
                 $i = 0 ;
@@ -111,7 +113,7 @@ trait HasFacetArrayComplex
                     (
                         $field ,
                         $negative ? Comparator::NOT_EQUAL : Comparator::EQUAL ,
-                        $this->alterExpression( $this->bind( $si , $binds , $subSearch ) , $valChain )
+                        alterExpression( $this->bind( $si , $binds , $subSearch ) , $valChain )
                     ) ;
                     $i++ ;
                 }
@@ -138,7 +140,7 @@ trait HasFacetArrayComplex
                 (
                     $field ,
                     $comparator ,
-                    $this->alterExpression( $this->bind( $s , $binds , $search ) , $valChain )
+                    alterExpression( $this->bind( $s , $binds , $search ) , $valChain )
                 ) ;
             }
         }

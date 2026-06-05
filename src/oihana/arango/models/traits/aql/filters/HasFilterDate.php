@@ -9,11 +9,14 @@ use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
+
 use function oihana\arango\db\functions\dates\dateISO8601;
 use function oihana\arango\db\functions\dates\dateLocalToUTC;
 use function oihana\arango\db\functions\dates\dateNow;
 use function oihana\arango\db\functions\dates\tomorrow;
 use function oihana\arango\db\functions\dates\yesterday;
+use function oihana\arango\db\helpers\alterExpression;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\core\date\isValidTimezone;
 use function oihana\core\strings\predicate;
 
@@ -141,9 +144,9 @@ trait HasFilterDate
         // Apply the value-side (right) `alt` chain when one is set (object form
         // alt:{ key:.. , val:.. } or val:true mirror); string/list `alt` only
         // touches the key side, so extractor forms leave the value untouched.
-        [ , $valChain ] = $this->resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+        [ , $valChain ] = resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
 
-        return $valChain === null ? $expr : $this->alterExpression( $expr , $valChain , $init ) ;
+        return $valChain === null ? $expr : alterExpression( $expr , $valChain , $init ) ;
     }
 
     /**

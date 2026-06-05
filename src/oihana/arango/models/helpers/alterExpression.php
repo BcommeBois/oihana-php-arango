@@ -14,9 +14,10 @@ use function oihana\core\arrays\isCallableWithParams;
  * Side-agnostic core shared by the key (left) and value (right) sides of a
  * comparison: it wraps `$expr` — whatever it is (a field reference `doc.name`, a
  * bind placeholder `@value`, or the loop variable `CURRENT`) — with the
- * function(s) described by `$chain`. Used by the {@see \oihana\arango\models\traits\aql\HasAltExpression}
- * trait (filters/facets) and by the inline-condition helpers
- * ({@see buildInlineFilterCondition()}), so there is a single implementation.
+ * function(s) described by `$chain`. Used directly by the filter and facet
+ * builders ({@see \oihana\arango\models\traits\aql\FilterTrait},
+ * {@see \oihana\arango\models\traits\aql\FacetTrait}) and by the inline-condition
+ * helpers ({@see buildInlineFilterCondition()}), so there is a single implementation.
  *
  * Supports multiple syntax formats for `$chain`:
  * 1. Single function: "lower"

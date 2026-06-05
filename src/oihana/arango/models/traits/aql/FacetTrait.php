@@ -27,8 +27,7 @@ use function oihana\core\strings\predicates;
  */
 trait FacetTrait
 {
-    use HasAltExpression      ,
-        HasFacetArrayComplex  ,
+    use HasFacetArrayComplex  ,
         HasFacetEdge          ,
         HasFacetEdgeAggregate ,
         HasFacetEdgeComplex   ,

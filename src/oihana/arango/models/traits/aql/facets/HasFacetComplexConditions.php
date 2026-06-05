@@ -8,7 +8,9 @@ use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
+use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\assertAttributeName;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\notEqual;
 use function oihana\core\strings\betweenParentheses;
@@ -59,14 +61,14 @@ trait HasFacetComplexConditions
     {
         // A facet-wide alt wraps every sub-field (left) and bound value (right);
         // legacy string/list alt only wraps the field. No per-sub-field alt yet.
-        [ $keyChain , $valChain ] = $this->resolveAltSides( $alt ) ;
+        [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
 
         $filters = [] ;
 
         foreach( $value as $subKey => $terms )
         {
             assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
-            $field = $this->alterExpression( key( $subKey , $docRef ) , $keyChain ) ;
+            $field = alterExpression( key( $subKey , $docRef ) , $keyChain ) ;
 
             if( is_array( $terms ) )
             {
@@ -76,7 +78,7 @@ trait HasFacetComplexConditions
                 {
                     $negative     = is_string( $term ) && $term !== Char::EMPTY && $term[ 0 ] === Char::HYPHEN ;
                     $term         = $negative ? ltrim( $term , Char::HYPHEN ) : $term ;
-                    $bind         = $this->alterExpression( $this->bind( $term , $binds , $key . Char::UNDERLINE . $subKey . $index ) , $valChain ) ;
+                    $bind         = alterExpression( $this->bind( $term , $binds , $key . Char::UNDERLINE . $subKey . $index ) , $valChain ) ;
                     $conditions[] = $negative ? notEqual( $field , $bind ) : equal( $field , $bind ) ;
                     if( $negative ) { $logic = Logic::AND ; }
                 }
@@ -86,7 +88,7 @@ trait HasFacetComplexConditions
             {
                 $negative  = is_string( $terms ) && $terms !== Char::EMPTY && $terms[ 0 ] === Char::HYPHEN ;
                 $terms     = $negative ? ltrim( $terms , Char::HYPHEN ) : $terms ;
-                $bind      = $this->alterExpression( $this->bind( $terms , $binds , $key . Char::UNDERLINE . $subKey ) , $valChain ) ;
+                $bind      = alterExpression( $this->bind( $terms , $binds , $key . Char::UNDERLINE . $subKey ) , $valChain ) ;
                 $filters[] = $negative ? notEqual( $field , $bind ) : equal( $field , $bind ) ;
             }
         }

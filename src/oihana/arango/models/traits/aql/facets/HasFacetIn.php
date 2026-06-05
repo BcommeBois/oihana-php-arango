@@ -13,8 +13,11 @@ use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 
+use oihana\exceptions\ValidationException;
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\toArray;
+use function oihana\arango\db\helpers\alterExpression;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\core\strings\betweenBrackets;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
@@ -52,6 +55,7 @@ trait HasFacetIn
      *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      *
      * @example
      * Set the facetable definition in the model (operator optional, defaults to
@@ -126,7 +130,7 @@ trait HasFacetIn
         // property (key side). Applying valChain to the items before they are
         // bracketed keeps the membership test and the SORT POSITION(...) clause
         // consistent.
-        [ $keyChain , $valChain ] = $this->resolveAltSides( $alt ) ;
+        [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
 
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
         $docProp  = key( $property , $doc ) ;
@@ -135,13 +139,13 @@ trait HasFacetIn
         // (LOWER(doc.tags) would be null; doc.tags[* RETURN LOWER(CURRENT)] is right).
         if( $keyChain !== null )
         {
-            $docProp .= '[* RETURN ' . $this->alterExpression( Clause::CURRENT , $keyChain ) . ']' ;
+            $docProp .= '[* RETURN ' . alterExpression( Clause::CURRENT , $keyChain ) . ']' ;
         }
 
         $items = [] ;
         foreach( $values as $index => $item )
         {
-            $items[] = $this->alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
+            $items[] = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
         }
         $array = betweenBrackets( compile( $items , Char::COMMA ) ) ;
 

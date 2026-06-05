@@ -14,8 +14,9 @@ use oihana\arango\models\enums\filters\FilterParam;
  *
  * The object form is told apart from a plain function chain by being an
  * associative array (a list is a function chain, an associative array is the
- * per-side object). Shared by the {@see \oihana\arango\models\traits\aql\HasAltExpression}
- * trait and the inline-condition helpers.
+ * per-side object). Shared by the filter and facet builders
+ * ({@see \oihana\arango\models\traits\aql\FilterTrait},
+ * {@see \oihana\arango\models\traits\aql\FacetTrait}) and the inline-condition helpers.
  *
  * @param mixed $alt The raw `alt` parameter.
  *
