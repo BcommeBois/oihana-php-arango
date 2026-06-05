@@ -364,15 +364,24 @@ class FieldsTraitTest extends TestCase
     }
 
     /**
-     * The explicit field-list branch always builds against AQL::DOC ('doc'),
-     * ignoring the supplied docRef. Frozen as the current behavior.
+     * The explicit field-list branch honors the supplied docRef, like the
+     * '*' and prepared-queryFields branches.
      */
-    public function testReturnFieldsExplicitListIgnoresCustomDocReference() :void
+    public function testReturnFieldsExplicitListHonorsCustomDocReference() :void
     {
         $this->assertSame
         (
-            'RETURN {name:doc.name}' ,
+            'RETURN {name:p.name}' ,
             $this->stub()->returnFields( [ Arango::FIELDS => 'name' , Arango::DOC_REF => 'p' ] ) ,
+        ) ;
+    }
+
+    public function testReturnFieldsExplicitListWithCustomDocReferenceMultipleFields() :void
+    {
+        $this->assertSame
+        (
+            'RETURN {name:p.name, age:p.age}' ,
+            $this->stub()->returnFields( [ Arango::FIELDS => 'name,age' , Arango::DOC_REF => 'p' ] ) ,
         ) ;
     }
 

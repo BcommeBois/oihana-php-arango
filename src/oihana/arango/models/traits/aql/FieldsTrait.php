@@ -352,7 +352,7 @@ trait FieldsTrait
 
                 $keys = array_map
                 (
-                    fn( string $key ) :string => keyValue( $key , key( $key, AQL::DOC ) )  ,
+                    fn( string $key ) :string => keyValue( $key , key( $key, $docRef ) )  ,
                     $fields
                 ) ;
                 $document = aqlDocument( compile( $keys , Char::COMMA . Char::SPACE ) ) ;
