@@ -20,7 +20,7 @@ class FilterPath
      */
     public function __construct
     (
-        string  $type                 ,
+        mixed   $type                 ,
         array   $path                 ,
         mixed   $typeConfig           ,
         ?string $relationRef   = null ,

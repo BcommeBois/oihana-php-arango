@@ -14,6 +14,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use ReflectionException;
+use RuntimeException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Filter;
@@ -617,5 +618,83 @@ class HasHierarchicalFilterTest extends TestCase
         $result = $model->prepareFilter( $init , $binds ) ;
 
         $this->assertStringContainsString( 'doc.profile.created' , $result ) ;
+    }
+
+    // ========================================
+    // CUSTOM CALLABLE LEAF (requires FilterPath mixed $type)
+    // ========================================
+
+    /**
+     * A closure declared as a nested leaf filter is resolved and invoked with
+     * ( $init , &$binds , $docRef ) — previously this crashed in FilterPath
+     * because its constructor typed $type as string.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testNestedCustomCallableLeafIsInvoked(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'customers' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'address' =>
+                [
+                    AQL::TYPE    => Filter::DOCUMENT ,
+                    AQL::FILTERS =>
+                    [
+                        'score' => fn( array $init , array &$binds , string $docRef ) : string
+                            => "LOWER($docRef.score) == 'hi'" ,
+                    ]
+                ]
+            ]
+        ]);
+
+        $init   = [ 'key' => 'address.score' , 'val' => 'hi' ] ;
+        $result = $model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertSame( "LOWER(doc.address.score) == 'hi'" , $result ) ;
+    }
+
+    /**
+     * An exception thrown by a custom leaf filter is caught and logged, and the
+     * whole hierarchical filter resolves to null (rather than bubbling up).
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testNestedLeafExceptionIsCaughtAndReturnsNull(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'customers' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'address' =>
+                [
+                    AQL::TYPE    => Filter::DOCUMENT ,
+                    AQL::FILTERS =>
+                    [
+                        'boom' => function( array $init , array &$binds , string $docRef ) : string
+                        {
+                            throw new RuntimeException( 'boom' ) ;
+                        } ,
+                    ]
+                ]
+            ]
+        ]);
+
+        $init = [ 'key' => 'address.boom' , 'val' => 'x' ] ;
+
+        $this->assertNull( $model->prepareFilter( $init , $this->binds ) ) ;
     }
 }
