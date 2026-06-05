@@ -4,7 +4,6 @@ namespace oihana\arango\models\traits\aql;
 
 use DI\DependencyException;
 use DI\NotFoundException;
-use oihana\exceptions\ValidationException;
 use ReflectionException;
 
 use Psr\Container\ContainerExceptionInterface;
@@ -28,6 +27,7 @@ use oihana\arango\models\traits\aql\filters\HasHierarchicalFilter;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 
 use function oihana\arango\db\helpers\alterExpression;
