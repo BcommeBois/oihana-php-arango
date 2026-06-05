@@ -78,9 +78,12 @@ Les valeurs de `op` sont définies par l'enum `FilterComparator`.
 | `lt` | Inférieur à | `doc.x < @val` |
 | `le` | Inférieur ou égal | `doc.x <= @val` |
 | `like` | Correspondance avec *wildcards* (`%`, `_`) | `LIKE(doc.x, @val, false)` |
+| `sw` | Commence par (préfixe **littéral**, sans wildcard) | `STARTS_WITH(doc.x, @val)` |
 | `in` | Dans la liste fournie | `doc.x IN @val` |
 | `nin` | Pas dans la liste | `doc.x NOT IN @val` |
 | `between` | Plage inclusive (clés `min`/`max` au lieu de `val`) | `(doc.x >= @min && doc.x <= @max)` |
+
+> `sw` est une **forme fonction** (`STARTS_WITH(clé, valeur)`), pas un comparateur infixe : le préfixe est comparé **littéralement** (les `%`/`_` ne sont pas des jokers, contrairement à `like`), donc rien à échapper. Insensible à la casse via le miroir `alt` : `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))`.
 
 Exemples :
 
@@ -88,6 +91,7 @@ Exemples :
 ?filter={"key":"status","val":"closed","op":"ne"}
 ?filter={"key":"price","val":100,"op":"gt"}
 ?filter={"key":"name","val":"%john%","op":"like"}
+?filter={"key":"name","val":"eka","op":"sw"}            // STARTS_WITH(doc.name, "eka")
 ?filter={"key":"role","val":["admin","owner"],"op":"in"}
 ```
 

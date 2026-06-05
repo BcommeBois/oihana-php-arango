@@ -362,4 +362,41 @@ class HasFilterStringTest extends TestCase
         $this->assertStringContainsString( 'doc.name' , $result ) ;
         $this->assertContains( 'Müller' , $this->binds ) ;
     }
+
+    // ========================================
+    // STARTS WITH (`sw`) — STARTS_WITH(key, value)
+    // ========================================
+
+    public function testStringFilterStartsWith(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'ekam' , 'op' => 'sw' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^STARTS_WITH\(doc\.name,\s*@\S+\)$/' , $result ) ;
+        $this->assertContains( 'ekam' , $this->binds ) ;
+    }
+
+    public function testStringFilterStartsWithCaseInsensitiveMirror(): void
+    {
+        // The alt {key:lower, val:true} mirror wraps both sides → case-insensitive.
+        $init = [ 'key' => 'name' , 'val' => 'EKAM' , 'op' => 'sw' , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^STARTS_WITH\(LOWER\(doc\.name\),\s*LOWER\(@\S+\)\)$/' , $result ) ;
+        $this->assertContains( 'EKAM' , $this->binds ) ;
+    }
+
+    public function testStringFilterStartsWithBindsValueLiterally(): void
+    {
+        // STARTS_WITH matches the prefix literally: wildcard chars are NOT special,
+        // the value is bound as-is (no LIKE-style escaping).
+        $init = [ 'key' => 'name' , 'val' => '50%_off' , 'op' => 'sw' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertStringStartsWith( 'STARTS_WITH(doc.name,' , $result ) ;
+        $this->assertContains( '50%_off' , $this->binds ) ;
+    }
 }

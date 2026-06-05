@@ -22,6 +22,7 @@ class FilterComparator
     public const string NIN     = 'nin'     ; // not in
     public const string NLIKE   = 'nlike'   ; // not like
     public const string NMATCH  = 'nmatch'  ; // not like
+    public const string SW      = 'sw'      ; // starts with — STARTS_WITH(key, value) (function form, not in __ALIAS__)
 
     protected const array __ALIAS__ =
     [

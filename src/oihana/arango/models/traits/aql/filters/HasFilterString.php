@@ -8,6 +8,7 @@ use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
+use function oihana\arango\db\functions\strings\startsWith;
 use function oihana\core\strings\predicate;
 
 /**
@@ -44,7 +45,7 @@ use function oihana\core\strings\predicate;
  * ?filter={ "key":"name" , "val":"eka%"           , "op":"like"  } // like
  * ?filter={ "key":"name" , "val":"eka%"           , "op":"nlike" } // not like
  * ?filter={ "key":"name" , "val":"leon"           , "op":"ew"    } // TODO ends with
- * ?filter={ "key":"name" , "val":"ekam"           , "op":"sw"    } // TODO starts with
+ * ?filter={ "key":"name" , "val":"ekam"           , "op":"sw"    } // starts with -> STARTS_WITH(doc.name, "ekam")
  * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"in"    } // in TODO
  * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"nin"   } // not in TODO
  * ```
@@ -72,9 +73,23 @@ trait HasFilterString
      */
     protected function prepareFilterString( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
     {
-        if ( ( $init[ FilterParam::OP ] ?? null ) === FilterComparator::BETWEEN )
+        $op = $init[ FilterParam::OP ] ?? null ;
+
+        if ( $op === FilterComparator::BETWEEN )
         {
             return $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ;
+        }
+
+        // `sw` (starts with) is a function-form operator, not an infix comparator:
+        // STARTS_WITH(key, value). The prefix is matched literally (no wildcards),
+        // so the value is bound as-is; alt stays available on both sides.
+        if ( $op === FilterComparator::SW )
+        {
+            return startsWith
+            (
+                $this->prepareFilterKey( $init , $doc ) ,
+                $this->prepareFilterValue( $init , $binds )
+            ) ;
         }
 
         return predicate
