@@ -11,6 +11,7 @@ class FilterComparator
 
     public const string BETWEEN = 'between' ; // range: key >= min && key <= max (no single AQL alias)
     public const string EQ      = 'eq'      ; // equals (default)
+    public const string EW      = 'ew'      ; // ends with — RIGHT(key, CHAR_LENGTH(value)) == value (special form, not in __ALIAS__)
     public const string GE      = 'ge'      ; // greater than or equals
     public const string GT      = 'gt'      ; // greater than
     public const string IN      = 'in'      ; // in

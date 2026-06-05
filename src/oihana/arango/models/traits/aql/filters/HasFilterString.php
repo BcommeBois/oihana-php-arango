@@ -3,12 +3,17 @@
 namespace oihana\arango\models\traits\aql\filters;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Comparator;
+use oihana\arango\db\enums\functions\StringFunction;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
+
+use function oihana\arango\db\functions\strings\charLength;
 use function oihana\arango\db\functions\strings\startsWith;
+use function oihana\core\strings\func;
 use function oihana\core\strings\predicate;
 
 /**
@@ -44,7 +49,7 @@ use function oihana\core\strings\predicate;
  * ?filter={ "key":"name" , "val":"ekameleon"      , "op":"le"    } // less than or equals
  * ?filter={ "key":"name" , "val":"eka%"           , "op":"like"  } // like
  * ?filter={ "key":"name" , "val":"eka%"           , "op":"nlike" } // not like
- * ?filter={ "key":"name" , "val":"leon"           , "op":"ew"    } // TODO ends with
+ * ?filter={ "key":"name" , "val":"leon"           , "op":"ew"    } // ends with   -> RIGHT(doc.name, CHAR_LENGTH("leon")) == "leon"
  * ?filter={ "key":"name" , "val":"ekam"           , "op":"sw"    } // starts with -> STARTS_WITH(doc.name, "ekam")
  * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"in"    } // in TODO
  * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"nin"   } // not in TODO
@@ -61,6 +66,43 @@ use function oihana\core\strings\predicate;
 trait HasFilterString
 {
     /**
+     * Builds an `ew` (ends with) string filter.
+     *
+     * AQL has no `ENDS_WITH` function, so the suffix is matched literally with
+     * `RIGHT(key, CHAR_LENGTH(value)) == value` — no `LIKE` pattern, nothing to
+     * escape, symmetric to the literal `sw` / `STARTS_WITH` form. The value is
+     * bound once and reused; `alt` stays available on both sides (e.g. the
+     * `{key:lower, val:true}` mirror yields `RIGHT(LOWER(doc.x), …) == LOWER(@v)`,
+     * a case-insensitive ends-with).
+     *
+     * ```aql
+     * RIGHT(doc.name, CHAR_LENGTH(@value)) == @value
+     * ```
+     *
+     * @param array $init The filter init (`op` = `ew`).
+     * @param array|null $binds The bind variables, populated by reference.
+     * @param string $doc The document reference.
+     *
+     * @return string
+     *
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    protected function prepareFilterEndsWith( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
+    {
+        $key   = $this->prepareFilterKey( $init , $doc ) ;
+        $value = $this->prepareFilterValue( $init , $binds ) ;
+
+        return predicate
+        (
+            func( StringFunction::RIGHT , [ $key , charLength( $value ) ] ) ,
+            Comparator::EQUAL ,
+            $value
+        ) ;
+    }
+
+    /**
      * Prepares the filter clause with a string attribute.
      *
      * @param array $init
@@ -73,30 +115,17 @@ trait HasFilterString
      */
     protected function prepareFilterString( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
     {
-        $op = $init[ FilterParam::OP ] ?? null ;
-
-        if ( $op === FilterComparator::BETWEEN )
+        return match ( $init[ FilterParam::OP ] ?? null )
         {
-            return $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ;
-        }
-
-        // `sw` (starts with) is a function-form operator, not an infix comparator:
-        // STARTS_WITH(key, value). The prefix is matched literally (no wildcards),
-        // so the value is bound as-is; alt stays available on both sides.
-        if ( $op === FilterComparator::SW )
-        {
-            return startsWith
+            FilterComparator::BETWEEN => $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ,
+            FilterComparator::SW      => startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) ,
+            FilterComparator::EW      => $this->prepareFilterEndsWith( $init , $binds , $doc ) ,
+            default                   => predicate
             (
                 $this->prepareFilterKey( $init , $doc ) ,
+                $this->prepareFilterComparator( $init ) ,
                 $this->prepareFilterValue( $init , $binds )
-            ) ;
-        }
-
-        return predicate
-        (
-            $this->prepareFilterKey( $init , $doc ) ,
-            $this->prepareFilterComparator( $init ) ,
-            $this->prepareFilterValue( $init , $binds )
-        ) ;
+            ) ,
+        } ;
     }
 }

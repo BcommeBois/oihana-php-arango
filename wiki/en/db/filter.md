@@ -79,11 +79,12 @@ The `op` values are defined by the `FilterComparator` enum.
 | `le` | Less than or equal | `doc.x <= @val` |
 | `like` | *Wildcard* match (`%`, `_`) | `LIKE(doc.x, @val, false)` |
 | `sw` | Starts with (**literal** prefix, no wildcards) | `STARTS_WITH(doc.x, @val)` |
+| `ew` | Ends with (**literal** suffix, no wildcards) | `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val` |
 | `in` | In the supplied list | `doc.x IN @val` |
 | `nin` | Not in the list | `doc.x NOT IN @val` |
 | `between` | Inclusive range (`min`/`max` keys instead of `val`) | `(doc.x >= @min && doc.x <= @max)` |
 
-> `sw` is a **function form** (`STARTS_WITH(key, value)`), not an infix comparator: the prefix is matched **literally** (`%`/`_` are not wildcards, unlike `like`), so nothing needs escaping. Case-insensitive via the `alt` mirror: `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))`.
+> `sw` and `ew` are **function forms** (not infix comparators) and match **literally**: `%`/`_` are not wildcards (unlike `like`), so nothing needs escaping. AQL has no native `ENDS_WITH`, so `ew` is written `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`. Both are case-insensitive via the `alt` mirror: `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))` (likewise for `ew`).
 
 Examples:
 
@@ -92,6 +93,7 @@ Examples:
 ?filter={"key":"price","val":100,"op":"gt"}
 ?filter={"key":"name","val":"%john%","op":"like"}
 ?filter={"key":"name","val":"eka","op":"sw"}            // STARTS_WITH(doc.name, "eka")
+?filter={"key":"name","val":"leon","op":"ew"}           // RIGHT(doc.name, CHAR_LENGTH("leon")) == "leon"
 ?filter={"key":"role","val":["admin","owner"],"op":"in"}
 ```
 

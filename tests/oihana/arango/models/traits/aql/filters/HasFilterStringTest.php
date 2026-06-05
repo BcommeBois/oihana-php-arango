@@ -399,4 +399,49 @@ class HasFilterStringTest extends TestCase
         $this->assertStringStartsWith( 'STARTS_WITH(doc.name,' , $result ) ;
         $this->assertContains( '50%_off' , $this->binds ) ;
     }
+
+    // ========================================
+    // ENDS WITH (`ew`) — RIGHT(key, CHAR_LENGTH(value)) == value
+    // ========================================
+
+    public function testStringFilterEndsWith(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'leon' , 'op' => 'ew' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        // RIGHT(doc.name, CHAR_LENGTH(@v)) == @v — the same bind is reused twice.
+        $this->assertMatchesRegularExpression
+        (
+            '/^RIGHT\(doc\.name,\s*CHAR_LENGTH\((@\S+)\)\)\s*==\s*\1$/' ,
+            $result
+        ) ;
+        $this->assertContains( 'leon' , $this->binds ) ;
+    }
+
+    public function testStringFilterEndsWithCaseInsensitiveMirror(): void
+    {
+        // The alt {key:lower, val:true} mirror wraps both sides → case-insensitive.
+        $init = [ 'key' => 'name' , 'val' => 'LEON' , 'op' => 'ew' , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression
+        (
+            '/^RIGHT\(LOWER\(doc\.name\),\s*CHAR_LENGTH\(LOWER\((@\S+)\)\)\)\s*==\s*LOWER\(\1\)$/' ,
+            $result
+        ) ;
+        $this->assertContains( 'LEON' , $this->binds ) ;
+    }
+
+    public function testStringFilterEndsWithBindsValueLiterally(): void
+    {
+        // Literal match (no LIKE pattern): wildcard chars are bound as-is.
+        $init = [ 'key' => 'name' , 'val' => '%_x' , 'op' => 'ew' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertStringStartsWith( 'RIGHT(doc.name,' , $result ) ;
+        $this->assertContains( '%_x' , $this->binds ) ;
+    }
 }
