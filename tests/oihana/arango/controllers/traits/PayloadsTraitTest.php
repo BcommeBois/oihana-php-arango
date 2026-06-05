@@ -29,6 +29,18 @@ class PayloadsTraitSub
         $this->path      = 'places';
         $this->fullPath  = '/places';
     }
+
+    /** A custom payload type resolved by method name (see extractCustomPayloadValue). */
+    public function myCustom( Request $request , string $name , array $options , mixed $default ) : string
+    {
+        return 'custom:' . $name ;
+    }
+
+    /** A method-based alter (see alterPayload). */
+    public function upperize( mixed $value ) : mixed
+    {
+        return is_string( $value ) ? strtoupper( $value ) : $value ;
+    }
 }
 
 #[CoversTrait(PayloadsTrait::class)]
@@ -408,6 +420,161 @@ class PayloadsTraitTest extends TestCase
         , $doc );
 
         $this->assertSame( [] , $relations ) ;
+    }
+
+    public function testPropertyPayloadLeavesUnknownTypeValueUntouched(): void
+    {
+        $subject = new PayloadsTraitSub();
+        $request = $this->stubRequest(['raw' => 'as-is']);
+
+        $subject->payload = [ Arango::TYPE => 'someUnknownType' ];
+
+        // unknown type → the match default arm returns the value unchanged
+        $this->assertSame(['raw' => 'as-is'], $subject->propertyPayload($request, 'raw'));
+    }
+
+    public function testPropertyPayloadReturnsWholeBodyWhenPayloadIsEmpty(): void
+    {
+        $subject = new PayloadsTraitSub();
+        $request = $this->stubRequest(['k' => 'v']);
+
+        $subject->payload = []; // empty → isSimplePayload() returns false
+
+        $result = $subject->propertyPayload($request, 'data');
+
+        $this->assertSame(['data' => ['k' => 'v']], $result);
+    }
+
+    // -------------------- generatePayload : edge / custom / alter / nested auto-name --------------------
+
+    /**
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    public function testGeneratePayloadCoversEdgeCustomAlterAndNestedAutoNaming(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $request = $this->stubRequest
+        ([
+            'name' => 'Joe',
+            'cat'  => 'categories/1',
+            'up'   => 'hi',
+            'fn'   => 'abc',
+            'cb'   => 'x',
+            'pt'   => 'raw',
+            'addr' => [ 'postalCode' => '49000' ],
+        ]);
+
+        $defs =
+        [
+            'name' => AQLType::STRING ,                                                  // string AQLType option
+            'bad'  => 123 ,                                                              // non-array → skipped
+            'cat'  => [ Arango::TYPE => AQLType::EDGE , 'collection' => 'categories' ] , // edge → relations
+            'cust' => [ Arango::TYPE => 'myCustom' ] ,                                   // custom type (method)
+            'unk'  => [ Arango::TYPE => 'doesNotExist' ] ,                               // custom type (unknown) → null + warning
+            'up'   => [ Arango::TYPE => AQLType::STRING , Arango::ALTER => 'upperize'  ] , // alter: method
+            'fn'   => [ Arango::TYPE => AQLType::STRING , Arango::ALTER => 'strtoupper' ] , // alter: function
+            'cb'   => [ Arango::TYPE => AQLType::STRING , Arango::ALTER => fn( $v ) => $v . '!' ] , // alter: callable
+            'pt'   => [ Arango::TYPE => AQLType::STRING , Arango::ALTER => 123 ] ,        // alter: non-callable → passthrough
+            'addr' =>
+            [
+                Arango::TYPE    => AQLType::PAYLOAD ,
+                Arango::PAYLOAD =>
+                [
+                    'postalCode' => [ Arango::TYPE => AQLType::STRING ] , // no NAME → auto-prefixed
+                    'weird'      => 123 ,                                 // non-array child → skipped by the prefixer
+                ],
+            ],
+        ];
+
+        $relations = [];
+        $doc = $subject->generatePayload( $request , $defs , [] , $relations ) ;
+
+        $this->assertSame( 'Joe'         , $doc['name'] ) ;
+        $this->assertArrayNotHasKey( 'bad' , $doc ) ;
+        $this->assertSame( 'categories/1', $doc['cat'] ) ;
+        $this->assertSame( 'custom:cust' , $doc['cust'] ) ;
+        $this->assertNull( $doc['unk'] ) ;
+        $this->assertSame( 'HI'          , $doc['up'] ) ;
+        $this->assertSame( 'ABC'         , $doc['fn'] ) ;
+        $this->assertSame( 'x!'          , $doc['cb'] ) ;
+        $this->assertSame( 'raw'         , $doc['pt'] ) ;
+        $this->assertSame( [ 'postalCode' => '49000' ] , $doc['addr'] ) ;
+
+        // edge registered in relations
+        $this->assertSame( 'categories/1' , $relations['cat'][ Arango::VALUE ] ) ;
+        $this->assertSame( 'categories'   , $relations['cat']['collection'] ) ;
+    }
+
+    // -------------------- validateI18nShape / enforceI18nShape --------------------
+
+    /**
+     * @throws NotFoundException
+     */
+    public function testValidateI18nShapeReturnsEmptyForNullRequestOrNonArrayDefs(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $this->assertSame( [] , $subject->validateI18nShape( null ) ) ;
+
+        // non-array payload definitions
+        $subject->payload = AQLType::STRING ;
+        $this->assertSame( [] , $subject->validateI18nShape( $this->stubRequest([ 'x' => 'y' ]) ) ) ;
+
+        // array definitions but empty after merge
+        $subject->payload = [ HttpMethod::ALL => [] ] ;
+        $this->assertSame( [] , $subject->validateI18nShape( $this->stubRequest([ 'x' => 'y' ]) ) ) ;
+    }
+
+    /**
+     * @throws NotFoundException
+     */
+    public function testValidateI18nShapeFlagsFlatStringAndSkipsValidOrUnrelatedFields(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $request = $this->stubRequest
+        ([
+            'flat'  => 'oops' ,                              // i18n but flat string → error
+            'good'  => [ 'fr' => 'Bonjour' , 'en' => 'Hi' ], // i18n, valid array → no error
+            'title' => 'whatever' ,                          // not i18n → skipped
+        ]);
+
+        $defs =
+        [
+            Arango::PAYLOAD =>
+            [
+                HttpMethod::ALL =>
+                [
+                    'flat'  => [ Arango::TYPE => AQLType::I18N ] ,
+                    'good'  => [ Arango::TYPE => AQLType::I18N ] ,
+                    'title' => AQLType::STRING ,    // string AQLType option (normalized, then skipped)
+                    'skip'  => 123 ,                // non-array option → skipped
+                ],
+            ],
+        ];
+
+        $errors = $subject->validateI18nShape( $request , HttpMethod::POST , $defs ) ;
+
+        $this->assertArrayHasKey( 'flat' , $errors ) ;
+        $this->assertStringContainsString( 'per-language object' , $errors['flat'] ) ;
+        $this->assertArrayNotHasKey( 'good' , $errors ) ;
+        $this->assertArrayNotHasKey( 'title' , $errors ) ;
+    }
+
+    /**
+     * @throws NotFoundException
+     */
+    public function testEnforceI18nShapeReturnsNullWhenBodyIsWellFormed(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $request = $this->stubRequest([ 'desc' => [ 'fr' => 'Bonjour' , 'en' => 'Hi' ] ]);
+
+        $init = [ Arango::PAYLOAD => [ HttpMethod::ALL => [ 'desc' => [ Arango::TYPE => AQLType::I18N ] ] ] ] ;
+
+        $this->assertNull( $subject->enforceI18nShape( $request , null , HttpMethod::POST , $init ) ) ;
     }
 
     // -------------------- helpers --------------------
