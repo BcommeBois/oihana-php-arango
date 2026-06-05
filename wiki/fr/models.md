@@ -50,26 +50,26 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 
 ### Catalogue complet des clés `AQL::*`
 
-| Clé | Type | Rôle |
-|---|---|---|
-| `AQL::COLLECTION` | `string` | Nom de la collection ArangoDB cible. |
-| `AQL::DATABASE` | `string` | Identifiant DI du service [`ArangoDB`](db/quickstart.md). |
-| `AQL::SCHEMA` | `class-string` | Classe schéma pour l'hydratation (`Thing` ou hydratable). |
-| `AQL::FIELDS` | `array` | Champs exposés et leur [`Filter::*`](enums.md#types) (cf. [Field](getting-started/glossary.md#field)). |
-| `AQL::FILTERS` | `array` | Champs filtrables depuis l'URL et leur `FilterType::*` (cf. [filter.md](db/filter.md)). |
-| `AQL::SEARCHABLE` | `array` | Champs sur lesquels `?search=` opère. |
-| `AQL::SORTABLE` | `array` | Mapping clé URL → champ AQL pour `?sort=`. |
-| `AQL::SORT_DEFAULT` | `string` | Tri par défaut au format grammaire ([`sortKeys`](helpers.md)). |
-| `AQL::EDGES` | `array` | Définitions d'*edges* (cf. [edges-joins-projection.md](edges-joins-projection.md)). |
-| `AQL::JOINS` | `array` | Définitions de *joins* (même page). |
-| `AQL::RESOLVE` | `array` | *Edges* internes non exposés (utilisés pour la cascade). |
-| `AQL::REQUIRES` | `string\|array` | Permission requise pour exposer un *edge*/*join*. |
-| `AQL::FACETS` | `array` | Définitions de facettes (`?facet=`). |
-| `AQL::FILLABLE` | `array` | Champs assignables en masse à l'insertion/mise à jour. |
-| `AQL::ALTERS` | `array` | Transformations post-requête sur les documents renvoyés. |
-| `AQL::INDEXES` | `array` | Index à créer à la première instanciation (lazy). |
-| `AQL::CONDITIONS` | `array` | Conditions AQL injectées côté serveur (cf. [filter-internal.md](db/filter-internal.md)). |
-| `AQL::BINDS` | `array` | *Bind variables* injectées côté serveur. |
+| Clé                 | Type            | Rôle                                                                                                   |
+|---------------------|-----------------|--------------------------------------------------------------------------------------------------------|
+| `AQL::COLLECTION`   | `string`        | Nom de la collection ArangoDB cible.                                                                   |
+| `AQL::DATABASE`     | `string`        | Identifiant DI du service [`ArangoDB`](db/quickstart.md).                                              |
+| `AQL::SCHEMA`       | `class-string`  | Classe schéma pour l'hydratation (`Thing` ou hydratable).                                              |
+| `AQL::FIELDS`       | `array`         | Champs exposés et leur [`Filter::*`](enums.md#types) (cf. [Field](getting-started/glossary.md#field)). |
+| `AQL::FILTERS`      | `array`         | Champs filtrables depuis l'URL et leur `FilterType::*` (cf. [filter.md](db/filter.md)).                |
+| `AQL::SEARCHABLE`   | `array`         | Champs sur lesquels `?search=` opère.                                                                  |
+| `AQL::SORTABLE`     | `array`         | Mapping clé URL → champ AQL pour `?sort=`.                                                             |
+| `AQL::SORT_DEFAULT` | `string`        | Tri par défaut au format grammaire ([`sortKeys`](helpers.md)).                                         |
+| `AQL::EDGES`        | `array`         | Définitions d'*edges* (cf. [edges-joins-projection.md](edges-joins-projection.md)).                    |
+| `AQL::JOINS`        | `array`         | Définitions de *joins* (même page).                                                                    |
+| `AQL::RESOLVE`      | `array`         | *Edges* internes non exposés (utilisés pour la cascade).                                               |
+| `AQL::REQUIRES`     | `string\|array` | Permission requise pour exposer un *edge*/*join*.                                                      |
+| `AQL::FACETS`       | `array`         | Définitions de facettes (`?facet=`).                                                                   |
+| `AQL::FILLABLE`     | `array`         | Champs assignables en masse à l'insertion/mise à jour.                                                 |
+| `AQL::ALTERS`       | `array`         | Transformations post-requête sur les documents renvoyés.                                               |
+| `AQL::INDEXES`      | `array`         | Index à créer à la première instanciation (lazy).                                                      |
+| `AQL::CONDITIONS`   | `array`         | Conditions AQL injectées côté serveur (cf. [filter-internal.md](db/filter-internal.md)).               |
+| `AQL::BINDS`        | `array`         | *Bind variables* injectées côté serveur.                                                               |
 
 ### Méthodes principales
 
@@ -183,18 +183,18 @@ Génèrent le texte AQL d'une opération de lecture. Indépendants du modèle ha
 
 Le grand bloc fonctionnel : chaque trait apporte une capacité (filtrage, tri, recherche, projection, *binds*, ...).
 
-| Trait | Apport |
-|---|---|
-| `FieldsTrait` | Construction du `RETURN { ... }` en routant chaque champ vers son [*field builder*](db/helpers.md#field-builders--sous-dossier-fields). |
-| `FilterTrait` | Conversion de `?filter=` JSON en `FILTER ...` AQL avec *binds*. |
-| `SortTrait` | Conversion de `?sort=` grammaire textuelle en `SORT ...`. |
-| `SearchTrait` | Conversion de `?search=` en filtre `LIKE` ou `STARTS_WITH` selon le champ. |
-| `LimitTrait` | Pagination `LIMIT offset, count`. |
-| `BindTrait` | Accumulation centralisée des *bind variables*. |
-| `FacetTrait` | Génération des facettes (agrégations sur champs). |
-| `PrepareDocumentTrait` | Validation et normalisation du document avant insertion/mise à jour. |
-| `PositionTrait` | Gestion des champs de position (réordonnancement). |
-| `ActiveTrait` | Helper pour filtrer sur le champ `active`. |
+| Trait                  | Apport                                                                                                                                  |
+|------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| `FieldsTrait`          | Construction du `RETURN { ... }` en routant chaque champ vers son [*field builder*](db/helpers.md#field-builders--sous-dossier-fields). |
+| `FilterTrait`          | Conversion de `?filter=` JSON en `FILTER ...` AQL avec *binds*.                                                                         |
+| `SortTrait`            | Conversion de `?sort=` grammaire textuelle en `SORT ...`.                                                                               |
+| `SearchTrait`          | Conversion de `?search=` en filtre `LIKE` ou `STARTS_WITH` selon le champ.                                                              |
+| `LimitTrait`           | Pagination `LIMIT offset, count`.                                                                                                       |
+| `BindTrait`            | Accumulation centralisée des *bind variables*.                                                                                          |
+| `FacetTrait`           | Génération des facettes (agrégations sur champs).                                                                                       |
+| `PrepareDocumentTrait` | Validation et normalisation du document avant insertion/mise à jour.                                                                    |
+| `PositionTrait`        | Gestion des champs de position (réordonnancement).                                                                                      |
+| `ActiveTrait`          | Helper pour filtrer sur le champ `active`.                                                                                              |
 
 **Sous-traits `aql/filters/`** (8 traits) : routent les filtres par type — `HasFilterString`, `HasFilterNumber`, `HasFilterDate`, `HasFilterBoolean`, `HasFilterArray`, `HasFilterDocumentation`, `HasFilterConditions`, `HasHierarchicalFilter`.
 
