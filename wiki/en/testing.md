@@ -1,6 +1,61 @@
-# Live smoke test commands
+# Testing
 
 ![Language](https://img.shields.io/badge/language-English-blue)
+
+The project has **two complementary layers of tests**:
+
+| Layer | Tool | ArangoDB server? | Role |
+|---|---|---|---|
+| **Unit tests** | PHPUnit | No (mocked transport) | Validate pure logic: AQL builders, filters, facets, helpers, models through a simulated transport. Fast, run on every commit. |
+| **Live smoke tests** | Symfony Console (`arango:test:*`) | Yes (ephemeral database) | Validate the whole stack end-to-end against a real `arangod`. |
+
+The contributor workflow is summarised in [CONTRIBUTING.md](../../CONTRIBUTING.md); this page is the detailed reference.
+
+## Unit tests (PHPUnit)
+
+The suite lives in [`tests/`](../../tests) and runs with:
+
+```shell
+composer test                                       # = ./vendor/bin/phpunit
+./vendor/bin/phpunit --filter FilterFunctionTest    # a single case
+```
+
+Configuration: [phpunit.xml](../../phpunit.xml). Key points:
+
+- **Coverage scope**: `./src` only (the `<source>` element).
+- **Strict mode**: `failOnWarning`, `failOnRisky`, `failOnSkipped`, `beStrictAboutOutputDuringTests`… A "risky" test (no assertion, produces output, etc.) **fails** the suite on purpose — a test that checks nothing protects nothing.
+- **`integration` group excluded** by default: tests that need a real server are tagged `@group integration` and do not run with `composer test`.
+
+### What we test, and how
+
+| Tier | Target | Technique |
+|---|---|---|
+| 1 | Pure AQL builders (`models/traits/aql/**`, `db/**`, `models/enums/**`) | Input → expected AQL string. No mocks. |
+| 2 | Models / edges / controllers | **Mocked** HTTP transport: inject a fake client, then assert the produced request and the response decoding. |
+| 3 | Commands & actions | Stubbed DI dependencies. |
+
+> **Characterization testing.** When covering existing code, we write tests that describe what the code **actually does**, branch by branch (`if` / `else` / `match`). That precision work regularly surfaces real bugs (mishandled edge case, unfiltered value…). **Golden rule**: if a surprising behaviour could be relied upon downstream by another library, we **freeze it in a test** and flag it — we never change a public API without explicit validation.
+
+## Code coverage
+
+PHPUnit measures which lines of `./src` the suite executes. You must **enable Xdebug's coverage mode** (or PCOV); otherwise PHPUnit prints `No tests executed!` and a `XDEBUG_MODE=coverage … has to be set` warning. The `composer` scripts below set the environment variable for you:
+
+```shell
+composer coverage       # suite + coverage: text in the terminal, Clover + HTML under build/coverage/
+composer coverage:md    # regenerate build/coverage/COVERAGE.md (Markdown summary, red zones first)
+```
+
+Output goes to `build/coverage/` — **gitignored, never committed**: a numbers snapshot goes stale at the next commit and pollutes diffs. Regenerate on demand. The Clover → Markdown converter lives in [`tools/clover-to-markdown.php`](../../tools/clover-to-markdown.php).
+
+### Reading the report
+
+- **Lines** = the reference metric (% of executed lines).
+- An empty bar = code **never tested** → an undetected potential bug.
+- ⚠️ **100% ≠ zero bugs.** A line "walked through" without a solid assertion is *covered* but not really *verified*. So we aim for tests that **assert a precise result**, not ones that merely pass through the code.
+
+Status as of 2026-06-05: **~61% of lines** (≈ 5200 / 8480), 2177 green tests. Largest open gaps: `auth/traits/**` (0%), `controllers/**` (0%), `commands/actions` (~1%).
+
+## Live smoke tests (real ArangoDB)
 
 Two Symfony Console commands validate the ArangoDB stack end-to-end against a real server, **without ever touching production data**.
 

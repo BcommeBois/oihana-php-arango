@@ -1,6 +1,61 @@
-# Commandes de smoke tests live
+# Tests
 
 ![Langue](https://img.shields.io/badge/langue-Français-blue)
+
+Le projet a **deux couches de tests**, complémentaires :
+
+| Couche | Outil | Serveur ArangoDB ? | Rôle |
+|---|---|---|---|
+| **Tests unitaires** | PHPUnit | Non (transport *mocké*) | Valident la logique pure : builders AQL, filtres, facettes, helpers, modèles via un transport simulé. Rapides, lancés à chaque commit. |
+| **Smoke tests live** | Symfony Console (`arango:test:*`) | Oui (base éphémère) | Valident la stack de bout en bout contre un vrai `arangod`. |
+
+Le workflow contributeur synthétique est résumé dans [CONTRIBUTING.md](../../CONTRIBUTING.md) ; cette page est la référence détaillée.
+
+## Tests unitaires (PHPUnit)
+
+La suite vit dans [`tests/`](../../tests) et se lance avec :
+
+```shell
+composer test                                       # = ./vendor/bin/phpunit
+./vendor/bin/phpunit --filter FilterFunctionTest    # un seul cas
+```
+
+Configuration : [phpunit.xml](../../phpunit.xml). Points clés :
+
+- **Périmètre de couverture** : `./src` uniquement (balise `<source>`).
+- **Mode strict** : `failOnWarning`, `failOnRisky`, `failOnSkipped`, `beStrictAboutOutputDuringTests`… Un test « risqué » (sans assertion, qui produit de la sortie, etc.) fait **échouer** la suite. C'est voulu : un test qui ne vérifie rien ne protège de rien.
+- **Groupe `integration` exclu** par défaut : les tests qui exigent un vrai serveur sont marqués `@group integration` et ne tournent pas avec `composer test`.
+
+### Ce qu'on teste, et comment
+
+| Tier | Cible | Technique |
+|---|---|---|
+| 1 | Builders AQL purs (`models/traits/aql/**`, `db/**`, `models/enums/**`) | Entrée → chaîne AQL attendue. Aucun mock. |
+| 2 | Modèles / edges / contrôleurs | Transport HTTP **mocké** : on injecte un faux client, puis on vérifie la requête produite et le décodage de la réponse. |
+| 3 | Commandes & actions | Dépendances DI *stubées*. |
+
+> **Tests de caractérisation.** Quand on couvre du code existant, on écrit des tests qui décrivent ce que le code **fait réellement**, branche par branche (`if` / `else` / `match`). Ce travail de précision révèle régulièrement de vrais bugs (cas limite mal géré, valeur non filtrée…). **Règle d'or** : si un comportement surprenant pourrait être utilisé en aval par une autre lib, on le **gèle dans un test** et on le signale — on ne change pas une API publique sans validation explicite.
+
+## Couverture de code
+
+PHPUnit mesure quelles lignes de `./src` sont exécutées par la suite. Il faut **activer le mode coverage de Xdebug** (ou PCOV) ; sinon PHPUnit affiche `No tests executed!` et un warning `XDEBUG_MODE=coverage … has to be set`. Les scripts `composer` ci-dessous positionnent la variable d'environnement pour toi :
+
+```shell
+composer coverage       # suite + couverture : texte au terminal, Clover + HTML sous build/coverage/
+composer coverage:md    # régénère build/coverage/COVERAGE.md (résumé Markdown, zones rouges en tête)
+```
+
+Les sorties vont dans `build/coverage/` — **gitignoré, jamais commité** : un snapshot de chiffres se périme au commit suivant et pollue les diffs. On régénère à la demande. L'outil de conversion Clover → Markdown vit dans [`tools/clover-to-markdown.php`](../../tools/clover-to-markdown.php).
+
+### Lire le rapport
+
+- **Lignes** = la métrique de référence (% de lignes exécutées).
+- Une barre vide = code **jamais testé** → bug potentiel non détecté.
+- ⚠️ **100 % ≠ zéro bug.** Une ligne « traversée » sans assertion solide est *couverte* mais pas vraiment *vérifiée*. On vise donc des tests qui **affirment un résultat précis**, pas qui passent simplement à travers le code.
+
+État au 2026-06-05 : **~61 % de lignes** (≈ 5200 / 8480), 2177 tests verts. Plus gros chantiers ouverts : `auth/traits/**` (0 %), `controllers/**` (0 %), `commands/actions` (~1 %).
+
+## Smoke tests live (ArangoDB réel)
 
 Deux commandes Symfony Console permettent de valider la stack ArangoDB de bout en bout, contre un serveur réel, **sans jamais toucher à la base de production**.
 

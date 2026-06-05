@@ -36,6 +36,8 @@
     "scripts" : {
         "doc"             : "rm -rf docs && mkdir docs && cp -r assets docs/assets && ./vendor/bin/phpdoc -c phpdoc.xml -v" ,
         "test"            : "./vendor/bin/phpunit" ,
+        "coverage"        : "XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-text --coverage-clover build/coverage/clover.xml --coverage-html build/coverage/html" ,
+        "coverage:md"     : [ "@coverage" , "php tools/clover-to-markdown.php build/coverage/clover.xml build/coverage/COVERAGE.md" ] ,
         "test:clients"    : "php bin/console.php command:arango:test:clients" ,
         "test:facade"     : "php bin/console.php command:arango:test:facade" ,
         "arango"          : "php bin/console.php command:arangodb" ,
@@ -46,6 +48,8 @@
     "scripts-descriptions" : {
         "doc"             : "Generate the phpDocumentor API documentation under docs/." ,
         "test"            : "Run the PHPUnit test suite." ,
+        "coverage"        : "Run the suite with code coverage (text + Clover + HTML under build/coverage/). Requires Xdebug or PCOV." ,
+        "coverage:md"     : "Regenerate build/coverage/COVERAGE.md, a readable Markdown coverage summary (gitignored, never committed)." ,
         "test:clients"    : "Run the live end-to-end smoke test for the clients/ HTTP library against a real arangod." ,
         "test:facade"     : "Run the live end-to-end smoke test for the high-level ArangoDB façade against a real arangod." ,
         "arango"          : "Proxy to bin/console.php command:arangodb (pass action + flags after `--`)." ,
