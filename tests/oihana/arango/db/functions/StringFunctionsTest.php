@@ -11,6 +11,7 @@ use function oihana\arango\db\functions\strings\charLength;
 use function oihana\arango\db\functions\strings\concat;
 use function oihana\arango\db\functions\strings\concatSeparator;
 use function oihana\arango\db\functions\strings\contains;
+use function oihana\arango\db\functions\strings\like;
 use function oihana\arango\db\helpers\aqlValue;
 use function oihana\core\strings\betweenDoubleQuotes;
 
@@ -57,6 +58,16 @@ class StringFunctionsTest extends TestCase
     {
         $this->assertSame('CHAR_LENGTH(doc.name)' , charLength('doc.name'));
         $this->assertSame('CHAR_LENGTH("name")'   , charLength( betweenDoubleQuotes('name') ));
+    }
+
+    public function testLike() :void
+    {
+        // Default: case-sensitive — the AQL third `caseInsensitive` argument is omitted.
+        $this->assertSame( 'LIKE(doc.name,"John%")' , like( 'doc.name' , '"John%"' ) );
+
+        // caseInsensitive: true → emits AQL's third argument `true`.
+        $this->assertSame( 'LIKE(doc.name,"john%",true)' , like( 'doc.name' , '"john%"' , true ) );
+        $this->assertSame( 'LIKE(doc.name,"john%",true)' , like( 'doc.name' , '"john%"' , caseInsensitive: true ) );
     }
 
     /**

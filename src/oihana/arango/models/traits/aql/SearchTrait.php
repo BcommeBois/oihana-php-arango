@@ -92,7 +92,7 @@ trait SearchTrait
                     ) ;
                     foreach( $searchable as $field )
                     {
-                        $likes[] = like( key( $field , $docRef ) , $word , caseSensitive: true ) ;
+                        $likes[] = like( key( $field , $docRef ) , $word , caseInsensitive: true ) ;
                     }
                 }
                 return betweenParentheses

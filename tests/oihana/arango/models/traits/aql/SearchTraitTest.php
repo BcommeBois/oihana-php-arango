@@ -26,7 +26,7 @@ class SearchTraitStub
 /**
  * Characterization coverage for {@see SearchTrait}: initializeSearchable and
  * prepareSearch (the `?search=Marc,Marco` grammar turned into a parenthesised
- * OR of case-sensitive LIKE() predicates over every searchable field).
+ * OR of case-insensitive LIKE() predicates over every searchable field).
  */
 class SearchTraitTest extends TestCase
 {

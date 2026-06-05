@@ -27,13 +27,15 @@ use function oihana\core\strings\func;
  * ```php
  * use function oihana\arango\db\functions\strings\like;
  *
- * $expr = like('doc.name', '"John%"', false);
- * // Produces: 'LIKE(doc.name, "John%")'
+ * echo like('doc.name', '"John%"');        // LIKE(doc.name,"John%")        case-sensitive
+ * echo like('doc.name', '"john%"', true);  // LIKE(doc.name,"john%",true)   case-insensitive
  * ```
  *
- * @param string $text The text to search in.
- * @param string $search The search pattern with wildcards (_ and %).
- * @param bool $caseSensitive When true, matching is case-insensitive (default: false).
+ * @param string $text          The text to search in.
+ * @param string $search        The search pattern with wildcards (_ and %).
+ * @param bool   $caseInsensitive When true, matching is case-insensitive (maps to AQL's
+ *                                third `caseInsensitive` argument). Default false = case-sensitive.
+ *
  * @return string The formatted AQL expression.
  *
  * @see https://docs.arangodb.com/stable/aql/functions/string/#like
@@ -43,8 +45,8 @@ use function oihana\core\strings\func;
  * @since 1.0.0
  * @author Marc Alcaraz
  */
-function like( string $text , string $search , bool $caseSensitive = false ): string
+function like( string $text , string $search , bool $caseInsensitive = false ): string
 {
-    return func(StringFunction::LIKE , [ $text , $search , $caseSensitive ? Boolean::TRUE : Char::EMPTY ] ) ;
+    return func(StringFunction::LIKE , [ $text , $search , $caseInsensitive ? Boolean::TRUE : Char::EMPTY ] ) ;
 }
 

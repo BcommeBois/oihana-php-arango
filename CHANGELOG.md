@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- AQL `like()` helper: its third parameter was named `$caseSensitive` but maps to ArangoDB's `LIKE(text, search, caseInsensitive)` third argument, so it did the opposite of its name (`true` produced a case-INSENSITIVE match). Renamed to `$caseInsensitive` (default `false` = case-sensitive, matching AQL). The emitted AQL is unchanged for every call path — `?search` stays case-insensitive and the `like` filter-function alter keeps its output — only the (now honest) parameter name and the docs change. Added the previously missing direct unit test, and fixed the stale `SearchTraitTest` comment that described the predicates as "case-sensitive".
 - `command:arangodb` document `upsert` now honors the `removeKeys` exclusion list: it was passed under the `excludes` key, which the upsert query never reads, so the exclusion silently had no effect.
 - `ArangoCommand` registered the wrong signals for event dispatch: it passed `(int) [SIGINT, …]` (which casts to `1`) to the variadic `setSignalsToDispatchEvent()`. The intended signal list is now passed.
 - Removed the unused `ignoreCollection` arangodump option (`ArangoDumpOptions::$ignoreCollection` / `ArangoDumpOption::IGNORE_COLLECTION`): no such flag exists in `arangodump`, and exclusion is resolved client-side as a `--collection` complement. The `--ignore-collection` CLI flag is unchanged.
