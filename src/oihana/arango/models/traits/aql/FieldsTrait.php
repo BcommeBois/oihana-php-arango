@@ -336,6 +336,8 @@ trait FieldsTrait
             }
             else
             {
+                $invalidType = get_debug_type( $fields ) ;
+
                 $fields = match( true )
                 {
                     is_string ( $fields ) => array_map('trim' , explode(Char::COMMA, $fields ) ) ,
@@ -345,7 +347,7 @@ trait FieldsTrait
 
                 if( $fields === null )
                 {
-                    throw new InvalidArgumentException(sprintf('Expected $fields to be string, array or "*", got %s', get_debug_type($fields))) ;
+                    throw new InvalidArgumentException(sprintf('Expected $fields to be string, array or "*", got %s', $invalidType)) ;
                 }
 
                 // echo 'returnFields ::: ' . json_encode( $fields , JSON_UNESCAPED_UNICODE ) . PHP_EOL ;

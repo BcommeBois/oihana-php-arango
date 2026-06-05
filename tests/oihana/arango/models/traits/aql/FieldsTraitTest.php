@@ -415,6 +415,7 @@ class FieldsTraitTest extends TestCase
     public function testReturnFieldsThrowsOnInvalidFieldsType() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
+        $this->expectExceptionMessage( 'got int' ) ;
         $this->stub()->returnFields( [ Arango::FIELDS => 123 ] ) ;
     }
 }
