@@ -53,6 +53,8 @@ use function oihana\core\strings\predicate;
  * ?filter={ "key":"name" , "val":"ekam"           , "op":"sw"    } // starts with -> STARTS_WITH(doc.name, "ekam")
  * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"in"    } // in          -> doc.name IN @value
  * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"nin"   } // not in      -> doc.name NOT IN @value
+ * ?filter={ "key":"name" , "val":"mele"           , "op":"contains" } // contains -> CONTAINS(doc.name, "mele")
+ * ?filter={ "key":"name" , "val":"^eka.*on$"      , "op":"regex" }    // regex    -> REGEX_TEST(doc.name, "^eka.*on$")
  * ```
  *
  * Use functions to transform the document property before the conditional evaluation.
@@ -117,10 +119,12 @@ trait HasFilterString
     {
         return match ( $init[ FilterParam::OP ] ?? null )
         {
-            FilterComparator::BETWEEN => $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ,
-            FilterComparator::SW      => startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) ,
-            FilterComparator::EW      => $this->prepareFilterEndsWith( $init , $binds , $doc ) ,
-            default                   => predicate
+            FilterComparator::BETWEEN  => $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ,
+            FilterComparator::SW       => startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) ,
+            FilterComparator::EW       => $this->prepareFilterEndsWith( $init , $binds , $doc ) ,
+            FilterComparator::CONTAINS => func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
+            FilterComparator::REGEX    => func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
+            default                    => predicate
             (
                 $this->prepareFilterKey( $init , $doc ) ,
                 $this->prepareFilterComparator( $init ) ,

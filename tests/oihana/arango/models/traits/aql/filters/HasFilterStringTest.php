@@ -444,4 +444,43 @@ class HasFilterStringTest extends TestCase
         $this->assertStringStartsWith( 'RIGHT(doc.name,' , $result ) ;
         $this->assertContains( '%_x' , $this->binds ) ;
     }
+
+    // ========================================
+    // CONTAINS (`contains`) — CONTAINS(key, value)
+    // ========================================
+
+    public function testStringFilterContains(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'mele' , 'op' => 'contains' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^CONTAINS\(doc\.name,\s*@\S+\)$/' , $result ) ;
+        $this->assertContains( 'mele' , $this->binds ) ;
+    }
+
+    public function testStringFilterContainsCaseInsensitiveMirror(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'MELE' , 'op' => 'contains' , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^CONTAINS\(LOWER\(doc\.name\),\s*LOWER\(@\S+\)\)$/' , $result ) ;
+        $this->assertContains( 'MELE' , $this->binds ) ;
+    }
+
+    // ========================================
+    // REGEX (`regex`) — REGEX_TEST(key, value)
+    // ========================================
+
+    public function testStringFilterRegex(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => '^eka.*on$' , 'op' => 'regex' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^REGEX_TEST\(doc\.name,\s*@\S+\)$/' , $result ) ;
+        // The pattern is bound (no AQL injection); it reaches AQL untouched.
+        $this->assertContains( '^eka.*on$' , $this->binds ) ;
+    }
 }
