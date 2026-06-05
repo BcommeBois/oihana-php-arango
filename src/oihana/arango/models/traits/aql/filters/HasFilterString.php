@@ -7,6 +7,7 @@ use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use function oihana\core\strings\predicate;
 
 /**
@@ -60,9 +61,14 @@ trait HasFilterString
 {
     /**
      * Prepares the filter clause with a string attribute.
-     * 
+     *
+     * @param array $init
+     * @param array|null $binds
+     * @param string $doc
+     * @return string
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareFilterString( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
     {
