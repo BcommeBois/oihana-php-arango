@@ -194,14 +194,19 @@ class FieldsTraitTest extends TestCase
     }
 
     /**
-     * NOTE: the docblock claims a comma-separated `$in` string is supported, but
-     * toArray('a,b') wraps to ['a,b'] (it does NOT split), so a CSV string matches
-     * no key and the whole projection collapses to null. Frozen here as the real
-     * behavior — flagged to the maintainer, prod code left untouched.
+     * A comma-separated `$in` string is split (and trimmed) into individual keys,
+     * keeping each matching field — as the docblock promises.
      */
-    public function testInCommaSeparatedStringMatchesNothingAndReturnsNull() :void
+    public function testInCommaSeparatedStringSelectsEachKey() :void
     {
-        $this->assertNull( $this->stub()->prepareQueryFields( $this->inFields() , null , null , 'a,b' ) ) ;
+        $out = $this->stub()->prepareQueryFields( $this->inFields() , null , null , 'a,b' ) ;
+        $this->assertSame( [ 'a' , 'b' ] , array_keys( $out ) ) ;
+    }
+
+    public function testInCommaSeparatedStringTrimsSurroundingSpaces() :void
+    {
+        $out = $this->stub()->prepareQueryFields( $this->inFields() , null , null , ' a , c ' ) ;
+        $this->assertSame( [ 'a' , 'c' ] , array_keys( $out ) ) ;
     }
 
     public function testInEmptyStringReturnsNull() :void

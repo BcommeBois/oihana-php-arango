@@ -82,7 +82,7 @@ use function oihana\core\strings\randomKey;
  * - `$in`:
  *      If null → all fields are included.
  *      If array → only keys present in the array are included.
- *      If string → treated as a single key or comma-separated list (toArray() converts it).
+ *      If string → treated as a single key, or a comma-separated list of keys (split and trimmed).
  *      If empty string or empty array → no fields are returned (`prepareQueryFields()` returns null).
  * - Normalization:
  *      Each field is converted to an array with keys:
@@ -218,7 +218,8 @@ trait FieldsTrait
 
         if( $in !== null )
         {
-            $fields = array_intersect_key( $fields , array_flip( toArray( $in ) ) ) ;
+            $keys   = is_string( $in ) ? array_map( 'trim' , explode( Char::COMMA , $in ) ) : toArray( $in ) ;
+            $fields = array_intersect_key( $fields , array_flip( $keys ) ) ;
         }
 
         if ( empty( $fields ) )
