@@ -6,6 +6,7 @@ use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 use function oihana\arango\db\functions\arrays\append;
+use function oihana\arango\db\functions\arrays\arrayContains;
 use function oihana\arango\db\functions\arrays\arrayFilter;
 use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\functions\arrays\count;
@@ -48,6 +49,35 @@ class ArrayFunctionsTest extends TestCase
         (
             'doc.contactPoint[* FILTER CURRENT.email != null]' ,
             arrayFilter( 'doc.contactPoint' , 'CURRENT.email != null' )
+        );
+    }
+
+    public function testArrayContainsDefaultQuantifier(): void
+    {
+        // No quantifier → "at least one" existential, returns a boolean.
+        $this->assertSame
+        (
+            'doc.contactPoint[? FILTER CURRENT.email != null]' ,
+            arrayContains( 'doc.contactPoint' , 'CURRENT.email != null' )
+        );
+    }
+
+    public function testArrayContainsWithQuantifiers(): void
+    {
+        $this->assertSame
+        (
+            'doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]' ,
+            arrayContains( 'doc.reviews' , 'CURRENT.rating >= @v' , 'AT LEAST (3)' )
+        );
+        $this->assertSame
+        (
+            'doc.flags[? NONE FILTER CURRENT == true]' ,
+            arrayContains( 'doc.flags' , 'CURRENT == true' , 'NONE' )
+        );
+        $this->assertSame
+        (
+            'doc.tags[? ALL FILTER CURRENT == @v]' ,
+            arrayContains( 'doc.tags' , 'CURRENT == @v' , 'ALL' )
         );
     }
 
