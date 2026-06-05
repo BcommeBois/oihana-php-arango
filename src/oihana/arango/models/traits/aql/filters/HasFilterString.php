@@ -51,8 +51,8 @@ use function oihana\core\strings\predicate;
  * ?filter={ "key":"name" , "val":"eka%"           , "op":"nlike" } // not like
  * ?filter={ "key":"name" , "val":"leon"           , "op":"ew"    } // ends with   -> RIGHT(doc.name, CHAR_LENGTH("leon")) == "leon"
  * ?filter={ "key":"name" , "val":"ekam"           , "op":"sw"    } // starts with -> STARTS_WITH(doc.name, "ekam")
- * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"in"    } // in TODO
- * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"nin"   } // not in TODO
+ * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"in"    } // in          -> doc.name IN @value
+ * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"nin"   } // not in      -> doc.name NOT IN @value
  * ```
  *
  * Use functions to transform the document property before the conditional evaluation.
