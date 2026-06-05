@@ -7,7 +7,12 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterParam;
 
+use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
+
 use PHPUnit\Framework\TestCase;
+
+use ReflectionException;
 
 /**
  * Unit coverage for the {@see \oihana\arango\models\traits\aql\FacetTrait::prepareFacets()}
@@ -45,7 +50,7 @@ final class FacetDispatchCoverageTest extends TestCase
      *
      * @return array<string,array{0:array,1:mixed}>
      */
-    public static function facetTypeProvider() :array
+    private function facetTypes() :array
     {
         return
         [
@@ -64,36 +69,56 @@ final class FacetDispatchCoverageTest extends TestCase
         ] ;
     }
 
-    /**
-     * @dataProvider facetTypeProvider
-     */
-    public function testPrepareFacetsRoutesEveryType( array $facet , mixed $value ) :void
+    public function testPrepareFacetsRoutesEveryType() :void
     {
-        $result = $this->dispatch( $facet , $value ) ;
-        $this->assertNotNull( $result ) ;
-        $this->assertNotSame( '' , $result ) ;
+        foreach ( $this->facetTypes() as $type => [ $facet , $value ] )
+        {
+            $result = $this->dispatch( $facet , $value ) ;
+            $this->assertNotNull( $result , "$type produced null" ) ;
+            $this->assertNotSame( '' , $result , "$type produced empty" ) ;
+        }
     }
 
     // ---------------------------------------------------------------- empty guards
 
+    /**
+     * @return void
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     */
     public function testFieldObjectWithoutValReturnsEmpty() :void
     {
         $binds = [] ;
         $this->assertSame( '' , $this->stub()->callField( 'k' , [ FilterParam::OP => 'eq' ] , $binds , [] , AQL::DOC ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     */
     public function testFieldEmptyValuesReturnsEmpty() :void
     {
         $binds = [] ;
         $this->assertSame( '' , $this->stub()->callField( 'k' , [] , $binds , [] , AQL::DOC ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws BindException
+     * @throws ReflectionException
+     */
     public function testSimpleConditionsObjectWithoutValReturnsEmpty() :void
     {
         $binds = [] ;
         $this->assertSame( '' , $this->stub()->callEdge( 'k' , [ FilterParam::OP => 'eq' ] , $binds , [ AQL::EDGE => 'e' ] , AQL::DOC ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws BindException
+     * @throws ReflectionException
+     */
     public function testSimpleConditionsEmptyClausesReturnsEmpty() :void
     {
         $binds = [] ;
