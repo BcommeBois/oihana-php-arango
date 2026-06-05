@@ -484,9 +484,31 @@ Convention : `AQL::FILTERS` est un sous-ensemble de `AQL::FIELDS` — on ne filt
 {"key":"scores","val":100,"op":"gt","alt":"sum"}
 ```
 
-**Quantificateur `AT LEAST (n)`** — garde un document quand **au moins `n` éléments** de son tableau satisfont la comparaison. C'est l'entre-deux entre `ANY` (au moins **1**) et `ALL` (**tous**) : tu choisis le nombre exact. L'opérateur prend la **forme tableau `["atLeast.<cmp>", n]`** (élément 0 = code, élément 1 = seuil, défaut 1). Le suffixe `<cmp>` réutilise le vocabulaire des opérateurs (`eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `nin`).
+### Quantificateurs sur tableaux — clé `quant`
 
-#### Exemple complet — des produits avec leurs notes clients (1 à 5 étoiles)
+Sur un champ tableau, deux axes **orthogonaux** se combinent :
+
+| Axe | Question | Où | Valeurs |
+|---|---|---|---|
+| **Comparaison** | comment comparer un élément ? | `op` (+ `val`) ou `match` | `eq`, `ge`, `in`… |
+| **Quantificateur** | combien d'éléments doivent matcher ? | `quant` | `any` *(défaut)*, `all`, `none`, `n` (≥ n) |
+
+Le comparateur reste dans `op` ; `quant` dit **combien d'éléments** du tableau doivent le satisfaire. La même clé `quant` couvre les **deux familles** de tableaux :
+
+- **tableaux de scalaires** (nombres, chaînes) → opérateur AQL de **comparaison de tableau** (`doc.scores ALL >= @v`) ;
+- **tableaux d'objets** (`reviews[*].rating`, `contactPoint[*]` + `match`) → opérateur AQL **« question-mark »** (`doc.reviews[? ALL FILTER CURRENT.rating >= @v]`).
+
+| `quant` | Sens | Scalaire (AQL) | Objet (AQL) |
+|---|---|---|---|
+| `"any"` *(défaut)* | au moins **1** | `… ANY <cmp> @v` | `…[? ANY FILTER …]` |
+| `"all"` | **tous** | `… ALL <cmp> @v` | `…[? ALL FILTER …]` |
+| `"none"` | **aucun** | `… NONE <cmp> @v` | `…[? NONE FILTER …]` |
+| `n` *(entier)* | **au moins n** | `… AT LEAST (n) <cmp> @v` | `…[? AT LEAST (n) FILTER …]` |
+
+> **Scalaires vs objets — deux opérateurs AQL, un seul vocabulaire.**
+> Sur un tableau de **scalaires**, `quant` produit l'opérateur de **comparaison de tableau** (`doc.scores AT LEAST (2) >= @v`). Sur un tableau d'**objets**, il produit l'opérateur **« question-mark »** (`doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]`), qui exige un `FILTER`/`CURRENT`. Tu écris le même `quant` ; le framework choisit la bonne forme selon la clé.
+
+#### Exemple complet — des produits avec leurs notes clients (tableau scalaire)
 
 ```jsonc
 // collection "products"
@@ -498,7 +520,7 @@ Convention : `AQL::FILTERS` est un sous-ensemble de `AQL::FIELDS` — on ne filt
 Besoin : « les produits qui ont **au moins 3 notes de 4 étoiles ou plus** ».
 
 ```jsonc
-?filter={"key":"ratings","op":["atLeast.ge",3],"val":4}
+?filter={"key":"ratings","op":"ge","val":4,"quant":3}
 // FILTER doc.ratings AT LEAST (3) >= @value   (@value = 4)
 ```
 
@@ -510,25 +532,48 @@ Besoin : « les produits qui ont **au moins 3 notes de 4 étoiles ou plus** ».
 
 → Résultat : **uniquement A**.
 
-Le même filtre avec les autres quantificateurs montre l'intérêt d'`AT LEAST` :
+Le même filtre avec les autres quantificateurs montre l'intérêt du quantificateur numérique :
 
-| Opérateur | Sens | AQL | Résultat |
+| `quant` | Sens | AQL | Résultat |
 |---|---|---|---|
-| `any.ge` | au moins **1** note ≥ 4 | `doc.ratings ANY >= 4` | A, B, C |
-| `all.ge` | **toutes** les notes ≥ 4 | `doc.ratings ALL >= 4` | C |
-| `["atLeast.ge",3]` | **au moins 3** notes ≥ 4 | `doc.ratings AT LEAST (3) >= 4` | **A** |
+| `"any"` | au moins **1** note ≥ 4 | `doc.ratings ANY >= 4` | A, B, C |
+| `"all"` | **toutes** les notes ≥ 4 | `doc.ratings ALL >= 4` | C |
+| `3` | **au moins 3** notes ≥ 4 | `doc.ratings AT LEAST (3) >= 4` | **A** |
 
-`ANY` est trop large, `ALL` trop strict : `AT LEAST (n)` exprime exactement « assez d'éléments qualifiants ».
-
-Autres exemples :
+`ANY` est trop large, `ALL` trop strict : `n` (au moins n) exprime exactement « assez d'éléments qualifiants ».
 
 ```jsonc
-// au moins 3 éléments dans la liste fournie
-{"key":"scores","op":["atLeast.in",3],"val":[1,2,3]}
+// au moins 3 valeurs parmi celles fournies
+{"key":"scores","op":"in","val":[1,2,3],"quant":3}
 // FILTER doc.scores AT LEAST (3) IN @value
 ```
 
-Le seuil est converti en entier (anti-injection) ; le champ reste compatible `alt`.
+#### Tableaux d'objets — `quant` + opérateur « question-mark »
+
+Quand chaque élément est un **objet**, la condition porte sur un sous-champ (`reviews[*].rating`) ou sur un `match` multi-sous-champs (`contactPoint[*]`). `quant` enveloppe alors l'opérateur question-mark — ce que `ALL`/`NONE`/`AT LEAST` rendent enfin possible (impossible avec le seul `LENGTH(...) > 0`) :
+
+```jsonc
+// au moins 3 reviews notées ≥ 4
+{"key":"reviews[*].rating","op":"ge","val":4,"quant":3}
+// doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]
+
+// tous les contacts vérifiés
+{"key":"contactPoint[*]","match":{"verified":true},"quant":"all"}
+// doc.contactPoint[? ALL FILTER CURRENT.verified == @v]
+
+// aucune variante en rupture de stock
+{"key":"variants[*]","match":{"stock":0},"quant":"none"}
+// doc.variants[? NONE FILTER CURRENT.stock == @v]
+```
+
+> Sans `quant`, un tableau d'objets garde son comportement historique **existentiel** — `LENGTH(doc.reviews[* FILTER CURRENT.rating >= @v]) > 0` (au moins un). Ajouter `quant` ne casse rien (rétro-compatible). `quant` ne s'applique qu'aux tableaux d'objets de **1er niveau** ; sur un tableau imbriqué (`employee[*].contactPoint[*]`) il est **ignoré** (le niveau de liaison serait ambigu) et le comportement existentiel est conservé.
+
+#### Compatibilité & notations
+
+- **Forme recommandée** : `quant` (uniforme scalaire + objet).
+- **Alias historiques** (toujours valides) sur les tableaux scalaires : `op:"all.ge"` / `"any.ge"` / `"none.ge"` et `op:["atLeast.ge", n]` (forme tableau, élément 0 = code, élément 1 = seuil).
+- `quant` **absent** = comportement legacy inchangé (défaut `==` / existentiel `LENGTH(...) > 0`).
+- `n` est converti en **entier** (anti-injection) ; un `quant` inconnu **rejette** le filtre (`ValidationException`). Le champ reste compatible `alt`.
 
 ### Combinaisons hash
 

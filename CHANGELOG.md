@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Array filter quantifiers unified under the `quant` key (`?filter=`) — answers the element axis « how many elements must match » independently of the comparator (which stays in `op`/`match`). Values: `any` (default) / `all` / `none` / an integer `n` (= at least `n`). One vocabulary drives both array surfaces: scalar arrays via the AQL array comparison operator (`doc.scores ALL >= @v`, `doc.scores AT LEAST (2) >= @v`) and object arrays via the AQL question-mark operator (`doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]`, also with `match`), the latter making `ALL`/`NONE`/`AT LEAST` expressible where only the existential `LENGTH(...) > 0` was possible before. New `FilterParam::QUANT`, `FilterQuantifier` enum, and free helper `resolveQuantifier()` (threshold cast to int, injection-safe; unknown quantifier → `ValidationException`). Backward compatible: omitting `quant` keeps the legacy AQL unchanged, and the legacy scalar notations `op:"all.ge"` / `op:["atLeast.ge", n]` remain valid aliases. `quant` applies to first-level object arrays only (nested `a[*].b[*]` keeps the existential behaviour). Documented in `wiki/{fr,en}/db/filter.md`.
+
 - Continuous integration (GitHub Actions): composer validation + the PHPUnit suite on PHP 8.4, on every push to `main` and pull request. The suite is server-free (Guzzle `MockHandler`), so no ArangoDB service is required.
 
 - Initial scaffold: Composer manifest, PHPUnit 12 + phpDocumentor 3 configuration, MPL-2.0 license, README, CHANGELOG, sibling-aligned folder layout (`src/`, `tests/`, `wiki/`, `assets/`, `bin/`, `configs/`, `definitions/`).

@@ -484,9 +484,31 @@ Convention: `AQL::FILTERS` is a subset of `AQL::FIELDS` — only fields actually
 {"key":"scores","val":100,"op":"gt","alt":"sum"}
 ```
 
-**`AT LEAST (n)` quantifier** — keeps a document when **at least `n` elements** of its array satisfy the comparison. It is the middle ground between `ANY` (at least **1**) and `ALL` (**all**): you pick the exact count. The operator takes the **array form `["atLeast.<cmp>", n]`** (element 0 is the code, element 1 the threshold, defaulting to 1). The `<cmp>` suffix reuses the operator vocabulary (`eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `nin`).
+### Array quantifiers — the `quant` key
 
-#### Complete example — products with their customer ratings (1 to 5 stars)
+On an array field, two **orthogonal** axes combine:
+
+| Axis | Question | Where | Values |
+|---|---|---|---|
+| **Comparison** | how to compare one element? | `op` (+ `val`) or `match` | `eq`, `ge`, `in`… |
+| **Quantifier** | how many elements must match? | `quant` | `any` *(default)*, `all`, `none`, `n` (≥ n) |
+
+The comparator stays in `op`; `quant` says **how many elements** of the array must satisfy it. The same `quant` key covers **both families** of arrays:
+
+- **scalar arrays** (numbers, strings) → AQL **array comparison** operator (`doc.scores ALL >= @v`);
+- **object arrays** (`reviews[*].rating`, `contactPoint[*]` + `match`) → AQL **question-mark** operator (`doc.reviews[? ALL FILTER CURRENT.rating >= @v]`).
+
+| `quant` | Meaning | Scalar (AQL) | Object (AQL) |
+|---|---|---|---|
+| `"any"` *(default)* | at least **1** | `… ANY <cmp> @v` | `…[? ANY FILTER …]` |
+| `"all"` | **all** | `… ALL <cmp> @v` | `…[? ALL FILTER …]` |
+| `"none"` | **none** | `… NONE <cmp> @v` | `…[? NONE FILTER …]` |
+| `n` *(integer)* | **at least n** | `… AT LEAST (n) <cmp> @v` | `…[? AT LEAST (n) FILTER …]` |
+
+> **Scalars vs objects — two AQL operators, one vocabulary.**
+> On a **scalar** array, `quant` produces the **array comparison** operator (`doc.scores AT LEAST (2) >= @v`). On an **object** array, it produces the **question-mark** operator (`doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]`), which requires a `FILTER`/`CURRENT`. You write the same `quant`; the framework picks the right form from the key.
+
+#### Complete example — products with their customer ratings (scalar array)
 
 ```jsonc
 // "products" collection
@@ -498,7 +520,7 @@ Convention: `AQL::FILTERS` is a subset of `AQL::FIELDS` — only fields actually
 Need: "products that have **at least 3 ratings of 4 stars or more**".
 
 ```jsonc
-?filter={"key":"ratings","op":["atLeast.ge",3],"val":4}
+?filter={"key":"ratings","op":"ge","val":4,"quant":3}
 // FILTER doc.ratings AT LEAST (3) >= @value   (@value = 4)
 ```
 
@@ -510,25 +532,48 @@ Need: "products that have **at least 3 ratings of 4 stars or more**".
 
 → Result: **only A**.
 
-The same filter with the other quantifiers shows why `AT LEAST` is useful:
+The same filter with the other quantifiers shows why the numeric quantifier is useful:
 
-| Operator | Meaning | AQL | Result |
+| `quant` | Meaning | AQL | Result |
 |---|---|---|---|
-| `any.ge` | at least **1** rating ≥ 4 | `doc.ratings ANY >= 4` | A, B, C |
-| `all.ge` | **all** ratings ≥ 4 | `doc.ratings ALL >= 4` | C |
-| `["atLeast.ge",3]` | **at least 3** ratings ≥ 4 | `doc.ratings AT LEAST (3) >= 4` | **A** |
+| `"any"` | at least **1** rating ≥ 4 | `doc.ratings ANY >= 4` | A, B, C |
+| `"all"` | **all** ratings ≥ 4 | `doc.ratings ALL >= 4` | C |
+| `3` | **at least 3** ratings ≥ 4 | `doc.ratings AT LEAST (3) >= 4` | **A** |
 
-`ANY` is too broad, `ALL` too strict: `AT LEAST (n)` expresses exactly "enough qualifying elements".
-
-Other examples:
+`ANY` is too broad, `ALL` too strict: `n` (at least n) expresses exactly "enough qualifying elements".
 
 ```jsonc
-// at least 3 elements in the supplied list
-{"key":"scores","op":["atLeast.in",3],"val":[1,2,3]}
+// at least 3 values among those supplied
+{"key":"scores","op":"in","val":[1,2,3],"quant":3}
 // FILTER doc.scores AT LEAST (3) IN @value
 ```
 
-The threshold is cast to an integer (injection-safe); the field stays `alt`-aware.
+#### Object arrays — `quant` + the question-mark operator
+
+When each element is an **object**, the condition targets a sub-field (`reviews[*].rating`) or a multi-sub-field `match` (`contactPoint[*]`). `quant` then wraps the question-mark operator — which is what makes `ALL`/`NONE`/`AT LEAST` finally expressible (impossible with `LENGTH(...) > 0` alone):
+
+```jsonc
+// at least 3 reviews rated ≥ 4
+{"key":"reviews[*].rating","op":"ge","val":4,"quant":3}
+// doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]
+
+// all contacts verified
+{"key":"contactPoint[*]","match":{"verified":true},"quant":"all"}
+// doc.contactPoint[? ALL FILTER CURRENT.verified == @v]
+
+// no variant out of stock
+{"key":"variants[*]","match":{"stock":0},"quant":"none"}
+// doc.variants[? NONE FILTER CURRENT.stock == @v]
+```
+
+> Without `quant`, an object array keeps its historical **existential** behaviour — `LENGTH(doc.reviews[* FILTER CURRENT.rating >= @v]) > 0` (at least one). Adding `quant` breaks nothing (backward compatible). `quant` applies only to **first-level** object arrays; on a nested array (`employee[*].contactPoint[*]`) it is **ignored** (the binding level would be ambiguous) and the existential behaviour is kept.
+
+#### Compatibility & notations
+
+- **Recommended form**: `quant` (uniform across scalar + object).
+- **Legacy aliases** (still valid) on scalar arrays: `op:"all.ge"` / `"any.ge"` / `"none.ge"` and `op:["atLeast.ge", n]` (array form, element 0 the code, element 1 the threshold).
+- `quant` **absent** = legacy behaviour unchanged (default `==` / existential `LENGTH(...) > 0`).
+- `n` is cast to an **integer** (injection-safe); an unknown `quant` **rejects** the filter (`ValidationException`). The field stays `alt`-aware.
 
 ### Hash combinations
 

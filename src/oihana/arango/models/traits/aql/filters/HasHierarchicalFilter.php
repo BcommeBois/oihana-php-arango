@@ -248,6 +248,15 @@ trait HasHierarchicalFilter
             FilterParam::ALT => $init[ FilterParam::ALT ] ?? null,
         ];
 
+        // Forward the `quant` element-axis quantifier only on a single-level
+        // object array (one `[*]`). Multi-level traversal is out of scope: the
+        // level the quantifier binds to would be ambiguous, so it keeps the
+        // legacy ANY behaviour (existential LENGTH(...) > 0).
+        if ( isset( $init[ FilterParam::QUANT ] ) && substr_count( $fullPath , Operator::ARRAY_EXPANSION ) === 1 )
+        {
+            $arrayInit[ FilterParam::QUANT ] = $init[ FilterParam::QUANT ] ;
+        }
+
         return $this->prepareFilterArray( $arrayInit , $binds , $docRef ) ;
     }
 

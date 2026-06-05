@@ -12,10 +12,12 @@ use oihana\exceptions\BindException;
 
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
+use function oihana\arango\db\functions\arrays\arrayContains;
 use function oihana\arango\db\functions\arrays\arrayFilter;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\buildCombinedInlineFilter;
 use function oihana\arango\db\helpers\buildInlineFilterCondition;
+use function oihana\arango\db\helpers\resolveQuantifier;
 use function oihana\core\strings\betweenBrackets;
 use function oihana\core\strings\key;
 use function oihana\core\strings\predicate;
@@ -125,8 +127,10 @@ trait HasFilterArray
         $value    = $init[ FilterParam::VAL   ] ?? null ;
         $match    = $init[ FilterParam::MATCH ] ?? null ;
         $alt      = $init[ FilterParam::ALT   ] ?? null ;
+        $quant    = $init[ FilterParam::QUANT ] ?? null ;
 
-        // AT LEAST (n) quantifier — notation ["atLeast.ge", 2] → doc.x AT LEAST (2) >= @v
+        // Legacy AT LEAST (n) — notation ["atLeast.ge", 2] → doc.x AT LEAST (2) >= @v.
+        // Kept as a BC alias of the unified `quant` key on scalar arrays.
         if ( is_array( $operator ) && is_string( $operator[ 0 ] ?? null ) && str_starts_with( $operator[ 0 ] , FilterArrayComparator::AT_LEAST . '.' ) )
         {
             return $this->prepareFilterAtLeast( $init , $binds , $docRef ) ;
@@ -163,6 +167,12 @@ trait HasFilterArray
 
                     $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields , $alt ) ;
 
+                    // `quant` present → question-mark operator (ANY/ALL/NONE/AT LEAST n).
+                    if ( $quant !== null )
+                    {
+                        return arrayContains( $baseKey , $inlineCondition , resolveQuantifier( $quant ) ) ;
+                    }
+
                     return predicate
                     (
                         leftOperand  : length( arrayFilter( $baseKey , $inlineCondition ) ) ,
@@ -188,6 +198,12 @@ trait HasFilterArray
                     alt    : $alt   ,
                 ) ;
 
+                // `quant` present → question-mark operator (ANY/ALL/NONE/AT LEAST n).
+                if ( $quant !== null )
+                {
+                    return arrayContains( $baseKey , $inlineCondition , resolveQuantifier( $quant ) ) ;
+                }
+
                 // Generate: LENGTH(array[* FILTER CURRENT.field <op> value]) > 0
                 return predicate
                 (
@@ -196,6 +212,13 @@ trait HasFilterArray
                     rightOperand : '0' ,
                 ) ;
             }
+        }
+
+        // Scalar array with the unified `quant` key → array comparison operator
+        // (`doc.scores ALL >= @v`, BC alias of op:"all.ge" / op:["atLeast.ge", n]).
+        if ( $quant !== null )
+        {
+            return $this->prepareFilterQuantified( $init , $binds , $docRef ) ;
         }
 
         return predicate
@@ -285,6 +308,44 @@ trait HasFilterArray
             $this->prepareFilterArrayKey( $init , $docRef ) ,
             $comparator ,
             $this->prepareFilterValue( $init , $binds )
+        ) ;
+    }
+
+    /**
+     * Builds a quantified comparison on a scalar array via the `quant` key: how
+     * many elements satisfy the comparison.
+     *
+     * The comparator stays in `op` (a plain {@see FilterComparator} code such as
+     * `ge`); the element-axis quantifier comes from `quant` and is resolved by
+     * {@see \oihana\arango\db\helpers\resolveQuantifier()} into `ANY` / `ALL` /
+     * `NONE` / `AT LEAST (n)`. This is the unified, recommended form; the legacy
+     * `op:"all.ge"` and `op:["atLeast.ge", n]` notations remain valid aliases.
+     *
+     * ```aql
+     * doc.scores ALL >= @value
+     * doc.scores AT LEAST (2) >= @value
+     * ```
+     *
+     * @param array $init The filter init (`op` = comparator code, `quant` = quantifier).
+     * @param array|null $binds The bind variables, populated by reference.
+     * @param string $docRef The document reference.
+     *
+     * @return string
+     *
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    protected function prepareFilterQuantified( array $init , ?array &$binds = null , string $docRef = AQL::DOC ) :string
+    {
+        $quantifier = resolveQuantifier( $init[ FilterParam::QUANT ] ) ;
+        $comparator = FilterComparator::getAlias( $init[ FilterParam::OP ] ?? null , Comparator::EQUAL ) ;
+
+        return predicate
+        (
+            $this->prepareFilterArrayKey( $init , $docRef ) ,
+            $quantifier . ' ' . $comparator ,
+            $this->prepareFilterValue( $init , $binds ) ,
         ) ;
     }
 }

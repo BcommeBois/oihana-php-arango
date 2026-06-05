@@ -84,6 +84,15 @@ class FilterParam
     public const string POS = 'pos' ;
 
     /**
+     * The element-axis quantifier of an array filter: how many elements must
+     * satisfy the condition. Values: `any` (default) / `all` / `none` / an
+     * integer `n` (= at least `n`). Works on scalar arrays (array comparison
+     * operator, e.g. `doc.scores ALL >= @v`) and on object arrays (question-mark
+     * operator, e.g. `doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]`).
+     */
+    public const string QUANT = 'quant' ;
+
+    /**
      * The scope of the attribute.
      */
     public const string SCOPE = 'scope' ;
