@@ -22,7 +22,9 @@ trait JoinsTrait
      * ([
      *     AQL::JOINS =>
      *     [
-     *          // TODO
+     *          // each entry maps a local reference field to the related model joined on a key
+     *          Schema::ADDITIONAL_TYPE => [ AQL::MODEL => 'placeTypes' , AQL::KEY => Schema::_KEY ] ,
+     *          Schema::CONTAINS_PLACE  => [ AQL::MODEL => 'places'     , AQL::KEY => Schema::_KEY ] ,
      *     ],
      *     AQL::FIELDS =>
      *     [
