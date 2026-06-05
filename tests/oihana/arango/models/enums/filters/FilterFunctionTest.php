@@ -431,6 +431,154 @@ class FilterFunctionTest extends TestCase
     }
 
     // ========================================
+    // APPLY - ARRAY FUNCTIONS (extra arms)
+    // ========================================
+
+    public function testApplyAppend(): void
+    {
+        $this->assertSame( 'APPEND(doc.items,["a","b"],true)' , FilterFunction::apply( FilterFunction::APPEND , 'doc.items' , [ [ 'a' , 'b' ] , true ] ) ) ;
+    }
+
+    public function testApplyCountDistinct(): void
+    {
+        $this->assertSame( 'COUNT_DISTINCT(doc.items)' , FilterFunction::apply( FilterFunction::COUNT_DISTINCT , 'doc.items' ) ) ;
+    }
+
+    public function testApplyPop(): void
+    {
+        $this->assertSame( 'POP(doc.items)' , FilterFunction::apply( FilterFunction::POP , 'doc.items' ) ) ;
+    }
+
+    public function testApplyPosition(): void
+    {
+        $this->assertSame( 'POSITION(doc.items,x,true)' , FilterFunction::apply( FilterFunction::POSITION , 'doc.items' , [ 'x' , true ] ) ) ;
+    }
+
+    public function testApplyPush(): void
+    {
+        $this->assertSame( 'PUSH(doc.items,x,true)' , FilterFunction::apply( FilterFunction::PUSH , 'doc.items' , [ 'x' , true ] ) ) ;
+    }
+
+    public function testApplyShift(): void
+    {
+        $this->assertSame( 'SHIFT(doc.items)' , FilterFunction::apply( FilterFunction::SHIFT , 'doc.items' ) ) ;
+    }
+
+    public function testApplyUnshift(): void
+    {
+        $this->assertSame( 'UNSHIFT(doc.items,x,true)' , FilterFunction::apply( FilterFunction::UNSHIFT , 'doc.items' , [ 'x' , true ] ) ) ;
+    }
+
+    /**
+     * NOTE: `remove` (singular) currently emits the plural AQL `REMOVE_VALUES`
+     * — the underlying removeValue() helper uses ArrayFunction::REMOVE_VALUES
+     * despite its docblock claiming REMOVE_VALUE. Frozen as the real behavior.
+     */
+    public function testApplyRemove(): void
+    {
+        $this->assertSame( 'REMOVE_VALUES(doc.items,x)' , FilterFunction::apply( FilterFunction::REMOVE , 'doc.items' , [ 'x' ] ) ) ;
+    }
+
+    public function testApplyRemoves(): void
+    {
+        $this->assertSame( 'REMOVE_VALUES(doc.items,["a","b"])' , FilterFunction::apply( FilterFunction::REMOVES , 'doc.items' , [ [ 'a' , 'b' ] ] ) ) ;
+    }
+
+    // ========================================
+    // APPLY - AGGREGATE (percentile)
+    // ========================================
+
+    public function testApplyPercentile(): void
+    {
+        $this->assertSame( 'PERCENTILE(doc.v,90)' , FilterFunction::apply( FilterFunction::PERCENTILE , 'doc.v' , [ 90 ] ) ) ;
+    }
+
+    // ========================================
+    // APPLY - NUMERIC (cosSimilarity)
+    // ========================================
+
+    public function testApplyCosSimilarity(): void
+    {
+        $this->assertSame( 'COSINE_SIMILARITY(doc.vec,doc.vec2)' , FilterFunction::apply( FilterFunction::COS_SIMILARITY , 'doc.vec' , [ 'doc.vec2' ] ) ) ;
+    }
+
+    // ========================================
+    // APPLY - STRING FUNCTIONS (extra arms)
+    // ========================================
+
+    public function testApplyConcat(): void
+    {
+        $this->assertSame( 'CONCAT(doc.a,doc.b,doc.c)' , FilterFunction::apply( FilterFunction::CONCAT , 'doc.a' , [ 'doc.b' , 'doc.c' ] ) ) ;
+    }
+
+    public function testApplyCharLength(): void
+    {
+        $this->assertSame( 'CHAR_LENGTH(doc.name)' , FilterFunction::apply( FilterFunction::CHAR_LENGTH , 'doc.name' ) ) ;
+    }
+
+    public function testApplyConcatSeparator(): void
+    {
+        $this->assertSame( "CONCAT_SEPARATOR(',',doc.name,' ','Doe')" , FilterFunction::apply( FilterFunction::CONCAT_SEPARATOR , 'doc.name' , [ ',' , ' ' , 'Doe' ] ) ) ;
+    }
+
+    public function testApplyContains(): void
+    {
+        // pass a boolean VAL in $init so the boolean-comparison guard stays quiet
+        $this->assertSame
+        (
+            "CONTAINS(doc.name,'abc',true)" ,
+            FilterFunction::apply( FilterFunction::CONTAINS , 'doc.name' , [ 'abc' , true ] , [ FilterParam::VAL => true ] )
+        ) ;
+    }
+
+    public function testApplyEncodeUriComponent(): void
+    {
+        $this->assertSame( 'ENCODE_URI_COMPONENT(doc.url)' , FilterFunction::apply( FilterFunction::ENCODE_URI , 'doc.url' ) ) ;
+    }
+
+    public function testApplyFindFirst(): void
+    {
+        $this->assertSame( 'FIND_FIRST(doc.name,x,0,5)' , FilterFunction::apply( FilterFunction::FIND_FIRST , 'doc.name' , [ 'x' , 0 , 5 ] ) ) ;
+    }
+
+    // ========================================
+    // APPLY - BOOLEAN-FUNCTION COMPARISON GUARD
+    // ========================================
+
+    /**
+     * A boolean-returning function compared against a non-boolean value emits an
+     * E_USER_WARNING (the expression itself is still produced).
+     */
+    public function testApplyBooleanFunctionWithNonBooleanValueTriggersWarning(): void
+    {
+        $warning = null ;
+        set_error_handler( function( int $no , string $str ) use ( &$warning ) : bool
+        {
+            $warning = $str ;
+            return true ;
+        } , E_USER_WARNING ) ;
+
+        try
+        {
+            $result = FilterFunction::apply
+            (
+                FilterFunction::STARTS_WITH ,
+                'doc.name' ,
+                [ 'abc' ] ,
+                [ FilterParam::VAL => 'not-a-bool' ]
+            ) ;
+        }
+        finally
+        {
+            restore_error_handler() ;
+        }
+
+        $this->assertNotNull( $warning ) ;
+        $this->assertStringContainsString( "Function 'startsWith' returns boolean" , $warning ) ;
+        $this->assertStringContainsString( 'STARTS_WITH(doc.name,abc)' , $result ) ;
+    }
+
+    // ========================================
     // INCLUDES
     // ========================================
 
