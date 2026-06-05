@@ -12,7 +12,12 @@ Composable PHP toolkit for [ArangoDB](https://www.arangodb.com/). Part of the **
 
 Full API reference (generated with phpDocumentor): `https://bcommebois.github.io/oihana-php-arango`
 
-User guides (FR + EN) live under [`wiki/`](wiki/).
+User guides (FR + EN) live under [`wiki/`](wiki/). A few entry points:
+
+- [Getting started](wiki/en/getting-started/introduction.md) — concepts and dependencies.
+- [Search & filtering](wiki/en/db/search-and-filtering.md) — the `?search=` / `?filter=` / `?facets=` query DSL.
+- [Testing](wiki/en/testing.md) — unit tests, code coverage and the live smoke tests.
+- [Contributing](CONTRIBUTING.md) — setup, conventions and the PR workflow.
 
 ## 📦 Installation
 
@@ -30,6 +35,7 @@ composer require oihana/php-arango
 - **Use transactions, graphs, analyzers and views** — streaming transactions with `withTransaction()` auto-commit/abort, gharial-based graphs with typed vertex/edge collections, ArangoSearch analyzers and views (full-text `SEARCH`, `PHRASE`, `BM25`).
 - **Compose document models** via fine-grained traits (CRUD, AQL helpers, signals before/after CRUD).
 - **Plug controllers** into any [Slim](https://www.slimframework.com/)-compatible PSR-15 stack with `DocumentsController` + capability gating.
+- **Drive list queries from the URL** — a declarative `?search=`, `?filter=` and `?facets=` DSL on document models that compiles to safe, bound AQL: rich comparators, `AND`/`OR`/`NOT`, range (`between`) and array quantifiers (`quant`, `AT LEAST`), hierarchical field paths, edge/join facets, plus output-side `alt` projection transforms.
 - **Run live smoke tests** against a real `arangod` via the built-in `arango:test:clients` and `arango:test:facade` console commands.
 
 ### Under the hood
@@ -53,6 +59,17 @@ Run a specific test file:
 ```bash
 composer test ./tests/oihana/arango/SomeTest.php
 ```
+
+### Code coverage
+
+Measure how much of `./src` the suite exercises (requires Xdebug or PCOV):
+
+```bash
+composer coverage       # text + Clover + HTML report under build/coverage/
+composer coverage:md    # readable Markdown summary at build/coverage/COVERAGE.md
+```
+
+The `build/` output is gitignored — regenerate it on demand rather than committing a snapshot. See [the testing guide](wiki/en/testing.md) for the full workflow.
 
 ### Live smoke tests against a real arango database
 
@@ -78,6 +95,10 @@ We use [phpDocumentor](https://phpdoc.org/) to generate documentation into the `
 ```bash
 composer doc
 ```
+
+## 🤝 Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, coding conventions, the testing workflow and the pull-request process.
 
 ## 🧾 License
 
