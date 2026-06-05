@@ -12,6 +12,7 @@ use oihana\exceptions\BindException;
 
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
+use function oihana\arango\db\functions\arrays\arrayFilter;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\buildCombinedInlineFilter;
 use function oihana\arango\db\helpers\buildInlineFilterCondition;
@@ -164,7 +165,7 @@ trait HasFilterArray
 
                     return predicate
                     (
-                        leftOperand  : length( "{$baseKey}[* FILTER $inlineCondition]" ) ,
+                        leftOperand  : length( arrayFilter( $baseKey , $inlineCondition ) ) ,
                         operator     : Comparator::GREATER_THAN ,
                         rightOperand : '0' ,
                     ) ;
@@ -190,7 +191,7 @@ trait HasFilterArray
                 // Generate: LENGTH(array[* FILTER CURRENT.field <op> value]) > 0
                 return predicate
                 (
-                    leftOperand  : length( "{$baseKey}[* FILTER $inlineCondition]" ) ,
+                    leftOperand  : length( arrayFilter( $baseKey , $inlineCondition ) ) ,
                     operator     : Comparator::GREATER_THAN ,
                     rightOperand : '0' ,
                 ) ;

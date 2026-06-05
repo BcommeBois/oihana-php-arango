@@ -70,6 +70,8 @@
             "src/oihana/arango/db/binds/formatBindVariable.php" ,
             "src/oihana/arango/db/binds/isBindVariable.php" ,
             "src/oihana/arango/db/functions/arrays/append.php" ,
+            "src/oihana/arango/db/functions/arrays/arrayFilter.php" ,
+            "src/oihana/arango/db/functions/arrays/arrayMap.php" ,
             "src/oihana/arango/db/functions/arrays/count.php" ,
             "src/oihana/arango/db/functions/arrays/countDistinct.php" ,
             "src/oihana/arango/db/functions/arrays/first.php" ,

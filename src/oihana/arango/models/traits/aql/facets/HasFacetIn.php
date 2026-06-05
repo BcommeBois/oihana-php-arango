@@ -14,6 +14,7 @@ use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 
 use oihana\exceptions\ValidationException;
+use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\toArray;
 use function oihana\arango\db\helpers\alterExpression;
@@ -139,7 +140,7 @@ trait HasFacetIn
         // (LOWER(doc.tags) would be null; doc.tags[* RETURN LOWER(CURRENT)] is right).
         if( $keyChain !== null )
         {
-            $docProp .= '[* RETURN ' . alterExpression( Clause::CURRENT , $keyChain ) . ']' ;
+            $docProp = arrayMap( $docProp , alterExpression( Clause::CURRENT , $keyChain ) ) ;
         }
 
         $items = [] ;

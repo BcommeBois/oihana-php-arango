@@ -30,6 +30,7 @@ use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 
+use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\arango\db\helpers\resolveAltSides;
@@ -653,7 +654,7 @@ trait FilterTrait
 
         if ( is_array( $value ) )
         {
-            return $bound . '[* RETURN ' . alterExpression( Clause::CURRENT , $valChain , $init ) . ']' ;
+            return arrayMap( $bound , alterExpression( Clause::CURRENT , $valChain , $init ) ) ;
         }
 
         return alterExpression( $bound , $valChain , $init ) ;

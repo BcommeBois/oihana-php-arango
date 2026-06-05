@@ -3,6 +3,7 @@
 namespace oihana\arango\db\functions\arrays;
 
 use oihana\arango\db\enums\Clause;
+use oihana\enums\Char;
 use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\helpers\assertAttributeName;
@@ -47,5 +48,5 @@ use function oihana\arango\db\helpers\assertAttributeName;
 function pluck( string $array , string $field ) : string
 {
     assertAttributeName( $field ) ; // URL-provided sub-field → guard against AQL injection
-    return $array . '[* RETURN ' . Clause::CURRENT . '.' . $field . ']' ;
+    return arrayMap( $array , Clause::CURRENT . Char::DOT . $field ) ;
 }

@@ -6,6 +6,8 @@ use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 use function oihana\arango\db\functions\arrays\append;
+use function oihana\arango\db\functions\arrays\arrayFilter;
+use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\functions\arrays\count;
 use function oihana\arango\db\functions\arrays\countDistinct;
 use function oihana\arango\db\functions\arrays\first;
@@ -31,6 +33,22 @@ class ArrayFunctionsTest extends TestCase
     {
         $this->assertEquals("APPEND(arr,[1, 2],true)", append('arr', '[1, 2]', true));
         $this->assertEquals("APPEND(arr,[1, 2])", append('arr', '[1, 2]'));
+    }
+
+    public function testArrayMap(): void
+    {
+        $this->assertSame( 'doc.tags[* RETURN LOWER(CURRENT)]' , arrayMap( 'doc.tags' , 'LOWER(CURRENT)' ) );
+        $this->assertSame( '@value[* RETURN LOWER(CURRENT)]'   , arrayMap( '@value' , 'LOWER(CURRENT)' ) );
+        $this->assertSame( 'doc.items[* RETURN CURRENT.price]' , arrayMap( 'doc.items' , 'CURRENT.price' ) );
+    }
+
+    public function testArrayFilter(): void
+    {
+        $this->assertSame
+        (
+            'doc.contactPoint[* FILTER CURRENT.email != null]' ,
+            arrayFilter( 'doc.contactPoint' , 'CURRENT.email != null' )
+        );
     }
 
     public function testCount(): void
