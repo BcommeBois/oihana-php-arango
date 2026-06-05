@@ -2,6 +2,7 @@
 
 namespace tests\oihana\arango\db\functions;
 
+use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 use function oihana\arango\db\functions\arrays\append;
@@ -10,6 +11,7 @@ use function oihana\arango\db\functions\arrays\countDistinct;
 use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\arrays\last;
 use function oihana\arango\db\functions\arrays\nth;
+use function oihana\arango\db\functions\arrays\pluck;
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\arrays\push;
 use function oihana\arango\db\functions\arrays\removeValue;
@@ -59,6 +61,22 @@ class ArrayFunctionsTest extends TestCase
     public function testNth(): void
     {
         $this->assertEquals("NTH(arr,2)", nth('arr', 2));
+    }
+
+    /**
+     * @return void
+     * @throws ValidationException
+     */
+    public function testPluck(): void
+    {
+        $this->assertEquals( 'doc.items[* RETURN CURRENT.price]' , pluck( 'doc.items' , 'price' ) ) ;
+        $this->assertEquals( 'CURRENT.offers[* RETURN CURRENT.amount]' , pluck( 'CURRENT.offers' , 'amount' ) ) ;
+    }
+
+    public function testPluckRejectsUnsafeField(): void
+    {
+        $this->expectException( ValidationException::class ) ;
+        pluck( 'doc.items' , 'price] || true || [' ) ;
     }
 
     public function testPosition(): void
