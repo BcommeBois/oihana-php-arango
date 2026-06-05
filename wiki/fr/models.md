@@ -188,7 +188,7 @@ Le grand bloc fonctionnel : chaque trait apporte une capacité (filtrage, tri, r
 | `FieldsTrait`          | Construction du `RETURN { ... }` en routant chaque champ vers son [*field builder*](db/helpers.md#field-builders--sous-dossier-fields). |
 | `FilterTrait`          | Conversion de `?filter=` JSON en `FILTER ...` AQL avec *binds*.                                                                         |
 | `SortTrait`            | Conversion de `?sort=` grammaire textuelle en `SORT ...`.                                                                               |
-| `SearchTrait`          | Conversion de `?search=` en filtre `LIKE` ou `STARTS_WITH` selon le champ.                                                              |
+| `SearchTrait`          | Conversion de `?search=` en filtre `LIKE` multi-champs (insensible à la casse) sur les champs `AQL::SEARCHABLE`.                         |
 | `LimitTrait`           | Pagination `LIMIT offset, count`.                                                                                                       |
 | `BindTrait`            | Accumulation centralisée des *bind variables*.                                                                                          |
 | `FacetTrait`           | Génération des facettes (agrégations sur champs).                                                                                       |
@@ -273,7 +273,10 @@ Les hooks `beforeModelCall`/`afterModelCall` viennent du trait `ModelCallTrait` 
 ## Voir aussi
 
 - [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`.
+- [Recherche & filtrage](db/search-and-filtering.md) — vue d'ensemble des 3 leviers (`?search` / `?filter` / `?facets`).
+- [Recherche HTTP `?search=`](db/search.md) — recherche multi-champs `LIKE`.
 - [Filtres HTTP `?filter=`](db/filter.md) — syntaxe URL des filtres, transformations `alt`, opérateurs.
+- [Facettes HTTP `?facets=`](db/facets.md) — multi-sélection et existentiels/agrégats sur relations.
 - [Filtrage interne](db/filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` pour les conditions serveur-only.
 - [Contrôleurs Slim](controllers/README.md) — exposition HTTP du modèle.
 - [Référence des enums](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consommés ici.

@@ -13,16 +13,11 @@ Cette page documente :
 5. Les [opérateurs `op`](#opérateurs-op), la [négation](#négation) et les [comportements par défaut](#comportements-par-défaut).
 6. La [sécurité](#sécurité-et-injection-aql) (anti-injection).
 
-## Facettes vs filtres
+## Facettes vs filtres vs recherche
 
-| | `?filter=` | `?facets=` |
-|---|---|---|
-| Cible | un **champ scalaire** du document courant (`doc.x`) | un **champ**, un **tableau**, un **edge** ou un **join** |
-| Syntaxe | explicite `{key, op, val, alt}` | compacte par clé : `{"<facette>": <valeur>}` |
-| Forces | comparateurs riches, transformations `alt`, AND/OR/imbrication | multi-sélection compacte, existentiels sur relations (edge/join), recherche multi-champs |
-| Vocabulaire `op` | `FilterComparator` / `FilterArrayComparator` | **les mêmes** (réutilisés) |
+Les facettes sont l'un des trois leviers de filtrage d'un modèle, aux côtés de [`?filter=`](filter.md) et [`?search=`](search.md). Le **tableau comparatif complet** (cible, syntaxe, déclaration, forces, socle commun, « quand utiliser quoi ») vit dans la page-pont [**Recherche & filtrage**](search-and-filtering.md).
 
-Les deux se combinent dans la même requête (chacun produit une portion du `FILTER`, jointes par `&&`).
+En bref : `?facets=` brille pour la **multi-sélection compacte** et les **existentiels/agrégats sur relations** (edge/join) que les filtres n'expriment pas ; il **réutilise le même vocabulaire `op` et le même moteur `alt`** que les filtres. Les trois se combinent dans la même requête (chacun produit une portion du `FILTER`, jointes par `&&`).
 
 ## Syntaxe URL
 

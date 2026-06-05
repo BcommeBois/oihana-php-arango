@@ -18,9 +18,11 @@ Si vous avez juste besoin de **lancer une requête et lire du JSON**, prenez le 
 | 1 | [Quickstart `ArangoDB`](quickstart.md) | Instancier, configurer (clés `ArangoConfig`, DI), exécuter de l'AQL brute, récupérer les résultats (`getDocuments` / `getFirstResult` / `getObject` / `getResult` / `streamDocuments`), hydratation par schéma, métadonnées de cursor, gestion des collections et des index. |
 | 2 | [Helpers AQL `db/helpers/`](helpers.md) | Composer des fragments de texte AQL — `aqlValue`, `aqlExpression`, `aqlDocument`, field builders, helpers de projection par *skin*. |
 | 3 | [Bind variables `db/binds/`](binds.md) | Injection sûre de valeurs — `aqlBind`, validation et formatage des placeholders. |
-| 4 | [Filtres HTTP `?filter=`](filter.md) | Syntaxe URL `?filter=`, comparateurs, transformations `alt`, chaînage, `FilterType::*`. |
-| 5 | [Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Conditions serveur-only, `FilterType::VIRTUAL`, règle de choix URL vs interne. |
-| 6 | [Facettes HTTP `?facets=`](facets.md) | Syntaxe URL `?facets=`, déclaration `Arango::FACETS` / `Facet::TYPE`, catalogue des types (FIELD, IN, EDGE, JOIN, *_COMPLEX), opérateurs, négation, sécurité. |
+| 4 | [Recherche & filtrage](search-and-filtering.md) | **Vue d'ensemble** des 3 leviers (`?search` / `?filter` / `?facets`) : modèle mental, tableau comparatif, socle commun (`op`, `alt`, binds, sécurité), « quand utiliser quoi ». |
+| 5 | [Recherche HTTP `?search=`](search.md) | Recherche multi-champs `LIKE` (insensible à la casse), déclaration `searchable`, combinaison, limites (vs ArangoSearch). |
+| 6 | [Filtres HTTP `?filter=`](filter.md) | Syntaxe URL `?filter=`, comparateurs, transformations `alt`, chaînage, `FilterType::*`. |
+| 7 | [Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Conditions serveur-only, `FilterType::VIRTUAL`, règle de choix URL vs interne. |
+| 8 | [Facettes HTTP `?facets=`](facets.md) | Syntaxe URL `?facets=`, déclaration `Arango::FACETS` / `Facet::TYPE`, catalogue des types (FIELD, IN, EDGE, JOIN, *_COMPLEX, *_AGGREGATE), opérateurs, négation, sécurité. |
 
 ## Cartographie du dossier `db/`
 

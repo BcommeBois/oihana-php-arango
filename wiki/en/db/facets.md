@@ -20,16 +20,11 @@ This page documents:
 5. The [`op` operators](#op-operators), [negation](#negation) and [default behaviours](#default-behaviours).
 6. [Security](#security-and-aql-injection) (injection guard).
 
-## Facets vs filters
+## Facets vs filters vs search
 
-| | `?filter=` | `?facets=` |
-|---|---|---|
-| Target | a **scalar field** of the current document (`doc.x`) | a **field**, an **array**, an **edge** or a **join** |
-| Syntax | explicit `{key, op, val, alt}` | compact per key: `{"<facet>": <value>}` |
-| Strengths | rich comparators, `alt` transforms, AND/OR/nesting | compact multi-select, relation existentials (edge/join), multi-field search |
-| `op` vocabulary | `FilterComparator` / `FilterArrayComparator` | **the same** (reused) |
+Facets are one of a model's three filtering levers, alongside [`?filter=`](filter.md) and [`?search=`](search.md). The **full comparison table** (target, syntax, declaration, strengths, shared foundation, "when to use which") lives in the bridge page [**Search & filtering**](search-and-filtering.md).
 
-Both combine in one request (each produces a slice of the `FILTER`, joined with `&&`).
+In short: `?facets=` shines for **compact multi-select** and for the **relation existentials/aggregates** (edge/join) that filters can't express; it **reuses the same `op` vocabulary and the same `alt` engine** as filters. All three combine in one request (each produces a slice of the `FILTER`, joined with `&&`).
 
 ## URL syntax
 

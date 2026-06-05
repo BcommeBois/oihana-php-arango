@@ -188,7 +188,7 @@ The big functional block: each trait brings one capability (filtering, sorting, 
 | `FieldsTrait` | Builds the `RETURN { ... }` by routing each field to its [*field builder*](db/helpers.md#field-builders--fields-sub-folder). |
 | `FilterTrait` | Converts `?filter=` JSON to `FILTER ...` AQL with *binds*. |
 | `SortTrait` | Converts `?sort=` text grammar to `SORT ...`. |
-| `SearchTrait` | Converts `?search=` to a `LIKE` or `STARTS_WITH` filter depending on the field. |
+| `SearchTrait` | Converts `?search=` to a multi-field `LIKE` filter (case-insensitive) over the `AQL::SEARCHABLE` fields. |
 | `LimitTrait` | Pagination `LIMIT offset, count`. |
 | `BindTrait` | Centralized *bind variable* accumulation. |
 | `FacetTrait` | Facet generation (field aggregations). |
@@ -273,7 +273,10 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 ## See also
 
 - [Edge and join projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`.
+- [Search & filtering](db/search-and-filtering.md) — overview of the 3 levers (`?search` / `?filter` / `?facets`).
+- [HTTP search `?search=`](db/search.md) — multi-field `LIKE` search.
 - [HTTP filters `?filter=`](db/filter.md) — URL filter syntax, `alt` transformations, operators.
+- [HTTP facets `?facets=`](db/facets.md) — multi-select and relation existentials/aggregates.
 - [Internal filtering](db/filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` for server-only conditions.
 - [Slim controllers](controllers/README.md) — HTTP exposition of the model.
 - [Enums reference](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consumed here.
