@@ -125,4 +125,53 @@ final class AqlFieldsTest extends TestCase
         ]) ;
         $this->assertSame( 'name:UPPER(doc.name), price:TO_NUMBER(doc.price), city:doc.city' , $result ) ;
     }
+
+    // ========================================
+    // Field::QUOTED — double-quote the projected key
+    // ========================================
+
+    /**
+     * `Field::QUOTED` is designed to be paired with `Field::NAME`: the output
+     * label is quoted while the value reads the real (aliased) attribute.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testQuotedKeyWithNameQuotesOnlyTheLabel(): void
+    {
+        $result = aqlFields( [ 'slug' => [ Field::FILTER => Filter::DEFAULT , Field::NAME => 'title' , Field::QUOTED => true ] ] ) ;
+        $this->assertSame( '"slug":doc.title' , $result ) ;
+    }
+
+    /**
+     * With `Field::ALTERS`, the value side uses the unquoted field reference, so
+     * the quoted label combines cleanly with the alt chain.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testQuotedKeyWithAltersQuotesOnlyTheLabel(): void
+    {
+        $result = aqlFields( [ 'name' => [ Field::FILTER => Filter::DEFAULT , Field::ALTERS => 'lower' , Field::QUOTED => true ] ] ) ;
+        $this->assertSame( '"name":LOWER(doc.name)' , $result ) ;
+    }
+
+    /**
+     * Characterization of the CURRENT (limited) behaviour when `Field::QUOTED`
+     * is used WITHOUT `Field::NAME`/`Field::ALTERS`: the same `$key` feeds both
+     * the output label and the attribute access, so the attribute access is
+     * quoted too (`doc."my-key"`). This is a known limitation — kept frozen
+     * here; see the audit note for the planned fix.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testQuotedKeyWithoutNameAlsoQuotesTheAttributeAccess(): void
+    {
+        $result = aqlFields( [ 'my-key' => [ Field::FILTER => Filter::DEFAULT , Field::QUOTED => true ] ] ) ;
+        $this->assertSame( '"my-key":doc."my-key"' , $result ) ;
+    }
 }

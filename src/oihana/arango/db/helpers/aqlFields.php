@@ -125,7 +125,7 @@ function aqlFields
 
             if( $quoted === true )
             {
-                $key = betweenDoubleQuotes( $key , trim: false ) ; // TODO test it
+                $key = betweenDoubleQuotes( $key , trim: false ) ;
             }
 
             // Output-side `alters` (Field::ALTERS): wrap the projected value with
