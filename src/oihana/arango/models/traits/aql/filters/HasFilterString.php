@@ -13,6 +13,7 @@ use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\strings\charLength;
 use function oihana\arango\db\functions\strings\startsWith;
+use function oihana\arango\db\operators\logicalNot;
 use function oihana\core\strings\func;
 use function oihana\core\strings\predicate;
 
@@ -55,6 +56,14 @@ use function oihana\core\strings\predicate;
  * ?filter={ "key":"name" , "val":["eka","meleon"] , "op":"nin"   } // not in      -> doc.name NOT IN @value
  * ?filter={ "key":"name" , "val":"mele"           , "op":"contains" } // contains -> CONTAINS(doc.name, "mele")
  * ?filter={ "key":"name" , "val":"^eka.*on$"      , "op":"regex" }    // regex    -> REGEX_TEST(doc.name, "^eka.*on$")
+ * ```
+ *
+ * Negated function-form operators (prefix `n`) wrap their positive form in `!( … )`:
+ * ```
+ * ?filter={ "key":"name" , "val":"ekam" , "op":"nsw" }       // not starts with -> !(STARTS_WITH(doc.name, "ekam"))
+ * ?filter={ "key":"name" , "val":"leon" , "op":"new" }       // not ends with   -> !(RIGHT(doc.name, CHAR_LENGTH("leon")) == "leon")
+ * ?filter={ "key":"name" , "val":"mele" , "op":"ncontains" } // not contains    -> !(CONTAINS(doc.name, "mele"))
+ * ?filter={ "key":"name" , "val":"^x"   , "op":"nregex" }    // not regex       -> !(REGEX_TEST(doc.name, "^x"))
  * ```
  *
  * Use functions to transform the document property before the conditional evaluation.
@@ -119,12 +128,16 @@ trait HasFilterString
     {
         return match ( $init[ FilterParam::OP ] ?? null )
         {
-            FilterComparator::BETWEEN  => $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ,
-            FilterComparator::SW       => startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) ,
-            FilterComparator::EW       => $this->prepareFilterEndsWith( $init , $binds , $doc ) ,
-            FilterComparator::CONTAINS => func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
-            FilterComparator::REGEX    => func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
-            default                    => predicate
+            FilterComparator::BETWEEN   => $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ,
+            FilterComparator::SW        => startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) ,
+            FilterComparator::NSW       => logicalNot( startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) , true ) ,
+            FilterComparator::EW        => $this->prepareFilterEndsWith( $init , $binds , $doc ) ,
+            FilterComparator::NEW       => logicalNot( $this->prepareFilterEndsWith( $init , $binds , $doc ) , true ) ,
+            FilterComparator::CONTAINS  => func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
+            FilterComparator::NCONTAINS => logicalNot( func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) , true ) ,
+            FilterComparator::REGEX     => func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
+            FilterComparator::NREGEX    => logicalNot( func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) , true ) ,
+            default                     => predicate
             (
                 $this->prepareFilterKey( $init , $doc ) ,
                 $this->prepareFilterComparator( $init ) ,

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Negated string filter operators `nsw` / `new` / `ncontains` / `nregex` — the `n`-prefixed negations of `sw` / `ew` / `contains` / `regex`, wrapping the positive function form in `!( … )` via the existing `logicalNot()` operator helper (e.g. `nsw` → `!(STARTS_WITH(doc.x, @value))`). New `FilterComparator::NSW`/`NEW`/`NCONTAINS`/`NREGEX`. Documented in `wiki/{fr,en}/db/filter.md`.
+
 - String filter operators `contains` and `regex` — `CONTAINS(doc.x, @value)` (literal substring) and `REGEX_TEST(doc.x, @value)` (ICU regular expression). Both bound (no AQL injection) and added as function-form arms of `prepareFilterString`. `contains` is case-insensitive via the `alt` mirror; `regex` via an inline `(?i)` flag in the pattern (a client-supplied regex can be ReDoS-prone — validate untrusted input on the application side). New `FilterComparator::CONTAINS` / `FilterComparator::REGEX`. Documented in `wiki/{fr,en}/db/filter.md`.
 
 - String filter operator `ew` (ends with) — `?filter={"key":"name","op":"ew","val":"leon"}` → `RIGHT(doc.name, CHAR_LENGTH(@value)) == @value`. AQL has no native `ENDS_WITH`, so the suffix is matched literally (no `LIKE` pattern, nothing to escape), symmetric to `sw`. Case-insensitive via the `alt` mirror (`RIGHT(LOWER(doc.name), …) == LOWER(@value)`). New `FilterComparator::EW`; `prepareFilterString` now dispatches its function/range forms (`between`/`sw`/`ew`) through a `match`. Documented in `wiki/{fr,en}/db/filter.md`.

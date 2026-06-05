@@ -79,9 +79,13 @@ Les valeurs de `op` sont définies par l'enum `FilterComparator`.
 | `le` | Inférieur ou égal | `doc.x <= @val` |
 | `like` | Correspondance avec *wildcards* (`%`, `_`) | `LIKE(doc.x, @val, false)` |
 | `sw` | Commence par (préfixe **littéral**, sans wildcard) | `STARTS_WITH(doc.x, @val)` |
+| `nsw` | Ne commence pas par | `!(STARTS_WITH(doc.x, @val))` |
 | `ew` | Finit par (suffixe **littéral**, sans wildcard) | `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val` |
+| `new` | Ne finit pas par | `!(RIGHT(doc.x, CHAR_LENGTH(@val)) == @val)` |
 | `contains` | Contient la sous-chaîne (littérale) | `CONTAINS(doc.x, @val)` |
+| `ncontains` | Ne contient pas | `!(CONTAINS(doc.x, @val))` |
 | `regex` | Correspond à l'expression régulière | `REGEX_TEST(doc.x, @val)` |
+| `nregex` | Ne correspond pas à l'expression régulière | `!(REGEX_TEST(doc.x, @val))` |
 | `in` | Dans la liste fournie | `doc.x IN @val` |
 | `nin` | Pas dans la liste | `doc.x NOT IN @val` |
 | `between` | Plage inclusive (clés `min`/`max` au lieu de `val`) | `(doc.x >= @min && doc.x <= @max)` |
@@ -89,6 +93,8 @@ Les valeurs de `op` sont définies par l'enum `FilterComparator`.
 > `sw`, `ew` et `contains` sont des **formes fonction** (pas des comparateurs infixes) et comparent **littéralement** : les `%`/`_` ne sont pas des jokers (contrairement à `like`), donc rien à échapper. AQL n'a pas de `ENDS_WITH` natif → `ew` s'écrit `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`. Ces trois-là sont insensibles à la casse via le miroir `alt` : `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))` (idem `ew`/`contains`).
 >
 > `regex` teste une **expression régulière** (ICU). La valeur est **bindée** (`@val`) : aucune injection AQL possible. Pour l'insensibilité à la casse, préfixe ton motif d'un flag *inline* `(?i)` (ex. `"(?i)^eka.*on$"`) — ne passe **pas** par le miroir `alt`, qui abaisserait aussi les classes de caractères (`[A-Z]`). ⚠️ Un motif fourni par le client peut être coûteux (*ReDoS*) : valide/limite-le côté application si l'entrée n'est pas de confiance.
+>
+> **Formes négatives** : chaque opérateur fonction a sa négation préfixée `n` qui enveloppe la forme positive dans `!( … )` : `nsw` (ne commence pas par), `new` (ne finit pas par), `ncontains` (ne contient pas), `nregex` (ne correspond pas). Ex. `{"op":"ncontains","val":"mele"}` → `!(CONTAINS(doc.x, @val))`.
 
 Exemples :
 

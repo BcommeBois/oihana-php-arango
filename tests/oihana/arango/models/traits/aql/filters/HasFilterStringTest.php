@@ -483,4 +483,62 @@ class HasFilterStringTest extends TestCase
         // The pattern is bound (no AQL injection); it reaches AQL untouched.
         $this->assertContains( '^eka.*on$' , $this->binds ) ;
     }
+
+    // ========================================
+    // NEGATED FUNCTION-FORM OPERATORS — !( … )
+    // ========================================
+
+    public function testStringFilterNotStartsWith(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'ekam' , 'op' => 'nsw' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^!\(STARTS_WITH\(doc\.name,\s*@\S+\)\)$/' , $result ) ;
+        $this->assertContains( 'ekam' , $this->binds ) ;
+    }
+
+    public function testStringFilterNotEndsWith(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'leon' , 'op' => 'new' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression
+        (
+            '/^!\(RIGHT\(doc\.name,\s*CHAR_LENGTH\((@\S+)\)\)\s*==\s*\1\)$/' ,
+            $result
+        ) ;
+        $this->assertContains( 'leon' , $this->binds ) ;
+    }
+
+    public function testStringFilterNotContains(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'mele' , 'op' => 'ncontains' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^!\(CONTAINS\(doc\.name,\s*@\S+\)\)$/' , $result ) ;
+        $this->assertContains( 'mele' , $this->binds ) ;
+    }
+
+    public function testStringFilterNotRegex(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => '^x' , 'op' => 'nregex' ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^!\(REGEX_TEST\(doc\.name,\s*@\S+\)\)$/' , $result ) ;
+        $this->assertContains( '^x' , $this->binds ) ;
+    }
+
+    public function testStringFilterNotStartsWithCaseInsensitiveMirror(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'EKAM' , 'op' => 'nsw' , 'alt' => [ 'key' => 'lower' , 'val' => true ] ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^!\(STARTS_WITH\(LOWER\(doc\.name\),\s*LOWER\(@\S+\)\)\)$/' , $result ) ;
+        $this->assertContains( 'EKAM' , $this->binds ) ;
+    }
 }

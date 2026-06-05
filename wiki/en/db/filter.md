@@ -79,9 +79,13 @@ The `op` values are defined by the `FilterComparator` enum.
 | `le` | Less than or equal | `doc.x <= @val` |
 | `like` | *Wildcard* match (`%`, `_`) | `LIKE(doc.x, @val, false)` |
 | `sw` | Starts with (**literal** prefix, no wildcards) | `STARTS_WITH(doc.x, @val)` |
+| `nsw` | Does not start with | `!(STARTS_WITH(doc.x, @val))` |
 | `ew` | Ends with (**literal** suffix, no wildcards) | `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val` |
+| `new` | Does not end with | `!(RIGHT(doc.x, CHAR_LENGTH(@val)) == @val)` |
 | `contains` | Contains the (literal) substring | `CONTAINS(doc.x, @val)` |
+| `ncontains` | Does not contain | `!(CONTAINS(doc.x, @val))` |
 | `regex` | Matches the regular expression | `REGEX_TEST(doc.x, @val)` |
+| `nregex` | Does not match the regular expression | `!(REGEX_TEST(doc.x, @val))` |
 | `in` | In the supplied list | `doc.x IN @val` |
 | `nin` | Not in the list | `doc.x NOT IN @val` |
 | `between` | Inclusive range (`min`/`max` keys instead of `val`) | `(doc.x >= @min && doc.x <= @max)` |
@@ -89,6 +93,8 @@ The `op` values are defined by the `FilterComparator` enum.
 > `sw`, `ew` and `contains` are **function forms** (not infix comparators) and match **literally**: `%`/`_` are not wildcards (unlike `like`), so nothing needs escaping. AQL has no native `ENDS_WITH`, so `ew` is written `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`. These three are case-insensitive via the `alt` mirror: `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))` (likewise for `ew`/`contains`).
 >
 > `regex` tests an ICU **regular expression**. The value is **bound** (`@val`): no AQL injection is possible. For case-insensitivity, prefix the pattern with an *inline* `(?i)` flag (e.g. `"(?i)^eka.*on$"`) — do **not** use the `alt` mirror, which would also lowercase character classes (`[A-Z]`). ⚠️ A client-supplied pattern can be expensive (*ReDoS*): validate/bound it on the application side when the input is untrusted.
+>
+> **Negated forms**: each function-form operator has an `n`-prefixed negation that wraps the positive form in `!( … )`: `nsw` (not starts with), `new` (not ends with), `ncontains` (not contains), `nregex` (not matching). E.g. `{"op":"ncontains","val":"mele"}` → `!(CONTAINS(doc.x, @val))`.
 
 Examples:
 
