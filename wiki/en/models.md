@@ -193,7 +193,6 @@ The big functional block: each trait brings one capability (filtering, sorting, 
 | `BindTrait` | Centralized *bind variable* accumulation. |
 | `FacetTrait` | Facet generation (field aggregations). |
 | `PrepareDocumentTrait` | Document validation and normalization before insert/update. |
-| `PositionTrait` | Position field handling (reordering). |
 | `ActiveTrait` | Helper to filter on the `active` field. |
 
 **`aql/filters/` sub-traits** (8 traits): route filters by type — `HasFilterString`, `HasFilterNumber`, `HasFilterDate`, `HasFilterBoolean`, `HasFilterArray`, `HasFilterDocumentation`, `HasFilterConditions`, `HasHierarchicalFilter`.

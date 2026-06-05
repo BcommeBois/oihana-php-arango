@@ -193,7 +193,6 @@ Le grand bloc fonctionnel : chaque trait apporte une capacité (filtrage, tri, r
 | `BindTrait`            | Accumulation centralisée des *bind variables*.                                                                                          |
 | `FacetTrait`           | Génération des facettes (agrégations sur champs).                                                                                       |
 | `PrepareDocumentTrait` | Validation et normalisation du document avant insertion/mise à jour.                                                                    |
-| `PositionTrait`        | Gestion des champs de position (réordonnancement).                                                                                      |
 | `ActiveTrait`          | Helper pour filtrer sur le champ `active`.                                                                                              |
 
 **Sous-traits `aql/filters/`** (8 traits) : routent les filtres par type — `HasFilterString`, `HasFilterNumber`, `HasFilterDate`, `HasFilterBoolean`, `HasFilterArray`, `HasFilterDocumentation`, `HasFilterConditions`, `HasHierarchicalFilter`.

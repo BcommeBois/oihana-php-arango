@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `PositionTrait` (`models/traits/aql/`) — dead, half-written trait: it was composed by no model, `preparePosition()` was never called, and its only AQL form had a hardcoded `@value` placeholder (no `$binds`/value parameter) plus an unfiltered `FOR doc_coll IN <collection>` scan. Removed the trait and its characterization test rather than freeze unused, broken output; a position-ranking feature, if ever needed, should be designed fresh with proper binding.
 - `Facet::THESAURUS` — it was exactly an `EDGE` facet with `AQL::FIELDS = '_key,name,alternateName'` and `op = like`, so it is now expressed as that configuration rather than a dedicated type.
 - Magic `id → _key` rewriting in facets — key/property aliases are now declared explicitly via `Facet::PROPERTY` everywhere, with no hidden remapping.
 
