@@ -54,16 +54,54 @@ abstract class ControllerTestCase extends TestCase
     }
 
     /**
-     * Builds an EdgesController backed by the given edge model double.
+     * Builds an EdgesController backed by the given edge / vertex doubles.
      *
-     * @param MockEdges $model The edge model double.
-     * @param array     $init  Extra init overrides merged into the defaults.
+     * The Edges / from / to dependencies are resolved by the controller through
+     * `resolveDependency()` which only accepts a string service id, so they are
+     * registered in the container and referenced by id.
+     *
+     * @param MockEdges          $edges The edge model double.
+     * @param MockDocuments|null $from  The optional source vertex model.
+     * @param MockDocuments|null $to    The optional target vertex model.
+     * @param array              $init  Extra init overrides merged into the defaults.
      *
      * @return EdgesController
      */
-    protected function makeEdgesController( MockEdges $model , array $init = [] ) :EdgesController
+    protected function makeEdgesController
+    (
+        MockEdges      $edges ,
+        ?MockDocuments $from = null ,
+        ?MockDocuments $to   = null ,
+        array          $init = []
+    )
+    :EdgesController
     {
-        return new EdgesController( ...$this->controllerArgs( $model , $init ) ) ;
+        $container = new Container() ;
+        AppFactory::setContainer( $container ) ;
+        $app = AppFactory::create() ;
+
+        $container->set( 'edges.service' , $edges ) ;
+
+        $defaults =
+        [
+            ControllerParam::APP    => $app ,
+            ControllerParam::ROUTER => $app->getRouteCollector()->getRouteParser() ,
+            EdgesController::EDGES  => 'edges.service' ,
+        ] ;
+
+        if( $from !== null )
+        {
+            $container->set( 'from.service' , $from ) ;
+            $defaults[ EdgesController::FROM ] = 'from.service' ;
+        }
+
+        if( $to !== null )
+        {
+            $container->set( 'to.service' , $to ) ;
+            $defaults[ EdgesController::TO ] = 'to.service' ;
+        }
+
+        return new EdgesController( $container , [ ...$defaults , ...$init ] ) ;
     }
 
     /**
