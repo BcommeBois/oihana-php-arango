@@ -214,6 +214,56 @@ aqlFieldDefault( 'userId' , 'doc' , 'id' ) ;      // "userId: doc.id"
 
 In normal use, these *builders* are not called directly: you declare a `Documents` model with typed `Field::FILTER`s and `aqlFields()` routes automatically.
 
+### Per-field options
+
+Besides `Field::FILTER`, each field definition accepts options:
+
+| Option | Effect | Output example |
+|---|---|---|
+| `Field::NAME` | Alias: the output key differs from the source attribute | `slug:doc.title` |
+| `Field::ALTERS` | `alt` transformation chain applied to the projected value | `name:LOWER(TRIM(doc.name))` |
+| `Field::QUOTED` | Double-quoted output label (keys with special characters) | `` "my-key":doc.`my-key` `` |
+| `Field::UNIQUE` | Unique variable name for the AQL expression | — |
+| `Field::REQUIRES` | Permission subject(s): the field is dropped if authorization is denied | — |
+
+> `Field::QUOTED` quotes **only the output label** and reaches the attribute with **backticks** (`` doc.`my-key` ``) — the valid AQL form for a special-character attribute (`doc."my-key"` is invalid and rejected by ArangoDB). A `Field::NAME` then supplies the source: only the label is quoted (`"slug":doc.title`).
+
+Worked examples:
+
+```php
+use oihana\arango\enums\Field ;
+use oihana\arango\enums\Filter ;
+use function oihana\arango\db\helpers\aqlFields ;
+
+// Default projection
+aqlFields([ 'name' => [] ]);
+// name:doc.name
+
+// Several typed fields (joined by ', ')
+aqlFields([
+    'name'   => [] ,
+    'price'  => [ Field::FILTER => Filter::NUMBER ] ,
+    'active' => [ Field::FILTER => Filter::BOOL ] ,
+]);
+// name:doc.name, price:TO_NUMBER(doc.price), active:TO_BOOL(doc.active)
+
+// Custom document reference (edge/join sub-query)
+aqlFields([ 'tags' => [ Field::FILTER => Filter::ARRAY ] ], 'edge');
+// tags:IS_ARRAY(edge.tags) ? edge.tags : []
+
+// Key alias (Field::NAME)
+aqlFields([ 'slug' => [ Field::NAME => 'title' ] ]);
+// slug:doc.title
+
+// Output-side transformation (Field::ALTERS)
+aqlFields([ 'name' => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ]);
+// name:LOWER(TRIM(doc.name))
+
+// Special-character key (quoted label, backtick attribute)
+aqlFields([ 'my-key' => [ Field::QUOTED => true ] ]);
+// "my-key":doc.`my-key`
+```
+
 ## AQL introspection
 
 Four predicates classify a string:

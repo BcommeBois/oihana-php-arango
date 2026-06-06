@@ -159,19 +159,32 @@ final class AqlFieldsTest extends TestCase
     }
 
     /**
-     * Characterization of the CURRENT (limited) behaviour when `Field::QUOTED`
-     * is used WITHOUT `Field::NAME`/`Field::ALTERS`: the same `$key` feeds both
-     * the output label and the attribute access, so the attribute access is
-     * quoted too (`doc."my-key"`). This is a known limitation — kept frozen
-     * here; see the audit note for the planned fix.
+     * `Field::QUOTED` without `Field::NAME`/`Field::ALTERS`: the output label is
+     * the double-quoted key, and the attribute access uses BACKTICKS — a
+     * special-character attribute is `doc.`my-key``, never `doc."my-key"`
+     * (which is invalid AQL).
      *
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
      */
-    public function testQuotedKeyWithoutNameAlsoQuotesTheAttributeAccess(): void
+    public function testQuotedKeyWithoutNameBacktickQuotesTheAttributeAccess(): void
     {
         $result = aqlFields( [ 'my-key' => [ Field::FILTER => Filter::DEFAULT , Field::QUOTED => true ] ] ) ;
-        $this->assertSame( '"my-key":doc."my-key"' , $result ) ;
+        $this->assertSame( '"my-key":doc.`my-key`' , $result ) ;
+    }
+
+    /**
+     * The backtick attribute access also applies under a typed filter
+     * (here BOOL): `"flag":TO_BOOL(doc.`flag`)`.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testQuotedKeyUnderTypedFilterBacktickQuotesTheAttributeAccess(): void
+    {
+        $result = aqlFields( [ 'flag' => [ Field::FILTER => Filter::BOOL , Field::QUOTED => true ] ] ) ;
+        $this->assertSame( '"flag":TO_BOOL(doc.`flag`)' , $result ) ;
     }
 }

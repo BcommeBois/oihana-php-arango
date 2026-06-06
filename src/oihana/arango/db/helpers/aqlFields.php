@@ -51,7 +51,11 @@ use function oihana\core\strings\keyValue;
  * Each field can also define additional options:
  * - `Field::NAME`     : The target field name in the document (optional)
  * - `Field::UNIQUE`   : Unique variable name to use for the AQL expression (optional)
- * - `Field::QUOTED`   : Whether to quote the key in the generated expression (boolean)
+ * - `Field::QUOTED`   : Double-quote the output label (for keys that are not bare
+ *                      identifiers, e.g. `"my-key": …`). The attribute access is
+ *                      then reached with backticks (`doc.`my-key``), the valid AQL
+ *                      form — never `doc."my-key"`. A `Field::NAME` still overrides
+ *                      the source attribute (only the label is quoted).
  * - `Field::REQUIRES` : Optional permission subject(s) — when present and the
  *                      request-scoped authorizer denies them, the field is
  *                      dropped from the projection (read-side gating).
@@ -76,6 +80,50 @@ use function oihana\core\strings\keyValue;
  * @throws NotFoundExceptionInterface
  * @throws UnsupportedOperationException
  * @throws Exception
+ *
+ * @example
+ * ```php
+ * use oihana\arango\enums\Field;
+ * use oihana\arango\enums\Filter;
+ * use function oihana\arango\db\helpers\aqlFields;
+ *
+ * // Default scalar projection (no options) — `key: doc.key`
+ * aqlFields([ 'name' => [] ]);
+ * // name:doc.name
+ *
+ * // Several fields, with typed conversions, joined by ', '
+ * aqlFields([
+ *     'name'   => [] ,
+ *     'price'  => [ Field::FILTER => Filter::NUMBER ] ,
+ *     'active' => [ Field::FILTER => Filter::BOOL ] ,
+ * ]);
+ * // name:doc.name, price:TO_NUMBER(doc.price), active:TO_BOOL(doc.active)
+ *
+ * // Array projection
+ * aqlFields([ 'tags' => [ Field::FILTER => Filter::ARRAY ] ]);
+ * // tags:IS_ARRAY(doc.tags) ? doc.tags : []
+ *
+ * // Custom document reference (e.g. inside an edge/join sub-query)
+ * aqlFields([ 'tags' => [ Field::FILTER => Filter::ARRAY ] ], 'edge');
+ * // tags:IS_ARRAY(edge.tags) ? edge.tags : []
+ *
+ * // Alias: output key differs from the source attribute (Field::NAME)
+ * aqlFields([ 'slug' => [ Field::NAME => 'title' ] ]);
+ * // slug:doc.title
+ *
+ * // Output-side transformation chain (Field::ALTERS), applied to the value
+ * aqlFields([ 'name' => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ]);
+ * // name:LOWER(TRIM(doc.name))
+ *
+ * // Quoted label for a non-identifier key (Field::QUOTED): the label is
+ * // double-quoted, the attribute access uses backticks (valid AQL)
+ * aqlFields([ 'my-key' => [ Field::QUOTED => true ] ]);
+ * // "my-key":doc.`my-key`
+ *
+ * // Quoted label + alias: only the label is quoted, the source is the alias
+ * aqlFields([ 'slug' => [ Field::NAME => 'title' , Field::QUOTED => true ] ]);
+ * // "slug":doc.title
+ * ```
  *
  * @package oihana\arango\db\helpers
  * @since 1.0.0
@@ -125,7 +173,13 @@ function aqlFields
 
             if( $quoted === true )
             {
-                $key = betweenDoubleQuotes( $key , trim: false ) ;
+                // The output label is the double-quoted key; the attribute access
+                // must use backticks, NOT double quotes — `doc."my-key"` is invalid
+                // AQL, an attribute with special characters is reached as
+                // `doc.`my-key``. When a NAME already aliases the source attribute
+                // it drives the value side, so only the label is quoted.
+                $keyName = $keyName ?? Char::GRAVE_ACCENT . $key . Char::GRAVE_ACCENT ;
+                $key     = betweenDoubleQuotes( $key , trim: false ) ;
             }
 
             // Output-side `alters` (Field::ALTERS): wrap the projected value with

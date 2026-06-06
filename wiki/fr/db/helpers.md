@@ -214,6 +214,56 @@ aqlFieldDefault( 'userId' , 'doc' , 'id' ) ;      // "userId: doc.id"
 
 En usage normal, on n'appelle pas ces *builders* directement : on déclare un modèle `Documents` avec des `Field::FILTER` typés et `aqlFields()` route automatiquement.
 
+### Options par champ
+
+En plus de `Field::FILTER`, chaque définition de champ accepte des options :
+
+| Option | Effet | Exemple de sortie |
+|---|---|---|
+| `Field::NAME` | Alias : la clé de sortie diffère de l'attribut source | `slug:doc.title` |
+| `Field::ALTERS` | Chaîne de transformation `alt` appliquée à la valeur projetée | `name:LOWER(TRIM(doc.name))` |
+| `Field::QUOTED` | Étiquette de sortie entre guillemets (clés à caractères spéciaux) | `` "my-key":doc.`my-key` `` |
+| `Field::UNIQUE` | Nom de variable unique pour l'expression AQL | — |
+| `Field::REQUIRES` | Sujet(s) de permission : le champ est retiré si l'autorisation est refusée | — |
+
+> `Field::QUOTED` met des guillemets **uniquement sur l'étiquette** de sortie et accède à l'attribut en **backticks** (`` doc.`my-key` ``) — la forme AQL valide pour un attribut à caractères spéciaux (`doc."my-key"` est invalide et rejeté par ArangoDB). Un `Field::NAME` fournit alors la source : seule l'étiquette est quotée (`"slug":doc.title`).
+
+Exemples travaillés :
+
+```php
+use oihana\arango\enums\Field ;
+use oihana\arango\enums\Filter ;
+use function oihana\arango\db\helpers\aqlFields ;
+
+// Projection par défaut
+aqlFields([ 'name' => [] ]);
+// name:doc.name
+
+// Plusieurs champs typés (séparés par ', ')
+aqlFields([
+    'name'   => [] ,
+    'price'  => [ Field::FILTER => Filter::NUMBER ] ,
+    'active' => [ Field::FILTER => Filter::BOOL ] ,
+]);
+// name:doc.name, price:TO_NUMBER(doc.price), active:TO_BOOL(doc.active)
+
+// Référence document personnalisée (sous-requête edge/join)
+aqlFields([ 'tags' => [ Field::FILTER => Filter::ARRAY ] ], 'edge');
+// tags:IS_ARRAY(edge.tags) ? edge.tags : []
+
+// Alias de clé (Field::NAME)
+aqlFields([ 'slug' => [ Field::NAME => 'title' ] ]);
+// slug:doc.title
+
+// Transformation de sortie (Field::ALTERS)
+aqlFields([ 'name' => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ]);
+// name:LOWER(TRIM(doc.name))
+
+// Clé à caractères spéciaux (étiquette quotée, attribut en backticks)
+aqlFields([ 'my-key' => [ Field::QUOTED => true ] ]);
+// "my-key":doc.`my-key`
+```
+
 ## Introspection AQL
 
 Quatre prédicats permettent de classifier une chaîne :
