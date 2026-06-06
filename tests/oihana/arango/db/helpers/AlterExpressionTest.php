@@ -94,4 +94,16 @@ final class AlterExpressionTest extends TestCase
         $this->expectException( ValidationException::class ) ;
         alterExpression( 'doc.items' , [ 'pluck' , 'price] || true || [' ] ) ;
     }
+
+    /**
+     * A chain that is neither null, string nor array hits the fallback and
+     * returns the expression unchanged.
+     *
+     * @throws ValidationException
+     * @throws UnsupportedOperationException
+     */
+    public function testNonStringNonArrayChainFallsThroughUnchanged(): void
+    {
+        $this->assertSame( 'doc.name' , alterExpression( 'doc.name' , 42 ) ) ;
+    }
 }

@@ -2,6 +2,8 @@
 
 namespace tests\oihana\arango\db\helpers;
 
+use oihana\arango\models\enums\filters\FilterMatch;
+use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -93,5 +95,24 @@ final class BuildCombinedInlineFilterTest extends TestCase
 
         $this->expectException( RuntimeException::class ) ;
         buildCombinedInlineFilter( [ 'secret' => 'x' ] , $binds , [ 'email' => true ] ) ;
+    }
+
+    /**
+     * The whitelist is also enforced inside the explicit-logic
+     * (`all` / `any` / `none`) conditions loop, not only the simple shorthand.
+     *
+     * @throws BindException
+     */
+    public function testDisallowedFieldInExplicitLogicThrows(): void
+    {
+        $binds = [] ;
+
+        $this->expectException( RuntimeException::class ) ;
+        buildCombinedInlineFilter
+        (
+            [ FilterMatch::ALL => [ [ FilterParam::KEY => 'secret' , FilterParam::VAL => 'x' ] ] ] ,
+            $binds ,
+            [ 'email' => true ] ,
+        ) ;
     }
 }
