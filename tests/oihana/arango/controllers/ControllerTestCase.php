@@ -10,7 +10,10 @@ use oihana\controllers\enums\ControllerParam;
 
 use Psr\Http\Message\ServerRequestInterface as Request;
 
+use Psr\Http\Message\ResponseInterface as Response;
+
 use Slim\Factory\AppFactory;
+use Slim\Psr7\Factory\ResponseFactory;
 use Slim\Psr7\Factory\ServerRequestFactory;
 
 use PHPUnit\Framework\TestCase;
@@ -76,6 +79,17 @@ abstract class ControllerTestCase extends TestCase
     {
         $request = ( new ServerRequestFactory() )->createServerRequest( $method , $uri ) ;
         return $request->withQueryParams( $query ) ;
+    }
+
+    /**
+     * A fresh PSR-7 response (used when a handler branch returns the response
+     * object itself rather than the raw data — e.g. validation short-circuits).
+     *
+     * @return Response
+     */
+    protected function makeResponse() :Response
+    {
+        return ( new ResponseFactory() )->createResponse() ;
     }
 
     /**
