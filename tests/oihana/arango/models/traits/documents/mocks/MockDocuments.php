@@ -58,6 +58,9 @@ class MockDocuments extends Documents
     /** Canned value returned by {@see collectionTruncate()}. */
     public bool $truncateResult = true ;
 
+    /** Canned value returned by {@see foundRows()}. */
+    public int $foundRowsResult = 0 ;
+
     /**
      * Captures the truncated collection name and returns the canned {@see $truncateResult}.
      *
@@ -69,6 +72,16 @@ class MockDocuments extends Documents
     {
         $this->lastTruncatedCollection = $name ;
         return $this->truncateResult ;
+    }
+
+    /**
+     * Returns the canned {@see $foundRowsResult} (no cursor stats needed).
+     *
+     * @return int The canned full-count value.
+     */
+    public function foundRows() :int
+    {
+        return $this->foundRowsResult ;
     }
 
     /**
