@@ -1,6 +1,6 @@
 <?php
 
-namespace tests\oihana\arango\controllers;
+namespace tests\oihana\arango\controllers\traits\inject;
 
 use oihana\arango\controllers\traits\inject\InjectFilterTrait;
 use oihana\arango\models\enums\filters\FilterComparator;
