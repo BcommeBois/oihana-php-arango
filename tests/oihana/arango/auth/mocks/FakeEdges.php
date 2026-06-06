@@ -64,6 +64,51 @@ class FakeEdges extends Edges
     public ?Throwable $listThrows = null ;
 
     /**
+     * Every `insertEdge()` call as `[ from , to ]`, in call order.
+     *
+     * @var array<int,array{0:string,1:string}>
+     */
+    public array $insertEdgeCalls = [] ;
+
+    /**
+     * Optional resolver mapping a `[ from , to ]` pair to a Throwable to
+     * raise from {@see insertEdge()} — use it to simulate an Error409 on a
+     * specific edge.
+     *
+     * @var callable(string,string):?Throwable|null
+     */
+    public $insertEdgeThrowResolver = null ;
+
+    /**
+     * Records the call and optionally raises a per-edge Throwable.
+     *
+     * @param string $from
+     * @param string $to
+     * @param array  $doc
+     * @param array  $init
+     *
+     * @return object|null Always null (no persistence).
+     *
+     * @throws Throwable When {@see $insertEdgeThrowResolver} returns one.
+     */
+    public function insertEdge( string $from , string $to , array $doc = [] , array $init = [] ) :?object
+    {
+        $this->insertEdgeCalls[] = [ $from , $to ] ;
+
+        if( $this->insertEdgeThrowResolver !== null )
+        {
+            $throwable = ( $this->insertEdgeThrowResolver )( $from , $to ) ;
+
+            if( $throwable !== null )
+            {
+                throw $throwable ;
+            }
+        }
+
+        return null ;
+    }
+
+    /**
      * Records the call and returns the canned rows.
      *
      * @param array $init The listing init array.
