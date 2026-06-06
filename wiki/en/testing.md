@@ -47,6 +47,12 @@ composer coverage:md    # regenerate build/coverage/COVERAGE.md (Markdown summar
 
 Output goes to `build/coverage/` — **gitignored, never committed**: a numbers snapshot goes stale at the next commit and pollutes diffs. Regenerate on demand. The Clover → Markdown converter lives in [`tools/clover-to-markdown.php`](../../tools/clover-to-markdown.php).
 
+#### Evolution between runs
+
+Each generation timestamps the report (`Generated at YYYY-MM-DD HH:MM:SS`) and appends a snapshot to `build/coverage/history.json` (also gitignored). On the next run the summary compares against the **previous recorded run** and shows a per-metric delta: `▲ +0.14 pts (+12 lines)` / `▼ -0.30 pts (-5 methods)` / `= ±0.00 pts (+0 lines)`.
+
+The timestamp written into the data is authoritative — we deliberately do **not** trust the file's mtime (a `touch`, `checkout` or no-op regeneration would falsify it, and the file vanishes with `build/`). `history.json` is capped at the last 50 runs. Since everything lives under `build/`, this trend is **local only**: for a shared trend (team, CI), publish the report from a CI job rather than committing it.
+
 ### Reading the report
 
 - **Lines** = the reference metric (% of executed lines).

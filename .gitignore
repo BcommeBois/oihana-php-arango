@@ -19,6 +19,7 @@ composer-dev.lock
 coverage.xml
 /.phpdoc/cache
 /build/
+/build/coverage/history.json   # coverage trend log — local only, never committed
 /builds/
 /vendor/
 
