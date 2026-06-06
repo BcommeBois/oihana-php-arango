@@ -44,6 +44,37 @@ class FakeDocuments extends Documents
     public ?Throwable $getThrows = null ;
 
     /**
+     * Every `$init` array passed to {@see list()}, in call order.
+     *
+     * @var array<int,array>
+     */
+    public array $listCalls = [] ;
+
+    /**
+     * Canned rows returned by {@see list()}.
+     *
+     * @var array<int,object|array>
+     */
+    public array $listResult = [] ;
+
+    /**
+     * When set, {@see list()} throws it instead of returning.
+     */
+    public ?Throwable $listThrows = null ;
+
+    /**
+     * Every `$init` array passed to {@see update()}, in call order.
+     *
+     * @var array<int,array>
+     */
+    public array $updateCalls = [] ;
+
+    /**
+     * When set, {@see update()} throws it instead of returning.
+     */
+    public ?Throwable $updateThrows = null ;
+
+    /**
      * @param string $collection The collection name.
      */
     public function __construct( string $collection = 'permissions' )
@@ -77,5 +108,47 @@ class FakeDocuments extends Documents
         $key = $init[ Arango::VALUE ] ?? null ;
 
         return $this->getResults[ $key ] ?? null ;
+    }
+
+    /**
+     * Records the call and returns the canned {@see $listResult}.
+     *
+     * @param array $init The listing init array.
+     *
+     * @return array
+     *
+     * @throws Throwable When {@see $listThrows} is set.
+     */
+    public function list( array $init = [] ) :array
+    {
+        $this->listCalls[] = $init ;
+
+        if( $this->listThrows !== null )
+        {
+            throw $this->listThrows ;
+        }
+
+        return $this->listResult ;
+    }
+
+    /**
+     * Records the call (no persistence) and returns null.
+     *
+     * @param array $init The update init array.
+     *
+     * @return object|null
+     *
+     * @throws Throwable When {@see $updateThrows} is set.
+     */
+    public function update( array $init = [] ) :?object
+    {
+        $this->updateCalls[] = $init ;
+
+        if( $this->updateThrows !== null )
+        {
+            throw $this->updateThrows ;
+        }
+
+        return null ;
     }
 }
