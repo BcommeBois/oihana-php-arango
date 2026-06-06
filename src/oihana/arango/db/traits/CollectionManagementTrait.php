@@ -8,7 +8,6 @@ use oihana\arango\clients\exceptions\ArangoException ;
 
 use oihana\arango\clients\Database ;
 use oihana\arango\clients\collection\indexes\RawIndexDefinition ;
-use oihana\arango\clients\exceptions\ArangoException as ArangoClientException ;
 
 use oihana\arango\db\options\indexes\IndexOptions ;
 
@@ -18,13 +17,11 @@ use oihana\arango\db\options\indexes\IndexOptions ;
  * were switched in Lot 6.1 from the legacy `client/CollectionHandler`
  * to the new `clients/Collection` (and `clients/Database`).
  *
- * Every method returning `bool` continues to map server-side
- * exceptions to `false` silently — the façade never lets the new
- * `oihana\arango\clients\exceptions\ArangoException` surface; instead
- * `createIndex()` / `dropIndex()` log a warning, the boolean methods
- * swallow the error, and the throwing methods (`getIndex` / `getIndexes`)
- * wrap the new exception in the legacy one so existing `catch` sites
- * keep matching.
+ * Every method returning `bool` maps server-side exceptions to `false`
+ * silently; `createIndex()` / `dropIndex()` log a warning and return
+ * `null` / `false`. The throwing methods (`collectionRename` / `getIndex`
+ * / `getIndexes`) let the `oihana\arango\clients\exceptions\ArangoException`
+ * propagate directly.
  *
  * @package oihana\arango\db\traits
  */
@@ -58,7 +55,7 @@ trait CollectionManagementTrait
                 return true ;
             }
         }
-        catch ( ArangoClientException ) {}
+        catch ( ArangoException ) {}
 
         return false ;
     }
@@ -81,7 +78,7 @@ trait CollectionManagementTrait
                 return true ;
             }
         }
-        catch ( ArangoClientException ) {}
+        catch ( ArangoException ) {}
 
         return false ;
     }
@@ -99,7 +96,7 @@ trait CollectionManagementTrait
         {
             return $this->database->collection( $name )->exists() ;
         }
-        catch ( ArangoClientException )
+        catch ( ArangoException )
         {
             return false ;
         }
@@ -117,20 +114,16 @@ trait CollectionManagementTrait
      */
     public function collectionRename( string $oldName , string $name ) : bool
     {
-        try
+        $collection = $this->database->collection( $oldName ) ;
+
+        if ( !$collection->exists() )
         {
-            $collection = $this->database->collection( $oldName ) ;
-            if ( !$collection->exists() )
-            {
-                return false ;
-            }
-            $collection->rename( $name ) ;
-            return true ;
+            return false ;
         }
-        catch ( ArangoClientException $e )
-        {
-            throw $this->toLegacyException( $e ) ;
-        }
+
+        $collection->rename( $name ) ;
+
+        return true ;
     }
 
     /**
@@ -151,7 +144,7 @@ trait CollectionManagementTrait
                 return true ;
             }
         }
-        catch ( ArangoClientException ) {}
+        catch ( ArangoException ) {}
 
         return false ;
     }
@@ -182,7 +175,7 @@ trait CollectionManagementTrait
                         ->collection( $this->resolveCollectionName( $collection ) )
                         ->createIndex( new RawIndexDefinition( $body ) ) ;
         }
-        catch ( ArangoClientException $exception )
+        catch ( ArangoException $exception )
         {
             $this->logger?->warning( $exception->getMessage() ) ;
         }
@@ -220,7 +213,7 @@ trait CollectionManagementTrait
             $this->database->collection( $collectionName )->dropIndex( $indexKey ) ;
             return true ;
         }
-        catch ( ArangoClientException $exception )
+        catch ( ArangoException $exception )
         {
             $this->logger?->warning( $exception->getMessage() ) ;
         }
@@ -240,14 +233,7 @@ trait CollectionManagementTrait
      */
     public function getIndex( string $collection , string $indexId ) : array
     {
-        try
-        {
-            return $this->database->collection( $collection )->index( $indexId ) ;
-        }
-        catch ( ArangoClientException $e )
-        {
-            throw $this->toLegacyException( $e ) ;
-        }
+        return $this->database->collection( $collection )->index( $indexId ) ;
     }
 
     /**
@@ -261,14 +247,7 @@ trait CollectionManagementTrait
      */
     public function getIndexes( string $name ) : array
     {
-        try
-        {
-            return $this->database->collection( $name )->indexes() ;
-        }
-        catch ( ArangoClientException $e )
-        {
-            throw $this->toLegacyException( $e ) ;
-        }
+        return $this->database->collection( $name )->indexes() ;
     }
 
     /**
