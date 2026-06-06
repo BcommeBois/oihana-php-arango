@@ -16,6 +16,7 @@ use oihana\enums\http\HttpStatusCode;
 use org\schema\constants\Schema;
 
 use function oihana\core\accessors\deleteKeyValue;
+use function oihana\core\accessors\getKeyValue;
 
 trait PropertyControllerPatchTrait
 {
@@ -94,11 +95,11 @@ trait PropertyControllerPatchTrait
                 (
                     $request ,
                     $response ,
-                    $raw ? ( $payload->{ $this->property } ?? null ) : ( $this->model->get
+                    $raw ? getKeyValue( (array) $payload , $this->property ) : ( $this->model->get
                     ([
                         Arango::ARGS  => $args ,
                         Arango::VALUE => $document->_key ,
-                        Arango::IN     => $this->property , // returns only the specific property field
+                        Arango::IN    => $this->property , // returns only the specific property field
                         Arango::LANG  => $this->prepareLang( $request , $init )
                     ])->{ $this->property } ?? null )
                 );

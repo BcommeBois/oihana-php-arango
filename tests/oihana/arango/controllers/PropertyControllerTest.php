@@ -70,20 +70,19 @@ class PropertyControllerTest extends ControllerTestCase
         $this->assertSame( [ 'new@x' ] , $controller->patch( $request , null , [ Arango::ID => 'k1' ] ) ) ;
     }
 
-    public function testPatchRawReturnsNullBecausePayloadIsArrayShaped() :void
+    public function testPatchRawReturnsThePayloadPropertyWithoutReload() :void
     {
         $model = new MockDocuments( 'users' ) ;
         $model->firstResult  = 1 ;
-        $model->objectResult = (object) [ '_key' => 'k1' , 'emails' => [ 'ignored@x' ] ] ;
+        // a reload would return 'reloaded@x'; raw mode must NOT reload
+        $model->objectResult = (object) [ '_key' => 'k1' , 'emails' => [ 'reloaded@x' ] ] ;
 
         $controller = $this->makePropertyController( $model , [ self::PROPERTY => 'emails' ] ) ;
-        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'emails' => [ 'raw@x' ] ] ) ;
+        // a property endpoint receives the property value as the body
+        $request = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'raw@x' , 'raw2@x' ] ) ;
 
-        // NOTE (characterization): in raw mode the handler returns
-        // `$payload->{$this->property}`, but propertyPayload() yields an ARRAY
-        // ([property => body]), so the object-property access resolves to null.
-        // Behavior frozen as-is; flagged for review (see potential_fixes_registry).
-        $this->assertNull( $controller->patch( $request , null , [ Arango::ID => 'k1' ] , [ Arango::RAW => true ] ) ) ;
+        // raw mode returns the submitted property value (read array-safe via getKeyValue), no reload
+        $this->assertSame( [ 'raw@x' , 'raw2@x' ] , $controller->patch( $request , null , [ Arango::ID => 'k1' ] , [ Arango::RAW => true ] ) ) ;
     }
 
     public function testPatchReturnsNotFoundWhenDocumentMissing() :void
