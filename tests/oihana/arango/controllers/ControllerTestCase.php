@@ -4,10 +4,15 @@ namespace tests\oihana\arango\controllers;
 
 use DI\Container;
 
+use DI\DependencyException;
+use DI\NotFoundException;
 use oihana\arango\controllers\DocumentsController;
 use oihana\arango\controllers\EdgesController;
+use oihana\arango\controllers\PropertyController;
 use oihana\controllers\enums\ControllerParam;
 
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use Psr\Http\Message\ResponseInterface as Response;
@@ -44,9 +49,14 @@ abstract class ControllerTestCase extends TestCase
      * Builds a DocumentsController backed by the given model double.
      *
      * @param MockDocuments $model The model double.
-     * @param array         $init  Extra init overrides merged into the defaults.
+     * @param array $init Extra init overrides merged into the defaults.
      *
      * @return DocumentsController
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws \ReflectionException
      */
     protected function makeDocumentsController( MockDocuments $model , array $init = [] ) :DocumentsController
     {
@@ -60,12 +70,17 @@ abstract class ControllerTestCase extends TestCase
      * `resolveDependency()` which only accepts a string service id, so they are
      * registered in the container and referenced by id.
      *
-     * @param MockEdges          $edges The edge model double.
-     * @param MockDocuments|null $from  The optional source vertex model.
-     * @param MockDocuments|null $to    The optional target vertex model.
-     * @param array              $init  Extra init overrides merged into the defaults.
+     * @param MockEdges $edges The edge model double.
+     * @param MockDocuments|null $from The optional source vertex model.
+     * @param MockDocuments|null $to The optional target vertex model.
+     * @param array $init Extra init overrides merged into the defaults.
      *
      * @return EdgesController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws \ReflectionException
      */
     protected function makeEdgesController
     (
@@ -105,6 +120,24 @@ abstract class ControllerTestCase extends TestCase
     }
 
     /**
+     * Builds a PropertyController backed by the given model double.
+     *
+     * @param MockDocuments $model The model double.
+     * @param array $init Extra init overrides (e.g. the `property` key).
+     *
+     * @return PropertyController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws \ReflectionException
+     */
+    protected function makePropertyController( MockDocuments $model , array $init = [] ) :PropertyController
+    {
+        return new PropertyController( ...$this->controllerArgs( $model , $init ) ) ;
+    }
+
+    /**
      * A PSR-7 GET server request carrying the given query params.
      *
      * @param array  $query  The query-string parameters.
@@ -115,7 +148,7 @@ abstract class ControllerTestCase extends TestCase
      */
     protected function makeRequest( array $query = [] , string $method = 'GET' , string $uri = '/' ) :Request
     {
-        $request = ( new ServerRequestFactory() )->createServerRequest( $method , $uri ) ;
+        $request = new ServerRequestFactory()->createServerRequest( $method , $uri ) ;
         return $request->withQueryParams( $query ) ;
     }
 
@@ -127,7 +160,7 @@ abstract class ControllerTestCase extends TestCase
      */
     protected function makeResponse() :Response
     {
-        return ( new ResponseFactory() )->createResponse() ;
+        return new ResponseFactory()->createResponse() ;
     }
 
     /**
