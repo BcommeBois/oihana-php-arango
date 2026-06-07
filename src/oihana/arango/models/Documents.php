@@ -9,8 +9,7 @@ use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\models\traits\aql\FieldsTrait;
 use oihana\arango\models\traits\AQLQueryTrait;
 use oihana\arango\models\traits\documents\DocumentsMethodsTrait;
-use oihana\arango\models\traits\ListItemTrait;
-use oihana\arango\models\traits\MultiFieldTrait;
+use oihana\arango\models\traits\DocumentsArrayTrait;
 use oihana\models\interfaces\DocumentsModel;
 use oihana\models\traits\BindsTrait;
 use oihana\models\traits\SchemaTrait;
@@ -126,6 +125,7 @@ class Documents implements DocumentsModel
              ->initializeCollection       ( $init , $type      ) # After the database
              ->initializeActivable        ( $init )
              ->initializeAlters           ( $init )
+             ->initializeArrays           ( $init )
              ->initializeBinds            ( $init )
              ->initializeConfig           ( $init , $container )
              ->initializeConditions       ( $init )
@@ -150,13 +150,10 @@ class Documents implements DocumentsModel
     BindsTrait ,
     ConfigTrait ,
     ContainerTrait ,
+    DocumentsArrayTrait ,
     DocumentsMethodsTrait,
     FieldsTrait ,
     QueryIDTrait ,
     SchemaTrait ,
-    ToStringTrait  ,
-    // ---------------- Extras ?
-    ListItemTrait  ,
-    MultiFieldTrait ;
-    // ----------------
+    ToStringTrait ;
 }
