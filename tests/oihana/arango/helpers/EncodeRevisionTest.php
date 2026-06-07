@@ -89,4 +89,28 @@ final class EncodeRevisionTest extends TestCase
         $this->assertSame($decoded1['count'] + 1, $decoded2['count']);
         $this->assertSame($decoded2['count'] + 1, $decoded3['count']);
     }
+
+    public function testThrowsInvalidArgumentOnUnparseableDateWhenThrowable(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('failed to parse date');
+        encodeRevision('not-a-date', null, true);
+    }
+
+    public function testReturnsEmptyStringOnUnparseableDateWhenNotThrowable(): void
+    {
+        $this->assertSame('', encodeRevision('not-a-date'));
+    }
+
+    public function testThrowsInvalidArgumentWhenCountNegativeAndThrowable(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('count must be between');
+        encodeRevision('2025-10-25T12:00:00.000Z', -1, true);
+    }
+
+    public function testReturnsEmptyStringWhenCountOutOfRangeAndNotThrowable(): void
+    {
+        $this->assertSame('', encodeRevision('2025-10-25T12:00:00.000Z', 1048576));
+    }
 }

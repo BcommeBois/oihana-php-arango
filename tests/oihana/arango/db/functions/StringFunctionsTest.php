@@ -51,6 +51,11 @@ class StringFunctionsTest extends TestCase
             'toHex'              => [ 'toHex', StringFunction::TO_HEX, ['hi'], 'hi'],
             'upper'              => [ 'upper', StringFunction::UPPER, ['test'], 'test'],
             'uuid'               => [ 'uuid', StringFunction::UUID, [], ''],
+            'findLast'           => [ 'findLast', StringFunction::FIND_LAST, ['doc.text', '"o"', 0, null], 'doc.text,"o",0'],
+            'findLastWithEnd'    => [ 'findLast', StringFunction::FIND_LAST, ['doc.text', '"o"', 0, 5], 'doc.text,"o",0,5'],
+            'split'              => [ 'split', StringFunction::SPLIT, ['doc.text', '","'], 'doc.text,","'],
+            'splitWithLimit'     => [ 'split', StringFunction::SPLIT, ['doc.text', '","', 2], 'doc.text,",",2'],
+            'tokens'             => [ 'tokens', StringFunction::TOKENS, ['doc.content', '"text_en"'], 'doc.content,"text_en"'],
         ];
     }
 
