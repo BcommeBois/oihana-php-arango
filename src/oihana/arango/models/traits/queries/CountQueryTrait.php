@@ -2,6 +2,10 @@
 
 namespace oihana\arango\models\traits\queries;
 
+use DI\DependencyException;
+use DI\NotFoundException;
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -59,10 +63,14 @@ trait CountQueryTrait
      * @return string The compiled AQL query string.
      *
      * @throws BindException
-     * @throws ReflectionException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
-     * @throws ConstantException
+     * @throws ReflectionException
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function buildCountQuery( array $init = [] , array &$bindVars = [] ) : string
     {

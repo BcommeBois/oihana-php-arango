@@ -234,7 +234,7 @@ trait ListQueryTrait
      * @throws DependencyException
      * @throws NotFoundException
      * @throws ValidationException
-     * 
+     *
      * @see list() For executing the built query and retrieving results
      * @see prepareActive() For active status filter preparation
      * @see prepareFacets() For facet filter preparation
