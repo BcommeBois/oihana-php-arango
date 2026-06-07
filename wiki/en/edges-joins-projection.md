@@ -5,13 +5,14 @@
 1. [Overview](#overview)
 2. [The `Field::SKINS` marker at the document level](#the-fieldskins-marker-at-the-document-level)
 3. [Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition](#composed-projection--aqlfields--aqledges-on-the-edge-definition)
-4. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
-5. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
-6. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
-7. [Which mechanism to use?](#which-mechanism-to-use)
-8. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
-9. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
-10. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
+4. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
+5. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
+6. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
+7. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
+8. [Which mechanism to use?](#which-mechanism-to-use)
+9. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
+10. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
+11. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
 
 ## Overview
 
@@ -114,6 +115,49 @@ Important points:
 - `AQL::FIELDS` on the edge definition **is read** by `buildEdgeVariable`. This is the effective projection used to hydrate the target document.
 - `AQL::EDGES` on the edge definition declares the sub-edges referenced by `Filter::EDGE` or `Filter::EDGES` markers in the projection.
 - `Field::FIELDS` placed **inline at the parent field level** is ignored for `Filter::EDGES` (it's only honoured for `Filter::DOCUMENT` and `Filter::MAP`). A common pitfall: declare the projection at the right level (on the edge definition, not on the parent field).
+
+## Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`
+
+Where an *edge* traverses an edge collection, a **join** resolves a **reference stored in the document itself** to the documents of another collection. The **field type** picks the cardinality, exactly like `Filter::EDGE` (single) vs `Filter::EDGES` (multiple):
+
+- **`Filter::JOIN`** — the field holds **one** identifier → projects **the** joined document.
+- **`Filter::JOINS`** — the field holds an **array of identifiers** → projects **the list** of joined documents.
+
+The projection is declared in two parts: the field **type** in `AQL::FIELDS`, and the join **definition** (target collection, projection, sort) in `AQL::JOINS`, under the same key.
+
+```php
+AQL::FIELDS =>
+[
+    Prop::_KEY => Filter::DEFAULT ,
+    'tracks'   => Filter::JOINS ,        // array of ids → joined documents
+],
+AQL::JOINS =>
+[
+    'tracks' =>
+    [
+        AQL::MODEL   => Models::TRACK ,                                            // target Documents model (DI)
+        AQL::FIELDS  => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] , // projection of the joined docs
+        Arango::SORT => 'name' ,                                                   // sort INSIDE the join
+    ],
+],
+```
+
+`GET /playlists/{id}` then returns `tracks` no longer as an array of ids, but as the **list of matching documents**. The generated AQL (simplified):
+
+```aql
+LET tracks = (
+    FOR doc_join IN @@track
+        FILTER doc_join._key IN ( IS_ARRAY( doc.tracks ) ? doc.tracks : [] )
+        SORT doc_join.name ASC
+        RETURN { _key: doc_join._key, name: doc_join.name }
+)
+```
+
+> **Sorting a joined array happens INSIDE the join** (`Arango::SORT` on the join definition), not through the outer `?sort=` — which sorts the **parent documents**, never the content of a joined field. That is the correct separation.
+
+Useful options on the join definition: `Arango::KEY` (join attribute, default `_key`), `Arango::PROPERTY` (point at a nested parent property as the key), `Arango::CONDITIONS` (extra filters), nested `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN` / `AQL::SKIN_FIELDS` (the joined projection varies with `?skin=`), `AQL::REQUIRES` ([permission gating](#permission-gated-edges-and-joins--aqlrequires)).
+
+> Natural combination with [embedded array fields](db/arrays.md): a `tracks` field (an array of ids mutated element-by-element via `ArrayPropertyController`) can **at the same time** be projected as sorted joined documents in the `GET` via `Filter::JOINS` — no duplication.
 
 ## Breaking an INBOUND cycle with `AQL::SKIN`
 

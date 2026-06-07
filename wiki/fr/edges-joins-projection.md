@@ -5,13 +5,14 @@
 1. [Vue d'ensemble](#vue-densemble)
 2. [Le marqueur `Field::SKINS` au niveau document](#le-marqueur-fieldskins-au-niveau-document)
 3. [Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge](#projection-composée--aqlfields--aqledges-sur-la-définition-dedge)
-4. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
-5. [Projection variable selon le skin de la requête — `Field::SKINS` sur les sous-champs](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs)
-6. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
-7. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
-8. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
-9. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
-10. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
+4. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
+5. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+6. [Projection variable selon le skin de la requête — `Field::SKINS` sur les sous-champs](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs)
+7. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
+8. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
+9. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
+10. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
+11. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
 
 ## Vue d'ensemble
 
@@ -114,6 +115,49 @@ Points importants :
 - `AQL::FIELDS` sur la définition d'edge **est lu** par `buildEdgeVariable`. C'est la projection effective utilisée pour hydrater le document cible.
 - `AQL::EDGES` sur la définition d'edge déclare les sous-edges référencées par les `Filter::EDGE` ou `Filter::EDGES` dans la projection.
 - `Field::FIELDS` posé **inline au niveau du champ parent** est ignoré pour `Filter::EDGES` (il n'est respecté que pour `Filter::DOCUMENT` et `Filter::MAP`). C'est un piège classique : déclarer la projection au bon niveau (sur la définition d'edge, pas sur le champ parent).
+
+## Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`
+
+Là où un *edge* traverse une collection d'arêtes, un **join** résout une **référence stockée dans le document lui-même** vers les documents d'une autre collection. Le **type du champ** choisit la cardinalité, exactement comme `Filter::EDGE` (unique) vs `Filter::EDGES` (multiple) :
+
+- **`Filter::JOIN`** — le champ contient **un** identifiant → projette **le** document joint.
+- **`Filter::JOINS`** — le champ contient un **tableau d'identifiants** → projette **la liste** des documents joints.
+
+La projection se déclare en deux temps : le **type** du champ dans `AQL::FIELDS`, et la **définition** du join (collection cible, projection, tri) dans `AQL::JOINS`, sous la même clé.
+
+```php
+AQL::FIELDS =>
+[
+    Prop::_KEY => Filter::DEFAULT ,
+    'tracks'   => Filter::JOINS ,        // tableau d'ids → documents joints
+],
+AQL::JOINS =>
+[
+    'tracks' =>
+    [
+        AQL::MODEL   => Models::TRACK ,                                            // modèle Documents cible (DI)
+        AQL::FIELDS  => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] , // projection des docs joints
+        Arango::SORT => 'name' ,                                                   // tri DANS la jointure
+    ],
+],
+```
+
+`GET /playlists/{id}` renvoie alors `tracks` non plus comme un tableau d'ids, mais comme la **liste des documents** correspondants. L'AQL généré (simplifié) :
+
+```aql
+LET tracks = (
+    FOR doc_join IN @@track
+        FILTER doc_join._key IN ( IS_ARRAY( doc.tracks ) ? doc.tracks : [] )
+        SORT doc_join.name ASC
+        RETURN { _key: doc_join._key, name: doc_join.name }
+)
+```
+
+> **Le tri d'un tableau joint se fait DANS la jointure** (`Arango::SORT` sur la définition du join), pas via le `?sort=` externe — qui, lui, trie les **documents parents**, jamais le contenu d'un champ joint. C'est la bonne séparation.
+
+Options utiles sur la définition de join : `Arango::KEY` (attribut de jointure, défaut `_key`), `Arango::PROPERTY` (pointer une propriété imbriquée du parent comme clé), `Arango::CONDITIONS` (filtres supplémentaires), `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS` imbriqués, `AQL::SKIN` / `AQL::SKIN_FIELDS` (la projection jointe varie avec `?skin=`), `AQL::REQUIRES` ([gating par permission](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)).
+
+> Combinaison naturelle avec les [champs-tableaux embarqués](db/arrays.md) : un champ `tracks` (tableau d'ids muté élément par élément via `ArrayPropertyController`) peut **en même temps** être projeté en documents joints triés dans le `GET` via `Filter::JOINS` — aucune duplication.
 
 ## Couper un cycle INBOUND avec `AQL::SKIN`
 
