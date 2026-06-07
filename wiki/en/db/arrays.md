@@ -51,6 +51,10 @@ An **undeclared** field defaults to `ArrayMode::LIST`, without a counter.
 
 If a field declares a `COUNTER`, the named attribute is **recomputed automatically** (`LENGTH(...)`) on every mutation. Handy to sort/filter on the list size without unwinding the array (e.g. `numberOfTracks`).
 
+### Default value on creation
+
+Declared array fields are **initialized to `[]` on document creation** (and their `counter` to `0`): `insert()` — and the INSERT branch of `upsert()` — seeds these defaults for any field declared in `AQL::ARRAYS` that the payload omits. A brand-new document is therefore always ready for `arrayInsert`/`arrayContains` with no missing-field special case. Explicitly provided values are never overwritten.
+
 ## Ordering modes (`ArrayMode`)
 
 The mode drives **both uniqueness AND sorting** with a single setting — so you never pass a `unique`/`sorted` flag at call time:

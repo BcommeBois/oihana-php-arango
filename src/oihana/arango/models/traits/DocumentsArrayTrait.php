@@ -2,6 +2,7 @@
 
 namespace oihana\arango\models\traits;
 
+use Closure;
 use ReflectionException;
 use Throwable;
 
@@ -45,6 +46,7 @@ use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlUpdate;
 use function oihana\arango\db\operators\equal;
 
+use function oihana\core\accessors\ensureKeyValue;
 use function oihana\core\arrays\toArray;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
@@ -149,6 +151,33 @@ trait DocumentsArrayTrait
         }
 
         return (bool) $this->getFirstResult( $query , $binds ) ;
+    }
+
+    /**
+     * Returns the default seed for the declared embedded array fields: each array
+     * field defaults to `[]`, and each declared counter to `0`.
+     *
+     * Used to initialize a freshly created document so that every declared array
+     * field is always a real (possibly empty) array — see {@see ensureArrayDefaults()}.
+     *
+     * @return array<string,array|int> e.g. `[ 'tracks' => [], 'numberOfTracks' => 0, 'tags' => [] ]`.
+     */
+    public function arrayDefaults() : array
+    {
+        $defaults = [] ;
+
+        foreach ( $this->arrays as $field => $config )
+        {
+            $defaults[ $field ] = [] ;
+
+            $counter = $config[ Arango::COUNTER ] ?? null ;
+            if ( $counter !== null )
+            {
+                $defaults[ $counter ] = 0 ;
+            }
+        }
+
+        return $defaults ;
     }
 
     /**
@@ -482,6 +511,32 @@ trait DocumentsArrayTrait
         }
 
         return '{ ' . compile( $fields , ', ' ) . ' }' ;
+    }
+
+    /**
+     * Builds an `ensure` closure that seeds the declared array fields to `[]` (and
+     * their counters to `0`) for any missing key of a document being created, then
+     * applies the optional user-supplied `ensure`. Returns the user closure unchanged
+     * when no array field is declared (so models without `AQL::ARRAYS` are untouched).
+     *
+     * @param Closure|null $ensure An optional user ensure closure to compose with.
+     *
+     * @return Closure|null
+     */
+    protected function ensureArrayDefaults( ?Closure $ensure = null ) : ?Closure
+    {
+        $defaults = $this->arrayDefaults() ;
+
+        if ( empty( $defaults ) )
+        {
+            return $ensure ;
+        }
+
+        return static function ( array|object $doc ) use ( $defaults , $ensure )
+        {
+            $doc = ensureKeyValue( $doc , $defaults ) ;
+            return $ensure !== null ? $ensure( $doc ) : $doc ;
+        } ;
     }
 
     /**

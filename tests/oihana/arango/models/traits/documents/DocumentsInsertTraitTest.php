@@ -3,6 +3,7 @@
 namespace tests\oihana\arango\models\traits\documents;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\ArrayMode;
 use oihana\models\notices\AfterInsert;
 use oihana\models\notices\BeforeInsert;
 
@@ -42,6 +43,25 @@ final class DocumentsInsertTraitTest extends TestCase
 
         $this->assertSame( 'INSERT @insert INTO @@collection RETURN NEW' , $model->lastQuery ) ;
         $this->assertSame( [ 'name' , 'created' , 'modified' ] , array_keys( $model->lastBinds[ 'insert' ] ) ) ;
+    }
+
+    public function testInsertSeedsDeclaredArrayFieldsToEmpty() :void
+    {
+        $model = new MockDocuments( 'Playlist' ) ;
+        $model->objectResult = (object) [ '_key' => 'p1' ] ;
+        $model->arrays =
+        [
+            'tags'   => [ Arango::MODE => ArrayMode::SET  , Arango::COUNTER => null ] ,
+            'tracks' => [ Arango::MODE => ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ,
+        ] ;
+
+        $model->insert( [ Arango::DOC => [ 'name' => 'Marc' , 'tags' => [ 'jazz' ] ] ] ) ;
+
+        $insert = $model->lastBinds[ 'insert' ] ;
+        $this->assertSame( [ 'jazz' ] , $insert[ 'tags' ] ) ;   // provided field kept, not overwritten
+        $this->assertSame( [] , $insert[ 'tracks' ] ) ;         // missing array field seeded to []
+        $this->assertSame( 0 , $insert[ 'numberOfTracks' ] ) ;  // its counter seeded to 0
+        $this->assertSame( 'Marc' , $insert[ 'name' ] ) ;
     }
 
     public function testDebugFlagLogsButDoesNotAlterTheInsert() :void

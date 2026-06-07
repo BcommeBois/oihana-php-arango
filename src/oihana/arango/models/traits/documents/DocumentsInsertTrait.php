@@ -81,6 +81,14 @@ trait DocumentsInsertTrait
         $doc        = $init[ Arango::DOC         ] ?? null ;
         $removeKeys = $init[ Arango::REMOVE_KEYS ] ?? null ;
 
+        // Seed the declared embedded array fields to [] (and their counters to 0)
+        // on creation, composed with any user-supplied Arango::ENSURE closure.
+        $ensure = $init[ Arango::ENSURE ] ?? null ;
+        if ( method_exists( $this , 'ensureArrayDefaults' ) )
+        {
+            $ensure = $this->ensureArrayDefaults( $ensure ) ;
+        }
+
         $docClause = $this->prepareDocumentClause
         (
             doc        : $doc ,
@@ -88,6 +96,7 @@ trait DocumentsInsertTrait
             binds    : $bindVars ,
             removeKeys : $removeKeys ,
             conditions : $conditions ,
+            ensure     : $ensure ,
         ) ;
 
         $query = aqlInsert

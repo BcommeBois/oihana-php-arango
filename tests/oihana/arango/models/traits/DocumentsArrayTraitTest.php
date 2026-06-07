@@ -494,6 +494,15 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- config + signals
 
+    public function testArrayDefaultsSeedsFieldsAndCounters() :void
+    {
+        $this->assertSame
+        (
+            [ 'tracks' => [] , 'numberOfTracks' => 0 , 'tags' => [] , 'genres' => [] ] ,
+            $this->stub()->arrayDefaults() ,
+        ) ;
+    }
+
     public function testInitializeArraysNormalisesShorthandAndFullForms() :void
     {
         $stub = $this->stub() ;

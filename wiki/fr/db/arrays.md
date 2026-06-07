@@ -51,6 +51,10 @@ Un champ **non déclaré** est traité par défaut comme `ArrayMode::LIST`, sans
 
 Si un champ déclare un `COUNTER`, l'attribut nommé est **recalculé automatiquement** (`LENGTH(...)`) à chaque mutation. Pratique pour trier/filtrer sur la taille de la liste sans dérouler le tableau (par ex. `numberOfTracks`).
 
+### Valeur par défaut à la création
+
+Les champs-tableaux déclarés sont **initialisés à `[]` à la création** du document (et leur `counter` à `0`) : `insert()` — et la branche INSERT d'`upsert()` — pose ces défauts pour tout champ déclaré dans `AQL::ARRAYS` que le payload ne fournit pas. Ainsi un document neuf est toujours prêt pour `arrayInsert`/`arrayContains` sans cas particulier « champ absent ». Les valeurs fournies explicitement ne sont jamais écrasées.
+
 ## Modes d'ordre (`ArrayMode`)
 
 Le mode pilote **l'unicité ET le tri** en un seul réglage — vous ne passez donc jamais de flag `unique`/`sorted` à l'appel :

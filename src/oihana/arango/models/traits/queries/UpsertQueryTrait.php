@@ -82,12 +82,22 @@ trait UpsertQueryTrait
             ) ;
         }
 
+        // Seed the declared embedded array fields to [] (and counters to 0) on the
+        // INSERT branch of the upsert, composed with any user-supplied ensure.
+        $insertEnsure = $init[ Arango::ENSURE ] ?? null ;
+        if ( method_exists( $this , 'ensureArrayDefaults' ) )
+        {
+            $insertEnsure = $this->ensureArrayDefaults( $insertEnsure ) ;
+        }
+
         $insert = $this->prepareDocumentClause
         (
             $init[ Arango::INSERT ] ?? null ,
             Operation::INSERT ,
             $bindVars ,
-            $removeKeys
+            $removeKeys ,
+            null ,
+            $insertEnsure
         ) ;
 
         $operation = $mode === AQL::REPLACE ? Operation::REPLACE : Operation::UPDATE ;
