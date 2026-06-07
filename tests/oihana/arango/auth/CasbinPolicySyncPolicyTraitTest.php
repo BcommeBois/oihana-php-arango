@@ -808,6 +808,16 @@ class CasbinPolicySyncPolicyTraitTest extends TestCase
         $this->assertSame( [] , $enforcer->calls ) ;
     }
 
+    public function testResolveRolesForPolicyReturnsEmptyWhenNoRoleHasPoliciesEdge() :void
+    {
+        // The private guard: with no role_has_policies edge model wired,
+        // resolveRolesForPolicy() short-circuits to an empty list.
+        $sync = new MockCasbinPolicySync( [] ) ;
+
+        $method = new \ReflectionMethod( $sync , 'resolveRolesForPolicy' ) ;
+        $this->assertSame( [] , $method->invoke( $sync , 'anyPolicyKey' ) ) ;
+    }
+
     public function testCleanupPermissionSkipsPolicyEdgeWithUnparsableFrom() :void
     {
         $enforcer = new SpyEnforcer() ;
