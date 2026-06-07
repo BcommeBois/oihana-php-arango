@@ -5,6 +5,9 @@ namespace tests\oihana\arango\casbin;
 use Casbin\Exceptions\CasbinException;
 use Casbin\Exceptions\InvalidFilterTypeException;
 use Casbin\Model\Model;
+use Casbin\Persist\Adapters\Filter;
+
+use RuntimeException;
 
 use DateInvalidTimeZoneException;
 use DateMalformedStringException;
@@ -549,5 +552,70 @@ class ArangoCasbinAdapterTest extends TestCase
 
         $this->adapter->setFiltered( false ) ;
         $this->assertFalse( $this->adapter->isFiltered() ) ;
+    }
+
+    // ========== loadFilteredPolicy with a Casbin Filter instance ==========
+
+    /**
+     * @throws InvalidFilterTypeException
+     */
+    public function testLoadFilteredPolicyWithCasbinFilterInstance(): void
+    {
+        $this->store =
+        [
+            [ 'ptype' => 'p' , 'v0' => 'role:admin'  , 'v1' => 'api-a' , 'v2' => '/products' , 'v3' => 'GET' , 'v4' => 'allow' ] ,
+            [ 'ptype' => 'p' , 'v0' => 'role:editor' , 'v1' => 'api-b' , 'v2' => '/users'    , 'v3' => 'GET' , 'v4' => 'allow' ] ,
+        ] ;
+
+        $model = new Model() ;
+        $model->loadModelFromText
+        (
+            "[request_definition]\n" .
+            "r = sub, dom, obj, act\n" .
+            "[policy_definition]\n" .
+            "p = sub, dom, obj, act, eft\n" .
+            "[role_definition]\n" .
+            "g = _, _, _\n" .
+            "[policy_effect]\n" .
+            "e = some(where (p.eft == allow))\n" .
+            "[matchers]\n" .
+            "m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act"
+        ) ;
+
+        // Filter->p holds the field names, Filter->g the parallel values:
+        // here "v0 == role:admin" → only the first stored policy matches.
+        $filter = new Filter() ;
+        $filter->p = [ 'v0' ] ;
+        $filter->g = [ 'role:admin' ] ;
+
+        $this->adapter->loadFilteredPolicy( $model , $filter ) ;
+
+        $this->assertTrue ( $model->hasPolicy( 'p' , 'p' , [ 'role:admin'  , 'api-a' , '/products' , 'GET' , 'allow' ] ) ) ;
+        $this->assertFalse( $model->hasPolicy( 'p' , 'p' , [ 'role:editor' , 'api-b' , '/users'    , 'GET' , 'allow' ] ) ) ;
+        $this->assertTrue ( $this->adapter->isFiltered() ) ;
+
+        // The condition went through buildFilterConditions().
+        $this->assertContains( [ 'doc.v0 == "role:admin"' ] , $this->calls['list'] ) ;
+    }
+
+    // ========== removePolicy — failure path ==========
+
+    public function testRemovePolicyLogsAWarningWhenTheModelThrows(): void
+    {
+        $throwingModel = $this->createStub( DocumentsModel::class ) ;
+        $throwingModel
+            ->method( 'list' )
+            ->willThrowException( new RuntimeException( 'database unavailable' ) ) ;
+
+        $logger = $this->createMock( LoggerInterface::class ) ;
+        $logger
+            ->expects( $this->once() )
+            ->method( 'warning' )
+            ->with( $this->stringContains( 'failed' ) ) ;
+
+        $adapter = new ArangoCasbinAdapter( $throwingModel , $logger ) ;
+
+        // Must swallow the exception (logged, not rethrown).
+        $adapter->removePolicy( 'p' , 'p' , [ 'role:admin' , 'api' , '/products' , 'GET' , 'allow' ] ) ;
     }
 }
