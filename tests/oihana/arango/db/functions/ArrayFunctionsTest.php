@@ -144,6 +144,11 @@ class ArrayFunctionsTest extends TestCase
         $this->assertEquals("REMOVE_VALUE(arr,1,1)", removeValue('arr', 1, 1));
         $this->assertEquals("REMOVE_VALUE(arr,1)", removeValue('arr', 1, 0));
         $this->assertEquals("REMOVE_VALUE(arr,1)", removeValue('arr', 1));
+
+        // numeric-string limit is accepted, non-numeric / non-positive is ignored (no TypeError)
+        $this->assertEquals("REMOVE_VALUE(arr,1,2)", removeValue('arr', 1, '2'));
+        $this->assertEquals("REMOVE_VALUE(arr,1)", removeValue('arr', 1, 'all'));
+        $this->assertEquals("REMOVE_VALUE(arr,1)", removeValue('arr', 1, '-3'));
     }
 
     public function testRemoveValues(): void

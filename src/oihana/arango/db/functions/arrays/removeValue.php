@@ -33,7 +33,8 @@ use function oihana\core\strings\func;
  *
  * @param string $anyArray Array expression to remove value from.
  * @param mixed $value Value to remove from the array.
- * @param int|null $limit Optional limit for number of removals (null = no limit).
+ * @param int|string|null $limit Optional limit for the number of removals. Non-numeric or
+ *                                non-positive values (and null) are ignored (no limit).
  * @return string The formatted AQL expression.
  *
  * @see https://docs.arangodb.com/stable/aql/functions/array/#remove_value
@@ -43,8 +44,9 @@ use function oihana\core\strings\func;
  * @since 1.0.0
  * @author Marc Alcaraz
  */
-function removeValue( string $anyArray , mixed $value , ?int $limit = null ) : string
+function removeValue( string $anyArray , mixed $value , int|string|null $limit = null ) : string
 {
-    return func( ArrayFunction::REMOVE_VALUE , [ $anyArray , $value , $limit > 0 ? $limit : Char::EMPTY ] ) ;
+    $limit = is_numeric( $limit ) && (int) $limit > 0 ? (int) $limit : Char::EMPTY ;
+    return func( ArrayFunction::REMOVE_VALUE , [ $anyArray , $value , $limit ] ) ;
 }
 

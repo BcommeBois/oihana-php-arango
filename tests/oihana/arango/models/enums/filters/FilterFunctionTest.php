@@ -478,6 +478,8 @@ class FilterFunctionTest extends TestCase
     {
         $this->assertSame( 'REMOVE_VALUE(doc.items,x)' , FilterFunction::apply( FilterFunction::REMOVE , 'doc.items' , [ 'x' ] ) ) ;
         $this->assertSame( 'REMOVE_VALUE(doc.items,x,1)' , FilterFunction::apply( FilterFunction::REMOVE , 'doc.items' , [ 'x' , 1 ] ) ) ;
+        // a non-numeric limit coming from the outside no longer raises a TypeError, it is ignored
+        $this->assertSame( 'REMOVE_VALUE(doc.items,x)' , FilterFunction::apply( FilterFunction::REMOVE , 'doc.items' , [ 'x' , 'all' ] ) ) ;
     }
 
     public function testApplyRemoves(): void
