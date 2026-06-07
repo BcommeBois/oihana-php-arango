@@ -6,6 +6,7 @@ use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoRestoreOption;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoRestoreTrait;
+use oihana\arango\commands\traits\DirectoryTrait;
 
 use oihana\commands\enums\CommandArg;
 use oihana\commands\enums\ExitCode;
@@ -67,18 +68,13 @@ trait ArangoRestoreAction
     use ArangoCollectionsTrait ,
         ArangoListDumpsAction ,
         ArangoRestoreTrait ,
+        DirectoryTrait ,
         EncryptTrait ;
 
     /**
      * The regexp to find the archive file.
      */
     public const string ARCHIVE_REGEXP = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-.+\.tar(\.gz(\.enc)?)?$/' ;
-
-    /**
-     * The dump/restore directory.
-     * @var ?string
-     */
-    public ?string $directory ;
 
     /**
      * The exit message.

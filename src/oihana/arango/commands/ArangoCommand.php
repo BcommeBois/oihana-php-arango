@@ -55,7 +55,7 @@ class ArangoCommand extends Kernel
         parent::__construct( $name , $container , $init );
         $this->dateFormat = $init[ ArangoCommandParam::DATE_FORMAT ] ?? $this->dateFormat ;
         $this->timezone   = $init[ ArangoCommandParam::TIMEZONE    ] ?? $this->timezone ;
-        $this->directory  = $init[ ArangoCommandParam::DIRECTORY   ] ?? $this->directory  ;
+        $this->initializeDirectory( $init );
         $this->initializeArangoDB( $init );
         $this->initializeEncrypt( $init );
         $this->initializePassphrase( $init );

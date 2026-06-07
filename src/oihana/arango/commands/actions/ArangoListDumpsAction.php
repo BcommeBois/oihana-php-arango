@@ -7,6 +7,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use oihana\arango\commands\options\ArangoCommandOption;
+use oihana\arango\commands\traits\DirectoryTrait;
 use oihana\commands\traits\IOTrait;
 use oihana\files\enums\FindFilesOption;
 use oihana\files\exceptions\DirectoryException;
@@ -23,18 +24,13 @@ use function oihana\files\getDirectory;
  */
 trait ArangoListDumpsAction
 {
-    use IOTrait ;
+    use DirectoryTrait ,
+        IOTrait ;
 
     /**
      * The pattern to find the archive files.
      */
     public const string ARCHIVE_REGEXP = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-.+\.tar(\.gz(\.enc)?)?$/' ;
-
-    /**
-     * The dump/restore directory.
-     * @var ?string
-     */
-    public ?string $directory ;
 
     /**
      * List the dump files of the database.

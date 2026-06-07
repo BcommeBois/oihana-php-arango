@@ -10,6 +10,7 @@ use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\traits\ArangoClientTrait;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoDumpTrait;
+use oihana\arango\commands\traits\DirectoryTrait;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\db\enums\ArangoConfig;
 
@@ -53,13 +54,8 @@ trait ArangoDumpAction
         ArangoCollectionsTrait ,
         ArangoDumpTrait ,
         ArangoListDumpsAction ,
+        DirectoryTrait ,
         EncryptTrait ;
-
-    /**
-     * The dump/restore directory.
-     * @var ?string
-     */
-    public ?string $directory ;
 
     /**
      * The compression of the dump file.
