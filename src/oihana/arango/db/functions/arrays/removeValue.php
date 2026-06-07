@@ -43,8 +43,8 @@ use function oihana\core\strings\func;
  * @since 1.0.0
  * @author Marc Alcaraz
  */
-function removeValue( string $anyArray , mixed $value , ?int $limit ) : string
+function removeValue( string $anyArray , mixed $value , ?int $limit = null ) : string
 {
-    return func( ArrayFunction::REMOVE_VALUES , [ $anyArray , $value , $limit > 0 ? $limit : Char::EMPTY ] ) ;
+    return func( ArrayFunction::REMOVE_VALUE , [ $anyArray , $value , $limit > 0 ? $limit : Char::EMPTY ] ) ;
 }
 

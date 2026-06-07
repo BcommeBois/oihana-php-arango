@@ -470,13 +470,14 @@ class FilterFunctionTest extends TestCase
     }
 
     /**
-     * NOTE: `remove` (singular) currently emits the plural AQL `REMOVE_VALUES`
-     * — the underlying removeValue() helper uses ArrayFunction::REMOVE_VALUES
-     * despite its docblock claiming REMOVE_VALUE. Frozen as the real behavior.
+     * `remove` (singular) emits the singular AQL `REMOVE_VALUE`, which removes a
+     * single value (with an optional occurrence limit as the second parameter).
+     * Use `removes` (plural) to remove a list of values via `REMOVE_VALUES`.
      */
     public function testApplyRemove(): void
     {
-        $this->assertSame( 'REMOVE_VALUES(doc.items,x)' , FilterFunction::apply( FilterFunction::REMOVE , 'doc.items' , [ 'x' ] ) ) ;
+        $this->assertSame( 'REMOVE_VALUE(doc.items,x)' , FilterFunction::apply( FilterFunction::REMOVE , 'doc.items' , [ 'x' ] ) ) ;
+        $this->assertSame( 'REMOVE_VALUE(doc.items,x,1)' , FilterFunction::apply( FilterFunction::REMOVE , 'doc.items' , [ 'x' , 1 ] ) ) ;
     }
 
     public function testApplyRemoves(): void

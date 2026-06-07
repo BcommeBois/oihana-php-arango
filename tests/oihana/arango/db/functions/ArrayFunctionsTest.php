@@ -141,8 +141,9 @@ class ArrayFunctionsTest extends TestCase
 
     public function testRemoveValue(): void
     {
-        $this->assertEquals("REMOVE_VALUES(arr,1,1)", removeValue('arr', 1, 1));
-        $this->assertEquals("REMOVE_VALUES(arr,1)", removeValue('arr', 1, 0));
+        $this->assertEquals("REMOVE_VALUE(arr,1,1)", removeValue('arr', 1, 1));
+        $this->assertEquals("REMOVE_VALUE(arr,1)", removeValue('arr', 1, 0));
+        $this->assertEquals("REMOVE_VALUE(arr,1)", removeValue('arr', 1));
     }
 
     public function testRemoveValues(): void
