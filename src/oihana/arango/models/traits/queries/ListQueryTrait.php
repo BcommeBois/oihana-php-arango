@@ -2,7 +2,10 @@
 
 namespace oihana\arango\models\traits\queries;
 
+use DI\DependencyException;
+use DI\NotFoundException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 use ReflectionException;
 
@@ -214,29 +217,24 @@ trait ListQueryTrait
      *   RETURN { _key: doc._key, title: doc.title, price: doc.price }
      * ```
      *
-     * @throws BindException
-     * If there's an error during bind variable processing, such as:
+     * @throws BindException If there's an error during bind variable processing, such as:
      * - Invalid bind variable names (reserved keywords, invalid characters)
      * - Type conversion failures
      * - Collection binding errors
-     *
-     * @throws ContainerExceptionInterface
-     * If there's an error accessing the dependency injection container
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface If there's an error accessing the dependency injection container
      * while resolving services needed during query construction
-     *
-     * @throws NotFoundExceptionInterface
-     * If a required service (like a filter handler) is not found
+     * @throws NotFoundExceptionInterface If a required service (like a filter handler) is not found
      * in the dependency injection container
-     *
-     * @throws ReflectionException
-     * If a reflection error occurs during internal processing, such as:
+     * @throws ReflectionException If a reflection error occurs during internal processing, such as:
      * - Analyzing filter or sort field structures
      * - Inspecting schema classes for field validation
      * - Dynamic method invocation failures
-     *
      * @throws UnsupportedOperationException
-     * @throws ConstantException
-     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws ValidationException
+     * 
      * @see list() For executing the built query and retrieving results
      * @see prepareActive() For active status filter preparation
      * @see prepareFacets() For facet filter preparation
