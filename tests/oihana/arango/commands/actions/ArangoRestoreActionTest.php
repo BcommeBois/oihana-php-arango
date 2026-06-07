@@ -12,13 +12,18 @@ use oihana\arango\commands\options\ArangoRestoreOptions;
 
 use oihana\commands\enums\ExitCode;
 use oihana\commands\exceptions\ExitException;
+use oihana\commands\traits\HelperTrait;
+
+use oihana\date\traits\DateTrait;
 
 use oihana\enums\Char;
 use oihana\files\enums\FileExtension;
 use oihana\files\exceptions\FileException;
+use oihana\files\openssl\OpenSSLFileEncryption;
 
 use PHPUnit\Framework\TestCase;
 
+use Symfony\Component\Console\Helper\QuestionHelper;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
@@ -36,6 +41,8 @@ use Symfony\Component\Console\Output\BufferedOutput;
 class ArangoRestoreActionHost
 {
     use ArangoRestoreAction ;
+    use DateTrait ;          // DEFAULT_TIMEZONE / DEFAULT_DATE_FORMAT + timezone/dateFormat (for --date)
+    use HelperTrait ;        // getQuestionHelper() + the injectable $questionHelper slot
 
     public string $id = 'test' ;
 
@@ -64,6 +71,12 @@ class ArangoRestoreActionHost
         $this->restoreCalled          = true ;
         $this->capturedRestoreOptions = (array) $options ;
         return ExitCode::SUCCESS ;
+    }
+
+    /** External passphrase seam (provided by the real command composition). */
+    public function getPassphrase( $input , $output ) :string
+    {
+        return 'test-passphrase' ;
     }
 }
 
@@ -306,5 +319,78 @@ class ArangoRestoreActionTest extends TestCase
 
         $this->expectException( FileException::class ) ;
         $host->restore( $this->input( [] ) , $output ) ;
+    }
+
+    /** Builds an interactive ArrayInput whose question stream answers with $answer. */
+    private function interactiveInput( array $options , string $answer ) :ArrayInput
+    {
+        $stream = fopen( 'php://memory' , 'r+' ) ;
+        fwrite( $stream , $answer . "\n" ) ;
+        rewind( $stream ) ;
+
+        $input = new ArrayInput( $options , $this->definition() ) ;
+        $input->setStream( $stream ) ;
+        $input->setInteractive( true ) ;
+        return $input ;
+    }
+
+    public function testRestoreFromDateResolvesTheTimestampedArchive() :void
+    {
+        // The archive name is "{date}{suffix}" with suffix "-mydb.tar.gz".
+        $this->makeArchive( $this->dumpDir . DIRECTORY_SEPARATOR . '2025-07-05T18:14:22-mydb.tar.gz' ) ;
+
+        $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::DATE => '2025-07-05T18:14:22' ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->restoreCalled ) ;
+    }
+
+    public function testInteractivePickerRestoresTheChosenArchive() :void
+    {
+        $this->makeArchive( $this->dumpDir . DIRECTORY_SEPARATOR . '2025-07-05T18:14:22-mydb.tar.gz' ) ;
+
+        $host                  = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $host->questionHelper  = new QuestionHelper() ;
+        $output                = new BufferedOutput() ;
+
+        // Choice index 0 → the (only) archive (the appended "Exit" entry is index 1).
+        $code = $host->restore( $this->interactiveInput( [] , '0' ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->restoreCalled ) ;
+    }
+
+    public function testInteractivePickerExitChoiceThrowsExitException() :void
+    {
+        $this->makeArchive( $this->dumpDir . DIRECTORY_SEPARATOR . '2025-07-05T18:14:22-mydb.tar.gz' ) ;
+
+        $host                 = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $host->questionHelper = new QuestionHelper() ;
+        $output               = new BufferedOutput() ;
+
+        // Choice index 1 → the appended "Exit" entry → ExitException.
+        $this->expectException( ExitException::class ) ;
+        $host->restore( $this->interactiveInput( [] , '1' ) , $output ) ;
+    }
+
+    public function testEncryptedArchiveIsDecryptedThenRestored() :void
+    {
+        // Build a real gzip tarball, then encrypt it with the same passphrase the host returns.
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+        new OpenSSLFileEncryption( 'test-passphrase' )->encrypt( $archive ) ;   // → backup.tar.gz.enc
+        @unlink( $archive ) ;
+
+        $host          = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $host->encrypt = true ;                                                 // enable the decrypt branch
+        $output        = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive . FileExtension::ENCRYPTED ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->restoreCalled ) ;
     }
 }

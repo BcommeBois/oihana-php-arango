@@ -56,6 +56,13 @@ class ArangoProcessTraitTest extends TestCase
         ) ;
     }
 
+    public function testBooleanTrueBecomesAStandaloneFlag() :void
+    {
+        // A boolean-true option emits the flag alone, with no following value.
+        $options = ArangoDumpOptions::create( [ ArangoDumpOption::DUMP_DATA => true ] ) ;
+        $this->assertSame( [ '--dump-data' ] , ArangoProcessTraitStub::arguments( $options ) ) ;
+    }
+
     public function testMetacharacterValueStaysOneArgument() :void
     {
         // The crux: a value with shell metacharacters must remain a single,
