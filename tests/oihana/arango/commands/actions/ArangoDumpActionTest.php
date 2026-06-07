@@ -1,0 +1,364 @@
+<?php
+
+namespace tests\oihana\arango\commands\actions;
+
+use InvalidArgumentException;
+use RuntimeException;
+
+use oihana\arango\clients\Database;
+use oihana\arango\clients\exceptions\ArangoException;
+use oihana\arango\commands\actions\ArangoDumpAction;
+use oihana\arango\commands\options\ArangoCommandOption;
+use oihana\arango\commands\options\ArangoDumpOption;
+use oihana\arango\commands\options\ArangoDumpOptions;
+use oihana\arango\commands\traits\ArangoConfigTrait;
+
+use oihana\commands\enums\CommandArg;
+use oihana\commands\enums\ExitCode;
+use oihana\commands\options\CommandOption;
+use oihana\commands\traits\IOTrait;
+
+use oihana\date\traits\DateTrait;
+
+use oihana\files\enums\CompressionType;
+
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\CoversTrait;
+use PHPUnit\Framework\TestCase;
+
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\BufferedOutput;
+
+/**
+ * Host wiring {@see ArangoDumpAction::dump()} for integration testing.
+ *
+ * Two external dependencies are stubbed: the `arangodump` process
+ * ({@see arangoDump()}, which instead drops a marker file into the output
+ * directory so the real tar step has something to archive) and the HTTP
+ * bridge ({@see buildDatabase()}). The real file-system flow (temp dir,
+ * timestamped dir, tar.gz, move) is exercised for real, with encryption
+ * disabled.
+ */
+class ArangoDumpActionHost
+{
+    use ArangoDumpAction ;
+    use ArangoConfigTrait ;
+    use DateTrait ;
+    use IOTrait ;
+
+    public string $id = 'test' ;
+
+    /** When true, the buildDatabase() seam returns null (no client). */
+    public bool $returnNullDatabase = false ;
+
+    /** The fake database returned by the buildDatabase() seam. */
+    public ?Database $fakeDatabase = null ;
+
+    /** Captured state of the stubbed dump process. */
+    public bool  $dumpCalled          = false ;
+    public array $capturedDumpOptions = [] ;
+
+    public function __construct( string $directory )
+    {
+        $this->directory   = $directory ;
+        $this->compression = CompressionType::GZIP ;
+        $this->encrypt     = false ;                  // skip the OpenSSL branch
+        $this->database    = 'mydb' ;
+        $this->endpoint    = 'tcp://127.0.0.1:8529' ;
+        $this->password    = 'secret' ;
+        $this->username    = 'root' ;
+    }
+
+    public function getName() :string
+    {
+        return 'dump' ;
+    }
+
+    /** External passphrase seam (provided by the real command composition). */
+    public function getPassphrase( $input , $output ) :string
+    {
+        return 'test-passphrase' ;
+    }
+
+    protected function buildDatabase( string $endpoint , string $username , string $password , string $database ) :?Database
+    {
+        return $this->returnNullDatabase ? null : $this->fakeDatabase ;
+    }
+
+    /** Stub the proc_open seam: no binary is launched, but a dump file is faked. */
+    public function arangoDump( array|ArangoDumpOptions|null $options = null , bool $silent = false ) :int
+    {
+        $this->dumpCalled          = true ;
+        $this->capturedDumpOptions = (array) $options ;
+
+        $directory = $this->capturedDumpOptions[ ArangoDumpOption::OUTPUT_DIRECTORY ] ?? null ;
+        if ( is_string( $directory ) && is_dir( $directory ) )
+        {
+            file_put_contents( $directory . DIRECTORY_SEPARATOR . 'dump.json' , '{"_key":"1"}' ) ;
+        }
+
+        return ExitCode::SUCCESS ;
+    }
+}
+
+/**
+ * Unit coverage for {@see ArangoDumpAction}.
+ */
+#[CoversTrait(ArangoDumpAction::class)]
+#[AllowMockObjectsWithoutExpectations]
+class ArangoDumpActionTest extends TestCase
+{
+    private string $dir = '' ;
+
+    protected function setUp() :void
+    {
+        $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'arango_dump_test_' . bin2hex( random_bytes( 6 ) ) ;
+        mkdir( $this->dir , 0o777 , true ) ;
+    }
+
+    protected function tearDown() :void
+    {
+        foreach ( glob( $this->dir . DIRECTORY_SEPARATOR . '*' ) ?: [] as $file )
+        {
+            @unlink( $file ) ;
+        }
+        @rmdir( $this->dir ) ;
+    }
+
+    /** Full option / argument surface read by dump(). */
+    private function definition() :InputDefinition
+    {
+        return new InputDefinition
+        ([
+            new InputArgument( CommandArg::ACTION , InputArgument::OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::LIST              , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::DATABASE          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::ENDPOINT          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::PASSWORD          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::USER              , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::COLLECTION        , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
+            new InputOption( ArangoCommandOption::IGNORE_COLLECTION , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
+            new InputOption( ArangoCommandOption::LABEL             , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DIRECTORY         , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DATE              , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( CommandOption::ENCRYPT                 , null , InputOption::VALUE_OPTIONAL ) ,
+        ]) ;
+    }
+
+    private function input( array $options = [] ) :ArrayInput
+    {
+        $input = new ArrayInput( $options , $this->definition() ) ;
+        $input->setInteractive( false ) ;
+        return $input ;
+    }
+
+    /** A bare collection-like object exposing only getName(). */
+    private function collection( string $name ) :object
+    {
+        return new class( $name )
+        {
+            public function __construct( private readonly string $name ) {}
+            public function getName() :string { return $this->name ; }
+        } ;
+    }
+
+    /** A Database double whose collections() returns the given names. */
+    private function databaseReturning( array $names ) :Database
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willReturn( array_map( $this->collection( ... ) , $names ) ) ;
+        return $db ;
+    }
+
+    private function host() :ArangoDumpActionHost
+    {
+        return new ArangoDumpActionHost( $this->dir ) ;
+    }
+
+    // ---------------------------------------------------------------- --list
+
+    public function testListOptionDelegatesToListDumpsAndDoesNotDump() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input( [ '--' . ArangoCommandOption::LIST => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertFalse( $host->dumpCalled ) ;
+    }
+
+    // ---------------------------------------------------------------- happy path
+
+    public function testHappyPathDumpsCreatesArchiveAndForwardsConnection() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input() , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->dumpCalled ) ;
+        $this->assertSame( 'mydb'                  , $host->capturedDumpOptions[ ArangoDumpOption::SERVER_DATABASE ] ) ;
+        $this->assertSame( 'tcp://127.0.0.1:8529'  , $host->capturedDumpOptions[ ArangoDumpOption::SERVER_ENDPOINT ] ) ;
+        $this->assertSame( 'secret'                , $host->capturedDumpOptions[ ArangoDumpOption::SERVER_PASSWORD ] ) ;
+        $this->assertSame( 'root'                  , $host->capturedDumpOptions[ ArangoDumpOption::SERVER_USERNAME ] ) ;
+        $this->assertArrayHasKey( ArangoDumpOption::OUTPUT_DIRECTORY , $host->capturedDumpOptions ) ;
+
+        // a full-dump (no collection targeting) does not forward COLLECTION
+        $this->assertArrayNotHasKey( ArangoDumpOption::COLLECTION , $host->capturedDumpOptions ) ;
+
+        // the final tar.gz archive landed in the output directory
+        $archives = glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ;
+        $this->assertCount( 1 , $archives ) ;
+    }
+
+    public function testEncryptedDumpProducesAnEncryptedArchive() :void
+    {
+        $host = $this->host() ;
+        $host->encrypt = true ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input() , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->dumpCalled ) ;
+
+        $encrypted = glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz.enc' ) ?: [] ;
+        $this->assertCount( 1 , $encrypted ) ;
+    }
+
+    // ---------------------------------------------------------------- --collection
+
+    public function testCollectionSubsetValidatesAndForwardsTheCollectionOption() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' , 'orders' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input( [ '--' . ArangoCommandOption::COLLECTION => [ 'users' ] ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'Collections : users' , $output->fetch() ) ;
+        $this->assertSame( [ 'users' ] , $host->capturedDumpOptions[ ArangoDumpOption::COLLECTION ] ) ;
+    }
+
+    public function testCollectionSubsetThrowsOnUnknownCollection() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'Unknown collection' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::COLLECTION => [ 'ghost' ] ] ) , $output ) ;
+    }
+
+    public function testCollectionValidationSkippedWhenNoHttpClient() :void
+    {
+        $host = $this->host() ;
+        $host->returnNullDatabase = true ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input( [ '--' . ArangoCommandOption::COLLECTION => [ 'users' ] ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->dumpCalled ) ;
+        $this->assertStringContainsString( 'Collection validation skipped' , $output->fetch() ) ;
+    }
+
+    public function testCollectionValidationSkippedWhenApiUnreachable() :void
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willThrowException( new ArangoException( 'down' ) ) ;
+
+        $host = $this->host() ;
+        $host->fakeDatabase = $db ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input( [ '--' . ArangoCommandOption::COLLECTION => [ 'users' ] ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->dumpCalled ) ;
+        $this->assertStringContainsString( 'Collection validation skipped' , $output->fetch() ) ;
+    }
+
+    // ---------------------------------------------------------------- --ignore-collection
+
+    public function testIgnoreCollectionComputesTheComplement() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' , 'orders' , 'logs' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'logs' ] ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertSame( [ 'users' , 'orders' ] , array_values( $host->capturedDumpOptions[ ArangoDumpOption::COLLECTION ] ) ) ;
+    }
+
+    public function testIgnoreCollectionRequiresAnHttpClient() :void
+    {
+        $host = $this->host() ;
+        $host->returnNullDatabase = true ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'requires the ArangoDB HTTP API' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'logs' ] ] ) , $output ) ;
+    }
+
+    public function testIgnoreCollectionThrowsWhenApiUnreachable() :void
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willThrowException( new ArangoException( 'down' ) ) ;
+
+        $host = $this->host() ;
+        $host->fakeDatabase = $db ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'unreachable' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'logs' ] ] ) , $output ) ;
+    }
+
+    public function testIgnoreCollectionThrowsOnUnknownCollection() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'Unknown collection' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'ghost' ] ] ) , $output ) ;
+    }
+
+    public function testIgnoreCollectionThrowsWhenEverythingIsExcluded() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' , 'orders' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'Nothing to dump' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'users' , 'orders' ] ] ) , $output ) ;
+    }
+
+    // ---------------------------------------------------------------- mutually exclusive
+
+    public function testCollectionAndIgnoreCollectionTogetherThrow() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::COLLECTION        => [ 'users' ] ,
+            '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'logs' ] ,
+        ]) , $output ) ;
+    }
+}
