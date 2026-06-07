@@ -44,13 +44,6 @@ class Arango
     public const string ALTER = 'alter' ;
 
     /**
-     * The 'arrays' parameter.
-     * Declares the ordering/uniqueness mode (and optional counter) of embedded
-     * array fields, consumed by {@see oihana\arango\models\traits\DocumentsArrayTrait}.
-     */
-    public const string ARRAYS = 'arrays' ;
-
-    /**
      * The 'authorizer' parameter.
      *
      * Optional `Closure(string $subject): bool` injected through `$init` so

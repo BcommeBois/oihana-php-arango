@@ -27,6 +27,7 @@ use oihana\models\traits\signals\HasUpdateSignals;
 
 use org\schema\constants\Schema;
 
+use Throwable;
 use function oihana\arango\db\functions\arrays\append;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\functions\arrays\position;
@@ -60,8 +61,8 @@ use function oihana\core\strings\key;
  * ```php
  * new Documents( $container,
  * [
- *     Arango::COLLECTION => 'Playlist',
- *     Arango::ARRAYS     =>
+ *     AQL::COLLECTION => 'Playlist',
+ *     AQL::ARRAYS     =>
  *     [
  *         'tracks' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ],
  *         'tags'   => ArrayMode::SET ,
@@ -181,6 +182,7 @@ trait DocumentsArrayTrait
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws Throwable
      */
     public function arrayInsert( array $init = [] ) : ?object
     {
@@ -243,6 +245,7 @@ trait DocumentsArrayTrait
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws Throwable
      * @throws UnsupportedOperationException
      */
     public function arrayMove( array $init = [] ) : ?object
@@ -302,6 +305,7 @@ trait DocumentsArrayTrait
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws Throwable
      */
     public function arrayPurgeRef( array $init = [] ) : array|int
     {
@@ -364,6 +368,7 @@ trait DocumentsArrayTrait
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws Throwable
      */
     public function arrayRemove( array $init = [] ) : ?object
     {
@@ -397,7 +402,7 @@ trait DocumentsArrayTrait
      */
     public function initializeArrays( array $init = [] ) : static
     {
-        $config = $init[ Arango::ARRAYS ] ?? null ;
+        $config = $init[ AQL::ARRAYS ] ?? null ;
 
         if ( is_array( $config ) )
         {
@@ -483,21 +488,22 @@ trait DocumentsArrayTrait
      * Compiles and executes a single-document array UPDATE (`FOR ... FILTER ... LET ... UPDATE ... RETURN NEW`),
      * emitting the update signals around the write.
      *
-     * @param string|null $field  The array attribute name.
-     * @param array       $lets   The ordered LET clauses producing the `__arr` variable.
-     * @param string      $filter The FILTER predicate locating the document.
-     * @param array       $binds  The bind variables (mutated by reference).
-     * @param array       $init
+     * @param string|null $field The array attribute name.
+     * @param array $lets The ordered LET clauses producing the `__arr` variable.
+     * @param string $filter The FILTER predicate locating the document.
+     * @param array $binds The bind variables (mutated by reference).
+     * @param array $init
      *
      * @return object|null
      *
      * @throws ArangoException
+     * @throws BindException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
-     * @throws BindException
+     * @throws Throwable
      */
     private function runArrayUpdate( ?string $field , array $lets , string $filter , array &$binds , array $init ) : ?object
     {

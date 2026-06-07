@@ -14,6 +14,7 @@ class AQL
     public const string ALTERS          = 'alters' ;
     public const string ANY_REF         = 'anyRef' ;
     public const string ARRAY           = 'array' ;
+    public const string ARRAYS          = 'arrays' ;
     public const string ASSIGN          = 'assign' ;
     public const string BINDS           = 'binds' ;
     public const string BOTH            = 'both' ;

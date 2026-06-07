@@ -4,16 +4,25 @@ namespace tests\oihana\arango\models\traits;
 
 use Closure;
 
+use DI\DependencyException;
+use DI\NotFoundException;
+use oihana\arango\clients\exceptions\ArangoException;
+use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\ArrayMode;
 use oihana\arango\models\enums\Side;
 use oihana\arango\models\traits\DocumentsArrayTrait;
 
+use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 
 use org\schema\helpers\SchemaResolver;
 
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+use ReflectionException;
+use Throwable;
 
 /**
  * Bare host exposing {@see DocumentsArrayTrait}. It mounts the trait (which pulls
@@ -38,7 +47,7 @@ class DocumentsArrayTraitStub
         $this->collection = 'Playlist' ;
         $this->initializeArrays
         ([
-            Arango::ARRAYS =>
+            AQL::ARRAYS =>
             [
                 'tracks' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ,
                 'tags'   => ArrayMode::SET ,
@@ -107,6 +116,18 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- arrayInsert
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertListAppendsWithCounterAndModified() :void
     {
         $stub = $this->stub() ;
@@ -121,6 +142,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => [ 'A' , 'B' ] , '@collection' => 'Playlist' ] , $binds ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertSetIsUniqueAndHasNoCounter() :void
     {
         $stub = $this->stub() ;
@@ -136,6 +169,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => [ 'jazz' ] , '@collection' => 'Playlist' ] , $binds ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertSortedSetWrapsInSortedUnique() :void
     {
         $stub = $this->stub() ;
@@ -144,6 +189,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'LET __arr = SORTED_UNIQUE(APPEND(doc.genres,@' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertLeftSwapsOperands() :void
     {
         $stub = $this->stub() ;
@@ -153,6 +210,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( ',doc.tracks)' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertTouchFalseOmitsModified() :void
     {
         $stub = $this->stub() ;
@@ -162,6 +231,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'numberOfTracks: LENGTH(__arr)' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertUndeclaredFieldDefaultsToListWithoutCounter() :void
     {
         $stub = $this->stub() ;
@@ -173,6 +254,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'UPDATE doc WITH { unknown: __arr, modified:' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertModeOverrideForcesUnique() :void
     {
         $stub = $this->stub() ;
@@ -182,6 +275,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( ',true)' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testInsertHonoursCustomKeyAttribute() :void
     {
         $stub = $this->stub() ;
@@ -192,6 +297,18 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- arrayRemove
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testRemoveScalarUsesRemoveValue() :void
     {
         $stub = $this->stub() ;
@@ -206,6 +323,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => 'A' , '@collection' => 'Playlist' ] , $binds ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testRemoveArrayUsesRemoveValues() :void
     {
         $stub = $this->stub() ;
@@ -216,6 +345,18 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- arrayMove
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testMoveBuildsSliceReinsertExpression() :void
     {
         $stub = $this->stub() ;
@@ -231,6 +372,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => 'A' , '@collection' => 'Playlist' ] , $binds ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testMoveOnSortedSetThrows() :void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
@@ -239,6 +392,18 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- arrayContains
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testContainsBuildsLengthSubquery() :void
     {
         $stub = $this->stub() ;
@@ -254,6 +419,18 @@ final class DocumentsArrayTraitTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testContainsReturnsFalseWhenAbsent() :void
     {
         $stub = $this->stub() ;
@@ -263,6 +440,18 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- arrayPurgeRef
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testPurgeRefReturnsModifiedDocuments() :void
     {
         $stub = $this->stub() ;
@@ -280,6 +469,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame( [ 'q_0' => 'A' , '@collection' => 'Playlist' ] , $binds ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testPurgeRefCountReturnsAffectedCount() :void
     {
         $stub = $this->stub() ;
@@ -308,6 +509,18 @@ final class DocumentsArrayTraitTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testDebugFlagIsHonouredOnEachExecutionPath() :void
     {
         $stub = $this->stub() ;
@@ -324,6 +537,18 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'FILTER POSITION(doc.tracks' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testWriteEmitsUpdateSignals() :void
     {
         $stub = $this->stub() ;
