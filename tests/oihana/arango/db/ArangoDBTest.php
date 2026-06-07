@@ -2,8 +2,11 @@
 
 namespace tests\oihana\arango\db;
 
+use InvalidArgumentException;
 use ReflectionProperty;
 use stdClass;
+
+use Psr\Log\LoggerInterface;
 
 use oihana\arango\clients\ArangoClient;
 use oihana\arango\clients\Database;
@@ -72,6 +75,21 @@ class ArangoDBTest extends ArangoDBTestCase
         $this->assertNull( ( new ReflectionProperty( $db , 'maxRuntime' ) )->getValue( $db ) ) ;
     }
 
+    public function testConstructorLogsAndRethrowsOnBuildFailure() :void
+    {
+        $logger = $this->createMock( LoggerInterface::class ) ;
+        $logger->expects( $this->once() )->method( 'error' ) ;
+
+        // an empty endpoint makes the client builder throw (caught, logged, rethrown)
+        $this->expectException( InvalidArgumentException::class ) ;
+
+        new ArangoDB
+        (
+            [ 'endpoint' => '' , 'database' => 'd' , 'username' => 'u' , 'password' => 'p' ] ,
+            $logger ,
+        ) ;
+    }
+
     // ---- auth delegation ------------------------------------------------
 
     public function testLoginDelegatesToClient() :void
@@ -105,6 +123,21 @@ class ArangoDBTest extends ArangoDBTestCase
         $cursor = $this->createMock( Cursor::class ) ;
 
         $this->assertSame( $cursor , $this->newArangoDB( null , null , $cursor )->getCursor() ) ;
+    }
+
+    public function testGetCursorReturnsNullBeforeAnyExecution() :void
+    {
+        $this->assertNull( $this->newArangoDB()->getCursor() ) ;
+    }
+
+    public function testGetExtraReturnsEmptyArrayWithoutCursor() :void
+    {
+        $this->assertSame( [] , $this->newArangoDB()->getExtra() ) ;
+    }
+
+    public function testGetFoundRowsReturnsZeroWithoutCursor() :void
+    {
+        $this->assertSame( 0 , $this->newArangoDB()->getFoundRows() ) ;
     }
 
     public function testGetFoundRowsReadsTheFullCount() :void
@@ -242,11 +275,7 @@ class ArangoDBTest extends ArangoDBTestCase
 
         $this->assertCount( 2 , $rows ) ;
         $this->assertSame( 'a' , $rows[ 0 ]->_key ) ;
-
-        // the `finally` resets the cursor to null (read via reflection — getCursor()
-        // is typed `: Cursor` non-nullable so it cannot be called in this state)
-        $cursorProp = new \ReflectionProperty( $db , 'cursor' ) ;
-        $this->assertNull( $cursorProp->getValue( $db ) ) ;
+        $this->assertNull( $db->getCursor() ) ; // the `finally` reset the cursor
     }
 
     public function testStreamDocumentsIsEmptyWithoutCursor() :void

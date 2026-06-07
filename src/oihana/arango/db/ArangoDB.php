@@ -5,6 +5,7 @@ namespace oihana\arango\db ;
 use Closure ;
 use Generator ;
 use ReflectionException ;
+use Throwable ;
 
 use Psr\Log\LoggerInterface ;
 
@@ -41,7 +42,7 @@ class ArangoDB
      * @param array<string, mixed>  $config Configuration array, typically the `[arango]` TOML section.
      * @param LoggerInterface|null  $logger Optional PSR-3 logger.
      *
-     * @throws ArangoException When the underlying ArangoClient / Database cannot be built.
+     * @throws Throwable When the underlying ArangoClient / Database cannot be built.
      */
     public function __construct( array $config = [] , ?LoggerInterface $logger = null )
     {
@@ -54,7 +55,7 @@ class ArangoDB
             $this->client   = new ArangoClient( $options ) ;
             $this->database = $this->client->database( $options->database ) ;
         }
-        catch ( ArangoException $e )
+        catch ( Throwable $e )
         {
             $this->logger?->error( __METHOD__ . ' failed: ' . $e->getMessage() . PHP_EOL ) ;
             throw $e ;
@@ -162,11 +163,12 @@ class ArangoDB
     // --- Metadata Getters ---
 
     /**
-     * Returns the current Cursor reference.
+     * Returns the current Cursor reference, or null when no query has been
+     * executed yet (or after {@see streamDocuments()} reset the state).
      *
-     * @return Cursor
+     * @return ?Cursor
      */
-    public function getCursor() : Cursor
+    public function getCursor() : ?Cursor
     {
         return $this->cursor ;
     }
@@ -178,7 +180,7 @@ class ArangoDB
      */
     public function getExtra() : array
     {
-        return $this->cursor->getExtra() ;
+        return $this->cursor?->getExtra() ?? [] ;
     }
 
     /**
@@ -189,7 +191,7 @@ class ArangoDB
      */
     public function getFoundRows() : int
     {
-        return $this->cursor->getFullCount() ;
+        return $this->cursor?->getFullCount() ?? 0 ;
     }
 
     // --- Query Execution & Results ---
