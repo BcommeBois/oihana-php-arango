@@ -7,6 +7,7 @@ The [`src/oihana/arango/controllers/`](../../../src/oihana/arango/controllers/) 
 | `DocumentsController` | Full CRUD on a document collection. | `GET /resource`, `GET /resource/{id}`, `POST /resource`, `PATCH /resource/{id}`, `PUT /resource/{id}`, `DELETE /resource/{id}`, `GET /resource/count`, `GET /resource/last` |
 | `EdgesController` | CRUD on an edge collection. | Same verbs, edge semantics (validation `_from`/`_to`). |
 | `PropertyController` | Exposes a specific property of a document (GET / PATCH). | `GET /resource/{id}/{property}`, `PATCH /resource/{id}/{property}` |
+| `ArrayPropertyController` | Element-level operations of an [array-field](../db/arrays.md) property (add / remove / move / contains). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|GET /resource/{id}/{property}/{value}` |
 
 ## Detailed pages in this folder
 
@@ -284,6 +285,69 @@ return
     ]) ,
 ] ;
 ```
+
+## `ArrayPropertyController`
+
+Extends [`PropertyController`](#propertycontroller) to expose the **element-level operations** of a property declared as an **embedded array field** ([`AQL::ARRAYS`](../db/arrays.md)): add, remove, move an element, test its presence — on top of the inherited `get()` (read the whole array) and `patch()` (replace the whole array).
+
+| Verb | Method | Route | Model operation |
+|---|---|---|---|
+| `addItem()` | `POST` | `/resource/{id}/{property}` | `arrayInsert` |
+| `removeItem()` | `DELETE` | `/resource/{id}/{property}/{value}` | `arrayRemove` |
+| `moveItem()` | `PATCH` | `/resource/{id}/{property}/{value}` | `arrayMove` |
+| `hasItem()` | `GET` | `/resource/{id}/{property}/{value}` | `arrayContains` |
+
+The four methods live in `ArrayPropertyControllerTrait`.
+
+### Element value: URL or body
+
+The element is resolved from the URL `{value}` placeholder (handy for **scalars**: ids, tags), otherwise from the request **body** (key `value`) — use the body for **complex** (object) values that cannot travel in a URL. `addItem` reads the value from the body (plus an optional `side` `left`/`right`); `moveItem` reads `position` from the body.
+
+### Error codes
+
+| Code | When |
+|---|---|
+| `400 Bad Request` | the targeted property is not declared in the model's `AQL::ARRAYS` |
+| `404 Not Found` | the owner document does not exist; or (`hasItem`) the value is absent from the array |
+| `422 Unprocessable Entity` | `moveItem` on a `sortedSet` field (sorting by value makes a manual position meaningless) |
+
+### Full wiring (model + controller + routes)
+
+```php
+use oihana\arango\controllers\ArrayPropertyController ;
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\enums\Arango ;
+use oihana\arango\models\enums\ArrayMode ;
+use oihana\arango\routes\ArrayPropertyRoute ;
+use oihana\routes\Route ;
+
+// 1. The model declares the array field (mode + counter). Bonus: on document
+//    creation (POST /playlists), `tracks` is seeded to [] automatically
+//    (and `numberOfTracks` to 0).
+Models::PLAYLIST => fn( Container $c ) => new Documents( $c ,
+[
+    AQL::COLLECTION => 'Playlist' ,
+    AQL::ARRAYS     => [ 'tracks' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ] ,
+]) ,
+
+// 2. The controller, configured for the 'tracks' property.
+Controllers::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyController( $c ,
+[
+    Arango::MODEL    => Models::PLAYLIST ,
+    Arango::PROPERTY => 'tracks' ,
+]) ,
+
+// 3. The routes: a single entry via ArrayPropertyRoute.
+Routes::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyRoute( $c ,
+[
+    Route::CONTROLLER_ID => Controllers::PLAYLIST_TRACKS ,
+    Route::ROUTE         => '/playlists/{id}/tracks' ,
+]) ,
+```
+
+Generates `POST /playlists/{id}/tracks` (addItem) and `DELETE|PATCH|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / hasItem).
+
+> `arrayPurgeRef` (remove a value from **every** document that references it) is **not** exposed over HTTP: it is a cascade operation, triggered application-side through an `afterUpdate`/`afterDelete` listener (see [Embedded array fields](../db/arrays.md#propagating-a-change-to-parent-documents)).
 
 ## `PayloadsTrait`
 

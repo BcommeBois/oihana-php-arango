@@ -7,6 +7,7 @@ Le dossier [`src/oihana/arango/controllers/`](../../../src/oihana/arango/control
 | `DocumentsController` | CRUD complet sur une collection de documents. | `GET /resource`, `GET /resource/{id}`, `POST /resource`, `PATCH /resource/{id}`, `PUT /resource/{id}`, `DELETE /resource/{id}`, `GET /resource/count`, `GET /resource/last` |
 | `EdgesController` | CRUD sur une collection d'arêtes. | Mêmes verbes, sémantique edge (validation `_from`/`_to`). |
 | `PropertyController` | Exposition d'une propriété spécifique d'un document (GET / PATCH). | `GET /resource/{id}/{property}`, `PATCH /resource/{id}/{property}` |
+| `ArrayPropertyController` | Opérations élément par élément d'une propriété [champ-tableau](../db/arrays.md) (ajout / retrait / déplacement / présence). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|GET /resource/{id}/{property}/{value}` |
 
 ## Pages détaillées du dossier
 
@@ -284,6 +285,69 @@ return
     ]) ,
 ] ;
 ```
+
+## `ArrayPropertyController`
+
+Étend [`PropertyController`](#propertycontroller) pour exposer les **opérations élément par élément** d'une propriété déclarée comme **champ-tableau embarqué** ([`AQL::ARRAYS`](../db/arrays.md)) : ajouter, retirer, déplacer un élément, tester sa présence — par-dessus le `get()` (lire tout le tableau) et `patch()` (remplacer tout le tableau) hérités.
+
+| Verbe | Méthode | Route | Opération modèle |
+|---|---|---|---|
+| `addItem()` | `POST` | `/resource/{id}/{property}` | `arrayInsert` |
+| `removeItem()` | `DELETE` | `/resource/{id}/{property}/{value}` | `arrayRemove` |
+| `moveItem()` | `PATCH` | `/resource/{id}/{property}/{value}` | `arrayMove` |
+| `hasItem()` | `GET` | `/resource/{id}/{property}/{value}` | `arrayContains` |
+
+Les quatre méthodes vivent dans `ArrayPropertyControllerTrait`.
+
+### Valeur de l'élément : URL ou body
+
+L'élément est résolu depuis le placeholder `{value}` de l'URL (pratique pour les **scalaires** : ids, tags), **sinon** depuis le **body** (clé `value`) — utilisez le body pour les valeurs **complexes** (objets) qui ne peuvent pas voyager dans une URL. `addItem` lit la valeur dans le body (+ un `side` `left`/`right` optionnel) ; `moveItem` lit `position` dans le body.
+
+### Codes d'erreur
+
+| Code | Quand |
+|---|---|
+| `400 Bad Request` | la propriété ciblée n'est pas déclarée dans `AQL::ARRAYS` du modèle |
+| `404 Not Found` | le document propriétaire n'existe pas ; ou (`hasItem`) la valeur est absente du tableau |
+| `422 Unprocessable Entity` | `moveItem` sur un champ `sortedSet` (le tri par valeur rend la position absurde) |
+
+### Câblage complet (modèle + controller + routes)
+
+```php
+use oihana\arango\controllers\ArrayPropertyController ;
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\enums\Arango ;
+use oihana\arango\models\enums\ArrayMode ;
+use oihana\arango\routes\ArrayPropertyRoute ;
+use oihana\routes\Route ;
+
+// 1. Le modèle déclare le champ-tableau (mode + compteur). Bonus : à la création
+//    d'un document (POST /playlists), `tracks` est initialisé à [] automatiquement
+//    (et `numberOfTracks` à 0).
+Models::PLAYLIST => fn( Container $c ) => new Documents( $c ,
+[
+    AQL::COLLECTION => 'Playlist' ,
+    AQL::ARRAYS     => [ 'tracks' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ] ,
+]) ,
+
+// 2. Le controller, configuré pour la propriété 'tracks'.
+Controllers::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyController( $c ,
+[
+    Arango::MODEL    => Models::PLAYLIST ,
+    Arango::PROPERTY => 'tracks' ,
+]) ,
+
+// 3. Les routes : une seule entrée via ArrayPropertyRoute.
+Routes::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyRoute( $c ,
+[
+    Route::CONTROLLER_ID => Controllers::PLAYLIST_TRACKS ,
+    Route::ROUTE         => '/playlists/{id}/tracks' ,
+]) ,
+```
+
+Génère `POST /playlists/{id}/tracks` (addItem) et `DELETE|PATCH|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / hasItem).
+
+> `arrayPurgeRef` (retirer une valeur de **tous** les documents qui la référencent) n'est **pas** exposé en HTTP : c'est une opération de cascade, à déclencher côté application via un listener `afterUpdate`/`afterDelete` (cf. [Champs-tableaux embarqués](../db/arrays.md#propager-une-modification-aux-documents-parents)).
 
 ## `PayloadsTrait`
 
