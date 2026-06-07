@@ -6,6 +6,7 @@ use DI\Container;
 
 use DI\DependencyException;
 use DI\NotFoundException;
+use oihana\arango\controllers\ArrayPropertyController;
 use oihana\arango\controllers\DocumentsController;
 use oihana\arango\controllers\EdgesController;
 use oihana\arango\controllers\PropertyController;
@@ -17,6 +18,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use Psr\Http\Message\ResponseInterface as Response;
 
+use ReflectionException;
 use Slim\Factory\AppFactory;
 use Slim\Psr7\Factory\ResponseFactory;
 use Slim\Psr7\Factory\ServerRequestFactory;
@@ -56,7 +58,7 @@ abstract class ControllerTestCase extends TestCase
      * @throws NotFoundException
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
-     * @throws \ReflectionException
+     * @throws ReflectionException
      */
     protected function makeDocumentsController( MockDocuments $model , array $init = [] ) :DocumentsController
     {
@@ -80,7 +82,7 @@ abstract class ControllerTestCase extends TestCase
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
-     * @throws \ReflectionException
+     * @throws ReflectionException
      */
     protected function makeEdgesController
     (
@@ -130,11 +132,29 @@ abstract class ControllerTestCase extends TestCase
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
-     * @throws \ReflectionException
+     * @throws ReflectionException
      */
     protected function makePropertyController( MockDocuments $model , array $init = [] ) :PropertyController
     {
         return new PropertyController( ...$this->controllerArgs( $model , $init ) ) ;
+    }
+
+    /**
+     * Builds an ArrayPropertyController backed by the given model double.
+     *
+     * @param MockDocuments $model The model double.
+     * @param array $init Extra init overrides (e.g. the `property` key).
+     *
+     * @return ArrayPropertyController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    protected function makeArrayPropertyController( MockDocuments $model , array $init = [] ) :ArrayPropertyController
+    {
+        return new ArrayPropertyController( ...$this->controllerArgs( $model , $init ) ) ;
     }
 
     /**
