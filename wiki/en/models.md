@@ -66,6 +66,7 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::REQUIRES` | `string\|array` | Permission required to expose an *edge*/*join*. |
 | `AQL::FACETS` | `array` | Facet definitions (`?facet=`). |
 | `AQL::FILLABLE` | `array` | Fields mass-assignable on insert/update. |
+| `AQL::ARRAYS` | `array` | Embedded array fields and their mode/counter (see [arrays.md](db/arrays.md)). |
 | `AQL::ALTERS` | `array` | Post-query transformations on returned documents. |
 | `AQL::INDEXES` | `array` | Indexes to create on first instantiation (lazy). |
 | `AQL::CONDITIONS` | `array` | Server-side injected AQL conditions (see [filter-internal.md](db/filter-internal.md)). |
@@ -276,6 +277,7 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 - [HTTP search `?search=`](db/search.md) — multi-field `LIKE` search.
 - [HTTP filters `?filter=`](db/filter.md) — URL filter syntax, `alt` transformations, operators.
 - [HTTP facets `?facets=`](db/facets.md) — multi-select and relation existentials/aggregates.
+- [Embedded array fields](db/arrays.md) — `AQL::ARRAYS`, atomic mutation of an array inside a document.
 - [Internal filtering](db/filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` for server-only conditions.
 - [Slim controllers](controllers/README.md) — HTTP exposition of the model.
 - [Enums reference](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consumed here.

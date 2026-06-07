@@ -66,6 +66,7 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 | `AQL::REQUIRES`     | `string\|array` | Permission requise pour exposer un *edge*/*join*.                                                      |
 | `AQL::FACETS`       | `array`         | Définitions de facettes (`?facet=`).                                                                   |
 | `AQL::FILLABLE`     | `array`         | Champs assignables en masse à l'insertion/mise à jour.                                                 |
+| `AQL::ARRAYS`       | `array`         | Champs-tableaux embarqués et leur mode/compteur (cf. [arrays.md](db/arrays.md)).                       |
 | `AQL::ALTERS`       | `array`         | Transformations post-requête sur les documents renvoyés.                                               |
 | `AQL::INDEXES`      | `array`         | Index à créer à la première instanciation (lazy).                                                      |
 | `AQL::CONDITIONS`   | `array`         | Conditions AQL injectées côté serveur (cf. [filter-internal.md](db/filter-internal.md)).               |
@@ -276,6 +277,7 @@ Les hooks `beforeModelCall`/`afterModelCall` viennent du trait `ModelCallTrait` 
 - [Recherche HTTP `?search=`](db/search.md) — recherche multi-champs `LIKE`.
 - [Filtres HTTP `?filter=`](db/filter.md) — syntaxe URL des filtres, transformations `alt`, opérateurs.
 - [Facettes HTTP `?facets=`](db/facets.md) — multi-sélection et existentiels/agrégats sur relations.
+- [Champs-tableaux embarqués](db/arrays.md) — `AQL::ARRAYS`, mutation atomique d'un tableau dans un document.
 - [Filtrage interne](db/filter-internal.md) — `AQL::CONDITIONS` + `AQL::BINDS` pour les conditions serveur-only.
 - [Contrôleurs Slim](controllers/README.md) — exposition HTTP du modèle.
 - [Référence des enums](enums.md#aql) — `AQL`, `Filter`, `Skin`, `Traversal` consommés ici.
