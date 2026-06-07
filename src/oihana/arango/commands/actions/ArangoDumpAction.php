@@ -256,7 +256,9 @@ trait ArangoDumpAction
         $toFile = $outputDirectory. DIRECTORY_SEPARATOR . basename( $fromFile ) ;
         if( !rename( $fromFile , $toFile ) )
         {
+            // @codeCoverageIgnoreStart
             throw new RuntimeException( "Failed to move the archive file in the final directory." ) ;
+            // @codeCoverageIgnoreEnd
         }
 
         // 06 - Finish the process

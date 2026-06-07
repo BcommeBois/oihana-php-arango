@@ -104,7 +104,9 @@ trait ArangoProcessTrait
 
         if ( !is_resource( $process ) )
         {
+            // @codeCoverageIgnoreStart
             throw new RuntimeException( sprintf( 'Failed to start the process: %s' , $arguments[ 0 ] ?? Char::EMPTY ) ) ;
+            // @codeCoverageIgnoreEnd
         }
 
         return proc_close( $process ) ;

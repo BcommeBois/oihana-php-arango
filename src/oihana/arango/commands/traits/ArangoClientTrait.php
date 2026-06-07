@@ -67,9 +67,11 @@ trait ArangoClientTrait
 
             return new ArangoClient( $options )->database( $database ) ;
         }
+        // @codeCoverageIgnoreStart
         catch ( Throwable )
         {
             return null ;
         }
+        // @codeCoverageIgnoreEnd
     }
 }
