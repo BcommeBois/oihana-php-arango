@@ -3,6 +3,7 @@
 namespace oihana\arango\models\traits;
 
 use ReflectionException;
+use Throwable;
 
 use DI\DependencyException;
 use DI\NotFoundException;
@@ -27,7 +28,6 @@ use oihana\models\traits\signals\HasUpdateSignals;
 
 use org\schema\constants\Schema;
 
-use Throwable;
 use function oihana\arango\db\functions\arrays\append;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\functions\arrays\position;
@@ -322,7 +322,7 @@ trait DocumentsArrayTrait
         $for    = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
         $filter = aqlFilter( position( $fieldExpr , $value ) ) ;
         $let    = aqlLet( '__arr' , removeValue( $fieldExpr , $value ) ) ;
-        $write  = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , '__arr' , $init ) ] ) ;
+        $write  = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , '__arr' , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
 
         // count mode returns lightweight `1` rows (no document is materialised) and counts them.
         $query  = compile( [ $for , $filter , $let , $write , aqlReturn( $count ? '1' : Clause::NEW ) ] ) ;
@@ -481,7 +481,7 @@ trait DocumentsArrayTrait
             $fields[] = Schema::MODIFIED . ': ' . dateISO8601( dateNow() ) ;
         }
 
-        return '{ ' . implode( ', ' , $fields ) . ' }' ;
+        return '{ ' . compile( $fields , ', ' ) . ' }' ;
     }
 
     /**
@@ -510,7 +510,7 @@ trait DocumentsArrayTrait
         $this->beforeUpdate?->emit( new BeforeUpdate( target : $this , context : $init ) ) ;
 
         $for   = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
-        $write = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , '__arr' , $init ) ] ) ;
+        $write = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , '__arr' , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
         $query = compile( [ $for , aqlFilter( $filter ) , ...$lets , $write , aqlReturn( Clause::NEW ) ] ) ;
 
         if ( $init[ Arango::DEBUG ] ?? false )

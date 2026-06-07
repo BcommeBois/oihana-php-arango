@@ -549,6 +549,33 @@ final class DocumentsArrayTraitTest extends TestCase
      * @throws ReflectionException
      * @throws Throwable
      */
+    public function testWriteForwardsUpdateOptions() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayInsert
+        ([
+            Arango::OWNER   => 'p42' ,
+            Arango::FIELD   => 'tracks' ,
+            Arango::VALUE   => 'A' ,
+            Arango::OPTIONS => [ 'keepNull' => false ] ,
+        ]) ;
+
+        $this->assertStringContainsString( 'OPTIONS {"keepNull":false}' , $stub->lastQuery ) ;
+    }
+
+    public function testPurgeRefForwardsUpdateOptions() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayPurgeRef
+        ([
+            Arango::FIELD   => 'tracks' ,
+            Arango::VALUE   => 'A' ,
+            Arango::OPTIONS => [ 'keepNull' => false ] ,
+        ]) ;
+
+        $this->assertStringContainsString( 'OPTIONS {"keepNull":false}' , $stub->lastQuery ) ;
+    }
+
     public function testWriteEmitsUpdateSignals() :void
     {
         $stub = $this->stub() ;
