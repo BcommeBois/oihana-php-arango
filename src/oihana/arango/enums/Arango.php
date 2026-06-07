@@ -44,6 +44,13 @@ class Arango
     public const string ALTER = 'alter' ;
 
     /**
+     * The 'arrays' parameter.
+     * Declares the ordering/uniqueness mode (and optional counter) of embedded
+     * array fields, consumed by {@see oihana\arango\models\traits\DocumentsArrayTrait}.
+     */
+    public const string ARRAYS = 'arrays' ;
+
+    /**
      * The 'authorizer' parameter.
      *
      * Optional `Closure(string $subject): bool` injected through `$init` so
@@ -82,6 +89,20 @@ class Arango
      * The 'controller' parameter.
      */
     public const string CONTROLLER = 'controller' ;
+
+    /**
+     * The 'count' parameter.
+     * When true, a bulk array operation returns the number of affected documents
+     * (server-side `COLLECT WITH COUNT`) instead of the list of modified documents.
+     */
+    public const string COUNT = 'count' ;
+
+    /**
+     * The 'counter' parameter.
+     * Name of the sibling field holding the length of an embedded array, kept in
+     * sync (`LENGTH(...)`) on every mutation by {@see oihana\arango\models\traits\DocumentsArrayTrait}.
+     */
+    public const string COUNTER = 'counter' ;
 
     /**
      * The 'database' parameter.
@@ -197,6 +218,12 @@ class Arango
      * The 'match' parameter.
      */
     public const string MATCH = 'match' ;
+
+    /**
+     * The 'mode' parameter.
+     * Optional per-call override of an embedded array field's {@see oihana\arango\models\enums\ArrayMode}.
+     */
+    public const string MODE = 'mode' ;
 
     /**
      * The 'modelID' parameter.
