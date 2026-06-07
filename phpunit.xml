@@ -41,6 +41,12 @@
         <include>
             <directory suffix=".php">./src</directory>
         </include>
+        <exclude>
+            <!-- Live smoke-test commands (arango:test:clients / arango:test:facade):
+                 run manually against a real ArangoDB server — not unit-testable. -->
+            <directory>./src/oihana/arango/clients/commands/tests</directory>
+            <directory>./src/oihana/arango/db/commands/tests</directory>
+        </exclude>
     </source>
 
 </phpunit>
