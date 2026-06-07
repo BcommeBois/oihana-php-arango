@@ -4,6 +4,7 @@ namespace tests\oihana\arango\clients\http ;
 
 use GuzzleHttp\Client ;
 use GuzzleHttp\Exception\ConnectException ;
+use GuzzleHttp\Exception\RequestException ;
 use GuzzleHttp\Handler\MockHandler ;
 use GuzzleHttp\HandlerStack ;
 use GuzzleHttp\Middleware ;
@@ -15,6 +16,7 @@ use Psr\Http\Message\RequestInterface ;
 use oihana\enums\http\HttpMethod ;
 
 use oihana\arango\clients\enums\AuthType ;
+use oihana\arango\clients\exceptions\ArangoException ;
 use oihana\arango\clients\exceptions\ConflictException ;
 use oihana\arango\clients\exceptions\HttpException ;
 use oihana\arango\clients\exceptions\MaintenanceException ;
@@ -759,5 +761,208 @@ class HttpTransportTest extends TestCase
 
         $this->assertSame( 'trx-1' , $history[ 0 ][ 'request' ]->getHeaderLine( 'x-arango-trx-id' ) ) ;
         $this->assertFalse( $history[ 1 ][ 'request' ]->hasHeader( 'x-arango-trx-id' ) ) ;
+    }
+
+    // =========================================================================
+    // withActiveTransactionId — ambient transaction scope
+    // =========================================================================
+
+    public function testWithActiveTransactionIdScopesFallbackRequestsAndReverts() :void
+    {
+        $history = [] ;
+        $client  = $this->mockClient
+        (
+            [
+                new Response( 200 , [] , '{}' ) ,
+                new Response( 200 , [] , '{}' ) ,
+            ] ,
+            $history ,
+        ) ;
+
+        $options   = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $transport = $this->transport( $options , $client ) ;
+
+        // Inside the scope, a request with no explicit transactionId falls back to the active id.
+        $returned = $transport->withActiveTransactionId( 'trx-active' , function () use ( $transport )
+        {
+            $transport->request( HttpMethod::GET , '/_api/version' ) ;
+            return 'callback-result' ;
+        } ) ;
+
+        $this->assertSame( 'callback-result' , $returned ) ;
+
+        // After the scope, the active id is reverted: a plain request carries no trx header.
+        $transport->request( HttpMethod::GET , '/_api/version' ) ;
+
+        $this->assertSame( 'trx-active' , $history[ 0 ][ 'request' ]->getHeaderLine( 'x-arango-trx-id' ) ) ;
+        $this->assertFalse( $history[ 1 ][ 'request' ]->hasHeader( 'x-arango-trx-id' ) ) ;
+    }
+
+    // =========================================================================
+    // Body encoding + query string (mergeOptions)
+    // =========================================================================
+
+    public function testRequestSendsRawStringBodyVerbatim() :void
+    {
+        $history = [] ;
+        $client  = $this->mockClient( [ new Response( 200 , [] , '{}' ) ] , $history ) ;
+
+        $options = new ClientOptions( database : 'mydb' , endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $this->transport( $options , $client )->request
+        (
+            method : HttpMethod::POST ,
+            path   : '/_api/import' ,
+            body   : "{\"a\":1}\n{\"a\":2}" ,        // JSON Lines payload, sent verbatim
+        ) ;
+
+        $sent = $history[ 0 ][ 'request' ] ;
+        $this->assertSame( "{\"a\":1}\n{\"a\":2}" , (string) $sent->getBody() ) ;
+    }
+
+    public function testRequestForwardsQueryParameters() :void
+    {
+        $history = [] ;
+        $client  = $this->mockClient( [ new Response( 200 , [] , '{}' ) ] , $history ) ;
+
+        $options = new ClientOptions( database : 'mydb' , endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $this->transport( $options , $client )->request
+        (
+            method : HttpMethod::GET ,
+            path   : '/_api/collection' ,
+            query  : [ 'excludeSystem' => 'true' ] ,
+        ) ;
+
+        $sent = $history[ 0 ][ 'request' ] ;
+        $this->assertSame( 'excludeSystem=true' , $sent->getUri()->getQuery() ) ;
+    }
+
+    public function testRequestWithEmptyPathTargetsTheBaseUrl() :void
+    {
+        $history = [] ;
+        $client  = $this->mockClient( [ new Response( 200 , [] , '{}' ) ] , $history ) ;
+
+        $options = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $this->transport( $options , $client )->request
+        (
+            method           : HttpMethod::GET ,
+            path             : '' ,
+            databaseOverride : '' ,
+        ) ;
+
+        $sent = $history[ 0 ][ 'request' ] ;
+        $this->assertSame( 'http://127.0.0.1:8529' , (string) $sent->getUri() ) ;
+    }
+
+    // =========================================================================
+    // Body decoding (decodeBody)
+    // =========================================================================
+
+    public function testEmptyResponseBodyDecodesToNull() :void
+    {
+        $client = $this->mockClient( [ new Response( 204 , [] , '' ) ] ) ;
+
+        $options  = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $response = $this->transport( $options , $client )->request( HttpMethod::DELETE , '/_api/document/users/1' ) ;
+
+        $this->assertSame( 204 , $response->status ) ;
+        $this->assertNull( $response->body ) ;
+        $this->assertSame( '' , $response->raw ) ;
+    }
+
+    public function testInvalidJsonBodyDecodesToNullButKeepsRaw() :void
+    {
+        $client = $this->mockClient( [ new Response( 200 , [] , 'not-json{' ) ] ) ;
+
+        $options  = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $response = $this->transport( $options , $client )->request( HttpMethod::GET , '/_api/version' ) ;
+
+        $this->assertSame( 200 , $response->status ) ;
+        $this->assertNull( $response->body ) ;
+        $this->assertSame( 'not-json{' , $response->raw ) ;
+    }
+
+    // =========================================================================
+    // Default Guzzle client + extra failure mappings
+    // =========================================================================
+
+    public function testConstructsADefaultGuzzleClientWhenNoneInjected() :void
+    {
+        // No httpClient injected → the constructor builds one from guzzleConfig().
+        $options   = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $transport = new HttpTransport( $options ) ;
+
+        $this->assertInstanceOf( HttpTransport::class , $transport ) ;
+        $this->assertSame( $options , $transport->options ) ;
+    }
+
+    public function testRetryDelayIsAppliedBetweenAttempts() :void
+    {
+        // baseDelayMs > 0 so the usleep() back-off branch runs (kept tiny: 1ms).
+        $client = $this->mockClient
+        (
+            [
+                new Response( 409 , [] , '{"error":true,"code":409,"errorNum":1200,"errorMessage":"conflict"}' ) ,
+                new Response( 200 , [] , '{"result":"ok"}' ) ,
+            ] ,
+        ) ;
+
+        $options  = new ClientOptions( database : 'mydb' , endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $policy   = new RetryPolicy( maxAttempts : 3 , baseDelayMs : 1 , maxDelayMs : 5 ) ;
+        $response = $this->transport( $options , $client , $policy )->request( HttpMethod::POST , '/_api/document/users' , [ 'a' => 1 ] ) ;
+
+        $this->assertSame( 200 , $response->status ) ;
+    }
+
+    public function testRequestWrapsGenericGuzzleExceptionAsNetworkException() :void
+    {
+        // A RequestException without a response is neither a ConnectException
+        // nor a BadResponseException → hits the generic GuzzleException catch.
+        $request = new Request( HttpMethod::GET , 'http://127.0.0.1:8529/_api/version' ) ;
+        $client  = $this->mockClient( [ new RequestException( 'too many redirects' , $request ) ] ) ;
+
+        $options = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+
+        $this->expectException( NetworkException::class ) ;
+        $this->transport( $options , $client )->request( HttpMethod::GET , '/_api/version' ) ;
+    }
+
+    // =========================================================================
+    // login() — remaining branches
+    // =========================================================================
+
+    public function testLoginThrowsWhenServerReturnsNoJwt() :void
+    {
+        $client = $this->mockClient( [ new Response( 200 , [] , '{"must_change_password":false}' ) ] ) ;
+
+        $options   = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $transport = $this->transport( $options , $client ) ;
+
+        $this->expectException( ArangoException::class ) ;
+        $this->expectExceptionMessage( 'returned no JWT' ) ;
+        $transport->login( 'root' , 'secret' ) ;
+    }
+
+    public function testLoginWrapsConnectExceptionAsNetworkException() :void
+    {
+        $request = new Request( HttpMethod::POST , 'http://127.0.0.1:8529/_open/auth' ) ;
+        $client  = $this->mockClient( [ new ConnectException( 'connection refused' , $request ) ] ) ;
+
+        $options   = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $transport = $this->transport( $options , $client ) ;
+
+        $this->expectException( NetworkException::class ) ;
+        $transport->login( 'root' , 'secret' ) ;
+    }
+
+    public function testLoginWrapsGenericGuzzleExceptionAsNetworkException() :void
+    {
+        $request = new Request( HttpMethod::POST , 'http://127.0.0.1:8529/_open/auth' ) ;
+        $client  = $this->mockClient( [ new RequestException( 'transfer error' , $request ) ] ) ;
+
+        $options   = new ClientOptions( endpoints : [ 'http://127.0.0.1:8529' ] ) ;
+        $transport = $this->transport( $options , $client ) ;
+
+        $this->expectException( NetworkException::class ) ;
+        $transport->login( 'root' , 'secret' ) ;
     }
 }

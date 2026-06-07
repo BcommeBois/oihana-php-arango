@@ -52,6 +52,15 @@ class HttpResponseTest extends TestCase
         $this->assertSame( 'a=1' , $response->header( 'Set-Cookie' ) ) ;
     }
 
+    public function testHeaderCastsAScalarHeaderValueToString() :void
+    {
+        // Defensive branch: a header stored as a scalar (not PSR-7's array shape)
+        // is returned as a string.
+        $response = new HttpResponse( 200 , [ 'X-Count' => 42 ] ) ;
+
+        $this->assertSame( '42' , $response->header( 'X-Count' ) ) ;
+    }
+
     public function testIsSuccessTrueForTwoHundredRange() :void
     {
         $this->assertTrue( ( new HttpResponse( 200 ) )->isSuccess() ) ;
