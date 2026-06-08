@@ -69,6 +69,7 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 - [Date functions](aql/aql-functions-dates.md) — 30 date AQL functions.
 - [Numeric functions](aql/aql-functions-numerics.md) — 31 numeric AQL functions.
 - [Array functions](aql/aql-functions-arrays.md) — 19 array AQL functions.
+- [Geospatial functions](aql/aql-functions-geo.md) — 17 geolocation AQL functions (points, polygons, distances, predicates).
 - [Document and check functions](aql/aql-functions-checks.md) — 28 functions: *type checks*, *casts*, document operations, database info.
 
 ### Db layer — [`db/`](db/)
