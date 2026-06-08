@@ -5,7 +5,6 @@ namespace oihana\arango\models\traits\aql\filters;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
-use oihana\arango\models\enums\filters\GeoFilterParam;
 use oihana\arango\models\traits\aql\BindTrait;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
@@ -15,6 +14,7 @@ use org\schema\constants\Schema;
 use oihana\logging\LoggerTrait;
 use function oihana\arango\db\functions\geo\distance;
 use function oihana\arango\db\helpers\buildBetweenClauses;
+use function oihana\arango\db\helpers\resolveGeoPoint;
 use function oihana\core\strings\key;
 
 /**
@@ -80,7 +80,7 @@ trait HasFilterGeo
             return Char::EMPTY ;
         }
 
-        [ $latitude , $longitude ] = $this->resolveGeoPoint( $init[ FilterParam::VAL ] ?? null ) ;
+        [ $latitude , $longitude ] = resolveGeoPoint( $init[ FilterParam::VAL ] ?? null ) ;
 
         if ( $latitude === null || $longitude === null )
         {
@@ -99,29 +99,5 @@ trait HasFilterGeo
         $max = array_key_exists( FilterParam::MAX , $init ) ? $this->bind( $init[ FilterParam::MAX ] , $binds ) : null ;
 
         return buildBetweenClauses( $expression , $min , $max ) ;
-    }
-
-    /**
-     * Resolve a `{ latitude, longitude }` point from a filter `val` object.
-     *
-     * Accepts the canonical Schema.org keys (`latitude` / `longitude`) and the
-     * short aliases (`lat` / `lng` / `lon`). Returns `[ null, null ]` when the
-     * value is not an object or a coordinate is missing.
-     *
-     * @param mixed $value
-     *
-     * @return array{0: mixed, 1: mixed}
-     */
-    private function resolveGeoPoint( mixed $value ): array
-    {
-        if ( !is_array( $value ) )
-        {
-            return [ null , null ] ;
-        }
-
-        $latitude  = $value[ Schema::LATITUDE  ] ?? $value[ GeoFilterParam::LAT ] ?? null ;
-        $longitude = $value[ Schema::LONGITUDE ] ?? $value[ GeoFilterParam::LNG ] ?? $value[ GeoFilterParam::LON ] ?? null ;
-
-        return [ $latitude , $longitude ] ;
     }
 }

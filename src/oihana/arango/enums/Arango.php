@@ -229,6 +229,15 @@ class Arango
     public const string NAME = 'name' ;
 
     /**
+     * The 'near' parameter — a geospatial anchor for distance sorting.
+     *
+     * Holds a `{ key, latitude, longitude }` object: the document attribute to
+     * measure from (`key`) plus the reference point. It exposes the synthetic
+     * `distance` sort key consumed by {@see \oihana\arango\models\traits\aql\SortTrait::prepareSort()}.
+     */
+    public const string NEAR = 'near' ;
+
+    /**
      * The 'num' parameter.
      */
     public const string NUM = 'num' ;

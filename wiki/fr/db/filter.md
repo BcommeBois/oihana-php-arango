@@ -156,7 +156,7 @@ Réservé au type [`FilterType::GEO`](#types-de-filtres). Il filtre les document
 
 `op` peut être omis (le type `geo` implique `distance`). **Un rayon est requis** : sans `min` ni `max`, aucune clause n'est émise. Les sous-attributs lus sont `<key>.latitude` / `<key>.longitude` (Schema.org) ; `DISTANCE` opère sur deux scalaires, donc le prédicat est **index-accéléré** dès qu'un [`GeoIndex`](../clients/indexes.md) à deux champs couvre ces attributs. Voir le catalogue des [fonctions géospatiales](../aql/aql-functions-geo.md).
 
-> **Filtrer ≠ trier.** `distance` **borne** (rayon) mais n'**ordonne** pas. Pour classer du plus proche au plus loin, le tri par distance est un levier distinct (paramètre dédié) — combinable avec ce filtre.
+> **Filtrer ≠ trier.** `distance` **borne** (rayon) mais n'**ordonne** pas. Pour classer du plus proche au plus loin, utilise le paramètre dédié [`?near=`](search-and-filtering.md#tri-par-distance-near) — combinable avec ce filtre.
 
 ## Types de filtres
 

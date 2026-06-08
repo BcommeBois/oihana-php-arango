@@ -83,10 +83,39 @@ Beyond the surface differences, all three rest on **the same building blocks** �
 # → LENGTH(FOR v IN INBOUND doc orgs_places FILTER v._key==@v RETURN 1) > 0
 ```
 
+## Distance sorting (`?near=`)
+
+Unlike the three levers above, which **restrict**, `?near=` **orders**: it ranks the list from nearest to farthest from a geographic point. It does not filter — pair it with a [`geo` filter](filter.md#distance-operator-geolocation) to bound a radius.
+
+```
+?near={"key":"geo","latitude":48.8566,"longitude":2.3522}
+# → SORT DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) ASC
+```
+
+`?near=` provides the **anchor point** (a Schema.org `GeoCoordinates` attribute, short aliases `lat`/`lng`/`lon` accepted) and exposes a **synthetic `distance` sort key** driven by `?sort=` — which stays the **single ordering authority**:
+
+| Request | Sort |
+|---|---|
+| `?near=…` alone | `distance` ASC (default, nearest first) |
+| `?near=…&sort=-distance` | farthest first |
+| `?near=…&sort=distance,name` | distance then name (you pick the priority) |
+| `?near=…&sort=name` | name only — distance **not** appended (explicit `?sort` decides) |
+| `?sort=distance` without `?near=` | dropped (no anchor) |
+
+Typical combination — the 10 **nearest** museums within 5 km:
+
+```
+?near={"key":"geo","latitude":48.8566,"longitude":2.3522}
+&filter=[{"key":"type","val":"museum"},{"key":"geo","op":"distance","val":{"latitude":48.8566,"longitude":2.3522},"max":5000}]
+&limit=10
+```
+
+`DISTANCE` operates on two scalars → **index-accelerated** sort with a two-field [`GeoIndex`](../clients/indexes.md). Coordinates are bound only when a `distance` criterion is actually emitted (never an unused bind). See the [geospatial functions](../aql/aql-functions-geo.md).
+
 ## See also
 
 - [Search `?search=`](search.md) — the multi-field `LIKE` search.
-- [Filters `?filter=`](filter.md) — comparators, `alt`, AND/OR/NOT, dates, `between`, `AT LEAST`.
+- [Filters `?filter=`](filter.md) — comparators, `alt`, AND/OR/NOT, dates, `between`, `AT LEAST`, `distance`.
 - [Facets `?facets=`](facets.md) — the type catalogue (FIELD/IN/EDGE/JOIN/complex/aggregate).
 - [Internal filtering `AQL::CONDITIONS`](filter-internal.md) — server-only conditions (never exposed to the URL).
 - [ArangoSearch (views)](../clients/arangosearch.md) — advanced full-text (analyzers, scoring); to be distinguished from the simple `?search`.

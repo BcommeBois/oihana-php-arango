@@ -252,7 +252,7 @@ trait ListQueryTrait
 
         $for   = aqlFor( [ AQL::IN => $this->bindCollection($bindVars ) ] ) ;
         $limit = aqlLimit  ( $limit , $offset ) ;
-        $sort  = aqlSort( $this->prepareSort( $init ) ) ;
+        $sort  = aqlSort( $this->prepareSort( $init , binds: $bindVars ) ) ;
 
         $filter = aqlFilter
         ([

@@ -360,6 +360,7 @@
             "src/oihana/arango/models/helpers/getDocuments.php" ,
             "src/oihana/arango/models/helpers/isAuthorized.php" ,
             "src/oihana/arango/models/helpers/resolveAltSides.php" ,
+            "src/oihana/arango/models/helpers/resolveGeoPoint.php" ,
             "src/oihana/arango/models/helpers/resolveQuantifier.php" ,
             "src/oihana/arango/models/helpers/joins/buildJoinVariable.php" ,
             "src/oihana/arango/models/helpers/joins/buildJoinVariables.php" ,
