@@ -94,6 +94,8 @@ function decodeRevision( ?string $revision , bool $throwable = false ) :?array
     }
 
     // 1. GMP extension check
+    // gmp is a hard requirement loaded in every supported runtime; this guard cannot be exercised in tests.
+    // @codeCoverageIgnoreStart
     if ( !extension_loaded('gmp' ) )
     {
         if ($throwable)
@@ -102,6 +104,7 @@ function decodeRevision( ?string $revision , bool $throwable = false ) :?array
         }
         return null ;
     }
+    // @codeCoverageIgnoreEnd
 
     // 2. Build the custom ArangoDB decode table (static for performance)
     static $decodeTable = null ;
@@ -170,6 +173,8 @@ function decodeRevision( ?string $revision , bool $throwable = false ) :?array
             $milliseconds
         );
     }
+    // the timestamp comes from a bounded 44-bit GMP decode, so DateTimeImmutable never throws for a valid 10–11 char revision; this catch is unreachable.
+    // @codeCoverageIgnoreStart
     catch ( Exception )
     {
         if( $throwable )
@@ -178,6 +183,7 @@ function decodeRevision( ?string $revision , bool $throwable = false ) :?array
         }
         return null ;
     }
+    // @codeCoverageIgnoreEnd
 
     // 6. Return in the same format as AQL
     return

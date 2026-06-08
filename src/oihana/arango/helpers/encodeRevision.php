@@ -60,6 +60,8 @@ use RuntimeException;
  */
 function encodeRevision( string $date , ?int $count = null, bool $throwable = false ): string
 {
+    // gmp is a hard requirement loaded in every supported runtime; this guard cannot be exercised in tests.
+    // @codeCoverageIgnoreStart
     if (!extension_loaded('gmp'))
     {
         if ( $throwable )
@@ -68,6 +70,7 @@ function encodeRevision( string $date , ?int $count = null, bool $throwable = fa
         }
         return '' ;
     }
+    // @codeCoverageIgnoreEnd
 
     // 1. Convert date to milliseconds
     try
@@ -95,7 +98,10 @@ function encodeRevision( string $date , ?int $count = null, bool $throwable = fa
             $lastCount++ ;
             if ( $lastCount > 1048575 ) // 2^20 - 1
             {
+                // requires 1,048,577 encode calls within the same millisecond; impractical to exercise and would pollute the shared static counter.
+                // @codeCoverageIgnoreStart
                 $lastCount = 0 ; // wrap around
+                // @codeCoverageIgnoreEnd
             }
         }
         else
