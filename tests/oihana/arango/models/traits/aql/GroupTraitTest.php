@@ -37,6 +37,21 @@ class GroupTraitTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
+    public function testInitializeGroupableReadsInitKey() :void
+    {
+        $stub = $this->stub() ;
+        $this->assertNull( $stub->groupable ) ;
+
+        $returned = $stub->initializeGroupable( [ Arango::GROUPABLE => [ 'cat' => 'category' ] ] ) ;
+
+        $this->assertSame( $stub , $returned ) ; // fluent
+        $this->assertSame( [ 'cat' => 'category' ] , $stub->groupable ) ;
+
+        // Absent key keeps the current value.
+        $stub->initializeGroupable( [] ) ;
+        $this->assertSame( [ 'cat' => 'category' ] , $stub->groupable ) ;
+    }
+
     public function testNoGroupNorCollectReturnsEmptySpec() :void
     {
         $this->assertSame( [] , $this->stub()->prepareCollect( [] ) ) ;

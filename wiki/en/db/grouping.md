@@ -156,15 +156,19 @@ A grouping field becomes `doc.<field>` *literally*. Every field of the `Group` l
 
 ### Restricting groupable fields
 
-Optionally define a `$this->groupable` whitelist/mapping on the model (like `$this->sortable`): `url-key → real field`. Only whitelisted keys are groupable, and the public key is decoupled from the internal field:
+Optionally define a `groupable` whitelist/mapping on the model (like `sortable`): `url-key → real field`. Only whitelisted keys are groupable, and the public key is decoupled from the internal field. It is declared in the model `$init`, like every other option:
 
 ```php
-$model->groupable = [ 'cat' => 'category' , 'year' => 'created' ] ;
+$articles = new Documents( $container ,
+[
+    Arango::COLLECTION => 'articles' ,
+    Arango::GROUPABLE  => [ 'cat' => 'category' , 'year' => 'created' ] ,
+]) ;
 // ?groupBy=cat       → COLLECT cat = doc.category ...
 // ?groupBy=secret    → ignored (not whitelisted)
 ```
 
-When `$this->groupable` is `null` (default), grouping is open but still protected against injection by `assertAttributeName()`.
+When `groupable` is `null` (default), grouping is open but still protected against injection by `assertAttributeName()`.
 
 ## See also
 

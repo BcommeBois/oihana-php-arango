@@ -94,6 +94,7 @@ class Documents implements DocumentsModel
      *   <li>'fields'     - The optional fields definitions to returns in the get/list methods.</li>
      *   <li>'fillable'   - The fillable definitions to register</li>
      *   <li>'filters'    - The filter definitions to register</li>
+     *   <li>'groupable'  - The optional whitelist/mapping (`urlKey => fieldPath`) of groupable dimensions for `?groupBy=` / `?group=`.</li>
      *   <li>'indexes'    - The definition of the indexes to auto-register when the collection is created (if not exist)</li>
      *   <li>'joins'      - The joins definitions to register</li>
      *   <li>'lazy'       - Indicates if the model create the collection if not exit.</li>
@@ -134,6 +135,7 @@ class Documents implements DocumentsModel
              ->initializeFacets           ( $init )
              ->initializeFillable         ( $init )
              ->initializeFilters          ( $init )
+             ->initializeGroupable        ( $init )
              ->initializeJoins            ( $init )
              ->initializeFields           ( $init )
              ->initializeMock             ( $init )

@@ -91,7 +91,7 @@ trait SortTrait
      * @return string|null The `SORT` body (without the `SORT` keyword), or an empty string when nothing sorts.
      *
      * @throws BindException When a bound coordinate cannot be registered.
-     * @throws ValidationException When the `?near=` `key` is not a safe attribute name.
+     * @throws ValidationException When a sort key (open mode) or the `?near=` `key` is not a safe attribute name.
      *
      * @example Plain field sort
      * ```php
@@ -193,6 +193,9 @@ trait SortTrait
                 }
                 else
                 {
+                    // Open mode (no whitelist): the URL key flows into doc.<key>,
+                    // so it must be validated against AQL injection.
+                    assertAttributeName( $key ) ;
                     $orders[] = key( $key , $docRef ) . Char::SPACE . $order ;
                 }
             }

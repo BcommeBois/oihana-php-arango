@@ -156,15 +156,19 @@ Un champ de regroupement devient `doc.<champ>` *littéralement*. Tous les champs
 
 ### Restreindre les champs groupables
 
-En option, définir une whitelist/mapping `$this->groupable` sur le modèle (comme `$this->sortable`) : `clé-URL → champ réel`. Seules les clés whitelistées sont groupables, et la clé publique est découplée du champ interne :
+En option, définir une whitelist/mapping `groupable` sur le modèle (comme `sortable`) : `clé-URL → champ réel`. Seules les clés whitelistées sont groupables, et la clé publique est découplée du champ interne. Elle se déclare dans le `$init` du modèle, comme tous les autres réglages :
 
 ```php
-$model->groupable = [ 'cat' => 'category' , 'year' => 'created' ] ;
+$articles = new Documents( $container ,
+[
+    Arango::COLLECTION => 'articles' ,
+    Arango::GROUPABLE  => [ 'cat' => 'category' , 'year' => 'created' ] ,
+]) ;
 // ?groupBy=cat       → COLLECT cat = doc.category ...
 // ?groupBy=secret    → ignoré (non whitelisté)
 ```
 
-Quand `$this->groupable` est `null` (défaut), le regroupement est ouvert mais reste protégé contre l'injection par `assertAttributeName()`.
+Quand `groupable` est `null` (défaut), le regroupement est ouvert mais reste protégé contre l'injection par `assertAttributeName()`.
 
 ## Voir aussi
 

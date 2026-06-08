@@ -35,6 +35,19 @@ class SortTraitTest extends TestCase
         $this->assertSame( 'doc.name ASC' , $this->stub()->prepareSort( [ 'sort' => 'name' ] ) ) ;
     }
 
+    public function testOpenModeAllowsDottedPath() :void
+    {
+        // No $sortable whitelist: a valid nested attribute path is accepted.
+        $this->assertSame( 'doc.address.city ASC' , $this->stub()->prepareSort( [ 'sort' => 'address.city' ] ) ) ;
+    }
+
+    public function testOpenModeRejectsInjectionKey() :void
+    {
+        // No $sortable whitelist: an unsafe sort key must not reach doc.<key>.
+        $this->expectException( \oihana\exceptions\ValidationException::class ) ;
+        $this->stub()->prepareSort( [ 'sort' => 'name) RETURN doc //' ] ) ;
+    }
+
     public function testLeadingHyphenIsDescending() :void
     {
         $this->assertSame( 'doc.name DESC' , $this->stub()->prepareSort( [ 'sort' => '-name' ] ) ) ;

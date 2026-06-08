@@ -185,6 +185,13 @@ class Arango
     public const string GROUP = 'group' ;
 
     /**
+     * The 'groupable' parameter — the optional whitelist/mapping of groupable
+     * dimensions (`urlKey => fieldPath`) consumed by
+     * {@see \oihana\arango\models\traits\aql\GroupTrait::$groupable}.
+     */
+    public const string GROUPABLE = 'groupable' ;
+
+    /**
      * The 'in' parameter.
      */
     public const string IN = 'in' ;

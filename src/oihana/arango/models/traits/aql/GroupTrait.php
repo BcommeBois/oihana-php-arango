@@ -52,6 +52,19 @@ trait GroupTrait
     public ?array $groupable = null ;
 
     /**
+     * Initializes the {@see GroupTrait::$groupable} whitelist from the model options.
+     *
+     * @param array $init The model options (`Arango::GROUPABLE`).
+     *
+     * @return static
+     */
+    public function initializeGroupable( array $init = [] ) :static
+    {
+        $this->groupable = $init[ Arango::GROUPABLE ] ?? $this->groupable ;
+        return $this ;
+    }
+
+    /**
      * Resolves the `COLLECT` spec for a list query.
      *
      * Translates a friendly {@see Arango::GROUP} spec ({@see Group::BY},
