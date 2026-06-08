@@ -50,6 +50,22 @@ class JoinFunctionTest extends TestCase
         ) ;
     }
 
+    public function testScalarBindNameCollidingWithEarlierQueryBindIsSuffixed() :void
+    {
+        // The first fragment already contributes a bind named `j1`; the scalar
+        // at index 1 would naturally claim `j1` too, so it is suffixed to `j1_1`.
+        $f1 = new AqlQuery( 'FILTER x == @j1' , [ 'j1' => 'a' ] ) ;
+
+        $result = join( [ $f1 , 42 ] ) ;
+
+        $this->assertSame( 'FILTER x == @j1 @j1_1' , $result->query ) ;
+        $this->assertSame
+        (
+            [ 'j1' => 'a' , 'j1_1' => 42 ] ,
+            $result->bindVars ,
+        ) ;
+    }
+
     public function testMergesAqlQueryFragmentsWithoutCollision() :void
     {
         $f1 = aql( 'FILTER u.role == ?'   , 'admin' ) ; // bindVars: { value1: 'admin' }

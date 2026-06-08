@@ -158,6 +158,15 @@ class ClientOptionsTest extends TestCase
         ) ;
     }
 
+    public function testFromArrayIgnoresNonArrayEndpoints() :void
+    {
+        // A non-array `endpoints` value (e.g. a scalar from a malformed config)
+        // is discarded in favour of an empty list rather than blowing up.
+        $options = ClientOptions::fromArray( [ 'endpoints' => 'tcp://oops:8529' ] ) ;
+
+        $this->assertSame( [] , $options->endpoints ) ;
+    }
+
     public function testFromArrayAuthTypeWinsOverLegacyTypeAlias() :void
     {
         $options = ClientOptions::fromArray( [

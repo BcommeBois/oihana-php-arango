@@ -96,6 +96,66 @@ class ArangoClientTest extends TestCase
     }
 
     // =========================================================================
+    // Authentication
+    // =========================================================================
+
+    public function testLoginDelegatesToTransportAndReturnsJwt() :void
+    {
+        $history = [] ;
+        $client  = $this->makeClient
+        (
+            $this->defaultOptions( 'mydb' ) ,
+            [ new Response( 200 , [] , '{"jwt":"eyJfakeToken"}' ) ] ,
+            $history ,
+        ) ;
+
+        $jwt = $client->login( 'root' , 'secret' ) ;
+
+        $this->assertSame( 'eyJfakeToken' , $jwt ) ;
+
+        /** @var RequestInterface $sent */
+        $sent = $history[ 0 ][ 'request' ] ;
+        $this->assertSame( HttpMethod::POST                          , $sent->getMethod() ) ;
+        $this->assertSame( 'http://127.0.0.1:8529/_open/auth' , (string) $sent->getUri() ) ;
+    }
+
+    public function testUseBasicAuthDelegatesToTransport() :void
+    {
+        $history = [] ;
+        $client  = $this->makeClient
+        (
+            $this->defaultOptions( 'mydb' ) ,
+            [ new Response( 200 , [] , '{}' ) ] ,
+            $history ,
+        ) ;
+
+        $client->useBasicAuth( 'root' , 'secret' ) ;
+        $client->version() ; // trigger a request so the new credentials are exercised
+
+        /** @var RequestInterface $sent */
+        $sent = $history[ 0 ][ 'request' ] ;
+        $this->assertSame( 'Basic ' . base64_encode( 'root:secret' ) , $sent->getHeaderLine( 'Authorization' ) ) ;
+    }
+
+    public function testUseBearerAuthDelegatesToTransport() :void
+    {
+        $history = [] ;
+        $client  = $this->makeClient
+        (
+            $this->defaultOptions( 'mydb' ) ,
+            [ new Response( 200 , [] , '{}' ) ] ,
+            $history ,
+        ) ;
+
+        $client->useBearerAuth( 'eyJfakeToken' ) ;
+        $client->version() ; // trigger a request so the new token is exercised
+
+        /** @var RequestInterface $sent */
+        $sent = $history[ 0 ][ 'request' ] ;
+        $this->assertSame( 'Bearer eyJfakeToken' , $sent->getHeaderLine( 'Authorization' ) ) ;
+    }
+
+    // =========================================================================
     // version()
     // =========================================================================
 

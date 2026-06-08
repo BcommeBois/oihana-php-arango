@@ -17,6 +17,8 @@ use oihana\arango\clients\Database ;
 use oihana\arango\clients\exceptions\HttpException ;
 use oihana\arango\clients\graph\EdgeDefinition ;
 use oihana\arango\clients\graph\Graph ;
+use oihana\arango\clients\graph\GraphEdgeCollection ;
+use oihana\arango\clients\graph\GraphVertexCollection ;
 use oihana\arango\clients\http\HostRing ;
 use oihana\arango\clients\http\HttpTransport ;
 use oihana\arango\clients\http\RetryPolicy ;
@@ -80,6 +82,28 @@ class GraphTest extends TestCase
         $this->assertSame( 'workplaces' , $g->getName() ) ;
         $this->assertSame( 'workplaces' , $g->name      ) ;
         $this->assertSame( $db           , $g->database  ) ;
+    }
+
+    public function testEdgeCollectionReturnsClientSideHandle() :void
+    {
+        $db = $this->makeDatabase( [] ) ; // no HTTP call expected
+        $g  = new Graph( $db , 'workplaces' ) ;
+
+        $edges = $g->edgeCollection( 'employs' ) ;
+
+        $this->assertInstanceOf( GraphEdgeCollection::class , $edges ) ;
+        $this->assertSame( 'employs' , $edges->getName() ) ;
+    }
+
+    public function testVertexCollectionReturnsClientSideHandle() :void
+    {
+        $db = $this->makeDatabase( [] ) ; // no HTTP call expected
+        $g  = new Graph( $db , 'workplaces' ) ;
+
+        $vertices = $g->vertexCollection( 'people' ) ;
+
+        $this->assertInstanceOf( GraphVertexCollection::class , $vertices ) ;
+        $this->assertSame( 'people' , $vertices->getName() ) ;
     }
 
     // =========================================================================

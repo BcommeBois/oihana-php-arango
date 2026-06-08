@@ -177,6 +177,29 @@ class CursorTest extends TestCase
         $this->assertNull ( $cursor->getId()   ) ;
     }
 
+    public function testNextBatchRefreshesExtraMetadata() :void
+    {
+        $db = $this->makeDatabase
+        (
+            [ new Response( 200 , [] , '{"result":[3],"hasMore":false,"extra":{"stats":{"fullCount":99}}}' ) ] ,
+        ) ;
+
+        $cursor = new Cursor
+        (
+            $db ,
+            [
+                'result'  => [ 1 , 2 ] ,
+                'hasMore' => true ,
+                'id'      => 'c-7' ,
+            ] ,
+        ) ;
+
+        // Drain the cursor so the next batch (carrying `extra`) is fetched.
+        foreach ( $cursor as $row ) {}
+
+        $this->assertSame( [ 'stats' => [ 'fullCount' => 99 ] ] , $cursor->getExtra() ) ;
+    }
+
     // =========================================================================
     // count() — only when count: true was requested
     // =========================================================================
