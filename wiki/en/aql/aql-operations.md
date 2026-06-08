@@ -137,7 +137,7 @@ aqlCollectReturn( [ AQL::ASSIGN => [ 'y' => 'DATE_YEAR(doc.created)' ] ] , '{ ye
 // RETURN { year: y }
 ```
 
-> The high-level model wiring (the `Arango::GROUP` key / `Group` vocabulary, and the raw `Arango::COLLECT` key in a `list` query) will be covered by a dedicated `db/grouping.md` guide.
+> The high-level model wiring (the `Arango::GROUP` key / `Group` vocabulary, and the raw `Arango::COLLECT` key in a `list` query) is described in the [Grouping](../db/grouping.md) guide.
 
 ## Sorting
 

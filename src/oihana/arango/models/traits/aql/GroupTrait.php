@@ -13,6 +13,7 @@ use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\alterExpression;
+use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlAsc;
 use function oihana\arango\db\operations\aqlDesc;
 use function oihana\core\strings\compile;
@@ -37,6 +38,19 @@ use function oihana\core\strings\key;
  */
 trait GroupTrait
 {
+    /**
+     * Optional whitelist/mapping of groupable dimensions: `urlKey => fieldPath`.
+     *
+     * When set, only whitelisted {@see Group::BY} keys are allowed and each
+     * resolves to its real field path (decoupling the public group key from the
+     * internal attribute, like {@see SortTrait::$sortable}). When `null`,
+     * grouping is open but every field is still validated against AQL injection
+     * via {@see assertAttributeName()}.
+     *
+     * @var array<string,string>|null
+     */
+    public ?array $groupable = null ;
+
     /**
      * Resolves the `COLLECT` spec for a list query.
      *
@@ -147,10 +161,12 @@ trait GroupTrait
     /**
      * Builds the `AQL::AGGREGATE` map from {@see Group::AGG}.
      *
-     * @param array  $group  The group spec.
+     * @param array $group The group spec.
      * @param string $docRef The document reference.
      *
      * @return array `[ outName => 'FN(doc.field)' ]`.
+     *
+     * @throws ValidationException
      */
     private function collectAggregate( array $group , string $docRef ) :array
     {
@@ -170,6 +186,8 @@ trait GroupTrait
             {
                 continue ;
             }
+
+            assertAttributeName( $field ) ; // guards against AQL injection through the field path.
 
             $out[ $name ] = func( $function , key( $field , $docRef ) ) ;
         }
@@ -200,6 +218,19 @@ trait GroupTrait
         $assign = [] ;
         foreach ( $fields as $var => $field )
         {
+            // Optional whitelist/mapping: when $groupable is set, the variable
+            // (URL key) must be whitelisted and resolves to its real field path.
+            if ( is_array( $this->groupable ) )
+            {
+                if ( !array_key_exists( $var , $this->groupable ) )
+                {
+                    continue ;
+                }
+                $field = $this->groupable[ $var ] ;
+            }
+
+            assertAttributeName( $field ) ; // guards against AQL injection through the field path.
+
             $chain          = is_array( $alt ) ? ( $alt[ $var ] ?? null ) : null ;
             $assign[ $var ] = alterExpression( key( $field , $docRef ) , $chain ) ;
         }

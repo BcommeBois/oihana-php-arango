@@ -3,11 +3,14 @@
 namespace tests\oihana\arango\integration ;
 
 use oihana\arango\clients\Database ;
+use oihana\arango\controllers\traits\PrepareGroupTrait ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Arango ;
 use oihana\arango\models\enums\Group as GroupSpec ;
 
 use tests\oihana\arango\models\traits\queries\ListQueryTraitStub ;
+
+use Slim\Psr7\Factory\ServerRequestFactory ;
 
 use PHPUnit\Framework\Attributes\Group ;
 
@@ -134,5 +137,20 @@ class CollectIntegrationTest extends IntegrationTestCase
         $byCat = [] ;
         foreach ( $rows as $r ) { $byCat[ $r['category'] ] = [ $r['total'] , $r['n'] ] ; }
         $this->assertSame( [ 'A' => [ 330 , 3 ] , 'B' => [ 120 , 2 ] ] , $byCat ) ;
+    }
+
+    public function testHttpGroupByEndToEnd() :void
+    {
+        // Full HTTP chain: ?groupBy=category -> prepareGroup() -> Arango::GROUP -> live AQL.
+        $host = new class { use PrepareGroupTrait { prepareGroup as public ; } } ;
+        $request = new ServerRequestFactory()->createServerRequest( 'GET' , '/' )
+            ->withQueryParams( [ 'groupBy' => 'category' ] ) ;
+
+        $group = $host->prepareGroup( $request ) ;
+        $rows  = $this->rows( [ Arango::GROUP => $group ] ) ;
+
+        $counts = [] ;
+        foreach ( $rows as $r ) { $counts[ $r['category'] ] = $r['count'] ; }
+        $this->assertSame( [ 'A' => 3 , 'B' => 2 ] , $counts ) ;
     }
 }

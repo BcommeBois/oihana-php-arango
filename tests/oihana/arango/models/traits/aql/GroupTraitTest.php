@@ -195,6 +195,46 @@ class GroupTraitTest extends TestCase
         $this->assertSame( 'COLLECT cat = doc.category' , aqlCollect( $spec ) ) ;
     }
 
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testInjectionInGroupByFieldThrows() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->prepareCollect( [ Arango::GROUP => [ Group::BY => 'category) RETURN doc //' ] ] ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testInjectionInAggregateFieldThrows() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->prepareCollect(
+        [
+            Arango::GROUP => [ Group::BY => 'category' , Group::AGG => [ 'x' => 'sum:amount) || 1==1' ] ] ,
+        ]) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testGroupableWhitelistMapsAndRestricts() :void
+    {
+        $stub = $this->stub() ;
+        $stub->groupable = [ 'cat' => 'category' ] ; // url key -> real field
+
+        // 'cat' is whitelisted and renamed to doc.category ; 'secret' is dropped.
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP => [ Group::BY => 'cat,secret' , Group::COUNT => true ] ,
+        ]) ;
+        $this->assertSame( 'COLLECT cat = doc.category WITH COUNT INTO count' , aqlCollect( $spec ) ) ;
+    }
+
     public function testPrepareGroupSortDirections() :void
     {
         $this->assertSame( 'count DESC' , $this->stub()->prepareGroupSort( [ Arango::GROUP => [ Group::SORT => '-count' ] ] ) ) ;

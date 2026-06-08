@@ -9,6 +9,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
+use oihana\arango\controllers\traits\PrepareGroupTrait;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\controllers\traits\BenchTrait;
@@ -27,6 +28,7 @@ trait DocumentsControllerListTrait
         CheckOwnerArgumentsTrait ,
         ModelTrait ,
         OutputDocumentsTrait ,
+        PrepareGroupTrait ,
         PrepareParamTrait ,
         StatusTrait;
 
@@ -65,6 +67,7 @@ trait DocumentsControllerListTrait
                 Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? null ,
                 Arango::FACETS     => $this->prepareFacets( $request , $init , $params ) ,
                 Arango::FILTER     => $this->prepareFilter( $request , $init , $params ) ,
+                Arango::GROUP      => $this->prepareGroup ( $request , $init , $params ) ,
                 Arango::LANG       => $this->prepareLang  ( $request , $init , $params ) ,
                 Arango::LIMIT      => $limit ,
                 Arango::OFFSET     => $this->prepareOffset( $request , $init , $params ) ,

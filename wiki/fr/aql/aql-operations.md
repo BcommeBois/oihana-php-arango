@@ -137,7 +137,7 @@ aqlCollectReturn( [ AQL::ASSIGN => [ 'y' => 'DATE_YEAR(doc.created)' ] ] , '{ ye
 // RETURN { year: y }
 ```
 
-> Le câblage haut niveau côté modèle (clé `Arango::GROUP` / vocabulaire `Group`, et la clé brute `Arango::COLLECT` dans une requête `list`) fera l'objet d'un guide `db/grouping.md` dédié.
+> Le câblage haut niveau côté modèle (clé `Arango::GROUP` / vocabulaire `Group`, et la clé brute `Arango::COLLECT` dans une requête `list`) est décrit dans le guide [Regroupement](../db/grouping.md).
 
 ## Tri
 
