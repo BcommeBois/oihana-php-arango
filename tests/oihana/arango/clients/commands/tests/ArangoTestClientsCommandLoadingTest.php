@@ -4,7 +4,7 @@ namespace tests\oihana\arango\clients\commands\tests ;
 
 use oihana\arango\clients\commands\tests\ArangoTestClientsCommand ;
 
-use PHPUnit\Framework\Attributes\CoversClass ;
+use PHPUnit\Framework\Attributes\CoversNothing ;
 use PHPUnit\Framework\TestCase ;
 
 use ReflectionClass ;
@@ -23,8 +23,12 @@ use Symfony\Component\Console\Command\Command ;
  * at runtime.
  *
  * Same pattern as {@see \tests\oihana\api\commands\AuthCommandsLoadingTest}.
+ *
+ * The command itself is a live smoke-test runner excluded from the coverage
+ * scope (see phpunit.xml `<source><exclude>`), so this structural check
+ * declares {@see CoversNothing} rather than targeting the excluded class.
  */
-#[CoversClass( ArangoTestClientsCommand::class )]
+#[CoversNothing]
 class ArangoTestClientsCommandLoadingTest extends TestCase
 {
     public function testCommandClassLoadsViaReflection() :void
