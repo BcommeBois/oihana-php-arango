@@ -357,10 +357,15 @@ trait PayloadsTrait
             $definition = [ Arango::TYPE => $definition ] ;
         }
 
+        // Unreachable: isSimplePayload() only returns true for an AQLType string
+        // (wrapped into an array just above) or an associative array, so by this
+        // point $definition is always an array.
+        // @codeCoverageIgnoreStart
         if ( !is_array( $definition ) )
         {
             return null ;
         }
+        // @codeCoverageIgnoreEnd
 
         if( array_key_exists( Arango::VALUE , $definition ) )
         {

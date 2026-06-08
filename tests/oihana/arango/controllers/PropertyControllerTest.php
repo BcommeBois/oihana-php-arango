@@ -3,6 +3,7 @@
 namespace tests\oihana\arango\controllers;
 
 use oihana\arango\controllers\PropertyController;
+use oihana\arango\controllers\enums\AQLType;
 use oihana\arango\enums\Arango;
 use oihana\controllers\enums\ControllerParam;
 
@@ -68,6 +69,28 @@ class PropertyControllerTest extends ControllerTestCase
         $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'emails' => [ 'new@x' ] ] ) ;
 
         $this->assertSame( [ 'new@x' ] , $controller->patch( $request , null , [ Arango::ID => 'k1' ] ) ) ;
+    }
+
+    /**
+     * When the payload definition is an EDGE type, propertyPayload() registers
+     * a relation, so the PATCH handler strips the relation keys from the
+     * document payload before the update (the `count($relations) > 0` branch).
+     */
+    public function testPatchWithEdgePayloadStripsRelationKeysFromDocument() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->firstResult  = 1 ; // exist() → true
+        $model->objectResult = (object) [ '_key' => 'k1' , 'friend' => 'users/u2' ] ;
+
+        $controller = $this->makePropertyController( $model ,
+        [
+            self::PROPERTY  => 'friend' ,
+            Arango::PAYLOAD => [ Arango::TYPE => AQLType::EDGE ] ,
+        ] ) ;
+
+        $request = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'friend' => 'users/u2' ] ) ;
+
+        $this->assertSame( 'users/u2' , $controller->patch( $request , null , [ Arango::ID => 'k1' ] ) ) ;
     }
 
     public function testPatchRawReturnsThePayloadPropertyWithoutReload() :void
