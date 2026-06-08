@@ -131,10 +131,14 @@ trait HasHierarchicalFilter
     )
     : ?string
     {
+        // Unreachable via the public path: the entry splits a non-empty key and
+        // every recursive call only happens for a non-last (non-empty) segment.
+        // @codeCoverageIgnoreStart
         if ( empty( $segments ) )
         {
             return null ;
         }
+        // @codeCoverageIgnoreEnd
 
         $currentSegment = array_shift( $segments ) ;
         $isLast         = empty( $segments ) ;
@@ -339,11 +343,16 @@ trait HasHierarchicalFilter
 
         $edgeConfig = $availableEdges[ $relationRef ] ?? null ;
 
+        // Unreachable: parseFilterSegment already validated that $relationRef
+        // exists in this same edges map (it throws otherwise) before the segment
+        // is classified as an edge and routed here.
+        // @codeCoverageIgnoreStart
         if ( !$edgeConfig )
         {
             $pathStr = implode( '.' , $segmentInfo->path ) ;
             throw new RuntimeException( "Edge '$relationRef' not found for path: $pathStr");
         }
+        // @codeCoverageIgnoreEnd
 
         $edges = getEdges($edgeConfig[ AQL::MODEL ] ?? null , $this->container ) ;
         if ( !( $edges instanceof Edges ) )
@@ -441,11 +450,16 @@ trait HasHierarchicalFilter
         $relationRef = $segmentInfo->relationRef;
         $joinConfig = $availableJoins[ $relationRef ] ?? null ;
 
+        // Unreachable: parseFilterSegment already validated that $relationRef
+        // exists in this same joins map (it throws otherwise) before the segment
+        // is classified as a join and routed here.
+        // @codeCoverageIgnoreStart
         if ( !$joinConfig )
         {
             $pathStr = implode( '.' , $segmentInfo->path ) ;
             throw new RuntimeException("Join '$relationRef' not found for path: $pathStr");
         }
+        // @codeCoverageIgnoreEnd
 
         $joinKey = $joinConfig[ AQL::KEY   ] ?? Schema::_KEY ;
         $model   = $joinConfig[ AQL::MODEL ] ?? null ;

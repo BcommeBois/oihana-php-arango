@@ -1028,4 +1028,74 @@ class HasHierarchicalFilterTest extends TestCase
 
         $this->assertNull( $result ) ;
     }
+
+    /**
+     * prepareHierarchicalFilter() returns null when the init carries no key.
+     * The public prepareFilter() short-circuits a missing key before dispatch,
+     * so this guard is reached only by calling the method directly — done here
+     * through a thin subclass that re-exposes it.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     */
+    public function testPrepareHierarchicalFilterReturnsNullWhenKeyMissing(): void
+    {
+        $model = new class( $this->container , [ AQL::COLLECTION => 'customers' , AQL::LAZY => false ] ) extends Documents
+        {
+            public function callPrepareHierarchical( array $init , ?array &$binds = null ) :?string
+            {
+                return $this->prepareHierarchicalFilter( $init , $binds ) ;
+            }
+        };
+
+        $binds = [] ;
+        $this->assertNull( $model->callPrepareHierarchical( [] , $binds ) ) ;
+    }
+
+    /**
+     * A join whose model resolves to a Documents without a collection cannot be
+     * traversed: the join traversal throws "Cannot resolve collection".
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testJoinTraversalThrowsWhenModelHasNoCollection(): void
+    {
+        // A model whose collection is empty (no AQL::COLLECTION supplied).
+        $company = new Documents( $this->container ,
+        [
+            AQL::LAZY    => false ,
+            AQL::FILTERS => [ 'name' => FilterType::STRING ] ,
+        ]);
+        $this->container->set( 'CollectionlessModel' , $company ) ;
+
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'customers' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'company' =>
+                [
+                    AQL::TYPE    => Filter::JOIN ,
+                    AQL::FILTERS => [ 'name' => FilterType::STRING ] ,
+                ]
+            ],
+            AQL::JOINS =>
+            [
+                'company' => [ AQL::MODEL => 'CollectionlessModel' , AQL::KEY => '_key' ] ,
+            ],
+        ]);
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'Cannot resolve collection' ) ;
+        $model->prepareFilter( [ 'key' => 'company.name' , 'val' => 'Acme' ] , $this->binds ) ;
+    }
 }
