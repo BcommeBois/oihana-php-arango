@@ -3,12 +3,16 @@
 namespace tests\oihana\arango\db\helpers;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\exceptions\UnsupportedOperationException;
+
 use PHPUnit\Framework\TestCase;
+
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
+
 use function oihana\arango\db\helpers\aqlFields;
 
 final class AqlFieldsTest extends TestCase
@@ -37,6 +41,31 @@ final class AqlFieldsTest extends TestCase
             'tags:IS_ARRAY(edge.tags) ? edge.tags : null' ,
             $result
         );
+    }
+
+    /**
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testNullFieldsReturnsNull(): void
+    {
+        $this->assertNull( aqlFields( null ) );
+    }
+
+    /**
+     * A field declaring Field::REQUIRES is dropped from the projection when
+     * the request-scoped authorizer denies its subject.
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testFieldDroppedWhenAuthorizerDenies(): void
+    {
+        $fields = [ 'secret' => [ Field::REQUIRES => 'x:read' ] , 'name' => [] ];
+        $init   = [ Arango::AUTHORIZER => fn() => false ];
+
+        $this->assertSame( 'name:doc.name', aqlFields( $fields, 'doc', null, $init ) );
     }
 
     /**
