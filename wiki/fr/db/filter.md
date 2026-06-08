@@ -89,6 +89,7 @@ Les valeurs de `op` sont définies par l'enum `FilterComparator`.
 | `in` | Dans la liste fournie | `doc.x IN @val` |
 | `nin` | Pas dans la liste | `doc.x NOT IN @val` |
 | `between` | Plage inclusive (clés `min`/`max` au lieu de `val`) | `(doc.x >= @min && doc.x <= @max)` |
+| `distance` | Rayon géo (type `geo` ; `val` = point, `min`/`max` = rayon en mètres) | `DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) <= @max` |
 
 > `sw`, `ew` et `contains` sont des **formes fonction** (pas des comparateurs infixes) et comparent **littéralement** : les `%`/`_` ne sont pas des jokers (contrairement à `like`), donc rien à échapper. AQL n'a pas de `ENDS_WITH` natif → `ew` s'écrit `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`. Ces trois-là sont insensibles à la casse via le miroir `alt` : `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))` (idem `ew`/`contains`).
 >
@@ -138,6 +139,25 @@ Exemples :
 
 Le champ comparé reste compatible `alt` (ex. `"alt":"abs"` → `(ABS(doc.price) >= @min && …)`).
 
+### Opérateur `distance` (géolocalisation)
+
+Réservé au type [`FilterType::GEO`](#types-de-filtres). Il filtre les documents par leur **distance** (en mètres) à un point de référence. La valeur `val` porte le **point** au format Schema.org `GeoCoordinates` (`{ latitude, longitude }`, alias courts `lat`/`lng`/`lon` acceptés) ; le **rayon** réutilise les clés **`min`/`max`** — exactement comme `between` :
+
+```jsonc
+// dans un rayon de 5 km
+{"key":"geo","op":"distance","val":{"latitude":48.8566,"longitude":2.3522},"max":5000}
+// FILTER DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) <= @max
+```
+```jsonc
+// anneau entre 1 km et 5 km
+{"key":"geo","op":"distance","val":{"latitude":48.8566,"longitude":2.3522},"min":1000,"max":5000}
+// FILTER (DISTANCE(...) >= @min && DISTANCE(...) <= @max)
+```
+
+`op` peut être omis (le type `geo` implique `distance`). **Un rayon est requis** : sans `min` ni `max`, aucune clause n'est émise. Les sous-attributs lus sont `<key>.latitude` / `<key>.longitude` (Schema.org) ; `DISTANCE` opère sur deux scalaires, donc le prédicat est **index-accéléré** dès qu'un [`GeoIndex`](../clients/indexes.md) à deux champs couvre ces attributs. Voir le catalogue des [fonctions géospatiales](../aql/aql-functions-geo.md).
+
+> **Filtrer ≠ trier.** `distance` **borne** (rayon) mais n'**ordonne** pas. Pour classer du plus proche au plus loin, le tri par distance est un levier distinct (paramètre dédié) — combinable avec ce filtre.
+
 ## Types de filtres
 
 Chaque champ filtrable est typé via `FilterType::*` dans la déclaration `AQL::FILTERS` du modèle. Le type **détermine** comment la valeur est validée et quel sous-ensemble des `alt` est compatible.
@@ -149,6 +169,7 @@ Chaque champ filtrable est typé via `FilterType::*` dans la déclaration `AQL::
 | `FilterType::DATE` | ISO 8601 ou timestamp Unix ms | `eq`, `ne`, `gt`, `ge`, `lt`, `le` | `dateYear`, `dateMonth`, `dateDayOfWeek`, `dateFormat` |
 | `FilterType::BOOL` | `true` / `false` | `eq`, `ne` | Aucun (booléen non transformable) |
 | `FilterType::ARRAY` | Tableau JSON | `eq`, `in`, `nin` ; opérateurs quantifiés | `count`, `length`, `first`, `last`, `sum`, `avg` |
+| `FilterType::GEO` | Objet `{ latitude, longitude }` (Schema.org) | `distance` (`val` = point, `min`/`max` = rayon m) | Aucun (voir [opérateur `distance`](#opérateur-distance-géolocalisation)) |
 | `FilterType::VIRTUAL` | Aucune clause AQL émise | — | Cas spécial : voir [filter-internal.md](filter-internal.md) |
 
 ```php

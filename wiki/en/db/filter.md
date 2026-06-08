@@ -89,6 +89,7 @@ The `op` values are defined by the `FilterComparator` enum.
 | `in` | In the supplied list | `doc.x IN @val` |
 | `nin` | Not in the list | `doc.x NOT IN @val` |
 | `between` | Inclusive range (`min`/`max` keys instead of `val`) | `(doc.x >= @min && doc.x <= @max)` |
+| `distance` | Geo radius (`geo` type; `val` = point, `min`/`max` = radius in meters) | `DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) <= @max` |
 
 > `sw`, `ew` and `contains` are **function forms** (not infix comparators) and match **literally**: `%`/`_` are not wildcards (unlike `like`), so nothing needs escaping. AQL has no native `ENDS_WITH`, so `ew` is written `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`. These three are case-insensitive via the `alt` mirror: `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))` (likewise for `ew`/`contains`).
 >
@@ -138,6 +139,25 @@ Examples:
 
 The compared field stays `alt`-aware (e.g. `"alt":"abs"` → `(ABS(doc.price) >= @min && …)`).
 
+### `distance` operator (geolocation)
+
+Reserved for the [`FilterType::GEO`](#filter-types) type. It filters documents by their **distance** (in meters) to a reference point. The `val` value carries the **point** in Schema.org `GeoCoordinates` form (`{ latitude, longitude }`, short aliases `lat`/`lng`/`lon` accepted); the **radius** reuses the **`min`/`max`** keys — exactly like `between`:
+
+```jsonc
+// within a 5 km radius
+{"key":"geo","op":"distance","val":{"latitude":48.8566,"longitude":2.3522},"max":5000}
+// FILTER DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) <= @max
+```
+```jsonc
+// ring between 1 km and 5 km
+{"key":"geo","op":"distance","val":{"latitude":48.8566,"longitude":2.3522},"min":1000,"max":5000}
+// FILTER (DISTANCE(...) >= @min && DISTANCE(...) <= @max)
+```
+
+`op` may be omitted (the `geo` type implies `distance`). **A radius is required**: with neither `min` nor `max`, no clause is emitted. The sub-attributes read are `<key>.latitude` / `<key>.longitude` (Schema.org); `DISTANCE` operates on two scalars, so the predicate is **index-accelerated** as soon as a two-field [`GeoIndex`](../clients/indexes.md) covers them. See the [geospatial functions](../aql/aql-functions-geo.md) catalog.
+
+> **Filtering ≠ sorting.** `distance` **bounds** (radius) but does not **order**. To rank from nearest to farthest, distance sorting is a separate lever (dedicated parameter) — composable with this filter.
+
 ## Filter types
 
 Each filterable field is typed via `FilterType::*` in the model's `AQL::FILTERS` declaration. The type **determines** how the value is validated and which subset of `alt` is compatible.
@@ -149,6 +169,7 @@ Each filterable field is typed via `FilterType::*` in the model's `AQL::FILTERS`
 | `FilterType::DATE` | ISO 8601 or Unix timestamp ms | `eq`, `ne`, `gt`, `ge`, `lt`, `le` | `dateYear`, `dateMonth`, `dateDayOfWeek`, `dateFormat` |
 | `FilterType::BOOL` | `true` / `false` | `eq`, `ne` | None (booleans aren't transformable) |
 | `FilterType::ARRAY` | JSON array | `eq`, `in`, `nin`; quantified operators | `count`, `length`, `first`, `last`, `sum`, `avg` |
+| `FilterType::GEO` | `{ latitude, longitude }` object (Schema.org) | `distance` (`val` = point, `min`/`max` = radius m) | None (see [`distance` operator](#distance-operator-geolocation)) |
 | `FilterType::VIRTUAL` | No AQL clause emitted | — | Special case: see [filter-internal.md](filter-internal.md) |
 
 ```php

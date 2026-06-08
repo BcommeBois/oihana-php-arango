@@ -20,6 +20,7 @@ class FilterTypeTest extends TestCase
         $this->assertSame( 'array'  , FilterType::ARRAY  ) ;
         $this->assertSame( 'bool'   , FilterType::BOOL   ) ;
         $this->assertSame( 'date'   , FilterType::DATE   ) ;
+        $this->assertSame( 'geo'    , FilterType::GEO   ) ;
         $this->assertSame( 'number' , FilterType::NUMBER ) ;
         $this->assertSame( 'string' , FilterType::STRING ) ;
     }
@@ -33,6 +34,7 @@ class FilterTypeTest extends TestCase
         $this->assertTrue( FilterType::includes( FilterType::ARRAY  ) ) ;
         $this->assertTrue( FilterType::includes( FilterType::BOOL   ) ) ;
         $this->assertTrue( FilterType::includes( FilterType::DATE   ) ) ;
+        $this->assertTrue( FilterType::includes( FilterType::GEO    ) ) ;
         $this->assertTrue( FilterType::includes( FilterType::NUMBER ) ) ;
         $this->assertTrue( FilterType::includes( FilterType::STRING ) ) ;
     }
@@ -57,10 +59,11 @@ class FilterTypeTest extends TestCase
         $enums = FilterType::enums() ;
 
         $this->assertIsArray( $enums ) ;
-        $this->assertCount( 6 , $enums ) ;
+        $this->assertCount( 7 , $enums ) ;
         $this->assertContains( FilterType::ARRAY   , $enums ) ;
         $this->assertContains( FilterType::BOOL    , $enums ) ;
         $this->assertContains( FilterType::DATE    , $enums ) ;
+        $this->assertContains( FilterType::GEO     , $enums ) ;
         $this->assertContains( FilterType::NUMBER  , $enums ) ;
         $this->assertContains( FilterType::STRING  , $enums ) ;
         $this->assertContains( FilterType::VIRTUAL , $enums ) ;

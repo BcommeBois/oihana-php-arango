@@ -11,6 +11,7 @@ class FilterComparator
 
     public const string BETWEEN   = 'between'   ; // range: key >= min && key <= max (no single AQL alias)
     public const string CONTAINS  = 'contains'  ; // contains substring — CONTAINS(key, value) (function form, not in __ALIAS__)
+    public const string DISTANCE  = 'distance'  ; // geo radius — DISTANCE(key.latitude, key.longitude, @lat, @lng) <= @max (FilterType::GEO, not in __ALIAS__)
     public const string EQ        = 'eq'        ; // equals (default)
     public const string EW        = 'ew'        ; // ends with — RIGHT(key, CHAR_LENGTH(value)) == value (special form, not in __ALIAS__)
     public const string GE        = 'ge'        ; // greater than or equals

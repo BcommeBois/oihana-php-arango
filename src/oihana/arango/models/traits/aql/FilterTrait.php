@@ -20,6 +20,7 @@ use oihana\arango\models\traits\aql\filters\HasFilterArray;
 use oihana\arango\models\traits\aql\filters\HasFilterBoolean;
 use oihana\arango\models\traits\aql\filters\HasFilterConditions;
 use oihana\arango\models\traits\aql\filters\HasFilterDate;
+use oihana\arango\models\traits\aql\filters\HasFilterGeo;
 use oihana\arango\models\traits\aql\filters\HasFilterDocumentation;
 use oihana\arango\models\traits\aql\filters\HasFilterNumber;
 use oihana\arango\models\traits\aql\filters\HasFilterString;
@@ -386,6 +387,7 @@ trait FilterTrait
         HasFilterBoolean        ,
         HasFilterConditions     ,
         HasFilterDate           ,
+        HasFilterGeo            ,
         HasFilterNumber         ,
         HasFilterString         ,
         HasFilterDocumentation  ,
@@ -485,6 +487,7 @@ trait FilterTrait
                     FilterType::ARRAY   => $this->prepareFilterArray   ( $init , $binds , $docRef ) ,
                     FilterType::BOOL    => $this->prepareFilterBoolean ( $init , $binds , $docRef ) , // ?filter={ "key":"flag"  , "val":true    }
                     FilterType::DATE    => $this->prepareFilterDate    ( $init , $binds , $docRef ) , // ?filter={ "key":"hello" , "val":"world" }
+                    FilterType::GEO     => $this->prepareFilterGeo     ( $init , $binds , $docRef ) , // ?filter={ "key":"geo" , "op":"distance" , "val":{ "latitude":48.85 , "longitude":2.35 } , "max":5000 }
                     FilterType::NUMBER  => $this->prepareFilterNumber  ( $init , $binds , $docRef ) ,
                     FilterType::STRING  => $this->prepareFilterString  ( $init , $binds , $docRef ) , // ?filter={ "key":"hello" , "val":"world" }
                     // FilterType::VIRTUAL => null -> declared filterable but emits no AQL predicate — see FilterType::VIRTUAL
