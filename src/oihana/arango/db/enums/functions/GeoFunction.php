@@ -26,9 +26,9 @@ class GeoFunction
     // ---- Utilities
 
     public const string GEO_LINESTRING       = 'GEO_LINESTRING' ;
-    public const string GEO_MULTILINESTRING  = 'GEO_MULTILINESTRING ' ;
-    public const string GEO_MULTIPOINT       = 'GEO_MULTIPOINT ' ;
-    public const string GEO_MULTIPOLYGON     = 'GEO_MULTIPOLYGON ' ;
-    public const string GEO_POINT            = 'GEO_POINT ' ;
-    public const string GEO_POLYGON          = 'GEO_POLYGON ' ;
+    public const string GEO_MULTILINESTRING  = 'GEO_MULTILINESTRING' ;
+    public const string GEO_MULTIPOINT       = 'GEO_MULTIPOINT' ;
+    public const string GEO_MULTIPOLYGON     = 'GEO_MULTIPOLYGON' ;
+    public const string GEO_POINT            = 'GEO_POINT' ;
+    public const string GEO_POLYGON          = 'GEO_POLYGON' ;
 }
