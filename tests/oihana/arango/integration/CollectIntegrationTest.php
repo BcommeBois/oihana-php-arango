@@ -5,6 +5,7 @@ namespace tests\oihana\arango\integration ;
 use oihana\arango\clients\Database ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Arango ;
+use oihana\arango\models\enums\Group as GroupSpec ;
 
 use tests\oihana\arango\models\traits\queries\ListQueryTraitStub ;
 
@@ -98,5 +99,40 @@ class CollectIntegrationTest extends IntegrationTestCase
         $rows = $this->rows( [ Arango::COLLECT => [ AQL::WITH_COUNT => 'length' ] ] ) ;
 
         $this->assertSame( [ 5 ] , $rows ) ;
+    }
+
+    // ---------------------------------------------------------------- high-level Group spec
+
+    public function testGroupHighLevelCountSorted() :void
+    {
+        // Arango::GROUP with WITH COUNT + descending sort on the count variable.
+        $rows = $this->rows(
+        [
+            Arango::GROUP => [ GroupSpec::BY => 'category' , GroupSpec::COUNT => true , GroupSpec::SORT => '-count' ] ,
+        ]) ;
+
+        // A (3) before B (2) thanks to SORT count DESC.
+        $this->assertSame(
+            [ [ 'category' => 'A' , 'count' => 3 ] , [ 'category' => 'B' , 'count' => 2 ] ] ,
+            array_map( fn( $r ) => [ 'category' => $r['category'] , 'count' => $r['count'] ] , $rows )
+        ) ;
+    }
+
+    public function testGroupHighLevelSumAndCount() :void
+    {
+        // Sum per group + count emitted as LENGTH(1) (aggregates present).
+        $rows = $this->rows(
+        [
+            Arango::GROUP =>
+            [
+                GroupSpec::BY    => 'category' ,
+                GroupSpec::AGG   => [ 'total' => 'sum:amount' ] ,
+                GroupSpec::COUNT => 'n' ,
+            ] ,
+        ]) ;
+
+        $byCat = [] ;
+        foreach ( $rows as $r ) { $byCat[ $r['category'] ] = [ $r['total'] , $r['n'] ] ; }
+        $this->assertSame( [ 'A' => [ 330 , 3 ] , 'B' => [ 120 , 2 ] ] , $byCat ) ;
     }
 }

@@ -19,6 +19,7 @@ use oihana\arango\models\traits\aql\ActiveTrait;
 use oihana\arango\models\traits\aql\FacetTrait;
 use oihana\arango\models\traits\aql\FieldsTrait;
 use oihana\arango\models\traits\aql\FilterTrait;
+use oihana\arango\models\traits\aql\GroupTrait;
 use oihana\arango\models\traits\aql\SearchTrait;
 use oihana\arango\models\traits\aql\SortTrait;
 use oihana\models\traits\ConditionsTrait;
@@ -50,6 +51,7 @@ trait ListQueryTrait
         FacetTrait ,
         FieldsTrait ,
         FilterTrait ,
+        GroupTrait ,
         SearchTrait ,
         SortTrait ;
 
@@ -266,14 +268,16 @@ trait ListQueryTrait
             ...( $init[ AQL::CONDITIONS ] ?? [] )
         ]);
 
-        // Optional COLLECT (grouping/aggregation). When present, `doc` is out of scope:
-        // the document-based SORT and RETURN are replaced by a grouped RETURN.
-        $collect = aqlCollect( $init[ Arango::COLLECT ] ?? [] ) ;
+        // Optional COLLECT (grouping/aggregation), from the high-level Arango::GROUP
+        // spec or a raw Arango::COLLECT spec. When present, `doc` is out of scope:
+        // the document-based SORT and RETURN are replaced by a grouped SORT/RETURN.
+        $collectSpec = $this->prepareCollect( $init ) ;
+        $collect     = aqlCollect( $collectSpec ) ;
 
         if ( $collect !== Char::EMPTY )
         {
-            $sort   = Char::EMPTY ;
-            $return = aqlCollectReturn( $init[ Arango::COLLECT ] ?? [] , $init[ Arango::RETURN ] ?? null ) ;
+            $sort   = aqlSort( $this->prepareGroupSort( $init ) ) ;
+            $return = aqlCollectReturn( $collectSpec , $init[ Arango::RETURN ] ?? null ) ;
         }
         else
         {

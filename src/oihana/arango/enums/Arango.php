@@ -178,6 +178,13 @@ class Arango
     public const string FROM = 'from' ;
 
     /**
+     * The 'group' parameter — holds a high-level grouping spec
+     * ({@see \oihana\arango\models\enums\Group}) translated into an AQL `COLLECT`
+     * by {@see \oihana\arango\models\traits\aql\GroupTrait::prepareCollect()}.
+     */
+    public const string GROUP = 'group' ;
+
+    /**
      * The 'in' parameter.
      */
     public const string IN = 'in' ;

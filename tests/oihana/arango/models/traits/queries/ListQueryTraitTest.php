@@ -4,6 +4,7 @@ namespace tests\oihana\arango\models\traits\queries;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\Group;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
 use PHPUnit\Framework\TestCase;
@@ -129,6 +130,42 @@ class ListQueryTraitTest extends TestCase
                 [
                     Arango::COLLECT => [ AQL::ASSIGN => [ 'status' => 'doc.status' ] ] ,
                     Arango::SORT    => 'name,-age' ,
+                ] ,
+                $binds
+            ) ,
+        ) ;
+    }
+
+    public function testGroupByHighLevelSpecWithCountAndSort() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'FOR doc IN @@collection COLLECT category = doc.category WITH COUNT INTO count SORT count DESC RETURN {category, count}' ,
+            $this->stub()->buildListQuery
+            (
+                [ Arango::GROUP => [ Group::BY => 'category' , Group::COUNT => true , Group::SORT => '-count' ] ] ,
+                $binds
+            ) ,
+        ) ;
+    }
+
+    public function testGroupByHighLevelAggregateWithFilterAndLimit() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc.y==1 COLLECT year = DATE_YEAR(doc.created) AGGREGATE total = SUM(doc.amount) LIMIT 10 RETURN {year, total}' ,
+            $this->stub()->buildListQuery
+            (
+                [
+                    Arango::CONDITIONS => [ 'doc.y==1' ] ,
+                    Arango::GROUP => [
+                        Group::BY  => [ 'year' => 'created' ] ,
+                        Group::ALT => [ 'year' => 'dateYear' ] ,
+                        Group::AGG => [ 'total' => 'sum:amount' ] ,
+                    ] ,
+                    Arango::LIMIT => 10 ,
                 ] ,
                 $binds
             ) ,

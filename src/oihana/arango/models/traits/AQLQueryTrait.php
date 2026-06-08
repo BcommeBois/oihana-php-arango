@@ -6,6 +6,7 @@ use oihana\arango\models\traits\aql\ActiveTrait;
 use oihana\arango\models\traits\aql\BindTrait;
 use oihana\arango\models\traits\aql\FacetTrait;
 use oihana\arango\models\traits\aql\FilterTrait;
+use oihana\arango\models\traits\aql\GroupTrait;
 use oihana\arango\models\traits\aql\LimitTrait;
 use oihana\arango\models\traits\aql\SearchTrait;
 use oihana\arango\models\traits\aql\SortTrait;
@@ -19,6 +20,7 @@ trait AQLQueryTrait
         BindTrait ,
         FilterTrait ,
         FacetTrait ,
+        GroupTrait ,
         LimitTrait ,
         SearchTrait ,
         SortTrait ;
