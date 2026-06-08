@@ -14,6 +14,7 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\enums\Char;
 use oihana\arango\models\traits\aql\ActiveTrait;
 use oihana\arango\models\traits\aql\FacetTrait;
 use oihana\arango\models\traits\aql\FieldsTrait;
@@ -23,6 +24,8 @@ use oihana\arango\models\traits\aql\SortTrait;
 use oihana\models\traits\ConditionsTrait;
 use oihana\exceptions\BindException;
 
+use function oihana\arango\db\operations\aqlCollect;
+use function oihana\arango\db\operations\aqlCollectReturn;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLimit;
@@ -252,7 +255,6 @@ trait ListQueryTrait
 
         $for   = aqlFor( [ AQL::IN => $this->bindCollection($bindVars ) ] ) ;
         $limit = aqlLimit  ( $limit , $offset ) ;
-        $sort  = aqlSort( $this->prepareSort( $init , binds: $bindVars ) ) ;
 
         $filter = aqlFilter
         ([
@@ -264,13 +266,27 @@ trait ListQueryTrait
             ...( $init[ AQL::CONDITIONS ] ?? [] )
         ]);
 
-        $return = $this->returnFields( $init , $variables ) ;
+        // Optional COLLECT (grouping/aggregation). When present, `doc` is out of scope:
+        // the document-based SORT and RETURN are replaced by a grouped RETURN.
+        $collect = aqlCollect( $init[ Arango::COLLECT ] ?? [] ) ;
+
+        if ( $collect !== Char::EMPTY )
+        {
+            $sort   = Char::EMPTY ;
+            $return = aqlCollectReturn( $init[ Arango::COLLECT ] ?? [] , $init[ Arango::RETURN ] ?? null ) ;
+        }
+        else
+        {
+            $sort   = aqlSort( $this->prepareSort( $init , binds: $bindVars ) ) ;
+            $return = $this->returnFields( $init , $variables ) ;
+        }
 
         $query = compile
         ([
             $for ,
             $filter ,
             $variables ,
+            $collect ,
             $sort ,
             $limit ,
             $return

@@ -2,6 +2,7 @@
 
 namespace tests\oihana\arango\models\traits\queries;
 
+use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
@@ -85,6 +86,73 @@ class ListQueryTraitTest extends TestCase
         (
             'FOR doc IN @@collection FILTER doc.k==1 RETURN doc' ,
             $stub->buildListQuery( [] , $binds ) ,
+        ) ;
+    }
+
+    public function testCollectGroupingDerivesReturn() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'FOR doc IN @@collection COLLECT status = doc.status RETURN {status}' ,
+            $this->stub()->buildListQuery
+            (
+                [ Arango::COLLECT => [ AQL::ASSIGN => [ 'status' => 'doc.status' ] ] ] ,
+                $binds
+            ) ,
+        ) ;
+    }
+
+    public function testCollectGroupingWithCount() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'FOR doc IN @@collection COLLECT category = doc.category WITH COUNT INTO count RETURN {category, count}' ,
+            $this->stub()->buildListQuery
+            (
+                [ Arango::COLLECT => [ AQL::ASSIGN => [ 'category' => 'doc.category' ] , AQL::WITH_COUNT => 'count' ] ] ,
+                $binds
+            ) ,
+        ) ;
+    }
+
+    public function testCollectDropsDocumentSort() :void
+    {
+        // A document-based ?sort= must be ignored once COLLECT is active (doc is gone).
+        $binds = [] ;
+        $this->assertSame
+        (
+            'FOR doc IN @@collection COLLECT status = doc.status RETURN {status}' ,
+            $this->stub()->buildListQuery
+            (
+                [
+                    Arango::COLLECT => [ AQL::ASSIGN => [ 'status' => 'doc.status' ] ] ,
+                    Arango::SORT    => 'name,-age' ,
+                ] ,
+                $binds
+            ) ,
+        ) ;
+    }
+
+    public function testCollectKeepsLimitAndExplicitReturn() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'FOR doc IN @@collection COLLECT y = DATE_YEAR(doc.created) AGGREGATE total = SUM(doc.amount) LIMIT 5 RETURN { year: y, revenue: total }' ,
+            $this->stub()->buildListQuery
+            (
+                [
+                    Arango::COLLECT => [
+                        AQL::ASSIGN    => [ 'y' => 'DATE_YEAR(doc.created)' ] ,
+                        AQL::AGGREGATE => [ 'total' => 'SUM(doc.amount)' ] ,
+                    ] ,
+                    Arango::RETURN => '{ year: y, revenue: total }' ,
+                    Arango::LIMIT  => 5 ,
+                ] ,
+                $binds
+            ) ,
         ) ;
     }
 }

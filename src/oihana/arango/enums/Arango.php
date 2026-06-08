@@ -9,8 +9,7 @@ use oihana\reflect\traits\ConstantsTrait;
 use xyz\oihana\schema\constants\traits\PaginationTrait;
 
 /**
- * Central enumeration of ArangoDB-related parameters
- * used throughout controllers, models, and pagination contexts.
+ * Central enumeration of ArangoDB-related parameters used throughout controllers, models, and pagination contexts.
  *
  * Provides typed constants for common parameters such as
  * 'doc', 'model', 'collection', 'queryFields', 'active', 'insert', 'update', etc.
@@ -57,6 +56,12 @@ class Arango
      * The 'cacheable' parameter.
      */
     public const string CACHEABLE = 'cacheable' ;
+
+    /**
+     * The 'collect' parameter — holds an AQL `COLLECT` (grouping/aggregation) spec
+     * forwarded to {@see aqlCollect()}.
+     */
+    public const string COLLECT = 'collect' ;
 
     /**
      * The 'collection' parameter.

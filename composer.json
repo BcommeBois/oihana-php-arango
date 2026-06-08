@@ -271,6 +271,7 @@
             "src/oihana/arango/db/helpers/resolveSkinFields.php" ,
             "src/oihana/arango/db/operations/aqlAsc.php" ,
             "src/oihana/arango/db/operations/aqlCollect.php" ,
+            "src/oihana/arango/db/operations/aqlCollectReturn.php" ,
             "src/oihana/arango/db/operations/aqlDesc.php" ,
             "src/oihana/arango/db/operations/aqlFilter.php" ,
             "src/oihana/arango/db/operations/aqlFor.php" ,
