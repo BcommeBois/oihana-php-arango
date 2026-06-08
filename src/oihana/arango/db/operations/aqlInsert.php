@@ -7,6 +7,7 @@ use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Clause;
+use oihana\arango\db\enums\EmptyObject;
 use oihana\arango\db\enums\Operation;
 use oihana\arango\db\enums\Operator;
 use oihana\arango\db\options\InsertOptions;
@@ -109,7 +110,7 @@ function aqlInsert
     }
 
     $binds      = $binds ?? [] ;
-    $doc        = $init[ AQL::DOC             ] ?? '{}' ;
+    $doc        = $init[ AQL::DOC             ] ?? EmptyObject::COMPACT ;
     $queryID    = $init[ AQL::QUERY_ID        ] ?? $queryID ;
     $to         = $init[ AQL::BIND_COLLECTION ] ?? null ;
 

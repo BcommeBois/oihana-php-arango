@@ -7,6 +7,7 @@ use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
+use oihana\arango\db\enums\EmptyObject;
 use oihana\arango\db\enums\Operation;
 use oihana\arango\db\enums\Operator;
 use oihana\arango\db\options\ReplaceOptions;
@@ -136,7 +137,7 @@ function aqlUpdate
     {
         $expressions[] = $init[ AQL::KEY ] ?? AQL::DOC ;
         $expressions[] = Operator::WITH ;
-        $expressions[] = $init[ AQL::WITH ] ?? '{}' ;
+        $expressions[] = $init[ AQL::WITH ] ?? EmptyObject::COMPACT ;
     }
     else
     {

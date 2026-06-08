@@ -4,7 +4,11 @@ namespace oihana\arango\db\helpers;
 
 use InvalidArgumentException;
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\EmptyObject;
+use oihana\enums\Char;
 use oihana\exceptions\UnsupportedOperationException;
+
+use function oihana\core\strings\compile;
 
 /**
  * Generate a document expression for ArangoDB AQL.
@@ -100,11 +104,11 @@ function aqlDocument
 {
     $useSpace = $options[ AQL::USE_SPACE ] ?? false ;
 
-    $space = $useSpace ? ' ' : '' ;
+    $space = $useSpace ? Char::SPACE : Char::EMPTY ;
 
     if ( is_null( $keyValues ) || ( is_array( $keyValues ) && empty( $keyValues ) ) )
     {
-        return $useSpace ? '{ }' : '{}' ;
+        return $useSpace ? EmptyObject::SPACED : EmptyObject::COMPACT ;
     }
 
     if ( is_object( $keyValues ) )
@@ -112,35 +116,28 @@ function aqlDocument
         $keyValues = get_object_vars( $keyValues ) ;
     }
 
+    if ( is_string( $keyValues ) )
+    {
+        return Char::LEFT_BRACE . $space . trim( $keyValues ) . $space . Char::RIGHT_BRACE ;
+    }
+
     $escapeKey = static fn( string $key ) :string
-               => preg_match( '/^[a-zA-Z_]\w*$/' , $key ) ? $key : "'" . addslashes( $key ) . "'" ;
+               => preg_match( '/^[a-zA-Z_]\w*$/' , $key ) ? $key : Char::APOSTROPHE . addslashes( $key ) . Char::APOSTROPHE ;
 
     $rawKeys   = is_array($options[ AQL::RAW_KEYS   ] ?? null ) ? $options[ AQL::RAW_KEYS   ] : [] ;
     $rawValues = is_array($options[ AQL::RAW_VALUES ] ?? null ) ? $options[ AQL::RAW_VALUES ] : [] ;
-
-    $aqlify = fn( $value , ?string $key = null ):string
-              => in_array( $key , $rawKeys , true ) ? $value : aqlValue( $value, $rawValues ) ;
-
-    if ( is_string( $keyValues ) )
-    {
-        return '{' . $space . trim( $keyValues ) . $space . '}' ;
-    }
-
-    if (!is_array( $keyValues ) )
-    {
-        throw new InvalidArgumentException( 'Invalid $keyValues type, must be array, string, or null' ) ;
-    }
+    $aqlify    = fn( $value , ?string $key = null ):string => in_array( $key , $rawKeys , true ) ? $value : aqlValue( $value, $rawValues ) ;
 
     $parts = [] ;
     foreach ( $keyValues as $key => $value )
     {
         if ( is_string( $key ) )
         {
-            $parts[] = $escapeKey( $key ) . ':' . $aqlify( $value , $key ) ;
+            $parts[] = $escapeKey( $key ) . Char::COLON . $aqlify( $value , $key ) ;
         }
         elseif ( is_array( $value ) && count( $value ) === 2 )
         {
-            $parts[] = $escapeKey( (string) $value[0] ) . ':' . $aqlify( $value[1] , (string) $value[0] ) ;
+            $parts[] = $escapeKey( (string) $value[0] ) . Char::COLON . $aqlify( $value[1] , (string) $value[0] ) ;
         }
         elseif ( is_object( $value ) )
         {
@@ -156,5 +153,5 @@ function aqlDocument
         }
     }
 
-    return '{' . $space . implode( ',' . $space , $parts ) . $space . '}';
+    return Char::LEFT_BRACE . $space . compile( $parts , Char::COMMA . $space ) . $space . Char::RIGHT_BRACE ;
 }

@@ -93,6 +93,27 @@ class AqlDocumentTest extends TestCase
     }
 
     /**
+     * An object nested as a value inside an indexed array is recursively
+     * expanded through `aqlDocument()` itself.
+     * @throws UnsupportedOperationException
+     */
+    public function testObjectValueInListIsRecursed()
+    {
+        $input = [ (object)['name'=>'Eka','age'=>47] ];
+        $this->assertSame("{{name:'Eka',age:47}}", aqlDocument($input));
+    }
+
+    /**
+     * Empty string parts are cleaned out by compile(), so no orphan
+     * separator is emitted between the remaining values.
+     * @throws UnsupportedOperationException
+     */
+    public function testEmptyStringPartsAreCleaned()
+    {
+        $this->assertSame("{a}", aqlDocument(['', 'a']));
+    }
+
+    /**
      * @throws UnsupportedOperationException
      */
     public function testRawExpressions()
