@@ -65,12 +65,8 @@ trait HasFilterGeo
      */
     protected function prepareFilterGeo( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ): string
     {
-        $key = $init[ FilterParam::KEY ] ?? null ;
-
-        if ( !is_string( $key ) || $key === Char::EMPTY )
-        {
-            return Char::EMPTY ;
-        }
+        // The key is guaranteed by the dispatch (a declared FilterType::GEO attribute).
+        $key = (string) ( $init[ FilterParam::KEY ] ?? Char::EMPTY ) ;
 
         $operator = $init[ FilterParam::OP ] ?? FilterComparator::DISTANCE ;
 

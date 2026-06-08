@@ -173,7 +173,7 @@ trait SortTrait
                         if( !$nearResolved )
                         {
                             $nearResolved   = true ;
-                            $nearExpression = $this->prepareNear( $init , $binds , $docRef ) ;
+                            $nearExpression = $this->prepareNear( $init[ Arango::NEAR ] , $binds , $docRef ) ;
                         }
 
                         if( $nearExpression !== null )
@@ -204,12 +204,12 @@ trait SortTrait
     /**
      * Build the `DISTANCE(...)` expression for a `?near=` anchor and bind its coordinates.
      *
-     * Reads the `{ key, latitude, longitude }` payload from `Arango::NEAR`, validates
-     * the attribute key against injection ({@see assertAttributeName()}), binds the
-     * reference point, and returns the AQL distance expression. Returns `null` when the
-     * anchor is missing or its coordinates are incomplete.
+     * Reads the `{ key, latitude, longitude }` payload, validates the attribute key
+     * against injection ({@see assertAttributeName()}), binds the reference point, and
+     * returns the AQL distance expression. Returns `null` when the `key` is missing or
+     * the coordinates are incomplete.
      *
-     * @param array      $init   Per-call parameters carrying `Arango::NEAR`.
+     * @param array      $near   The `?near=` payload (`{ key, latitude, longitude }`), already array-checked by the caller.
      * @param array|null $binds  Bind variables, populated by reference.
      * @param string     $docRef The document variable the fields hang off.
      *
@@ -218,15 +218,8 @@ trait SortTrait
      * @throws BindException When a bound coordinate cannot be registered.
      * @throws ValidationException When the `key` is not a safe attribute name.
      */
-    protected function prepareNear( array $init , ?array &$binds , string $docRef = AQL::DOC ): ?string
+    protected function prepareNear( array $near , ?array &$binds , string $docRef = AQL::DOC ): ?string
     {
-        $near = $init[ Arango::NEAR ] ?? null ;
-
-        if( !is_array( $near ) )
-        {
-            return null ;
-        }
-
         $key = $near[ FilterParam::KEY ] ?? null ;
 
         if( !is_string( $key ) || $key === Char::EMPTY )

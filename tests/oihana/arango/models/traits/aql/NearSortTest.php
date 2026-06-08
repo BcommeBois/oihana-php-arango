@@ -151,6 +151,25 @@ class NearSortTest extends TestCase
         $this->assertSame( '' , $result ) ;
     }
 
+    public function testNearWithoutKeyYieldsNoSort(): void
+    {
+        $init = [ Arango::NEAR => [ 'latitude' => 48.8566 , 'longitude' => 2.3522 ] ] ;
+
+        $result = $this->model->prepareSort( $init , binds: $this->binds ) ;
+
+        $this->assertSame( '' , $result ) ;
+    }
+
+    public function testSortIgnoresEmptySegments(): void
+    {
+        // A trailing comma yields an empty criterion that must be skipped.
+        $init = [ Arango::SORT => 'name,' ] ;
+
+        $result = $this->model->prepareSort( $init ) ;
+
+        $this->assertSame( 'doc.name ASC' , $result ) ;
+    }
+
     public function testNearWithCustomDocRef(): void
     {
         $init = [ Arango::NEAR => $this->near() ] ;
