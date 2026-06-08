@@ -47,7 +47,6 @@ use function oihana\arango\db\operations\aqlUpdate;
 use function oihana\arango\db\operators\equal;
 
 use function oihana\core\accessors\ensureKeyValue;
-use function oihana\core\arrays\toArray;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
 
@@ -220,9 +219,14 @@ trait DocumentsArrayTrait
         $side   = $init[ Arango::SIDE   ] ?? Side::RIGHT ;
         $mode   = $this->arrayMode( $field , $init ) ;
 
+        // A list of values is appended as several elements; a scalar or an object
+        // (associative array) is appended as a single element.
+        $raw    = $init[ Arango::VALUE ] ?? [] ;
+        $values = is_array( $raw ) && array_is_list( $raw ) ? $raw : [ $raw ] ;
+
         $binds     = [] ;
         $owner     = $this->bind( $init[ Arango::OWNER ] ?? null , $binds ) ;
-        $value     = $this->bind( toArray( $init[ Arango::VALUE ] ?? [] ) , $binds ) ;
+        $value     = $this->bind( $values , $binds ) ;
         $fieldExpr = key( $field , $prefix ) ;
 
         $unique  = $mode !== ArrayMode::LIST ;
@@ -346,8 +350,9 @@ trait DocumentsArrayTrait
         $value     = $this->bind( $init[ Arango::VALUE ] ?? null , $binds ) ;
         $fieldExpr = key( $field , $prefix ) ;
 
-        $this->beforeUpdate?->emit( new BeforeUpdate( target : $this , context : $init ) ) ;
-
+        // No before/afterUpdate signals here: arrayPurgeRef is a collection-wide
+        // operation returning a list/count, which does not fit the single-document
+        // update-relations contract (see OnUpdateRelations).
         $for    = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
         $filter = aqlFilter( position( $fieldExpr , $value ) ) ;
         $let    = aqlLet( '__arr' , removeValue( $fieldExpr , $value ) ) ;
@@ -364,8 +369,6 @@ trait DocumentsArrayTrait
         $result = $count
                 ? count( $this->getResult( $query , $binds , raw : true ) ?? [] )
                 : ( $this->getResult( $query , $binds ) ?? [] ) ;
-
-        $this->afterUpdate?->emit( new AfterUpdate( data : $result , target : $this , context : $init ) ) ;
 
         return $result ;
     }
@@ -410,7 +413,9 @@ trait DocumentsArrayTrait
         $value     = $this->bind( $raw , $binds ) ;
         $fieldExpr = key( $field , $prefix ) ;
 
-        $arrExpr = is_array( $raw )
+        // A list of values removes them all; a scalar or an object (associative
+        // array) removes that single element.
+        $arrExpr = is_array( $raw ) && array_is_list( $raw )
                  ? removeValues( $fieldExpr , $value )
                  : removeValue ( $fieldExpr , $value ) ;
 
