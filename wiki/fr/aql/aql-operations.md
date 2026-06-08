@@ -1,6 +1,6 @@
 # Opérations AQL `db/operations/`
 
-Le dossier [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) fournit les **21 opérations** qui correspondent aux *high-level operations* du langage AQL. Chaque fonction produit le fragment de texte AQL correspondant et peut se concaténer librement avec les autres pour former une requête complète.
+Le dossier [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) fournit les **22 opérations** qui correspondent aux *high-level operations* du langage AQL. Chaque fonction produit le fragment de texte AQL correspondant et peut se concaténer librement avec les autres pour former une requête complète.
 
 Pour la vue d'ensemble pédagogique de la composition, voir [Construire une requête AQL pas à pas](aql-building-queries.md). Cette page est la **référence** de chacune des opérations.
 
@@ -11,7 +11,7 @@ Pour la vue d'ensemble pédagogique de la composition, voir [Construire une requ
 | Itération | `aqlFor`, `aqlSearch` |
 | Restriction | `aqlFilter`, `aqlPrune` |
 | Variable intermédiaire | `aqlLet` |
-| Agrégation | `aqlCollect` |
+| Agrégation | `aqlCollect`, `aqlCollectReturn` |
 | Tri | `aqlSort`, `aqlAsc`, `aqlDesc` |
 | Pagination | `aqlLimit` |
 | Retour | `aqlReturn` |
@@ -106,7 +106,38 @@ function aqlCollect( array $init = [] ) : string
 
 Construit la clause `COLLECT` pour le regroupement, l'agrégation et le comptage. Équivalent du `GROUP BY` SQL avec en plus le support des fonctions agrégées AQL (`AGGREGATE total = SUM(doc.amount)`).
 
+> **Note :** `AQL::AGGREGATE` et `AQL::WITH_COUNT` sont mutuellement exclusifs en AQL. Si les deux sont fournis, `AGGREGATE` est prioritaire et `WITH COUNT INTO` est ignoré. Pour compter en présence d'autres agrégats, exprimer le comptage comme un agrégat (`['n' => 'LENGTH(1)']`).
+
 Doc officielle : [`COLLECT`](https://docs.arangodb.com/stable/aql/high-level-operations/collect/).
+
+### `aqlCollectReturn()`
+
+```php
+function aqlCollectReturn( array $spec = [] , ?string $explicit = null ) : string
+```
+
+Construit la clause `RETURN` qui suit un `COLLECT` produit par `aqlCollect()`. Après un `COLLECT`, la variable d'itération (`doc`) sort du scope : seules restent les variables de regroupement, les agrégats et l'éventuelle variable `WITH COUNT`. Ce helper dérive une projection valide à partir de la **même** `$spec` que `aqlCollect()`, garantissant que les deux restent synchronisés.
+
+- Une expression `$explicit` non vide l'emporte (`RETURN <expr>`).
+- Sinon la projection est dérivée : clés de regroupement (`array_keys(AQL::ASSIGN)`) + clés d'agrégats (`array_keys(AQL::AGGREGATE)`) + variable `AQL::WITH_COUNT`.
+- Un comptage pur (sans regroupement ni agrégat) renvoie le compte **scalaire** (`RETURN length`), pas un objet.
+- `AQL::AGGREGATE` et `AQL::WITH_COUNT` étant exclusifs, la variable de comptage est ignorée quand un agrégat est présent.
+
+```php
+aqlCollectReturn( [ AQL::ASSIGN => [ 'status' => 'doc.status' ] ] ) ;
+// RETURN { status }
+
+aqlCollectReturn( [ AQL::ASSIGN => [ 'category' => 'doc.category' ] , AQL::WITH_COUNT => 'count' ] ) ;
+// RETURN { category, count }
+
+aqlCollectReturn( [ AQL::WITH_COUNT => 'length' ] ) ;
+// RETURN length
+
+aqlCollectReturn( [ AQL::ASSIGN => [ 'y' => 'DATE_YEAR(doc.created)' ] ] , '{ year: y }' ) ;
+// RETURN { year: y }
+```
+
+> Le câblage haut niveau côté modèle (clé `Arango::GROUP` / vocabulaire `Group`, et la clé brute `Arango::COLLECT` dans une requête `list`) fera l'objet d'un guide `db/grouping.md` dédié.
 
 ## Tri
 

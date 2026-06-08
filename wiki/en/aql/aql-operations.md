@@ -1,6 +1,6 @@
 # AQL operations `db/operations/`
 
-The [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) folder provides the **21 operations** that match the *high-level operations* of the AQL language. Each function produces the corresponding AQL text fragment and can freely concatenate with the others to form a complete query.
+The [`src/oihana/arango/db/operations/`](../../../src/oihana/arango/db/operations/) folder provides the **22 operations** that match the *high-level operations* of the AQL language. Each function produces the corresponding AQL text fragment and can freely concatenate with the others to form a complete query.
 
 For the pedagogical overview of composition, see [Building an AQL query step by step](aql-building-queries.md). This page is the **reference** for each operation.
 
@@ -11,7 +11,7 @@ For the pedagogical overview of composition, see [Building an AQL query step by 
 | Iteration | `aqlFor`, `aqlSearch` |
 | Restriction | `aqlFilter`, `aqlPrune` |
 | Intermediate variable | `aqlLet` |
-| Aggregation | `aqlCollect` |
+| Aggregation | `aqlCollect`, `aqlCollectReturn` |
 | Sorting | `aqlSort`, `aqlAsc`, `aqlDesc` |
 | Pagination | `aqlLimit` |
 | Return | `aqlReturn` |
@@ -106,7 +106,38 @@ function aqlCollect( array $init = [] ) : string
 
 Builds the `COLLECT` clause for grouping, aggregation and counting. Equivalent to SQL `GROUP BY` with additional support for AQL aggregate functions (`AGGREGATE total = SUM(doc.amount)`).
 
+> **Note:** `AQL::AGGREGATE` and `AQL::WITH_COUNT` are mutually exclusive in AQL. When both are supplied, `AGGREGATE` takes precedence and `WITH COUNT INTO` is dropped. To count alongside other aggregates, express the count as an aggregate (`['n' => 'LENGTH(1)']`).
+
 Official docs: [`COLLECT`](https://docs.arangodb.com/stable/aql/high-level-operations/collect/).
+
+### `aqlCollectReturn()`
+
+```php
+function aqlCollectReturn( array $spec = [] , ?string $explicit = null ) : string
+```
+
+Builds the `RETURN` clause that follows a `COLLECT` produced by `aqlCollect()`. After a `COLLECT`, the iteration variable (`doc`) is out of scope: only the grouping variables, the aggregate variables and the optional `WITH COUNT` variable remain. This helper derives a valid projection from the **same** `$spec` given to `aqlCollect()`, so the two always stay in sync.
+
+- A non-empty `$explicit` expression always wins (`RETURN <expr>`).
+- Otherwise the projection is derived: grouping keys (`array_keys(AQL::ASSIGN)`) + aggregate keys (`array_keys(AQL::AGGREGATE)`) + the `AQL::WITH_COUNT` variable.
+- A pure count (no grouping, no aggregate) returns the **scalar** count (`RETURN length`), not an object.
+- Since `AQL::AGGREGATE` and `AQL::WITH_COUNT` are exclusive, the count variable is ignored when an aggregate is present.
+
+```php
+aqlCollectReturn( [ AQL::ASSIGN => [ 'status' => 'doc.status' ] ] ) ;
+// RETURN { status }
+
+aqlCollectReturn( [ AQL::ASSIGN => [ 'category' => 'doc.category' ] , AQL::WITH_COUNT => 'count' ] ) ;
+// RETURN { category, count }
+
+aqlCollectReturn( [ AQL::WITH_COUNT => 'length' ] ) ;
+// RETURN length
+
+aqlCollectReturn( [ AQL::ASSIGN => [ 'y' => 'DATE_YEAR(doc.created)' ] ] , '{ year: y }' ) ;
+// RETURN { year: y }
+```
+
+> The high-level model wiring (the `Arango::GROUP` key / `Group` vocabulary, and the raw `Arango::COLLECT` key in a `list` query) will be covered by a dedicated `db/grouping.md` guide.
 
 ## Sorting
 
