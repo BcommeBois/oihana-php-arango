@@ -15,6 +15,7 @@ use oihana\enums\http\HttpMethod ;
 use oihana\arango\clients\ArangoClient ;
 use oihana\arango\clients\Database ;
 use oihana\arango\clients\document\Document ;
+use oihana\arango\clients\exceptions\ArangoException ;
 use oihana\arango\clients\graph\Graph ;
 use oihana\arango\clients\graph\GraphVertexCollection ;
 use oihana\arango\clients\http\HostRing ;
@@ -128,6 +129,17 @@ class GraphVertexCollectionTest extends TestCase
         ) ;
 
         $this->assertFalse( $coll->documentExists( 'missing' ) ) ;
+    }
+
+    public function testDocumentExistsRethrowsNon404Errors() :void
+    {
+        $coll = $this->makeCollection
+        (
+            [ new Response( 500 , [] , '{"error":true,"errorNum":1234,"errorMessage":"boom"}' ) ] ,
+        ) ;
+
+        $this->expectException( ArangoException::class ) ;
+        $coll->documentExists( 'alice' ) ;
     }
 
     // =========================================================================
