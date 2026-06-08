@@ -738,6 +738,21 @@ class DatabaseTest extends TestCase
         $this->assertSame( 'trx-bare' , $trx->id ) ;
     }
 
+    public function testBeginTransactionYieldsEmptyIdWhenBodyIsNotArray() :void
+    {
+        // A non-array decoded body (e.g. a bare JSON scalar) yields an empty
+        // transaction id rather than blowing up in extractTransactionId().
+        $client = $this->makeClient
+        (
+            $this->defaultOptions() ,
+            [ new Response( 201 , [] , '42' ) ] ,
+        ) ;
+
+        $trx = $client->database( 'mydb' )->beginTransaction( write : [ 'docs' ] ) ;
+
+        $this->assertSame( '' , $trx->id ) ;
+    }
+
     // =========================================================================
     // transaction() factory — wraps an existing trx id, no HTTP call
     // =========================================================================

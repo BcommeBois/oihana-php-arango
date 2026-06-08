@@ -174,6 +174,20 @@ class GraphEdgeCollectionTest extends TestCase
         $this->assertSame( 'people/alice'   , $payload[ '_to'   ] ) ;
     }
 
+    public function testInsertReturnsEmptyEdgeWhenBodyIsNotArray() :void
+    {
+        // A non-array decoded body (e.g. a bare JSON scalar) yields an empty
+        // Edge rather than blowing up in wrapWritten().
+        $coll = $this->makeCollection
+        (
+            [ new Response( 200 , [] , '42' ) ] ,
+        ) ;
+
+        $edge = $coll->insert( [ '_from' => 'companies/acme' , '_to' => 'people/alice' ] ) ;
+
+        $this->assertNull( $edge->getKey() ) ;
+    }
+
     public function testInsertReturnNewMergesPayloadIntoDocument() :void
     {
         $coll = $this->makeCollection

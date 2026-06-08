@@ -146,6 +146,20 @@ class GraphVertexCollectionTest extends TestCase
     // insert()
     // =========================================================================
 
+    public function testInsertReturnsEmptyDocumentWhenBodyIsNotArray() :void
+    {
+        // A non-array decoded body (e.g. a bare JSON scalar) yields an empty
+        // Document rather than blowing up in wrapWritten().
+        $coll = $this->makeCollection
+        (
+            [ new Response( 200 , [] , '42' ) ] ,
+        ) ;
+
+        $doc = $coll->insert( [ 'name' => 'Alice' ] ) ;
+
+        $this->assertNull( $doc->getKey() ) ;
+    }
+
     public function testInsertPostsToCollectionPathAndUnwraps() :void
     {
         $history = [] ;

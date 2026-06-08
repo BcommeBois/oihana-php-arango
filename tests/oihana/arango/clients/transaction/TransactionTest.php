@@ -135,6 +135,18 @@ class TransactionTest extends TestCase
         $this->assertSame( '' , ( new Transaction( $db , 'trx-42' ) )->status() ) ;
     }
 
+    public function testStatusReturnsEmptyStringWhenBodyIsNotArray() :void
+    {
+        // A non-array decoded body (e.g. a bare JSON scalar) yields the empty
+        // status rather than blowing up in parseStatus().
+        $db = $this->makeDatabase
+        (
+            [ new Response( 200 , [] , '42' ) ] ,
+        ) ;
+
+        $this->assertSame( '' , ( new Transaction( $db , 'trx-42' ) )->status() ) ;
+    }
+
     // =========================================================================
     // commit()
     // =========================================================================

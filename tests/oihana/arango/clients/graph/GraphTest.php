@@ -296,6 +296,26 @@ class GraphTest extends TestCase
         $this->assertSame( [ 'tags' , 'notes' ] , ( new Graph( $db , 'g' ) )->orphanCollections() ) ;
     }
 
+    public function testOrphanCollectionsReturnsEmptyWhenFieldIsNotArray() :void
+    {
+        $db = $this->makeDatabase
+        (
+            [ new Response( 200 , [] , '{"graph":{"name":"g","orphanCollections":"oops"}}' ) ] ,
+        ) ;
+
+        $this->assertSame( [] , ( new Graph( $db , 'g' ) )->orphanCollections() ) ;
+    }
+
+    public function testEdgeDefinitionsReturnsEmptyWhenFieldIsNotArray() :void
+    {
+        $db = $this->makeDatabase
+        (
+            [ new Response( 200 , [] , '{"graph":{"name":"g","edgeDefinitions":"oops"}}' ) ] ,
+        ) ;
+
+        $this->assertSame( [] , ( new Graph( $db , 'g' ) )->edgeDefinitions() ) ;
+    }
+
     public function testEdgeDefinitionsTypesEntriesAsValueObjects() :void
     {
         $db = $this->makeDatabase

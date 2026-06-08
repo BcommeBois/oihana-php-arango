@@ -415,6 +415,32 @@ class CollectionTest extends TestCase
         $this->assertSame( '{"name":"Marc"}'                                        , (string) $sent->getBody() ) ;
     }
 
+    public function testInsertReturnsEmptyDocumentWhenBodyIsNotArray() :void
+    {
+        // A non-array decoded body (e.g. a bare JSON scalar) yields an empty
+        // Document rather than blowing up in wrapWritten().
+        $col = $this->makeCollection
+        (
+            [ new Response( 200 , [] , '42' ) ] ,
+        ) ;
+
+        $doc = $col->insert( [ 'name' => 'Marc' ] ) ;
+
+        $this->assertNull( $doc->getKey() ) ;
+    }
+
+    public function testReplaceAllReturnsEmptyListWhenBodyIsNotArray() :void
+    {
+        // A non-array decoded body yields an empty list rather than blowing up
+        // in wrapWrittenBatch().
+        $col = $this->makeCollection
+        (
+            [ new Response( 200 , [] , '42' ) ] ,
+        ) ;
+
+        $this->assertSame( [] , $col->replaceAll( [ [ '_key' => 'a' ] ] ) ) ;
+    }
+
     public function testInsertWithReturnNewMergesPayloadInDocument() :void
     {
         $history = [] ;
