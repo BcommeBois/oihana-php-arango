@@ -2,6 +2,8 @@
 
 namespace tests\oihana\arango\db\functions;
 
+use InvalidArgumentException;
+
 use PHPUnit\Framework\TestCase;
 
 use function oihana\arango\db\functions\dates\dateAdd;
@@ -48,6 +50,11 @@ class DateFunctionsTest extends TestCase
     public function testDateCompare(): void
     {
         $this->assertEquals('DATE_COMPARE("date1","date2","d","m")', dateCompare('"date1"', '"date2"', 'd', 'm'));
+    }
+
+    public function testDateCompareDefaultsBothDatesToNow(): void
+    {
+        $this->assertEquals('DATE_COMPARE(DATE_NOW(),DATE_NOW(),"y")', dateCompare());
     }
 
     public function testDateDay(): void
@@ -187,6 +194,21 @@ class DateFunctionsTest extends TestCase
         );
     }
 
+    public function testDateDiffWithTimezones(): void
+    {
+        $this->assertEquals
+        (
+            'DATE_DIFF(DATE_NOW(),DATE_NOW(),"day",false,"Europe/Paris")',
+            dateDiff(null, null, 'day', false, betweenDoubleQuotes('Europe/Paris'))
+        );
+
+        $this->assertEquals
+        (
+            'DATE_DIFF(DATE_NOW(),DATE_NOW(),"day",false,"Europe/Paris","UTC")',
+            dateDiff(null, null, 'day', false, betweenDoubleQuotes('Europe/Paris'), betweenDoubleQuotes('UTC'))
+        );
+    }
+
     public function testDateIsoWeekYear(): void
     {
         $this->assertEquals('DATE_ISOWEEKYEAR(DATE_NOW())', dateIsoWeekYear());
@@ -201,6 +223,13 @@ class DateFunctionsTest extends TestCase
         );
     }
 
+    public function testDateLocalToUTCThrowsOnInvalidTimezone(): void
+    {
+        $this->expectException( InvalidArgumentException::class );
+        $this->expectExceptionMessage( 'Invalid timezone Not/AZone.' );
+        dateLocalToUTC( null, 'Not/AZone' );
+    }
+
     public function testDateUtcToLocal(): void
     {
         $this->assertEquals
@@ -208,6 +237,13 @@ class DateFunctionsTest extends TestCase
             'DATE_UTCTOLOCAL(DATE_NOW(),"Europe/Berlin")',
             dateUTCToLocal(null, betweenDoubleQuotes( 'Europe/Berlin' ) )
         );
+    }
+
+    public function testDateUtcToLocalThrowsOnInvalidTimezone(): void
+    {
+        $this->expectException( InvalidArgumentException::class );
+        $this->expectExceptionMessage( 'Invalid timezone Not/AZone.' );
+        dateUTCToLocal( null, 'Not/AZone', true );
     }
 
     public function testDateTimezone(): void
