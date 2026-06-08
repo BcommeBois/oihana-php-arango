@@ -2,6 +2,8 @@
 
 namespace tests\oihana\arango\models\traits\edges;
 
+use InvalidArgumentException;
+
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
 
@@ -129,5 +131,15 @@ final class EdgesGetTraitTest extends TestCase
         $edges->getVertices( Traversal::INBOUND , 'roles/2' , [ AQL::TARGET => $target , AQL::RETURN => 'vertex._key' ] ) ;
 
         $this->assertStringEndsWith( 'RETURN vertex._key' , $edges->lastQuery ) ;
+    }
+
+    public function testPrepareTraversalThrowsOnEmptyVertex() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $init  = [] ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $this->expectExceptionMessage( 'Vertex ID cannot be null or empty' ) ;
+        $edges->prepareTraversal( Traversal::OUTBOUND , null , $init ) ;
     }
 }

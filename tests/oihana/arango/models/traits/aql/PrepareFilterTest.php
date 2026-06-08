@@ -772,4 +772,39 @@ class PrepareFilterTest extends TestCase
 
         $this->assertStringContainsString('customDoc.name', $result);
     }
+
+    /**
+     * A filter definition that is a callable (rather than a FilterType string)
+     * is resolved through resolveCallable() and invoked to produce the
+     * predicate, receiving ($init, $binds, $docRef).
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws UnsupportedOperationException
+     * @throws ConstantException
+     * @throws NotFoundExceptionInterface
+     * @throws ContainerExceptionInterface
+     * @throws ReflectionException
+     * @throws BindException
+     */
+    public function testCustomCallableFilterIsInvoked(): void
+    {
+        $container = new Container();
+        $container->set( LoggerInterface::class, new NullLogger() );
+
+        $model = new Documents( $container,
+        [
+            AQL::COLLECTION => 'testCollection',
+            AQL::LAZY       => false,
+            AQL::FILTERS    =>
+            [
+                'custom' => fn( array $init, ?array &$binds, string $docRef ) => $docRef . '.custom == @custom',
+            ],
+        ]);
+
+        $binds  = [];
+        $result = $model->prepareFilter( [ 'key' => 'custom', 'val' => 1 ], $binds );
+
+        $this->assertSame( 'doc.custom == @custom', $result );
+    }
 }

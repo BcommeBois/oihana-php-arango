@@ -391,4 +391,90 @@ class HasFilterDocumentationTest extends TestCase
         $this->assertSame( FilterType::DATE   , $pathByName['dateField']['type']   ) ;
         $this->assertSame( FilterType::ARRAY  , $pathByName['arrayField']['type']  ) ;
     }
+
+    /**
+     * A filter config that is neither a string nor an array (a branch node that
+     * is malformed) is skipped without producing a path.
+     *
+     * @throws NotFoundException
+     * @throws ReflectionException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundExceptionInterface
+     */
+    public function testNonStringNonArrayConfigIsSkipped(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'testCollection' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'weird' => 123 ] ,
+        ]);
+
+        $this->assertNotContains( 'weird' , array_column( $model->documentFilterPaths() , 'path' ) ) ;
+    }
+
+    /**
+     * A complex (array) config without a `type` is a no-op branch: it produces
+     * no path and is not recursed into.
+     *
+     * @throws NotFoundException
+     * @throws ReflectionException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundExceptionInterface
+     */
+    public function testArrayConfigWithoutTypeIsSkipped(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'testCollection' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'branch' =>
+                [
+                    AQL::FILTERS => [ 'leaf' => FilterType::STRING ] ,
+                ] ,
+            ] ,
+        ]);
+
+        $pathNames = array_column( $model->documentFilterPaths() , 'path' ) ;
+
+        $this->assertNotContains( 'branch'      , $pathNames ) ;
+        $this->assertNotContains( 'branch.leaf' , $pathNames ) ;
+    }
+
+    /**
+     * With includeRelations enabled, a typed config that declares a relation
+     * carries it into the documented path entry.
+     *
+     * @throws NotFoundException
+     * @throws ReflectionException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundExceptionInterface
+     */
+    public function testIncludeRelationsCarriesRelationReference(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'testCollection' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'roles' =>
+                [
+                    AQL::TYPE     => Filter::JOINS ,
+                    AQL::RELATION => 'user_roles' ,
+                ] ,
+            ] ,
+        ]);
+
+        $paths      = $model->documentFilterPaths( includeTypes: true , includeRelations: true ) ;
+        $pathByName = array_column( $paths , null , 'path' ) ;
+
+        $this->assertArrayHasKey( 'roles[*]' , $pathByName ) ;
+        $this->assertSame( 'user_roles' , $pathByName['roles[*]'][ AQL::RELATION ] ) ;
+    }
 }

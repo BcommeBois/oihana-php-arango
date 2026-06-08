@@ -86,6 +86,35 @@ class UpsertQueryTraitTest extends TestCase
     }
 
     /**
+     * With Arango::DEBUG enabled, the query is still built and returned; the
+     * debug branch routes through debugQuery() (logger is null on the mock,
+     * so the calls safely no-op).
+     *
+     * @throws DateMalformedStringException
+     * @throws DateInvalidTimeZoneException
+     * @throws UnsupportedOperationException
+     * @throws BindException
+     * @throws ReflectionException
+     */
+    public function testBuildUpsertQueryWithDebugStillReturnsQuery(): void
+    {
+        $binds = [] ;
+
+        $init =
+        [
+            Arango::SEARCH => [ 'email'  => 'john@doe.com' ] ,
+            Arango::INSERT => [ 'name'   => 'John' , 'email' => 'john@doe.com' ] ,
+            Arango::UPDATE => [ 'active' => false ] ,
+            Arango::RETURN => Clause::NEW ,
+            Arango::DEBUG  => true ,
+        ];
+
+        $aql = $this->tester->buildUpsertQuery( AQL::UPDATE , $init , $binds ) ;
+
+        $this->assertStringContainsString( 'UPSERT' , $aql ) ;
+    }
+
+    /**
      * Teste le mode "REPSERT" (REPLACE au lieu de UPDATE).
      * Vérifie que la clause REPLACE est générée et que la logique de bind suit.
      *

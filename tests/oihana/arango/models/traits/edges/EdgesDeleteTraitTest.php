@@ -4,6 +4,7 @@ namespace tests\oihana\arango\models\traits\edges;
 
 use ArrayObject;
 use Closure;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 use oihana\arango\models\Edges;
@@ -96,6 +97,15 @@ final class EdgesDeleteTraitTest extends TestCase
 
         $this->assertCount( 1 , $events[ 'before' ] , 'deleteEdgeTo must propagate beforeDelete via deleteEdge' ) ;
         $this->assertCount( 1 , $events[ 'after'  ] , 'deleteEdgeTo must propagate afterDelete via deleteEdge'  ) ;
+    }
+
+    public function testDeleteEdgesThrowsWhenNoValidVertexId() :void
+    {
+        $edges = $this->createEdges( returnDocuments: [] ) ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $this->expectExceptionMessage( 'No valid vertex IDs provided.' ) ;
+        $edges->deleteEdges( [] ) ;
     }
 
     /**

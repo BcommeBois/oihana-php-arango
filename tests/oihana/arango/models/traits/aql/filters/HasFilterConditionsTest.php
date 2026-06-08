@@ -343,6 +343,16 @@ class HasFilterConditionsTest extends TestCase
         $this->assertNull( $result ) ;
     }
 
+    /**
+     * A single NOT operand that is null short-circuits to null (the
+     * isset($init[0]) guard fails), without attempting to negate anything.
+     */
+    public function testNotWithNullOperandReturnsNull(): void
+    {
+        $result = $this->model->prepareFilterConditions( [ 'not' , null ] , $this->binds ) ;
+        $this->assertNull( $result ) ;
+    }
+
     public function testConditionsWithMixedTypes(): void
     {
         $init =
