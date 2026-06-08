@@ -28,6 +28,11 @@ use function oihana\core\strings\compile;
  * | `AQL::WITH_COUNT`| string | Variable name for the count (e.g., `AQL::LENGTH`). |
  * | `AQL::OPTIONS` | array | `COLLECT` options (e.g., `['method' => 'sorted']`). |
  *
+ * > **Note:** `AQL::AGGREGATE` and `AQL::WITH_COUNT` are mutually exclusive in AQL.
+ * > When both are supplied, `AGGREGATE` takes precedence and `WITH COUNT INTO` is dropped.
+ * > To count alongside other aggregates, express the count as an aggregate
+ * > (e.g., `['n' => 'LENGTH(1)']`).
+ *
  * ### Examples
  *
  * **Simple Count (for `countVertices`):**
@@ -38,19 +43,21 @@ use function oihana\core\strings\compile;
  *
  * **Grouping and Aggregating:**
  * ```php
- * echo aqlCollect([
- * AQL::ASSIGN => ['type' => 'doc.type'],
- * AQL::AGGREGATE => ['count' => 'LENGTH(1)']
+ * echo aqlCollect
+ * ([
+ *     AQL::ASSIGN    => ['type' => 'doc.type'],
+ *     AQL::AGGREGATE => ['count' => 'LENGTH(1)']
  * ]);
  * // COLLECT type = doc.type AGGREGATE count = LENGTH(1)
  * ```
  *
  * **Grouping with INTO:**
  * ```php
- * echo aqlCollect([
- * AQL::ASSIGN => ['type' => 'doc.type'],
- * AQL::INTO => 'items',
- * AQL::PROJECTION => '{ name: doc.name, age: doc.age }'
+ * echo aqlCollect
+ * ([
+ *     AQL::ASSIGN     => ['type' => 'doc.type'],
+ *     AQL::INTO       => 'items',
+ *     AQL::PROJECTION => '{ name: doc.name, age: doc.age }'
  * ]);
  * // COLLECT type = doc.type INTO items = { name: doc.name, age: doc.age }
  * ```
@@ -73,6 +80,13 @@ function aqlCollect( array $init = [] ) : string
     $projection = $init[ AQL::PROJECTION ] ?? null ;
     $keep       = $init[ AQL::KEEP       ] ?? null ;
     $withCount  = $init[ AQL::WITH_COUNT ] ?? null ;
+
+    // AGGREGATE and WITH COUNT INTO are mutually exclusive in AQL.
+    // When both are provided, AGGREGATE wins and WITH COUNT INTO is dropped.
+    if ( !empty( $aggregate ) )
+    {
+        $withCount = null ;
+    }
 
     // A COLLECT clause must have at least one of these.
     if ( empty( $assign ) && empty( $aggregate ) && empty( $withCount ) )

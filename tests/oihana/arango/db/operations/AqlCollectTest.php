@@ -146,16 +146,32 @@ class AqlCollectTest extends TestCase
     /**
      * @throws ReflectionException
      */
-    public function testAggregateWithCount(): void
+    public function testAggregateWinsOverWithCount(): void
     {
+        // AGGREGATE and WITH COUNT INTO are mutually exclusive in AQL.
+        // When both are provided, AGGREGATE wins and WITH COUNT INTO is dropped.
         $init =
         [
             AQL::AGGREGATE => ['total' => 'SUM(1)'],
             AQL::WITH_COUNT => 'len'
         ];
-        // Mock aqlAssignments: "total = SUM(1)"
-        // Mock compile: COLLECT, AGGREGATE, "total = SUM(1)", WITH COUNT, INTO, len
-        $expected = 'COLLECT AGGREGATE total = SUM(1) WITH COUNT INTO len';
+        $expected = 'COLLECT AGGREGATE total = SUM(1)';
+        $this->assertSame($expected, aqlCollect($init));
+    }
+
+    /**
+     * @throws ReflectionException
+     */
+    public function testAssignAndAggregateWinsOverWithCount(): void
+    {
+        // Grouping + aggregate + (ignored) WITH COUNT.
+        $init =
+        [
+            AQL::ASSIGN     => ['type' => 'doc.type'],
+            AQL::AGGREGATE  => ['total' => 'SUM(doc.value)'],
+            AQL::WITH_COUNT => 'len'
+        ];
+        $expected = 'COLLECT type = doc.type AGGREGATE total = SUM(doc.value)';
         $this->assertSame($expected, aqlCollect($init));
     }
 
@@ -171,7 +187,7 @@ class AqlCollectTest extends TestCase
             AQL::INTO       => 'items' ,
             AQL::PROJECTION => 'd.name',
             AQL::KEEP       => [ 'sharedVar' ] ,
-            AQL::WITH_COUNT => 'groupLength',
+            AQL::WITH_COUNT => 'groupLength', // dropped: AGGREGATE takes precedence
             AQL::OPTIONS    => [ 'method' => 'hash' ] // This triggers the aqlOptions mock
         ];
 
@@ -179,8 +195,8 @@ class AqlCollectTest extends TestCase
         // Mock aqlAssignments (agg): "count = LENGTH(1)"
         // Mock compile (keep): "sharedVar"
         // Mock aqlOptions: "OPTIONS { ... }"
-        // Mock compile (main): Joins all parts
-        $expected = 'COLLECT group = d.group AGGREGATE count = LENGTH(1) INTO items = d.name KEEP sharedVar WITH COUNT INTO groupLength OPTIONS {"method":"hash"}';
+        // WITH COUNT INTO is dropped because AGGREGATE is present (mutually exclusive).
+        $expected = 'COLLECT group = d.group AGGREGATE count = LENGTH(1) INTO items = d.name KEEP sharedVar OPTIONS {"method":"hash"}';
         $this->assertSame($expected, aqlCollect($init));
     }
 }
