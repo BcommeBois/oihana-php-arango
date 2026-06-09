@@ -4,6 +4,7 @@ namespace tests\oihana\arango\controllers;
 
 use oihana\arango\controllers\DocumentsController;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\Facet;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
@@ -112,6 +113,24 @@ class DocumentsControllerReadTest extends ControllerTestCase
 
         $this->assertSame( $model->documentsResult , $result ) ;
         $this->assertStringContainsString( 'LIMIT 10' , $model->lastQuery ) ;
+    }
+
+    public function testListComputesFacetCountsWhenRequested() :void
+    {
+        $model = new MockDocuments( 'articles' ) ;
+        $model->facets          = [ 'category' => [ Facet::TYPE => Facet::FIELD ] ] ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] ] ;
+        $model->firstResult     = [ 'category' => [ [ 'value' => 'A' , 'count' => 3 ] ] ] ; // canned facet buckets
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        // ?facetCounts=category → the controller runs facetCounts() over the same filter.
+        $request = $this->makeRequest( [ Arango::FACET_COUNTS => 'category' ] ) ;
+        $result  = $controller->list( $request , null , [] ) ;
+
+        $this->assertSame( $model->documentsResult , $result ) ;
+        $this->assertStringContainsString( 'WITH COUNT INTO count' , $model->lastQuery ) ;
+        $this->assertStringContainsString( 'LET category' , $model->lastQuery ) ;
     }
 
     public function testListReturnsNullOnModelFailure() :void
