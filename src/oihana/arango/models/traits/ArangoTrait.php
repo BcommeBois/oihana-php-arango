@@ -302,10 +302,10 @@ trait ArangoTrait
      */
     public function getResult
     (
-        string              $query    ,
-        array               $bindVars = [] ,
-        array               $options  = [] ,
-        bool                $raw      = false ,
+        string                             $query    ,
+        array                              $bindVars = [] ,
+        array                              $options  = [] ,
+        bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
     )
     :?array
