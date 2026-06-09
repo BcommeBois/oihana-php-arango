@@ -18,5 +18,5 @@ Composable PHP toolkit for [ArangoDB](https://www.arangodb.com/) — modern HTTP
 
 - [Project README](../README.md) — installation, quick start, features.
 - [Packagist `oihana/php-arango`](https://packagist.org/packages/oihana/php-arango) — release notes and version matrix.
-- [API reference (phpDocumentor)](https://bcommebois.github.io/oihana-php-arango) — generated class-level reference.
+- API reference (phpDocumentor) — generated locally with `composer doc` (output under `./docs`).
 - [Source code](../src/oihana/arango/) — the framework lives under `src/oihana/arango/`.

@@ -10,9 +10,9 @@ Composable PHP toolkit for [ArangoDB](https://www.arangodb.com/). Part of the **
 
 ## 📚 Documentation
 
-Full API reference (generated with phpDocumentor): `https://bcommebois.github.io/oihana-php-arango`
+User guides (FR + EN) live under [`wiki/`](wiki/) — start there. A full API reference can be generated locally with [phpDocumentor](https://phpdoc.org/) via `composer doc` (output under `./docs`).
 
-User guides (FR + EN) live under [`wiki/`](wiki/). A few entry points:
+A few entry points:
 
 - [Getting started](wiki/en/getting-started/introduction.md) — concepts and dependencies.
 - [Search & filtering](wiki/en/db/search-and-filtering.md) — the `?search=` / `?filter=` / `?facets=` query DSL.
