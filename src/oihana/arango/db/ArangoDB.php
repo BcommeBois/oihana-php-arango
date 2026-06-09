@@ -14,6 +14,7 @@ use org\schema\Thing ;
 
 use oihana\traits\ToStringTrait ;
 
+use oihana\arango\clients\aql\AqlQuery ;
 use oihana\arango\clients\ArangoClient ;
 use oihana\arango\clients\cursor\Cursor ;
 use oihana\arango\clients\cursor\enums\CursorField ;
@@ -21,6 +22,7 @@ use oihana\arango\clients\exceptions\ArangoException ;
 use oihana\arango\clients\options\ClientOptions ;
 
 use oihana\arango\db\enums\ArangoConfig ;
+use oihana\arango\db\results\ExplainResult ;
 use oihana\arango\db\traits\CollectionManagementTrait ;
 
 /**
@@ -195,6 +197,24 @@ class ArangoDB
     }
 
     // --- Query Execution & Results ---
+
+    /**
+     * Asks the optimizer for the execution plan of a query **without running it**,
+     * and returns it as a typed {@see ExplainResult} (optimizer rules applied,
+     * collections touched, estimated cost, and the indexes actually used).
+     *
+     * @param AqlQuery|string       $query    The AQL query (or an {@see AqlQuery} carrying its own binds).
+     * @param array<string,mixed>   $bindVars Bind variables (omit when `$query` is an {@see AqlQuery}).
+     * @param array<string,mixed>   $options  Explain options (`allPlans`, `optimizer.rules`, …).
+     *
+     * @return ExplainResult
+     *
+     * @throws ArangoException When the request fails.
+     */
+    public function explain( AqlQuery|string $query , array $bindVars = [] , array $options = [] ) : ExplainResult
+    {
+        return new ExplainResult( $this->database->explain( $query , $bindVars , $options ) ) ;
+    }
 
     /**
      * Executes the prepared query against the server and stores the

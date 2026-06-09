@@ -16,11 +16,13 @@ use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
+use oihana\arango\clients\aql\AqlQuery;
 use oihana\arango\clients\collection\enums\CollectionField;
 use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\ArangoDB;
+use oihana\arango\db\results\ExplainResult;
 use oihana\arango\enums\Arango;
 
 use oihana\enums\Char;
@@ -182,6 +184,23 @@ trait ArangoTrait
     public function getExtra():array
     {
         return $this->arangodb->getExtra() ;
+    }
+
+    /**
+     * Explains an AQL query — returns the optimizer's execution plan as a typed
+     * {@see ExplainResult} (rules applied, collections, estimated cost, indexes
+     * actually used) **without executing the query**.
+     *
+     * @param AqlQuery|string     $query    The AQL query to explain.
+     * @param array<string,mixed> $bindVars Bind variables (omit when `$query` is an {@see AqlQuery}).
+     * @param array<string,mixed> $options  Explain options (`allPlans`, `optimizer.rules`, …).
+     *
+     * @return ExplainResult
+     * @throws ArangoException
+     */
+    public function explain( AqlQuery|string $query , array $bindVars = [] , array $options = [] ) : ExplainResult
+    {
+        return $this->arangodb->explain( $query , $bindVars , $options ) ;
     }
 
     /**

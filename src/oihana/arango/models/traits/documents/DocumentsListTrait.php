@@ -5,6 +5,7 @@ namespace oihana\arango\models\traits\documents;
 use DI\DependencyException;
 use DI\NotFoundException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 use ReflectionException;
 
@@ -13,6 +14,7 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\cursor\enums\CursorField;
+use oihana\arango\db\results\ExplainResult;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\ArangoTrait;
 use oihana\arango\models\traits\queries\ListQueryTrait;
@@ -44,6 +46,36 @@ trait DocumentsListTrait
 {
     use ArangoTrait ,
         ListQueryTrait ;
+
+    /**
+     * Explains the query that {@see list()} would run for the same `$init`, **without
+     * executing it**. Use it to check which indexes the list query actually uses, the
+     * optimizer rules that fire, and the estimated cost — straight from the same
+     * filter / facet / search / sort / pagination input.
+     *
+     * @param array $init The same input array accepted by {@see list()}.
+     *
+     * @return ExplainResult The typed execution plan.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     *
+     * @see list() For the executed counterpart.
+     */
+    public function explainList( array $init = [] ) :ExplainResult
+    {
+        $bindVars = $init[ Arango::BINDS ] ?? [] ;
+        $query    = $this->buildListQuery( $init , $bindVars ) ;
+        return $this->explain( $query , $bindVars ) ;
+    }
 
     /**
      * Retrieves a list of documents from the collection with filtering, sorting, and pagination.
@@ -235,18 +267,19 @@ trait DocumentsListTrait
      * - Invalid bind variable names (reserved keywords, special characters)
      * - Type mismatch in bind values
      * - Collection binding errors
+     * @throws ConstantException
      * @throws ContainerExceptionInterface If there's an error accessing the dependency injection container
      * while resolving services needed for query execution or result processing
+     * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface If a required service is not found in the dependency injection container
      * @throws ReflectionException If a reflection error occurs during processing, such as:
      * - Schema class not found or not accessible
      * - Invalid schema structure
      * - Property hydration errors
      * - Method invocation failures during alter()
-     * @throws DependencyException
-     * @throws NotFoundException
      * @throws UnsupportedOperationException
-     * @throws ConstantException
+     * @throws ValidationException
      *
      * @see buildListQuery() For the query construction logic
      * @see getDocuments() For the underlying execution and transformation
@@ -258,11 +291,8 @@ trait DocumentsListTrait
         $bindVars = $init[ Arango::BINDS ] ?? [] ;
         $limit    = $init[ Arango::LIMIT ] ?? 0 ;
         $query    = $this->buildListQuery( $init , $bindVars ) ;
-        return $this->getDocuments
-        (
-            $query ,
-            $bindVars ,
-            [ CursorField::FULL_COUNT => (bool) $limit ]
-        ) ;
+
+        return $this->getDocuments( $query , $bindVars , [ CursorField::FULL_COUNT => (bool) $limit ] ) ;
     }
+
 }
