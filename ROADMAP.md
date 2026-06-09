@@ -7,11 +7,11 @@ shift. The library is versioned through git tags (no `version` field in
 
 ## Where we are
 
-The library already covers a large part of the AQL surface:
+As of **1.0.0**, the library covers the bulk of the AQL surface:
 
-- **21 of the 22 high-level operations** (`FOR`, `FILTER`, `SORT`, `LIMIT`, `LET`,
-  `COLLECT`, `RETURN`, `INSERT`, `UPDATE`, `REPLACE`, `UPSERT`, `REMOVE`, graph
-  traversal, `PRUNE`, `SEARCH`, `WITH`, `OPTIONS`, …) — only `WINDOW` is missing.
+- **All 22 high-level operations** (`FOR`, `FILTER`, `SORT`, `LIMIT`, `LET`,
+  `COLLECT`, `WINDOW`, `RETURN`, `INSERT`, `UPDATE`, `REPLACE`, `UPSERT`, `REMOVE`,
+  graph traversal, `PRUNE`, `SEARCH`, `WITH`, `OPTIONS`, …) — `WINDOW` landed in 1.0.0.
 - **~165 AQL functions** across strings, numerics, dates, arrays, documents and geo.
 - **ArangoSearch**: View and Analyzer management clients, plus the `SEARCH` operation.
 - **Transactions**, **18+ index types** (including a vector index), the full
@@ -19,21 +19,20 @@ The library already covers a large part of the AQL surface:
 
 ## Versioning strategy
 
+`1.0.0` ships with all high-level AQL operations supported and a stable public API.
 Everything below is **additive** — new functions, operations and clients are
-non-breaking and ship as **minor** releases. The only gap in the *core* operation
-set is `WINDOW`; closing it lets `1.0.0` ship with "all high-level AQL operations
-supported".
+non-breaking and ship as **minor** releases.
 
-- **`1.0.0`** — once `WINDOW` lands.
+- **`1.0.0`** — ✅ released (all high-level AQL operations supported).
 - **`1.1.0`+** — feature extensions and consolidation, as below.
 
 ## Milestones
 
-### Toward 1.0.0
+### 1.0.0 — released
 
-| Lot | Scope | Effort |
+| Lot | Scope | Status |
 |-----|-------|--------|
-| **W — `WINDOW`** | `aqlWindow()` for both forms — row-based (`WINDOW { preceding, following } AGGREGATE …`) and range-based (`WINDOW rangeValue WITH { preceding, following } AGGREGATE …`), reusing the existing aggregate machinery. The `Operation::WINDOW` enum already exists. Unit + live + docs (FR/EN) + CHANGELOG. | Medium |
+| **W — `WINDOW`** | `aqlWindow()` for both forms — row-based (`WINDOW { preceding, following } AGGREGATE …`) and range-based (`WINDOW rangeValue WITH { preceding, following } AGGREGATE …`) — plus the dedicated `aqlWindowBounds()` helper. Unit + live + docs (FR/EN) + CHANGELOG. | ✅ Done |
 
 ### 1.1.0
 

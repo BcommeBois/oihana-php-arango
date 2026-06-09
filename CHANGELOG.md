@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-09
+
+First stable release. All AQL high-level operations are supported (the last one, `WINDOW`, landed in this release), alongside the full document/edge model layer, the filter / facet / group / search engine, the HTTP controllers, the ArangoDB clients (Database, Collection, Graph, View, Analyzer, Transaction, indexes including vector), and the CLI commands. Line and method test coverage is at 100%, backed by a server-free unit suite and a live integration suite.
+
 ### Added
 
 - `WINDOW` operation builder (`aqlWindow()`) — sliding-window aggregation (running totals, rolling averages, and other statistics over neighbouring rows), completing the set of AQL high-level operations. Both forms are supported, selected by the presence of `AQL::RANGE_VALUE`: row-based (`WINDOW { preceding: N, following: M } AGGREGATE …`) and range-based (`WINDOW rangeValue WITH { preceding: …, following: … } AGGREGATE …`, where the `WITH` keyword belongs to the `WINDOW` syntax, unrelated to the collection-declaring `WITH` operation). `$init` keys: `AQL::AGGREGATE` (required; reuses the same aggregate machinery as `COLLECT` via `aqlAssignments()`), `AQL::PRECEDING`, `AQL::FOLLOWING`, `AQL::RANGE_VALUE`. Bounds are emitted as-is when numeric and single-quoted when given as strings (ISO 8601 durations like `PT1H`); a cumulative running total uses the string `'unbounded'` as `preceding` (verified live: a bareword is parsed as a collection name, the quoted string is accepted). Without an aggregate the builder returns an empty string. The bounds object is serialized by a dedicated `aqlWindowBounds()` helper (one file per helper, reusable on its own). New `AQL::PRECEDING` / `AQL::FOLLOWING` / `AQL::RANGE_VALUE` enum keys. Covered by unit tests (`AqlWindowTest`, `AqlWindowBoundsTest`) and a live integration test (`WindowIntegrationTest`). Documented in `wiki/{fr,en}/aql/aql-operations.md`.
