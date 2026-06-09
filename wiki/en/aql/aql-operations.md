@@ -325,6 +325,8 @@ aqlWith( 'users' , 'orders' , 'products' ) ;
 // "WITH users, orders, products"
 ```
 
+> **Automatic emission on anonymous traversals.** The edge-traversal methods (`getOutboundVertices()`, `getInboundVertices()`, `getAnyVertices()`, `countVertices()` and their variants) now prefix the query with a `WITH` clause whenever they traverse an **anonymous graph** (an edge collection, with no named graph). The reachable vertex collections are declared by direction: `OUTBOUND` → the `_to` collection, `INBOUND` → the `_from` collection, `ANY` → both (de-duplicated). This is required to avoid deadlocks in a cluster, and is a no-op on a single server. Nothing is emitted for a **named-graph** traversal (its collections are already known). The declared collections can be overridden through the method's `AQL::WITH` option key.
+
 Official docs: [`WITH`](https://docs.arangodb.com/stable/aql/high-level-operations/with/).
 
 ## See also

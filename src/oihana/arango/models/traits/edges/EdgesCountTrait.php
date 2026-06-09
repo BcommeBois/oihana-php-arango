@@ -236,10 +236,11 @@ trait EdgesCountTrait
         array   $init      = []
     ) : int
     {
-        [ $bindVars , $filter ] = $this->prepareTraversal( $direction , $vertex , $init ) ;
+        [ $bindVars , $filter , $from , $to ] = $this->prepareTraversal( $direction , $vertex , $init ) ;
 
         $query = compile
         ([
+            $this->prepareTraversalWith( $direction , $from , $to , $init ) ,
             aqlTraversal ( $init , $bindVars ) ,
             aqlFilter    ( $filter ) ,
             aqlCollect   ( [ AQL::WITH_COUNT => AQL::LENGTH ] ) , // COLLECT WITH COUNT INTO length

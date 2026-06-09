@@ -5,11 +5,14 @@ namespace oihana\arango\models\traits\edges\helpers;
 use InvalidArgumentException;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
+use oihana\arango\models\Documents;
 use oihana\arango\models\traits\ArangoTrait;
 use oihana\arango\models\traits\VerticesTrait;
+use oihana\enums\Char;
 use oihana\models\traits\BindsTrait;
 use oihana\reflect\exceptions\ConstantException;
 
+use function oihana\arango\db\operations\aqlWith;
 use function oihana\arango\models\helpers\vertexID;
 
 /**
@@ -129,5 +132,75 @@ trait PrepareTraversalTrait
         }
 
         return [ $bindVars , $filter , $from , $to , $vertexId ] ;
+    }
+
+    /**
+     * Derives the AQL `WITH` clause declaring the vertex collections reached by an
+     * **anonymous** traversal (edge collection, no named graph).
+     *
+     * In a cluster, collections accessed dynamically by collection-set traversals must
+     * be declared up front so they are all locked at query start, which avoids deadlocks.
+     * Named-graph traversals already know their collections, so this returns an empty
+     * string for them. The clause is harmless (a no-op) on a single server.
+     *
+     * Declared collections, by direction:
+     * - {@see Traversal::OUTBOUND} → the `$to` vertex collection,
+     * - {@see Traversal::INBOUND}  → the `$from` vertex collection,
+     * - {@see Traversal::ANY}      → both `$from` and `$to` (de-duplicated).
+     *
+     * An explicit `AQL::WITH` entry in `$init` (a collection name or an array of names)
+     * overrides the direction-based derivation.
+     *
+     * @param string         $direction Traversal direction ({@see Traversal}).
+     * @param Documents|null $from      The `_from` vertex model (may be null).
+     * @param Documents|null $to        The `_to` vertex model (may be null).
+     * @param array          $init      The traversal init array (read-only here).
+     *
+     * @return string The `WITH coll1, coll2, ...` clause, or an empty string when there
+     *                is nothing to declare (named graph, missing models, or explicit empty).
+     *
+     * @see https://docs.arangodb.com/stable/aql/high-level-operations/with/
+     */
+    private function prepareTraversalWith
+    (
+        string     $direction ,
+        ?Documents $from = null ,
+        ?Documents $to   = null ,
+        array      $init = []
+    )
+    :string
+    {
+        if ( !empty( $init[ AQL::GRAPH ] ) )
+        {
+            return Char::EMPTY ; // named graph: collections are already known
+        }
+
+        if ( isset( $init[ AQL::WITH ] ) )
+        {
+            $collections = (array) $init[ AQL::WITH ] ; // explicit override
+        }
+        else
+        {
+            $collections = [] ;
+
+            // INBOUND reaches the `_from` collection, OUTBOUND the `_to` one, ANY both.
+            if ( $direction === Traversal::INBOUND || $direction === Traversal::ANY )
+            {
+                $collections[] = $from?->collection ;
+            }
+
+            if ( $direction === Traversal::OUTBOUND || $direction === Traversal::ANY )
+            {
+                $collections[] = $to?->collection ;
+            }
+        }
+
+        $collections = array_values( array_unique( array_filter
+        (
+            $collections ,
+            fn( $collection ) => is_string( $collection ) && $collection !== Char::EMPTY
+        ) ) ) ;
+
+        return aqlWith( ...$collections ) ;
     }
 }

@@ -135,6 +135,8 @@ Direction keywords: `OUTBOUND` (`_from → _to`), `INBOUND` (`_to → _from`), `
 
 The `GRAPH 'name'` clause tells the engine to honour the graph's edge definitions. You can also traverse against raw edge collections with `IN ... edges`, but you lose the type-safety guarantee.
 
+> **Anonymous traversals and the cluster.** A traversal over raw edge collections (no `GRAPH`) must, **in a cluster**, declare the reachable vertex collections through a `WITH` clause at the top of the query, otherwise the engine risks a deadlock. The `Edges` model traversal methods (`getOutboundVertices()`, `getInboundVertices()`, `getAnyVertices()`, `countVertices()`…) handle this automatically from the `_from` / `_to` models; see [`aqlWith()`](../aql/aql-operations.md#aqlwith).
+
 For everything you can express in a traversal — pruning, filtering by edge attributes, weighted shortest paths — see the official [Graph traversals](https://docs.arangodb.com/stable/aql/graphs/) AQL reference.
 
 ## Drop a graph

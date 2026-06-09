@@ -325,6 +325,8 @@ aqlWith( 'users' , 'orders' , 'products' ) ;
 // "WITH users, orders, products"
 ```
 
+> **Émission automatique sur les traversals anonymes.** Les méthodes de traversal d'arêtes (`getOutboundVertices()`, `getInboundVertices()`, `getAnyVertices()`, `countVertices()` et leurs variantes) préfixent désormais la requête d'un `WITH` lorsqu'elles parcourent un **graphe anonyme** (collection d'arêtes, sans graphe nommé). Les collections de sommets atteignables sont déclarées selon la direction : `OUTBOUND` → collection `_to`, `INBOUND` → collection `_from`, `ANY` → les deux (dédupliquées). C'est indispensable pour éviter les *deadlocks* en cluster, et sans effet sur un serveur unique. Aucune émission pour un traversal de **graphe nommé** (les collections y sont déjà connues). On peut surcharger les collections déclarées via la clé `AQL::WITH` du tableau d'options de la méthode.
+
 Doc officielle : [`WITH`](https://docs.arangodb.com/stable/aql/high-level-operations/with/).
 
 ## Voir aussi

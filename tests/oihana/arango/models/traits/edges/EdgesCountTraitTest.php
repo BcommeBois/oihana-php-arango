@@ -2,9 +2,11 @@
 
 namespace tests\oihana\arango\models\traits\edges;
 
+use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
 
 use PHPUnit\Framework\TestCase;
+use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
 
 /**
@@ -90,5 +92,85 @@ final class EdgesCountTraitTest extends TestCase
 
         $this->assertSame( 9 , $edges->countAnyVertices( 'users/1' ) ) ;
         $this->assertStringContainsString( 'IN ANY @startVertex' , $edges->lastQuery ) ;
+    }
+
+    // ---------- WITH clause (anonymous traversal counts, cluster-safe)
+
+    public function testCountVerticesPrependsWithFromCollectionInbound() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->from = ( new MockDocuments( 'users' ) )->initializeDeleteSignals() ;
+        $edges->to   = ( new MockDocuments( 'roles' ) )->initializeDeleteSignals() ;
+        $edges->firstResult = 4 ;
+
+        $this->assertSame( 4 , $edges->countVertices( Traversal::INBOUND , 'roles/2' ) ) ;
+        $this->assertSame
+        (
+            'WITH users FOR vertex IN INBOUND @startVertex @@edgeCollection_X COLLECT WITH COUNT INTO length RETURN length' ,
+            $this->normalize( $edges->lastQuery ) ,
+        ) ;
+    }
+
+    public function testCountVerticesPrependsWithToCollectionOutbound() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->from = ( new MockDocuments( 'users' ) )->initializeDeleteSignals() ;
+        $edges->to   = ( new MockDocuments( 'roles' ) )->initializeDeleteSignals() ;
+        $edges->firstResult = 5 ;
+
+        $edges->countVertices( Traversal::OUTBOUND , 'users/1' ) ;
+        $this->assertStringStartsWith
+        (
+            'WITH roles FOR vertex IN OUTBOUND @startVertex' ,
+            $this->normalize( $edges->lastQuery ) ,
+        ) ;
+    }
+
+    public function testCountVerticesPrependsWithBothCollectionsAny() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->from = ( new MockDocuments( 'users' ) )->initializeDeleteSignals() ;
+        $edges->to   = ( new MockDocuments( 'roles' ) )->initializeDeleteSignals() ;
+        $edges->firstResult = 9 ;
+
+        $edges->countVertices( Traversal::ANY , 'users/1' ) ;
+        $this->assertStringStartsWith
+        (
+            'WITH users, roles FOR vertex IN ANY @startVertex' ,
+            $this->normalize( $edges->lastQuery ) ,
+        ) ;
+    }
+
+    public function testCountVerticesWithNamedGraphOmitsWith() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->from = ( new MockDocuments( 'users' ) )->initializeDeleteSignals() ;
+        $edges->to   = ( new MockDocuments( 'roles' ) )->initializeDeleteSignals() ;
+        $edges->firstResult = 1 ;
+
+        $edges->countVertices( Traversal::OUTBOUND , 'users/1' , [ AQL::GRAPH => 'social' ] ) ;
+        $this->assertStringStartsWith( 'FOR vertex IN OUTBOUND @startVertex' , $edges->lastQuery ) ;
+    }
+
+    public function testCountVerticesExplicitWithOverridesDerivation() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->firstResult = 1 ;
+
+        $edges->countVertices( Traversal::OUTBOUND , 'users/1' , [ AQL::WITH => [ 'alpha' , 'beta' ] ] ) ;
+        $this->assertStringStartsWith
+        (
+            'WITH alpha, beta FOR vertex IN OUTBOUND @startVertex' ,
+            $this->normalize( $edges->lastQuery ) ,
+        ) ;
+    }
+
+    public function testCountVerticesWithoutVertexModelsOmitsWith() :void
+    {
+        $edges = new MockEdges( 'follows' ) ; // from / to stay null
+        $edges->firstResult = 1 ;
+
+        $edges->countVertices( Traversal::INBOUND , 'roles/2' ) ;
+        $this->assertStringStartsWith( 'FOR vertex IN INBOUND @startVertex' , $edges->lastQuery ) ;
     }
 }

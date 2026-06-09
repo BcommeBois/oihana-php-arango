@@ -135,6 +135,8 @@ Mots-clés de direction : `OUTBOUND` (`_from → _to`), `INBOUND` (`_to → _fro
 
 La clause `GRAPH 'name'` indique au moteur de respecter les edge definitions du graphe. Vous pouvez aussi traverser des collections d'arêtes brutes avec `IN ... edges`, mais vous perdez la garantie de type safety.
 
+> **Traversal anonyme et cluster.** Un traversal sur collections d'arêtes brutes (sans `GRAPH`) doit, **en cluster**, déclarer les collections de sommets atteignables via une clause `WITH` en tête de requête, faute de quoi le moteur risque un *deadlock*. Les méthodes de traversal des modèles `Edges` (`getOutboundVertices()`, `getInboundVertices()`, `getAnyVertices()`, `countVertices()`…) s'en chargent automatiquement à partir des modèles `_from` / `_to` ; voir [`aqlWith()`](../aql/aql-operations.md#aqlwith).
+
 Pour tout ce qu'on peut exprimer dans un traversal — *pruning*, filtrage par attribut d'arête, plus courts chemins pondérés — voir la référence AQL officielle [Graph traversals](https://docs.arangodb.com/stable/aql/graphs/).
 
 ## Supprimer un graphe

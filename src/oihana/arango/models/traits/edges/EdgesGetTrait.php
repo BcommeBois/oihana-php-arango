@@ -2,9 +2,15 @@
 
 namespace oihana\arango\models\traits\edges;
 
+use InvalidArgumentException;
+use ReflectionException;
+
 use DI\DependencyException;
 use DI\NotFoundException;
-use InvalidArgumentException;
+
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
@@ -15,9 +21,7 @@ use oihana\arango\models\traits\edges\helpers\PrepareTraversalTrait;
 use oihana\arango\models\traits\VerticesTrait;
 use oihana\exceptions\BindException;
 use oihana\reflect\exceptions\ConstantException;
-use Psr\Container\ContainerExceptionInterface;
-use Psr\Container\NotFoundExceptionInterface;
-use ReflectionException;
+
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlLimit;
 use function oihana\arango\db\operations\aqlReturn;
@@ -567,6 +571,7 @@ trait EdgesGetTrait
         $variables = $init[ Arango::VARIABLES ] ?? [] ;
         $vertexRef = $init[ Arango::DOC_REF   ] ?? AQL::VERTEX ;
 
+        $with   = $this->prepareTraversalWith( $direction , $from , $to , $init ) ;
         $for    = aqlTraversal ( $init , $bindVars ) ;
         $filter = aqlFilter    ( $filter ) ;
         $limit  = aqlLimit     ( $init[ AQL::LIMIT ] ?? 0 , $init[ AQL::OFFSET ] ?? 0 )  ;
@@ -594,7 +599,7 @@ trait EdgesGetTrait
         // LIMIT
         // RETURN
 
-        $query = compile( [ $for , $variables , $filter , $sort , $limit , $return ] ) ;
+        $query = compile( [ $with , $for , $variables , $filter , $sort , $limit , $return ] ) ;
 
         // echo 'getOutboundVertices query: ' . $query . PHP_EOL;
         // echo 'getOutboundVertices binds: ' . json_encode( $bindVars , JSON_UNESCAPED_SLASHES ) . PHP_EOL;
