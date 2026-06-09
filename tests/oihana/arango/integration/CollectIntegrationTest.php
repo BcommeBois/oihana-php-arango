@@ -6,7 +6,10 @@ use oihana\arango\clients\Database ;
 use oihana\arango\controllers\traits\PrepareGroupTrait ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Arango ;
+use oihana\arango\models\enums\Facet ;
 use oihana\arango\models\enums\Group as GroupSpec ;
+use oihana\arango\models\traits\queries\FacetCountsQueryTrait ;
+use oihana\arango\models\traits\queries\ListQueryTrait ;
 
 use tests\oihana\arango\models\traits\queries\ListQueryTraitStub ;
 
@@ -35,11 +38,12 @@ class CollectIntegrationTest extends IntegrationTestCase
         $sales = $db->collection( self::COLLECTION ) ;
         $sales->create() ;
         // category A : 3 rows (100 + 200 + 30 = 330) ; category B : 2 rows (50 + 70 = 120)
-        $sales->insert( [ '_key' => 's1' , 'category' => 'A' , 'amount' => 100 ] ) ;
-        $sales->insert( [ '_key' => 's2' , 'category' => 'A' , 'amount' => 200 ] ) ;
-        $sales->insert( [ '_key' => 's3' , 'category' => 'B' , 'amount' => 50  ] ) ;
-        $sales->insert( [ '_key' => 's4' , 'category' => 'B' , 'amount' => 70  ] ) ;
-        $sales->insert( [ '_key' => 's5' , 'category' => 'A' , 'amount' => 30  ] ) ;
+        // tags counts : x → 3 (s1,s2,s5) ; y → 3 (s1,s3,s4) ; z → 1 (s4)
+        $sales->insert( [ '_key' => 's1' , 'category' => 'A' , 'amount' => 100 , 'tags' => [ 'x' , 'y' ] ] ) ;
+        $sales->insert( [ '_key' => 's2' , 'category' => 'A' , 'amount' => 200 , 'tags' => [ 'x' ] ] ) ;
+        $sales->insert( [ '_key' => 's3' , 'category' => 'B' , 'amount' => 50  , 'tags' => [ 'y' ] ] ) ;
+        $sales->insert( [ '_key' => 's4' , 'category' => 'B' , 'amount' => 70  , 'tags' => [ 'y' , 'z' ] ] ) ;
+        $sales->insert( [ '_key' => 's5' , 'category' => 'A' , 'amount' => 30  , 'tags' => [ 'x' ] ] ) ;
     }
 
     private function stub() :ListQueryTraitStub
@@ -152,5 +156,40 @@ class CollectIntegrationTest extends IntegrationTestCase
         $counts = [] ;
         foreach ( $rows as $r ) { $counts[ $r['category'] ] = $r['count'] ; }
         $this->assertSame( [ 'A' => 3 , 'B' => 2 ] , $counts ) ;
+    }
+
+    public function testFacetCountsLive() :void
+    {
+        // Several independent bucket counts in one query: a FIELD facet (category)
+        // and an array-membership IN facet (tags), both over the same set.
+        $stub = new class
+        {
+            use ListQueryTrait , FacetCountsQueryTrait ;
+
+            public function __construct()
+            {
+                $this->initializeQueryID( 'q' ) ;
+                $this->collection = 'sales' ;
+                $this->facets =
+                [
+                    'category' => [ Facet::TYPE => Facet::FIELD ] ,
+                    'tags'     => [ Facet::TYPE => Facet::IN ] ,
+                ] ;
+            }
+        } ;
+
+        $binds = [] ;
+        $aql   = $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category,tags' ] , $binds ) ;
+        $row   = iterator_to_array( self::$db->query( $aql , $binds ) , false )[ 0 ] ;
+
+        $category = [] ;
+        foreach ( $row['category'] as $bucket ) { $category[ $bucket['value'] ] = $bucket['count'] ; }
+        ksort( $category ) ;
+        $this->assertSame( [ 'A' => 3 , 'B' => 2 ] , $category ) ;
+
+        $tags = [] ;
+        foreach ( $row['tags'] as $bucket ) { $tags[ $bucket['value'] ] = $bucket['count'] ; }
+        ksort( $tags ) ;
+        $this->assertSame( [ 'x' => 3 , 'y' => 3 , 'z' => 1 ] , $tags ) ;
     }
 }

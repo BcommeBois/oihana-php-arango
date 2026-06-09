@@ -22,7 +22,7 @@ If you only need to **issue a query and read JSON**, use the client. If you want
 | 5 | [HTTP search `?search=`](search.md) | Multi-field `LIKE` search (case-insensitive), `searchable` declaration, combining, limits (vs ArangoSearch). |
 | 6 | [HTTP filters `?filter=`](filter.md) | `?filter=` URL syntax, comparators, `alt` transformations, chaining, `FilterType::*`. |
 | 7 | [Internal filtering — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Server-only conditions, `FilterType::VIRTUAL`, URL vs internal decision rule. |
-| 8 | [HTTP facets `?facets=`](facets.md) | `?facets=` URL syntax, `Arango::FACETS` / `Facet::TYPE` declaration, type catalogue (FIELD, IN, EDGE, JOIN, *_COMPLEX, *_AGGREGATE), operators, negation, security. |
+| 8 | [HTTP facets `?facets=`](facets.md) | `?facets=` URL syntax, `Arango::FACETS` / `Facet::TYPE` declaration, type catalogue (FIELD, IN, EDGE, JOIN, *_COMPLEX, *_AGGREGATE), operators, negation, security, **facet counts `?facetCounts=`**. |
 | 9 | [HTTP grouping `?groupBy=` / `?group=`](grouping.md) | `GROUP BY` via `COLLECT`: URL syntax (`?groupBy=` CSV + `?group=` JSON), `Arango::GROUP` / `Group` vocabulary, the three uses (distinct / count / aggregates), group sorting, raw `Arango::COLLECT` spec, `groupable` whitelist and security. |
 
 ## The `db/` source map

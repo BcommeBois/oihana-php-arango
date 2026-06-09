@@ -19,6 +19,7 @@ This page documents:
 4. The [facet type catalogue](#facet-type-catalogue), with concrete examples and generated AQL.
 5. The [`op` operators](#op-operators), [negation](#negation) and [default behaviours](#default-behaviours).
 6. [Security](#security-and-aql-injection) (injection guard).
+7. [Facet counts `?facetCounts=`](#facet-counts-facetcounts) (breakdowns alongside the list).
 
 ## Facets vs filters vs search
 
@@ -454,9 +455,50 @@ The contract is strict: **only bound values (`@bind`) are under user control**.
   an unsafe name makes the facet fail (dropped + `warning`), and no fragment ever
   reaches the AQL.
 
+## Facet counts `?facetCounts=`
+
+The facets above **filter** the list. To show, alongside the list, the **number
+of documents per value** of each facet (the sidebar "Category: Cooking (42),
+Travel (17)"), request **counts**:
+
+```
+GET /articles?facetCounts=category,keywords
+```
+
+- Dimensions are keys of the already-declared `Arango::FACETS` (the filterable facets become the counted facets); an unknown key is ignored.
+- v1 supports `Facet::FIELD` (scalar field) and `Facet::IN` (array membership, unwound); other types are skipped.
+- Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list).
+
+Buckets are returned under `options.facets`, next to `options.total`, **without
+changing** the document list:
+
+```json
+{
+  "data": [ /* …filtered documents… */ ],
+  "options": {
+    "total": 120,
+    "facets": {
+      "category": [ {"value":"Cooking","count":42}, {"value":"Travel","count":17} ],
+      "keywords": [ {"value":"bio","count":31}, {"value":"local","count":12} ]
+    }
+  }
+}
+```
+
+Generated AQL (one `LET` sub-query per dimension, see [`aqlCollect`](../aql/aql-operations.md#aqlcollect)):
+```aql
+LET category = (FOR doc IN @@articles FILTER <same filters> COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN { value, count })
+LET keywords = (FOR doc IN @@articles FILTER <same filters> FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN { value, count })
+RETURN { category, keywords }
+```
+
+> This is the right tool for **several independent breakdowns** in one response.
+> To turn the list itself into **one** aggregation, see [Grouping `?groupBy=` / `?group=`](grouping.md).
+
 ## See also
 
 - [HTTP filters `?filter=`](filter.md) — comparators, `alt` transforms, compound conditions.
+- [HTTP grouping `?groupBy=` / `?group=`](grouping.md) — turn the list into an aggregation.
 - [AQL helpers `db/helpers/`](helpers.md) — `isAttributeName` / `assertAttributeName`, AQL introspection.
 - [Bind variables `db/binds/`](binds.md) — safe placeholders.
 - [`Documents` and `Edges` models](../models.md) — `Arango::FACETS` declaration.

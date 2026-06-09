@@ -9,6 +9,7 @@ trait DocumentsMethodsTrait
     use DocumentsCountTrait    ,
         DocumentsDeleteTrait   ,
         DocumentsExistTrait    ,
+        DocumentsFacetCountsTrait ,
         DocumentsGetTrait      ,
         DocumentsInsertTrait   ,
         DocumentsLastTrait     ,

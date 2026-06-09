@@ -9,6 +9,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
+use oihana\arango\controllers\traits\PrepareFacetCountsTrait;
 use oihana\arango\controllers\traits\PrepareGroupTrait;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -28,6 +29,7 @@ trait DocumentsControllerListTrait
         CheckOwnerArgumentsTrait ,
         ModelTrait ,
         OutputDocumentsTrait ,
+        PrepareFacetCountsTrait ,
         PrepareGroupTrait ,
         PrepareParamTrait ,
         StatusTrait;
@@ -76,6 +78,8 @@ trait DocumentsControllerListTrait
                 Arango::SORT       => $this->prepareSort   ( $request , $init , $params ) ,
             ] ;
 
+            $facetCounts = $this->prepareFacetCounts( $request , $init , $params ) ;
+
             $this->beforeModelCall( $request , $modelInit ) ;
             $documents = $this->model->list( $modelInit ) ;
             $this->afterModelCall( $request , $modelInit , $documents ) ;
@@ -88,6 +92,12 @@ trait DocumentsControllerListTrait
             }
 
             $options = [ Output::TOTAL => $total ] ;
+
+            // Per-value facet counts alongside the list (faceted-search sidebar).
+            if( !empty( $facetCounts ) && $this->model instanceof Documents && !$this->model->mock )
+            {
+                $options[ Arango::FACETS ] = $this->model->facetCounts( [ ...$modelInit , Arango::FACET_COUNTS => $facetCounts ] ) ;
+            }
 
             $this->endBench( $timestamp , $options ) ;
 

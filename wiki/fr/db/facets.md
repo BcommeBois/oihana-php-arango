@@ -12,6 +12,7 @@ Cette page documente :
 4. Le [catalogue des types de facettes](#catalogue-des-types-de-facettes), avec exemples concrets et AQL généré.
 5. Les [opérateurs `op`](#opérateurs-op), la [négation](#négation) et les [comportements par défaut](#comportements-par-défaut).
 6. La [sécurité](#sécurité-et-injection-aql) (anti-injection).
+7. Les [compteurs de facettes `?facetCounts=`](#compteurs-de-facettes-facetcounts) (ventilations à côté de la liste).
 
 ## Facettes vs filtres vs recherche
 
@@ -415,9 +416,46 @@ Le contrat est strict : **seules les valeurs liées (`@bind`) sont sous contrôl
 - Les **clés de facette** sont whitelistées (`Arango::FACETS` du modèle ; clé absente → ignorée).
 - Les **noms de sous-champs** des facettes complexes (issus de l'URL et concaténés dans `doc.<champ>`) sont validés par [`assertAttributeName`](helpers.md#garde-anti-injection--isattributename--assertattributename) : un nom dangereux fait échouer la facette (ignorée + `warning`), aucun fragment n'atteint l'AQL.
 
+## Compteurs de facettes `?facetCounts=`
+
+Les facettes ci-dessus **filtrent** la liste. Pour afficher, à côté de la liste, le **nombre de documents par valeur** de chaque facette (la barre latérale « Catégorie : Cuisine (42), Voyage (17) »), on demande des **compteurs** :
+
+```
+GET /articles?facetCounts=category,keywords
+```
+
+- Les dimensions sont des **clés de `Arango::FACETS`** déjà déclarées (les facettes filtrables deviennent les facettes comptées) ; une clé inconnue est ignorée.
+- v1 supporte les types `Facet::FIELD` (champ scalaire) et `Facet::IN` (appartenance à un tableau, dépliée) ; les autres types sont ignorés.
+- Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste).
+
+Les buckets sont renvoyés dans `options.facets`, à côté de `options.total`, **sans modifier** la liste de documents :
+
+```json
+{
+  "data": [ /* …documents filtrés… */ ],
+  "options": {
+    "total": 120,
+    "facets": {
+      "category": [ {"value":"Cuisine","count":42}, {"value":"Voyage","count":17} ],
+      "keywords": [ {"value":"bio","count":31}, {"value":"local","count":12} ]
+    }
+  }
+}
+```
+
+AQL généré (une sous-requête `LET` par dimension, cf. [`aqlCollect`](../aql/aql-operations.md#aqlcollect)) :
+```aql
+LET category = (FOR doc IN @@articles FILTER <mêmes filtres> COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN { value, count })
+LET keywords = (FOR doc IN @@articles FILTER <mêmes filtres> FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN { value, count })
+RETURN { category, keywords }
+```
+
+> C'est le bon outil quand on veut **plusieurs ventilations indépendantes** dans une réponse. Pour transformer la liste elle-même en **une** agrégation, voir le [Regroupement `?groupBy=` / `?group=`](grouping.md).
+
 ## Voir aussi
 
 - [Filtres HTTP `?filter=`](filter.md) — comparateurs, transformations `alt`, conditions composées.
+- [Regroupement HTTP `?groupBy=` / `?group=`](grouping.md) — transformer la liste en agrégation.
 - [Helpers AQL `db/helpers/`](helpers.md) — `isAttributeName` / `assertAttributeName`, introspection AQL.
 - [Bind variables `db/binds/`](binds.md) — placeholders sûrs.
 - [Modèles `Documents` et `Edges`](../models.md) — déclaration `Arango::FACETS`.

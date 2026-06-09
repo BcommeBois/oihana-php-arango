@@ -168,6 +168,13 @@ class Arango
     public const string EXTRA_QUERY = 'extraQuery' ;
 
     /**
+     * The 'facetCounts' parameter — the list of facet keys (from `Arango::FACETS`)
+     * for which per-value bucket counts are computed alongside the list, by
+     * {@see \oihana\arango\models\traits\queries\FacetCountsQueryTrait::buildFacetCountsQuery()}.
+     */
+    public const string FACET_COUNTS = 'facetCounts' ;
+
+    /**
      * The 'field' parameter.
      */
     public const string FIELD = 'field' ;
