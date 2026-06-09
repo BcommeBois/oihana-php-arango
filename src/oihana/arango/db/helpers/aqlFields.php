@@ -79,6 +79,7 @@ use function oihana\core\strings\keyValue;
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
  * @throws UnsupportedOperationException
+ * @throws \oihana\exceptions\ValidationException When a (non-quoted) source attribute name is unsafe.
  * @throws Exception
  *
  * @example
@@ -156,6 +157,18 @@ function aqlFields
             // Field reference captured before `$key` is (possibly) quoted, so the
             // output-side `alters` chain always wraps the real `doc.<field>`.
             $fieldRef = key( $keyName ?? $key , $docRef ) ;
+
+            // Defense-in-depth: the bare source attribute flows into `doc.<attr>`.
+            // Validate it against AQL injection — except the quoted-key escape
+            // hatch (a non-identifier key intentionally reached via backticks,
+            // e.g. `doc.`my-key``). A URL-driven projection never sets QUOTED, so
+            // it always goes through this guard. Non-string keys (numeric indexes)
+            // cannot carry injection and are left untouched.
+            $sourceRef = $keyName ?? $key ;
+            if ( is_string( $sourceRef ) && !( $quoted === true && $keyName === null ) )
+            {
+                assertAttributeName( $sourceRef ) ;
+            }
 
             // Field-level gating: when the field declares `Field::REQUIRES`
             // and the request-scoped authorizer denies it, the field is

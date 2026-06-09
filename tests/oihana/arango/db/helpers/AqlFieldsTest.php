@@ -216,4 +216,31 @@ final class AqlFieldsTest extends TestCase
         $result = aqlFields( [ 'flag' => [ Field::FILTER => Filter::BOOL , Field::QUOTED => true ] ] ) ;
         $this->assertSame( '"flag":TO_BOOL(doc.`flag`)' , $result ) ;
     }
+
+    /**
+     * Defense-in-depth: an unsafe bare source attribute (would flow into
+     * `doc.<attr>`) is rejected.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testInjectionInBareFieldKeyThrows(): void
+    {
+        $this->expectException( \oihana\exceptions\ValidationException::class ) ;
+        aqlFields( [ 'name) RETURN doc //' => [] ] ) ;
+    }
+
+    /**
+     * The `Field::NAME` alias (a bare source attribute) is validated too.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testInjectionInFieldNameAliasThrows(): void
+    {
+        $this->expectException( \oihana\exceptions\ValidationException::class ) ;
+        aqlFields( [ 'slug' => [ Field::NAME => 'title) || 1==1' ] ] ) ;
+    }
 }
