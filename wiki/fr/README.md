@@ -67,8 +67,9 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 - [Opérateurs `db/operators/`](aql/aql-operators.md) — les 42 comparateurs (logiques, quantifiés, *range*, *ternary*).
 - [Fonctions de chaînes](aql/aql-functions-strings.md) — 37 fonctions AQL côté chaînes.
 - [Fonctions de dates](aql/aql-functions-dates.md) — 30 fonctions AQL côté dates.
-- [Fonctions numériques](aql/aql-functions-numerics.md) — 31 fonctions AQL côté nombres.
+- [Fonctions numériques](aql/aql-functions-numerics.md) — 35 fonctions AQL côté nombres (dont distances vectorielles).
 - [Fonctions de tableaux](aql/aql-functions-arrays.md) — 19 fonctions AQL côté tableaux.
+- [Fonctions binaires](aql/aql-functions-bit.md) — 12 fonctions AQL bit à bit (logique, décalages, popcount, chaînes binaires).
 - [Fonctions géospatiales](aql/aql-functions-geo.md) — 17 fonctions AQL de géolocalisation (points, polygones, distances, prédicats).
 - [Fonctions documents et vérifications](aql/aql-functions-checks.md) — 45 fonctions : *type-checks*, *casts*, opérations sur documents (l'ensemble complet de `documents/`), informations de la base.
 
