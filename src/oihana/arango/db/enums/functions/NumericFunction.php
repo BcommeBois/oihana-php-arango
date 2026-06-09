@@ -23,6 +23,16 @@ class NumericFunction
     public const string ACOS = 'ACOS' ;
 
     /**
+     * Return the approximate cosine similarity between two vectors, accelerated by a vector index (cosine metric).
+     */
+    public const string APPROX_NEAR_COSINE = 'APPROX_NEAR_COSINE' ;
+
+    /**
+     * Return the approximate L2 (Euclidean) distance between two vectors, accelerated by a vector index (l2 metric).
+     */
+    public const string APPROX_NEAR_L2 = 'APPROX_NEAR_L2' ;
+
+    /**
      * Return the arcsine of value.
      */
     public const string ASIN = 'ASIN' ;

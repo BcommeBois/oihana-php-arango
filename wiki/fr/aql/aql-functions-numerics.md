@@ -1,6 +1,6 @@
 # Fonctions numériques `db/functions/numerics/`
 
-Le sous-dossier [`src/oihana/arango/db/functions/numerics/`](../../../src/oihana/arango/db/functions/numerics/) regroupe **31 fonctions** qui correspondent aux *numeric functions* natives d'AQL — calculs scalaires, trigonométrie, logarithmes, agrégations sur tableau, génération de plages.
+Le sous-dossier [`src/oihana/arango/db/functions/numerics/`](../../../src/oihana/arango/db/functions/numerics/) regroupe **35 fonctions** qui correspondent aux *numeric functions* natives d'AQL — calculs scalaires, trigonométrie, logarithmes, agrégations sur tableau, génération de plages, et distances vectorielles.
 
 ## Sommaire
 
@@ -14,7 +14,7 @@ Le sous-dossier [`src/oihana/arango/db/functions/numerics/`](../../../src/oihana
 | Constantes et aléa | `pi`, `rand` |
 | Agrégation sur tableau | `average`, `max`, `min`, `median`, `percentile`, `product`, `sum` |
 | Séquence | `range` |
-| Vecteurs | `cosSimilarity` |
+| Vecteurs | `cosSimilarity`, `l1Distance`, `l2Distance`, `approxNearCosine`, `approxNearL2` |
 
 ## Arithmétique de base
 
@@ -113,8 +113,25 @@ Produit un tableau de nombres dans l'intervalle. Utile dans un `FOR i IN RANGE(1
 | Fonction | Signature | Sortie AQL |
 |---|---|---|
 | `cosSimilarity` | `(string\|int $x, string\|int $y)` | `COSINE_SIMILARITY(<x>, <y>)` |
+| `l1Distance` | `(string\|int $x, string\|int $y)` | `L1_DISTANCE(<x>, <y>)` |
+| `l2Distance` | `(string\|int $x, string\|int $y)` | `L2_DISTANCE(<x>, <y>)` |
+| `approxNearCosine` | `(string\|int $x, string\|int $y, ?int $nProbe = null)` | `APPROX_NEAR_COSINE(<x>, <y>[, {"nProbe":N}])` |
+| `approxNearL2` | `(string\|int $x, string\|int $y, ?int $nProbe = null)` | `APPROX_NEAR_L2(<x>, <y>[, {"nProbe":N}])` |
 
-Mesure de similarité entre deux vecteurs (chacun étant un tableau de nombres). Utilisé en combinaison avec les index `vector` pour la recherche par similarité (*embeddings*).
+`cosSimilarity`, `l1Distance` et `l2Distance` calculent une mesure **exacte** entre deux vecteurs (chacun étant un tableau de nombres) et ne nécessitent aucun index.
+
+`approxNearCosine` et `approxNearL2` calculent un score de plus-proche-voisin **approché**, *accéléré par un index `vector`* — un opérande doit référencer l'attribut indexé, l'autre est le vecteur de requête. Ce sont les briques de la recherche par similarité sur *embeddings* (RAG, recommandation). Le `nProbe` optionnel élargit la recherche (plus de centroïdes explorés → plus précis, plus lent).
+
+> La métrique doit correspondre à celle du `VectorIndex` : `approxNearCosine` ⇄ index `cosine` trié **`DESC`** (proche de 1 = plus proche), `approxNearL2` ⇄ index `l2` trié **`ASC`** (proche de 0 = plus proche). Les index vectoriels sont une fonctionnalité **expérimentale** d'ArangoDB (serveur démarré avec `--experimental-vector-index`).
+
+Pour la requête de plus-proches-voisins complète, préférez l'opération dédiée [`aqlVectorSearch()`](aql-operations.md#aqlvectorsearch--recherche-approximative-de-plus-proches-voisins), qui câble pour vous la fonction, le sens du tri et le `LIMIT` :
+
+```php
+use function oihana\arango\db\operations\aqlVectorSearch ;
+
+aqlVectorSearch( collection: 'items', attribute: 'embedding', vector: '@query', limit: 10 ) ;
+// "FOR doc IN items SORT APPROX_NEAR_COSINE(doc.embedding,@query) DESC LIMIT 10 RETURN doc"
+```
 
 ## Composition typique
 

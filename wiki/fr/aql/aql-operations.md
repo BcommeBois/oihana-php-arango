@@ -452,6 +452,60 @@ function aqlTraversalRange( ... ) : string
 
 Construit le fragment `<min>..<max>` (par exemple `1..1`, `1..5`, `..2`, `3..`). Utilisé en interne par `aqlTraversal()` pour la portée du parcours ; exposé indépendamment pour les cas où l'on a besoin de calculer la range séparément.
 
+## Recherche vectorielle
+
+### `aqlVectorSearch()` — Recherche approximative de plus proches voisins
+
+```php
+function aqlVectorSearch(
+    string  $collection ,
+    string  $attribute ,
+    string  $vector ,
+    int     $limit ,
+    string  $metric  = 'cosine' , // 'cosine' ou 'l2'
+    ?int    $nProbe  = null ,
+    string  $docRef  = 'doc' ,
+    ?string $return  = null ,
+) : string
+```
+
+Construit une requête complète de plus-proches-voisins approchés (ANN) sur un [index `vector`](../clients/indexes.md), dans la forme canonique `FOR … SORT APPROX_NEAR_…(…) [DESC|ASC] LIMIT … RETURN …`. Elle compose `aqlFor()`, les fonctions numériques `approxNear*`, `aqlSort()`, `aqlLimit()` et `aqlReturn()`.
+
+La `$metric` sélectionne **à la fois** la fonction et le sens du tri — c'est le piège classique :
+
+| `$metric` | Fonction | Tri | Le plus proche est |
+|---|---|---|---|
+| `'cosine'` (défaut) | `APPROX_NEAR_COSINE` | `DESC` | proche de `1` |
+| `'l2'` | `APPROX_NEAR_L2` | `ASC` | proche de `0` |
+
+Elle doit correspondre à la métrique du `VectorIndex` couvrant `$attribute`, sinon l'optimiseur ne peut pas accélérer la requête. Une métrique non supportée lève `InvalidArgumentException`. Les index vectoriels sont une fonctionnalité **expérimentale** d'ArangoDB (serveur démarré avec `--experimental-vector-index`).
+
+```php
+use function oihana\arango\db\operations\aqlVectorSearch ;
+
+// Top-10 voisins cosine, vecteur de requête lié via @query :
+aqlVectorSearch( collection: 'items', attribute: 'embedding', vector: '@query', limit: 10 ) ;
+// "FOR doc IN items SORT APPROX_NEAR_COSINE(doc.embedding,@query) DESC LIMIT 10 RETURN doc"
+
+// Métrique L2, nProbe personnalisé, variable d'itération et projection :
+aqlVectorSearch(
+    collection: 'items', attribute: 'embedding', vector: '@query',
+    limit: 5, metric: 'l2', nProbe: 20, docRef: 'd',
+    return: '{ key: d._key, score: APPROX_NEAR_L2(d.embedding, @query) }' ,
+) ;
+// "FOR d IN items SORT APPROX_NEAR_L2(d.embedding,@query,{"nProbe":20}) ASC LIMIT 5
+//   RETURN { key: d._key, score: APPROX_NEAR_L2(d.embedding, @query) }"
+```
+
+Bout-en-bout (client PHP), documents les plus proches d'un embedding :
+
+```php
+$aql  = aqlVectorSearch( collection: 'items', attribute: 'embedding', vector: '@query', limit: 10 ) ;
+$rows = iterator_to_array( $db->query( $aql , [ 'query' => $embedding ] ) , false ) ;
+```
+
+Les helpers de plus bas niveau `approxNearCosine()` / `approxNearL2()` / `l1Distance()` / `l2Distance()` sont documentés dans [Fonctions numériques › Vecteurs](aql-functions-numerics.md#vecteurs).
+
 ## Configuration
 
 ### `aqlOptions()`

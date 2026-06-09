@@ -452,6 +452,60 @@ function aqlTraversalRange( ... ) : string
 
 Builds the `<min>..<max>` fragment (e.g. `1..1`, `1..5`, `..2`, `3..`). Used internally by `aqlTraversal()` for the traversal scope; exposed independently for cases where you need to compute the range separately.
 
+## Vector search
+
+### `aqlVectorSearch()` — Approximate nearest-neighbour search
+
+```php
+function aqlVectorSearch(
+    string  $collection ,
+    string  $attribute ,
+    string  $vector ,
+    int     $limit ,
+    string  $metric  = 'cosine' , // 'cosine' or 'l2'
+    ?int    $nProbe  = null ,
+    string  $docRef  = 'doc' ,
+    ?string $return  = null ,
+) : string
+```
+
+Builds a complete approximate nearest-neighbour (ANN) query over a [`vector` index](../clients/indexes.md), in the canonical form `FOR … SORT APPROX_NEAR_…(…) [DESC|ASC] LIMIT … RETURN …`. It composes `aqlFor()`, the `approxNear*` numeric functions, `aqlSort()`, `aqlLimit()` and `aqlReturn()`.
+
+The `$metric` selects **both** the function and the sort direction — the part that is easy to get wrong:
+
+| `$metric` | Function | Sort | Nearest is |
+|---|---|---|---|
+| `'cosine'` (default) | `APPROX_NEAR_COSINE` | `DESC` | closer to `1` |
+| `'l2'` | `APPROX_NEAR_L2` | `ASC` | closer to `0` |
+
+It must match the metric of the `VectorIndex` covering `$attribute`, otherwise the optimiser cannot accelerate the query. An unsupported metric throws `InvalidArgumentException`. Vector indexes are an **experimental** ArangoDB feature (server started with `--experimental-vector-index`).
+
+```php
+use function oihana\arango\db\operations\aqlVectorSearch ;
+
+// Top-10 cosine neighbours, query vector bound as @query:
+aqlVectorSearch( collection: 'items', attribute: 'embedding', vector: '@query', limit: 10 ) ;
+// "FOR doc IN items SORT APPROX_NEAR_COSINE(doc.embedding,@query) DESC LIMIT 10 RETURN doc"
+
+// L2 metric, custom nProbe, iteration variable and projection:
+aqlVectorSearch(
+    collection: 'items', attribute: 'embedding', vector: '@query',
+    limit: 5, metric: 'l2', nProbe: 20, docRef: 'd',
+    return: '{ key: d._key, score: APPROX_NEAR_L2(d.embedding, @query) }' ,
+) ;
+// "FOR d IN items SORT APPROX_NEAR_L2(d.embedding,@query,{"nProbe":20}) ASC LIMIT 5
+//   RETURN { key: d._key, score: APPROX_NEAR_L2(d.embedding, @query) }"
+```
+
+End-to-end (PHP client), nearest documents to an embedding:
+
+```php
+$aql  = aqlVectorSearch( collection: 'items', attribute: 'embedding', vector: '@query', limit: 10 ) ;
+$rows = iterator_to_array( $db->query( $aql , [ 'query' => $embedding ] ) , false ) ;
+```
+
+The lower-level `approxNearCosine()` / `approxNearL2()` / `l1Distance()` / `l2Distance()` helpers are documented in [Numeric functions › Vectors](aql-functions-numerics.md#vectors).
+
 ## Configuration
 
 ### `aqlOptions()`

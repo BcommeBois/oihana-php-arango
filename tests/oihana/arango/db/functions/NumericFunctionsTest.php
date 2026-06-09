@@ -9,6 +9,8 @@ use oihana\arango\db\enums\PercentileMethod;
 
 use function oihana\arango\db\functions\numerics\abs;
 use function oihana\arango\db\functions\numerics\acos;
+use function oihana\arango\db\functions\numerics\approxNearCosine;
+use function oihana\arango\db\functions\numerics\approxNearL2;
 use function oihana\arango\db\functions\numerics\asin;
 use function oihana\arango\db\functions\numerics\atan;
 use function oihana\arango\db\functions\numerics\atan2;
@@ -20,6 +22,8 @@ use function oihana\arango\db\functions\numerics\degrees;
 use function oihana\arango\db\functions\numerics\exp;
 use function oihana\arango\db\functions\numerics\exp2;
 use function oihana\arango\db\functions\numerics\floor;
+use function oihana\arango\db\functions\numerics\l1Distance;
+use function oihana\arango\db\functions\numerics\l2Distance;
 use function oihana\arango\db\functions\numerics\log;
 use function oihana\arango\db\functions\numerics\log10;
 use function oihana\arango\db\functions\numerics\log2;
@@ -265,5 +269,53 @@ class NumericFunctionsTest extends TestCase
             "PERCENTILE([1,2,3],100)",
             percentile("[1,2,3]", 150, PercentileMethod::RANK)
         );
+    }
+
+    // ---------- Vector / distance functions ----------
+
+    public function testL1Distance(): void
+    {
+        $this->assertSame( 'L1_DISTANCE([1,2],[4,6])' , l1Distance( '[1,2]' , '[4,6]' ) ) ;
+    }
+
+    public function testL2Distance(): void
+    {
+        $this->assertSame( 'L2_DISTANCE([1,2],[4,6])' , l2Distance( '[1,2]' , '[4,6]' ) ) ;
+    }
+
+    public function testApproxNearCosine(): void
+    {
+        $this->assertSame
+        (
+            'APPROX_NEAR_COSINE(doc.embedding,@query)' ,
+            approxNearCosine( 'doc.embedding' , '@query' )
+        ) ;
+    }
+
+    public function testApproxNearCosineWithNProbe(): void
+    {
+        $this->assertSame
+        (
+            'APPROX_NEAR_COSINE(doc.embedding,@query,{"nProbe":20})' ,
+            approxNearCosine( 'doc.embedding' , '@query' , 20 )
+        ) ;
+    }
+
+    public function testApproxNearL2(): void
+    {
+        $this->assertSame
+        (
+            'APPROX_NEAR_L2(doc.embedding,@query)' ,
+            approxNearL2( 'doc.embedding' , '@query' )
+        ) ;
+    }
+
+    public function testApproxNearL2WithNProbe(): void
+    {
+        $this->assertSame
+        (
+            'APPROX_NEAR_L2(doc.embedding,@query,{"nProbe":20})' ,
+            approxNearL2( 'doc.embedding' , '@query' , 20 )
+        ) ;
     }
 }
