@@ -9,10 +9,27 @@ use PHPUnit\Framework\TestCase;
 use oihana\arango\db\enums\functions\DocumentFunction;
 use oihana\exceptions\UnsupportedOperationException;
 
+use function oihana\arango\db\functions\documents\attributes;
+use function oihana\arango\db\functions\documents\count;
+use function oihana\arango\db\functions\documents\entries;
 use function oihana\arango\db\functions\documents\has;
+use function oihana\arango\db\functions\documents\isSameCollection;
+use function oihana\arango\db\functions\documents\keep;
+use function oihana\arango\db\functions\documents\keepRecursive;
+use function oihana\arango\db\functions\documents\keys;
+use function oihana\arango\db\functions\documents\length;
+use function oihana\arango\db\functions\documents\matches;
 use function oihana\arango\db\functions\documents\merge;
+use function oihana\arango\db\functions\documents\mergeRecursive;
+use function oihana\arango\db\functions\documents\parseCollection;
+use function oihana\arango\db\functions\documents\parseIdentifier;
+use function oihana\arango\db\functions\documents\parseKey;
 use function oihana\arango\db\functions\documents\translate;
+use function oihana\arango\db\functions\documents\unsetAttributes;
+use function oihana\arango\db\functions\documents\unsetRecursive;
 use function oihana\arango\db\functions\documents\value;
+use function oihana\arango\db\functions\documents\values;
+use function oihana\arango\db\functions\documents\zip;
 
 use function oihana\arango\db\helpers\aqlDocument;
 
@@ -129,5 +146,101 @@ class DocumentFunctionsTest extends TestCase
     {
         $result = func("FOO", ["a", "b", "c"], ";");
         $this->assertSame("FOO(a;b;c)", $result);
+    }
+
+    // ---------- Lot F — document function helpers ----------
+
+    public function testAttributes(): void
+    {
+        $this->assertSame( 'ATTRIBUTES(doc)' , attributes( 'doc' ) );
+        $this->assertSame( 'ATTRIBUTES(doc,true)' , attributes( 'doc' , true ) );
+        $this->assertSame( 'ATTRIBUTES(doc,true,true)' , attributes( 'doc' , true , true ) );
+        $this->assertSame( 'ATTRIBUTES(doc,false,true)' , attributes( 'doc' , null , true ) );
+    }
+
+    public function testKeys(): void
+    {
+        $this->assertSame( 'KEYS(doc)' , keys( 'doc' ) );
+        $this->assertSame( 'KEYS(doc,true,true)' , keys( 'doc' , true , true ) );
+        $this->assertSame( 'KEYS(doc,false,true)' , keys( 'doc' , null , true ) );
+    }
+
+    public function testValues(): void
+    {
+        $this->assertSame( 'VALUES(doc)' , values( 'doc' ) );
+        $this->assertSame( 'VALUES(doc,true)' , values( 'doc' , true ) );
+    }
+
+    public function testCount(): void
+    {
+        $this->assertSame( 'COUNT(doc)' , count( 'doc' ) );
+    }
+
+    public function testLength(): void
+    {
+        $this->assertSame( 'LENGTH(doc)' , length( 'doc' ) );
+    }
+
+    public function testEntries(): void
+    {
+        $this->assertSame( 'ENTRIES(doc)' , entries( 'doc' ) );
+    }
+
+    public function testKeep(): void
+    {
+        $this->assertSame( 'KEEP(doc,"name","age")' , keep( 'doc' , 'name' , 'age' ) );
+    }
+
+    public function testKeepRecursive(): void
+    {
+        $this->assertSame( 'KEEP_RECURSIVE(doc,"meta")' , keepRecursive( 'doc' , 'meta' ) );
+    }
+
+    public function testUnsetAttributes(): void
+    {
+        $this->assertSame( 'UNSET(doc,"_id","_rev")' , unsetAttributes( 'doc' , '_id' , '_rev' ) );
+    }
+
+    public function testUnsetRecursive(): void
+    {
+        $this->assertSame( 'UNSET_RECURSIVE(doc,"_id")' , unsetRecursive( 'doc' , '_id' ) );
+    }
+
+    public function testMergeRecursive(): void
+    {
+        $this->assertSame( 'MERGE_RECURSIVE(d1,d2)' , mergeRecursive( [ 'd1' , 'd2' ] ) );
+    }
+
+    public function testMatches(): void
+    {
+        $this->assertSame( 'MATCHES(doc,{"age":30})' , matches( 'doc' , [ 'age' => 30 ] ) );
+        $this->assertSame( 'MATCHES(doc,[{"age":30},{"age":40}],true)' , matches( 'doc' , [ [ 'age' => 30 ] , [ 'age' => 40 ] ] , true ) );
+        $this->assertSame( 'MATCHES(doc,@examples)' , matches( 'doc' , '@examples' ) );
+    }
+
+    public function testZip(): void
+    {
+        $this->assertSame( 'ZIP(["a","b"],[1,2])' , zip( [ 'a' , 'b' ] , [ 1 , 2 ] ) );
+        $this->assertSame( 'ZIP(doc.k,doc.v)' , zip( 'doc.k' , 'doc.v' ) );
+    }
+
+    public function testIsSameCollection(): void
+    {
+        $this->assertSame( 'IS_SAME_COLLECTION("products",doc._id)' , isSameCollection( 'products' , 'doc._id' ) );
+    }
+
+    public function testParseCollection(): void
+    {
+        $this->assertSame( 'PARSE_COLLECTION(doc._id)' , parseCollection( 'doc._id' ) );
+    }
+
+    public function testParseIdentifier(): void
+    {
+        $this->assertSame( 'PARSE_IDENTIFIER(doc._id)' , parseIdentifier( 'doc._id' ) );
+    }
+
+    public function testParseKey(): void
+    {
+        $this->assertSame( 'PARSE_KEY(doc._id)' , parseKey( 'doc._id' ) );
     }
 }

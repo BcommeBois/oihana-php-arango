@@ -1,6 +1,6 @@
 # Document and check functions
 
-This page groups **28 functions** spread between the root of [`db/functions/`](../../../src/oihana/arango/db/functions/) (24 cross-cutting functions) and the [`db/functions/documents/`](../../../src/oihana/arango/db/functions/documents/) sub-folder (4 document functions). You'll find the *type checks*, the *casts*, the document operations and the database information functions.
+This page groups **45 functions** spread between the root of [`db/functions/`](../../../src/oihana/arango/db/functions/) (24 cross-cutting functions) and the [`db/functions/documents/`](../../../src/oihana/arango/db/functions/documents/) sub-folder (21 document functions). You'll find the *type checks*, the *casts*, the document operations and the database information functions.
 
 ## Summary
 
@@ -11,7 +11,7 @@ This page groups **28 functions** spread between the root of [`db/functions/`](.
 | Type inspection | `typeName` |
 | Conditional choice | `firstDocument`, `firstList`, `notNull` |
 | Documents (root) | `document`, `checkDocument`, `decodeRev` |
-| Documents (subfolder) | `has`, `merge`, `translate`, `value` |
+| Documents (subfolder) | `attributes`, `count`, `entries`, `has`, `isSameCollection`, `keep`, `keepRecursive`, `keys`, `length`, `matches`, `merge`, `mergeRecursive`, `parseCollection`, `parseIdentifier`, `parseKey`, `translate`, `unsetAttributes`, `unsetRecursive`, `value`, `values`, `zip` |
 | Database information | `length`, `collectionCount`, `currentDatabase`, `currentUser` |
 
 ## Type checks
@@ -98,24 +98,46 @@ document( "'users'" , 'doc.userId' ) ; // "DOCUMENT('users', doc.userId)"
 
 ## Documents (`documents/` subfolder)
 
+The full set of the AQL *document/object functions* (21 helpers, one per `DocumentFunction` constant):
+
 | Function | Signature | AQL output |
 |---|---|---|
+| `attributes` | `(string $document, ?bool $removeSystemAttrs = null, ?bool $sort = null)` | `ATTRIBUTES(<doc>[, <bool>[, <bool>]])` |
+| `count` | `(string $document)` | `COUNT(<doc>)` |
+| `entries` | `(string $document)` | `ENTRIES(<doc>)` |
 | `has` | `(string $document, string $attributeName)` | `HAS(<doc>, <attr>)` |
+| `isSameCollection` | `(string $collectionName, string $documentIdentifier)` | `IS_SAME_COLLECTION("<coll>", <id>)` |
+| `keep` | `(string $document, string ...$attributes)` | `KEEP(<doc>, "<attr>", ...)` |
+| `keepRecursive` | `(string $document, string ...$attributes)` | `KEEP_RECURSIVE(<doc>, "<attr>", ...)` |
+| `keys` | `(string $document, ?bool $removeSystemAttrs = null, ?bool $sort = null)` | `KEYS(<doc>[, <bool>[, <bool>]])` |
+| `length` | `(string $document)` | `LENGTH(<doc>)` |
+| `matches` | `(string $document, string\|array $examples, ?bool $returnIndex = null)` | `MATCHES(<doc>, <examples>[, <bool>])` |
 | `merge` | `(string\|array\|null $documents)` | `MERGE(<docs>)` |
+| `mergeRecursive` | `(string\|array\|null $documents)` | `MERGE_RECURSIVE(<docs>)` |
+| `parseCollection` | `(string $documentIdentifier)` | `PARSE_COLLECTION(<id>)` |
+| `parseIdentifier` | `(string $documentIdentifier)` | `PARSE_IDENTIFIER(<id>)` |
+| `parseKey` | `(string $documentIdentifier)` | `PARSE_KEY(<id>)` |
 | `translate` | `(mixed $value, mixed $lookupDocument, mixed $defaultValue = null)` | `TRANSLATE(<value>, <lookup>[, <default>])` |
+| `unsetAttributes` | `(string $document, string ...$attributes)` | `UNSET(<doc>, "<attr>", ...)` |
+| `unsetRecursive` | `(string $document, string ...$attributes)` | `UNSET_RECURSIVE(<doc>, "<attr>", ...)` |
 | `value` | `(string $document, array $path)` | `VALUE(<doc>, [<path>])` |
+| `values` | `(string $document, ?bool $removeSystemAttrs = null)` | `VALUES(<doc>[, <bool>])` |
+| `zip` | `(string\|array $keys, string\|array $values)` | `ZIP(<keys>, <values>)` |
 
-`has` tests the existence of a key. `merge` merges documents (JS `Object.assign` equivalent). `translate` is a *lookup* in a translation table. `value` accesses a deep field through a path (`['a', 'b', 'c']` for `doc.a.b.c`).
+Key reference (`attributes`/`keys`, `values`, `entries`, `count`/`length`), projection (`keep`/`keepRecursive`, `unsetAttributes`/`unsetRecursive`), merging (`merge`/`mergeRecursive`), building (`zip`), lookup (`translate`, `value`), matching (`matches`, `has`), and identifier parsing (`parseCollection`/`parseIdentifier`/`parseKey`, `isSameCollection`).
+
+> **Quoting** — helpers whose AQL argument must be a *string literal* quote it for you: the attribute names of `keep`/`unset*`, the collection name of `isSameCollection`, and PHP arrays passed to `matches`/`zip` (emitted as JSON via `json_encode`). The `document` / identifier arguments stay raw AQL expressions (`doc`, `@bind`, `doc._id`). `unsetAttributes()` is named so because `unset` is a reserved PHP keyword.
 
 ```php
-use function oihana\arango\db\functions\documents\has        ;
-use function oihana\arango\db\functions\documents\translate  ;
+use function oihana\arango\db\functions\documents\keep            ;
+use function oihana\arango\db\functions\documents\unsetAttributes  ;
+use function oihana\arango\db\functions\documents\merge            ;
+use function oihana\arango\db\functions\documents\zip             ;
 
-has( 'doc' , "'email'" ) ;
-// "HAS(doc, 'email')"
-
-translate( 'doc.lang' , '{ "fr": "Français", "en": "English" }' , "'?'" ) ;
-// "TRANSLATE(doc.lang, { \"fr\": \"Français\", \"en\": \"English\" }, '?')"
+keep( 'doc' , 'name' , 'email' ) ;        // "KEEP(doc,\"name\",\"email\")"
+unsetAttributes( 'doc' , '_id' , '_rev' ); // "UNSET(doc,\"_id\",\"_rev\")"
+merge( [ 'doc' , '{ active: true }' ] ) ;  // "MERGE(doc,{ active: true })"
+zip( [ 'a' , 'b' ] , [ 1 , 2 ] ) ;         // "ZIP([\"a\",\"b\"],[1,2])"
 ```
 
 ## Database information
