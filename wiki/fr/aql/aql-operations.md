@@ -11,7 +11,7 @@ Pour la vue d'ensemble pédagogique de la composition, voir [Construire une requ
 | Itération | `aqlFor`, `aqlSearch` |
 | Restriction | `aqlFilter`, `aqlPrune` |
 | Variable intermédiaire | `aqlLet` |
-| Agrégation | `aqlCollect`, `aqlCollectReturn` |
+| Agrégation | `aqlCollect`, `aqlCollectReturn`, `aqlWindow` |
 | Tri | `aqlSort`, `aqlAsc`, `aqlDesc` |
 | Pagination | `aqlLimit` |
 | Retour | `aqlReturn` |
@@ -138,6 +138,91 @@ aqlCollectReturn( [ AQL::ASSIGN => [ 'y' => 'DATE_YEAR(doc.created)' ] ] , '{ ye
 ```
 
 > Le câblage haut niveau côté modèle (clé `Arango::GROUP` / vocabulaire `Group`, et la clé brute `Arango::COLLECT` dans une requête `list`) est décrit dans le guide [Regroupement](../db/grouping.md).
+
+### `aqlWindow()`
+
+```php
+function aqlWindow( array $init = [] ) : string
+```
+
+#### À quoi sert `WINDOW` ?
+
+`WINDOW` calcule une **agrégation glissante** : pour **chaque** ligne du résultat, il agrège les quelques lignes *voisines* (précédentes et/ou suivantes) et attache le résultat à cette ligne.
+
+La différence clé avec `COLLECT` :
+
+- `COLLECT` **réduit** le résultat : N lignes → quelques lignes de groupes. On perd le détail ligne à ligne.
+- `WINDOW` **conserve toutes les lignes** : N lignes en entrée → N lignes en sortie, chacune enrichie d'une valeur agrégée calculée sur sa fenêtre.
+
+C'est l'outil des **totaux courants** (running total), **moyennes mobiles**, classements glissants, comparaisons « cette ligne vs la moyenne des 7 derniers jours », etc. — tout ce qui a besoin du détail **et** d'un agrégat contextuel sur la même ligne.
+
+#### Exemple concret de bout en bout
+
+Une collection `ventes` (une ligne par jour) :
+
+| jour | montant |
+|---|---|
+| 1 | 10 |
+| 2 | 20 |
+| 3 | 30 |
+
+On veut, pour chaque jour, le montant **et** le cumul depuis le début (total courant) :
+
+```aql
+FOR v IN ventes
+  SORT v.jour
+  WINDOW { preceding: 'unbounded', following: 0 }   // toutes les lignes précédentes + la courante
+  AGGREGATE cumul = SUM(v.montant)
+  RETURN { jour: v.jour, montant: v.montant, cumul }
+```
+
+Résultat — **une ligne par jour conservée**, avec le cumul qui s'accumule :
+
+| jour | montant | cumul |
+|---|---|---|
+| 1 | 10 | 10 |
+| 2 | 20 | 30 |
+| 3 | 30 | 60 |
+
+> Avec `COLLECT`, on n'aurait obtenu qu'**une seule** ligne (`60`), en perdant le détail par jour. C'est tout l'intérêt de `WINDOW` : garder chaque ligne tout en y ajoutant un agrégat contextuel.
+
+Changer la fenêtre change le calcul : `{ preceding: 1, following: 1 }` donnerait la **moyenne mobile** sur la ligne précédente, la courante et la suivante (`AGGREGATE moy = AVG(v.montant)`).
+
+Côté PHP, le même `WINDOW` se construit avec `aqlWindow()` :
+
+```php
+aqlWindow([ AQL::PRECEDING => 'unbounded' , AQL::FOLLOWING => 0 , AQL::AGGREGATE => [ 'cumul' => 'SUM(v.montant)' ] ]) ;
+// WINDOW { preceding: 'unbounded', following: 0 } AGGREGATE cumul = SUM(v.montant)
+```
+
+#### Référence
+
+Construit la clause `WINDOW` d'agrégation par **fenêtre glissante** (totaux courants, moyennes mobiles, et autres statistiques sur des lignes voisines). Deux formes, selon la présence de `AQL::RANGE_VALUE` :
+
+- **Row-based** (nombre fixe de lignes adjacentes) — sans `rangeValue` : `WINDOW { preceding: N, following: M } AGGREGATE …`
+- **Range-based** (plage de valeur ou de durée autour de `rangeValue`) — avec `rangeValue` : `WINDOW <rangeValue> WITH { preceding: …, following: … } AGGREGATE …`
+
+> Le mot-clé `WITH` de la forme range-based appartient à la syntaxe de `WINDOW` et n'a **rien à voir** avec l'opération `WITH` de déclaration de collections ([`aqlWith()`](#aqlwith)).
+
+Clés de `$init` : `AQL::AGGREGATE` (requis), `AQL::PRECEDING`, `AQL::FOLLOWING`, `AQL::RANGE_VALUE`. Les bornes numériques sont émises telles quelles, les bornes string sont mises entre quotes simples (durées ISO 8601 comme `PT1H`). Une borne `null` est omise de l'objet `{ … }`.
+
+```php
+// Moyenne mobile sur 3 lignes (précédente, courante, suivante)
+aqlWindow([ AQL::PRECEDING => 1 , AQL::FOLLOWING => 1 , AQL::AGGREGATE => [ 'rollingAvg' => 'AVG(doc.val)' ] ]) ;
+// WINDOW { preceding: 1, following: 1 } AGGREGATE rollingAvg = AVG(doc.val)
+
+// Total courant (cumulatif) depuis le début du résultat
+aqlWindow([ AQL::PRECEDING => 'unbounded' , AQL::FOLLOWING => 0 , AQL::AGGREGATE => [ 'runningTotal' => 'SUM(doc.val)' ] ]) ;
+// WINDOW { preceding: 'unbounded', following: 0 } AGGREGATE runningTotal = SUM(doc.val)
+
+// Fenêtre par plage de durée
+aqlWindow([ AQL::RANGE_VALUE => 'doc.time' , AQL::PRECEDING => 'PT1H' , AQL::FOLLOWING => 0 , AQL::AGGREGATE => [ 'total' => 'SUM(doc.val)' ] ]) ;
+// WINDOW doc.time WITH { preceding: 'PT1H', following: 0 } AGGREGATE total = SUM(doc.val)
+```
+
+> Pour un total courant illimité, ArangoDB attend la **string** `"unbounded"` (un bareword serait interprété comme un nom de collection). La forme range-based impose un tri par la valeur de plage : l'optimiseur AQL insère automatiquement un `SORT` devant le `WINDOW`.
+
+Doc officielle : [`WINDOW`](https://docs.arangodb.com/stable/aql/high-level-operations/window/).
 
 ## Tri
 

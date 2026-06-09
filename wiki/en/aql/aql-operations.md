@@ -11,7 +11,7 @@ For the pedagogical overview of composition, see [Building an AQL query step by 
 | Iteration | `aqlFor`, `aqlSearch` |
 | Restriction | `aqlFilter`, `aqlPrune` |
 | Intermediate variable | `aqlLet` |
-| Aggregation | `aqlCollect`, `aqlCollectReturn` |
+| Aggregation | `aqlCollect`, `aqlCollectReturn`, `aqlWindow` |
 | Sorting | `aqlSort`, `aqlAsc`, `aqlDesc` |
 | Pagination | `aqlLimit` |
 | Return | `aqlReturn` |
@@ -138,6 +138,91 @@ aqlCollectReturn( [ AQL::ASSIGN => [ 'y' => 'DATE_YEAR(doc.created)' ] ] , '{ ye
 ```
 
 > The high-level model wiring (the `Arango::GROUP` key / `Group` vocabulary, and the raw `Arango::COLLECT` key in a `list` query) is described in the [Grouping](../db/grouping.md) guide.
+
+### `aqlWindow()`
+
+```php
+function aqlWindow( array $init = [] ) : string
+```
+
+#### What is `WINDOW` for?
+
+`WINDOW` computes a **sliding aggregation**: for **each** result row, it aggregates the few *neighbouring* rows (preceding and/or following) and attaches the result to that row.
+
+The key difference with `COLLECT`:
+
+- `COLLECT` **reduces** the result: N rows → a few group rows. The row-level detail is lost.
+- `WINDOW` **keeps every row**: N input rows → N output rows, each enriched with an aggregate computed over its window.
+
+It is the tool for **running totals**, **rolling averages**, sliding rankings, "this row vs the last-7-days average" comparisons — anything that needs the detail **and** a contextual aggregate on the same row.
+
+#### A concrete end-to-end example
+
+A `sales` collection (one row per day):
+
+| day | amount |
+|---|---|
+| 1 | 10 |
+| 2 | 20 |
+| 3 | 30 |
+
+For each day we want the amount **and** the cumulative total from the start (running total):
+
+```aql
+FOR v IN sales
+  SORT v.day
+  WINDOW { preceding: 'unbounded', following: 0 }   // all previous rows + the current one
+  AGGREGATE total = SUM(v.amount)
+  RETURN { day: v.day, amount: v.amount, total }
+```
+
+Result — **one row per day kept**, with the total accumulating:
+
+| day | amount | total |
+|---|---|---|
+| 1 | 10 | 10 |
+| 2 | 20 | 30 |
+| 3 | 30 | 60 |
+
+> With `COLLECT` we would have gotten a **single** row (`60`), losing the per-day detail. That is the whole point of `WINDOW`: keep every row while adding a contextual aggregate.
+
+Changing the window changes the computation: `{ preceding: 1, following: 1 }` would give the **rolling average** over the previous, current and next row (`AGGREGATE avg = AVG(v.amount)`).
+
+On the PHP side, the same `WINDOW` is built with `aqlWindow()`:
+
+```php
+aqlWindow([ AQL::PRECEDING => 'unbounded' , AQL::FOLLOWING => 0 , AQL::AGGREGATE => [ 'total' => 'SUM(v.amount)' ] ]) ;
+// WINDOW { preceding: 'unbounded', following: 0 } AGGREGATE total = SUM(v.amount)
+```
+
+#### Reference
+
+Builds the `WINDOW` clause for **sliding-window** aggregation (running totals, rolling averages, and other statistics over neighbouring rows). Two forms, selected by the presence of `AQL::RANGE_VALUE`:
+
+- **Row-based** (a fixed number of adjacent rows) — no `rangeValue`: `WINDOW { preceding: N, following: M } AGGREGATE …`
+- **Range-based** (a value or duration range around `rangeValue`) — with `rangeValue`: `WINDOW <rangeValue> WITH { preceding: …, following: … } AGGREGATE …`
+
+> The `WITH` keyword in the range-based form belongs to the `WINDOW` syntax and is **unrelated** to the collection-declaring `WITH` operation ([`aqlWith()`](#aqlwith)).
+
+`$init` keys: `AQL::AGGREGATE` (required), `AQL::PRECEDING`, `AQL::FOLLOWING`, `AQL::RANGE_VALUE`. Numeric bounds are emitted as-is, string bounds are single-quoted (ISO 8601 durations such as `PT1H`). A `null` bound is omitted from the `{ … }` object.
+
+```php
+// Rolling average over 3 rows (previous, current, next)
+aqlWindow([ AQL::PRECEDING => 1 , AQL::FOLLOWING => 1 , AQL::AGGREGATE => [ 'rollingAvg' => 'AVG(doc.val)' ] ]) ;
+// WINDOW { preceding: 1, following: 1 } AGGREGATE rollingAvg = AVG(doc.val)
+
+// Cumulative running total from the start of the result set
+aqlWindow([ AQL::PRECEDING => 'unbounded' , AQL::FOLLOWING => 0 , AQL::AGGREGATE => [ 'runningTotal' => 'SUM(doc.val)' ] ]) ;
+// WINDOW { preceding: 'unbounded', following: 0 } AGGREGATE runningTotal = SUM(doc.val)
+
+// Range window by duration
+aqlWindow([ AQL::RANGE_VALUE => 'doc.time' , AQL::PRECEDING => 'PT1H' , AQL::FOLLOWING => 0 , AQL::AGGREGATE => [ 'total' => 'SUM(doc.val)' ] ]) ;
+// WINDOW doc.time WITH { preceding: 'PT1H', following: 0 } AGGREGATE total = SUM(doc.val)
+```
+
+> For an unbounded running total, ArangoDB expects the **string** `"unbounded"` (a bareword would be parsed as a collection name). The range-based form requires the input to be sorted by the range value: the AQL optimizer inserts a `SORT` in front of the `WINDOW` automatically.
+
+Official docs: [`WINDOW`](https://docs.arangodb.com/stable/aql/high-level-operations/window/).
 
 ## Sorting
 

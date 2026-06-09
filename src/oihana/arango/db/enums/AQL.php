@@ -41,6 +41,7 @@ class AQL
     public const string FILTER          = 'filter' ;
     public const string FILTERS         = 'filters' ;
     public const string FIRST           = 'first' ;
+    public const string FOLLOWING       = 'following' ;
     public const string FROM            = 'from' ;
     public const string GRAPH           = 'graph' ;
     public const string GRAPH_DEFAULT   = 'vertex, edge, path' ;
@@ -71,12 +72,14 @@ class AQL
     public const string ORDER           = 'order' ;
     public const string PATH            = 'path' ;
     public const string PATH_REF        = 'pathRef' ;
+    public const string PRECEDING       = 'preceding' ;
     public const string PREFIX          = 'prefix' ;
     public const string PROJECTION      = 'projection' ;
     public const string PROPERTY        = 'property' ;
     public const string PRUNE           = 'prune' ;
     public const string PURGE           = 'purge' ;
     public const string QUERY_ID        = 'queryId' ;
+    public const string RANGE_VALUE     = 'rangeValue' ;
     public const string RAW             = 'raw' ;
     public const string RAW_KEYS        = 'rawKeys' ;
     public const string RAW_VALUES      = 'rawValues' ;

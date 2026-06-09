@@ -290,6 +290,8 @@
             "src/oihana/arango/db/operations/aqlTraversalRange.php" ,
             "src/oihana/arango/db/operations/aqlUpdate.php" ,
             "src/oihana/arango/db/operations/aqlUpsert.php" ,
+            "src/oihana/arango/db/operations/aqlWindow.php" ,
+            "src/oihana/arango/db/operations/aqlWindowBounds.php" ,
             "src/oihana/arango/db/operations/aqlWith.php" ,
             "src/oihana/arango/db/operators/allEqual.php" ,
             "src/oihana/arango/db/operators/allGreaterThan.php" ,
