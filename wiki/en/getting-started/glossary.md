@@ -8,13 +8,25 @@ This page defines the key terms used in the framework documentation. It does not
 
 Acronym for Atomicity, Consistency, Isolation, Durability. ArangoDB guarantees these four properties on its transactions, including when they touch multiple documents and multiple collections.
 
+### Analyzer
+
+Text-processing pipeline of *ArangoSearch* (tokenization, normalization, *stemming*, n-grams…) that turns a value into indexable tokens. The framework exposes typed classes (`TextAnalyzer`, `StemAnalyzer`, `NormAnalyzer`, `IdentityAnalyzer`) to create and manage them. See [`clients/arangosearch.md`](../clients/arangosearch.md).
+
 ### AQL
 
 *ArangoDB Query Language*. Declarative SQL-inspired language that expresses both document queries (`FOR doc IN users FILTER ... RETURN doc`) and graph traversals (`FOR v, e IN 1..3 OUTBOUND start GRAPH 'g' ...`). The entire `db/` layer of the framework produces AQL.
 
+### ArangoSearch
+
+ArangoDB's search engine, exposed through a *View*: full-text indexing via *analyzers*, scoring (BM25/TFIDF), phrase search, *facets*. Queried in AQL by the `SEARCH` operation. See [`clients/arangosearch.md`](../clients/arangosearch.md).
+
 ### Bind variable
 
 Variable injected into an AQL query as `@var` (value) or `@@coll` (collection name), with its value supplied separately as `bindVars`. Guarantees no AQL injection and enables *query cache* reuse. The `aqlBind()` helper (under `db/binds/`) automates the safe declaration.
+
+### COLLECT (grouping)
+
+AQL grouping and aggregation operation, the equivalent of SQL's `GROUP BY`: groups rows by one or more keys, computes aggregates (`SUM`, `AVG`, `MIN`, `MAX`) and counts per group (`WITH COUNT`). Exposed over HTTP via `?groupBy=` / `?group=`. See [`db/grouping.md`](../db/grouping.md).
 
 ### Collection
 
@@ -56,9 +68,17 @@ Acceleration structure attached to a collection. Main types: `persistent` (looku
 
 ArangoDB's default storage engine since version 3.4. Disk-persistent, ACID transactions, compression. Maintained by Meta.
 
+### SEARCH
+
+AQL operation that queries an *ArangoSearch* *View* (`FOR doc IN myView SEARCH … RETURN doc`). Unlike `FILTER` (which scans then filters documents), `SEARCH` leverages the view's inverted index: full-text, scoring, *analyzers*. See [`clients/arangosearch.md`](../clients/arangosearch.md).
+
 ### Traversal
 
 Graph walk in AQL via `FOR v, e, p IN min..max <DIRECTION> <startVertex> GRAPH 'g'`. `DIRECTION` is `OUTBOUND`, `INBOUND` or `ANY`. `v` is the visited vertex, `e` the edge taken, `p` the full path (useful to filter on a path).
+
+### Upsert
+
+AQL "insert-or-update" operation: `UPSERT <search> INSERT <doc> UPDATE <changes>` creates the document if it does not exist, updates it otherwise. The *repsert* variant (`… REPLACE …`) **replaces** the document instead of merging fields. On the model side: `Documents::upsert()` / `repsert()`.
 
 ### Vertex
 
@@ -67,6 +87,14 @@ Graph node. In ArangoDB, a *vertex* is simply a document of a collection (as opp
 ### View
 
 Logical view on top of one or several collections, mainly used for advanced text search via *ArangoSearch* (linguistic analyzers, BM25, *facets*).
+
+### WINDOW
+
+AQL **sliding-window** aggregation operation: for each row, it aggregates the neighbouring rows (preceding and/or following) **without reducing** the result — N input rows → N output rows, each enriched with an aggregate. Used for running totals and rolling averages. See [`aql/aql-operations.md`](../aql/aql-operations.md).
+
+### WITH
+
+AQL operation placed **at the start of a query** that declares the collections it implicitly reads. Required in a cluster for traversals over anonymous edge collections (locking at query start → avoids *deadlocks*). The `Edges` model traversal methods emit it automatically. See [`aql/aql-operations.md`](../aql/aql-operations.md).
 
 ### `_from` / `_to`
 

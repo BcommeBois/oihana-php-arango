@@ -8,13 +8,25 @@ Cette page définit les termes clés rencontrés dans la documentation du framew
 
 Acronyme pour Atomicité, Cohérence, Isolation, Durabilité. ArangoDB garantit ces quatre propriétés sur ses transactions, y compris quand elles touchent plusieurs documents et plusieurs collections.
 
+### Analyzer
+
+Pipeline de traitement de texte d'*ArangoSearch* (tokenisation, normalisation, *stemming*, n-grammes…) qui transforme une valeur en tokens indexables. Le framework expose des classes typées (`TextAnalyzer`, `StemAnalyzer`, `NormAnalyzer`, `IdentityAnalyzer`) pour les créer et les gérer. Voir [`clients/arangosearch.md`](../clients/arangosearch.md).
+
 ### AQL
 
 *ArangoDB Query Language*. Langage déclaratif inspiré de SQL qui exprime à la fois des requêtes documentaires (`FOR doc IN users FILTER ... RETURN doc`) et des traversées de graphe (`FOR v, e IN 1..3 OUTBOUND start GRAPH 'g' ...`). Toute la couche `db/` du framework produit de l'AQL.
 
+### ArangoSearch
+
+Moteur de recherche d'ArangoDB exposé au travers d'une *View* : indexation full-text via des *analyzers*, scoring (BM25/TFIDF), recherche par phrase, *facets*. Interrogé en AQL par l'opération `SEARCH`. Voir [`clients/arangosearch.md`](../clients/arangosearch.md).
+
 ### Bind variable
 
 Variable injectée dans une requête AQL sous la forme `@var` (valeur) ou `@@coll` (nom de collection), avec sa valeur fournie séparément en `bindVars`. Garantit l'absence d'injection AQL et permet la réutilisation du *query cache*. Le helper `aqlBind()` (sous `db/binds/`) automatise la déclaration sûre.
+
+### COLLECT (regroupement)
+
+Opération AQL de regroupement et d'agrégation, équivalent du `GROUP BY` SQL : regroupe les lignes par une ou plusieurs clés, calcule des agrégats (`SUM`, `AVG`, `MIN`, `MAX`) et compte par groupe (`WITH COUNT`). Exposée côté HTTP via `?groupBy=` / `?group=`. Voir [`db/grouping.md`](../db/grouping.md).
 
 ### Collection
 
@@ -56,9 +68,17 @@ Structure d'accélération attachée à une collection. Types principaux : `pers
 
 Moteur de stockage par défaut d'ArangoDB depuis la version 3.4. Persistant sur disque, transactions ACID, compression. Maintenu par Meta.
 
+### SEARCH
+
+Opération AQL qui interroge une *View* *ArangoSearch* (`FOR doc IN maVue SEARCH … RETURN doc`). Contrairement à `FILTER` (qui parcourt puis filtre les documents), `SEARCH` s'appuie sur l'index inversé de la vue : full-text, scoring, *analyzers*. Voir [`clients/arangosearch.md`](../clients/arangosearch.md).
+
 ### Traversal
 
 Parcours de graphe en AQL via `FOR v, e, p IN min..max <DIRECTION> <startVertex> GRAPH 'g'`. La `DIRECTION` est `OUTBOUND`, `INBOUND` ou `ANY`. `v` est le sommet visité, `e` l'arête empruntée, `p` le chemin complet (utile pour filtrer sur un chemin).
+
+### Upsert
+
+Opération AQL « insérer-ou-modifier » : `UPSERT <recherche> INSERT <doc> UPDATE <maj>` crée le document s'il n'existe pas, le met à jour sinon. La variante *repsert* (`… REPLACE …`) **remplace** le document au lieu de fusionner les champs. Côté modèle : `Documents::upsert()` / `repsert()`.
 
 ### Vertex
 
@@ -67,6 +87,14 @@ Sommet d'un graphe. Dans ArangoDB, un *vertex* est simplement un document d'une 
 ### View
 
 Vue logique au-dessus d'une ou plusieurs collections, principalement utilisée pour la recherche textuelle avancée via *ArangoSearch* (analyseurs linguistiques, BM25, *facets*).
+
+### WINDOW
+
+Opération AQL d'agrégation par **fenêtre glissante** : pour chaque ligne, elle agrège les lignes voisines (précédentes et/ou suivantes) **sans réduire** le résultat — N lignes en entrée → N lignes en sortie, chacune enrichie d'un agrégat. Sert aux totaux courants et moyennes mobiles. Voir [`aql/aql-operations.md`](../aql/aql-operations.md).
+
+### WITH
+
+Opération AQL placée **en tête de requête** qui déclare les collections lues implicitement. Indispensable en cluster pour les traversées sur collections d'arêtes anonymes (verrouillage au démarrage → évite les *deadlocks*). Les méthodes de traversée des modèles `Edges` l'émettent automatiquement. Voir [`aql/aql-operations.md`](../aql/aql-operations.md).
 
 ### `_from` / `_to`
 

@@ -42,7 +42,16 @@ Doc officielle : [`FOR`](https://docs.arangodb.com/stable/aql/high-level-operati
 function aqlSearch( array $init = [] ) : string
 ```
 
-Construit la clause `SEARCH <expression>` utilisée à l'intérieur d'un `FOR` qui itère sur une vue ArangoSearch. Le filtrage est résolu par l'index inversé de la vue, plus rapide qu'un `FILTER` classique sur grandes volumétries. Appelée en interne par `aqlFor()` quand `AQL::SEARCH` est fourni, mais peut être utilisée seule.
+Construit la clause `SEARCH <expression>` utilisée à l'intérieur d'un `FOR` qui itère sur une vue ArangoSearch. Le filtrage est résolu par l'index inversé de la vue, plus rapide qu'un `FILTER` classique sur grandes volumétries, et permet le scoring (BM25/TFIDF) et les *analyzers*. Appelée en interne par `aqlFor()` quand `AQL::SEARCH` est fourni, mais peut être utilisée seule.
+
+```aql
+FOR doc IN articlesView
+  SEARCH ANALYZER( doc.body IN TOKENS( @q , 'text_fr' ) , 'text_fr' )
+  SORT BM25( doc ) DESC
+  RETURN doc
+```
+
+> `SEARCH` ne s'applique qu'à une *View*, pas à une collection. La gestion des vues et des analyzers est décrite dans [`clients/arangosearch.md`](../clients/arangosearch.md).
 
 Doc officielle : [`SEARCH`](https://docs.arangodb.com/stable/aql/high-level-operations/search/).
 
@@ -106,7 +115,21 @@ function aqlCollect( array $init = [] ) : string
 
 Construit la clause `COLLECT` pour le regroupement, l'agrégation et le comptage. Équivalent du `GROUP BY` SQL avec en plus le support des fonctions agrégées AQL (`AGGREGATE total = SUM(doc.amount)`).
 
+À l'inverse de `WINDOW` (qui conserve toutes les lignes), `COLLECT` **réduit** le résultat : N lignes → une ligne par groupe distinct.
+
+```php
+// Total des ventes par catégorie
+aqlCollect([ AQL::ASSIGN => [ 'category' => 'doc.category' ] , AQL::AGGREGATE => [ 'total' => 'SUM(doc.amount)' ] ]) ;
+// COLLECT category = doc.category AGGREGATE total = SUM(doc.amount)
+
+// Comptage par groupe
+aqlCollect([ AQL::ASSIGN => [ 'status' => 'doc.status' ] , AQL::WITH_COUNT => 'count' ]) ;
+// COLLECT status = doc.status WITH COUNT INTO count
+```
+
 > **Note :** `AQL::AGGREGATE` et `AQL::WITH_COUNT` sont mutuellement exclusifs en AQL. Si les deux sont fournis, `AGGREGATE` est prioritaire et `WITH COUNT INTO` est ignoré. Pour compter en présence d'autres agrégats, exprimer le comptage comme un agrégat (`['n' => 'LENGTH(1)']`).
+
+Le câblage haut niveau (`?groupBy=` / `Arango::GROUP`) est décrit dans le guide [Regroupement](../db/grouping.md).
 
 Doc officielle : [`COLLECT`](https://docs.arangodb.com/stable/aql/high-level-operations/collect/).
 
@@ -224,6 +247,20 @@ aqlWindow([ AQL::RANGE_VALUE => 'doc.time' , AQL::PRECEDING => 'PT1H' , AQL::FOL
 
 Doc officielle : [`WINDOW`](https://docs.arangodb.com/stable/aql/high-level-operations/window/).
 
+#### `aqlWindowBounds()`
+
+```php
+function aqlWindowBounds( int|float|string|null $preceding , int|float|string|null $following ) : string
+```
+
+Helper bas niveau qui sérialise l'objet de bornes `{ preceding: …, following: … }` d'une clause `WINDOW`. Utilisé en interne par `aqlWindow()`, mais exposé séparément (un fichier = un helper) pour réutilisation. Les bornes numériques sont émises telles quelles, les bornes string entre quotes simples (durées ISO 8601, mot-clé `'unbounded'`) ; une borne `null` est omise.
+
+```php
+aqlWindowBounds( 1 , 1 ) ;            // { preceding: 1, following: 1 }
+aqlWindowBounds( 'unbounded' , 0 ) ;  // { preceding: 'unbounded', following: 0 }
+aqlWindowBounds( 0 , null ) ;         // { preceding: 0 }
+```
+
 ## Tri
 
 ### `aqlSort()`
@@ -332,7 +369,21 @@ Doc officielle : [`REPLACE`](https://docs.arangodb.com/stable/aql/high-level-ope
 function aqlUpsert( array $init = [] ) : string
 ```
 
-Construit `UPSERT { search } INSERT { ... } UPDATE { ... } IN collection [OPTIONS { ... }]`. Insère si le document de recherche n'existe pas, sinon met à jour avec la clause `UPDATE` (partielle).
+Construit `UPSERT { search } INSERT { ... } UPDATE { ... } IN collection [OPTIONS { ... }]`. Insère si le document de recherche n'existe pas, sinon met à jour avec la clause `UPDATE` (partielle). C'est l'écriture **idempotente** par excellence : rejouer la même requête ne crée pas de doublon.
+
+Chaque bloc (`search` / `insert` / `update`) est une **liste de paires `[clé, valeur]`** :
+
+```php
+aqlUpsert
+([
+    'search' => [ [ 'foo' , 'bar' ] ] ,
+    'insert' => [ [ 'foo' , 'bar' ] ] ,
+    'update' => [ [ 'foo' , 'baz' ] ] ,
+]) ;
+// UPSERT {foo:'bar'} INSERT {foo:'bar'} UPDATE {foo:'baz'} IN @@collection RETURN NEW
+```
+
+La clé `return` accepte `Clause::WITH_STATUS` pour distinguer insertion et mise à jour dans le `RETURN`.
 
 Doc officielle : [`UPSERT`](https://docs.arangodb.com/stable/aql/high-level-operations/upsert/).
 
@@ -362,20 +413,34 @@ Doc officielle : [`REMOVE`](https://docs.arangodb.com/stable/aql/high-level-oper
 function aqlTraversal( array $init = [] , ?array &$binds = null ) : string
 ```
 
-Construit la clause de traversée complète `FOR v[, e[, p]] IN <range> <DIRECTION> <start> GRAPH '<name>'`. Consomme les clés `AQL::VERTEX`, `AQL::EDGE`, `AQL::PATH`, `AQL::MIN`, `AQL::MAX`, `AQL::DIRECTION` (`Traversal::OUTBOUND`, `INBOUND`, `ANY`), `AQL::START`, `AQL::GRAPH`. Le paramètre `$binds` est passé par référence pour accumuler les *bind variables* internes.
+Construit la clause de traversée complète `FOR v[, e[, p]] IN <range> <DIRECTION> <start> GRAPH '<name>'` (ou, sans graphe nommé, `… <start> <edgeCollection>`). Consomme les clés `AQL::VERTEX_REF`, `AQL::EDGE_REF`, `AQL::PATH_REF`, `AQL::MIN_DEPTH`, `AQL::MAX_DEPTH`, `AQL::DIRECTION` (`Traversal::OUTBOUND`, `INBOUND`, `ANY`), `AQL::START_VERTEX`, `AQL::GRAPH` ou `AQL::EDGE_COLLECTION`. Le paramètre `$binds` est passé par référence pour accumuler les *bind variables* internes.
 
 ```php
+// Traversée sur graphe nommé, profondeur 1..3
 aqlTraversal
 ([
-    AQL::VERTEX    => 'v' ,
-    AQL::MIN       => 1   ,
-    AQL::MAX       => 3   ,
-    AQL::DIRECTION => Traversal::OUTBOUND ,
-    AQL::START     => '@startVertex'       ,
-    AQL::GRAPH     => 'social'             ,
+    AQL::VERTEX_REF   => 'v' ,
+    AQL::MIN_DEPTH    => 1   ,
+    AQL::MAX_DEPTH    => 3   ,
+    AQL::DIRECTION    => Traversal::OUTBOUND ,
+    AQL::START_VERTEX => '@startVertex'      ,
+    AQL::GRAPH        => 'social'            ,
 ]) ;
 // "FOR v IN 1..3 OUTBOUND @startVertex GRAPH 'social'"
+
+// Traversée INBOUND sur collection d'arêtes anonyme, avec variable d'arête
+aqlTraversal
+([
+    AQL::VERTEX_REF      => 'v' ,
+    AQL::EDGE_REF        => 'e' ,
+    AQL::DIRECTION       => Traversal::INBOUND ,
+    AQL::START_VERTEX    => 'comments/42' ,
+    AQL::EDGE_COLLECTION => 'authored' ,
+]) ;
+// "FOR v, e IN INBOUND 'comments/42' authored"
 ```
+
+> Sur les modèles `Edges`, les méthodes `getInboundVertices()` / `getOutboundVertices()` / `getAnyVertices()` enveloppent `aqlTraversal()` et ajoutent automatiquement le `FILTER`, le `SORT`, le `LIMIT` et la clause `WITH` (cluster). Voir [`clients/graphs.md`](../clients/graphs.md).
 
 Doc officielle : [Graph traversals](https://docs.arangodb.com/stable/aql/graphs/traversals/).
 
