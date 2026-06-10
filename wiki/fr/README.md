@@ -71,6 +71,7 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 - [Fonctions de tableaux](aql/aql-functions-arrays.md) — 19 fonctions AQL côté tableaux.
 - [Fonctions binaires](aql/aql-functions-bit.md) — 12 fonctions AQL bit à bit (logique, décalages, popcount, chaînes binaires).
 - [Fonctions géospatiales](aql/aql-functions-geo.md) — 17 fonctions AQL de géolocalisation (points, polygones, distances, prédicats).
+- [Fonctions ArangoSearch](aql/aql-functions-search.md) — 11 fonctions AQL de recherche (contexte, filtrage fuzzy/phrase, scoring BM25/TF-IDF).
 - [Fonctions documents et vérifications](aql/aql-functions-checks.md) — 45 fonctions : *type-checks*, *casts*, opérations sur documents (l'ensemble complet de `documents/`), informations de la base.
 
 ### Couche db — [`db/`](db/)

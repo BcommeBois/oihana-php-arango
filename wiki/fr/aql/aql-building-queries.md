@@ -178,7 +178,7 @@ aqlReturn( [
 // RETURN { fullName: CONCAT(doc.firstName, ' ', doc.lastName), now: DATE_NOW() }
 ```
 
-Les catalogues complets, par type, sont dans les pages [Fonctions de chaînes](aql-functions-strings.md), [Fonctions de dates](aql-functions-dates.md), [Fonctions numériques](aql-functions-numerics.md), [Fonctions de tableaux](aql-functions-arrays.md), [Fonctions binaires](aql-functions-bit.md) et [Fonctions documents et vérifications](aql-functions-checks.md).
+Les catalogues complets, par type, sont dans les pages [Fonctions de chaînes](aql-functions-strings.md), [Fonctions de dates](aql-functions-dates.md), [Fonctions numériques](aql-functions-numerics.md), [Fonctions de tableaux](aql-functions-arrays.md), [Fonctions binaires](aql-functions-bit.md), [Fonctions ArangoSearch](aql-functions-search.md) et [Fonctions documents et vérifications](aql-functions-checks.md).
 
 ## Exécuter la requête finale
 

@@ -71,6 +71,7 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 - [Array functions](aql/aql-functions-arrays.md) — 19 array AQL functions.
 - [Bit functions](aql/aql-functions-bit.md) — 12 bitwise AQL functions (logic, shifts, popcount, bitstrings).
 - [Geospatial functions](aql/aql-functions-geo.md) — 17 geolocation AQL functions (points, polygons, distances, predicates).
+- [ArangoSearch functions](aql/aql-functions-search.md) — 11 search AQL functions (context, fuzzy/phrase filtering, BM25/TF-IDF scoring).
 - [Document and check functions](aql/aql-functions-checks.md) — 45 functions: *type checks*, *casts*, document operations (the full `documents/` set), database info.
 
 ### Db layer — [`db/`](db/)

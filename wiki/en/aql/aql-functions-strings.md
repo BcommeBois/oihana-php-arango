@@ -76,7 +76,7 @@ concatSeparator( "'-'" , [ 'doc.year' , 'doc.month' , 'doc.day' ] ) ;
 | Function | Signature | AQL output |
 |---|---|---|
 | `contains` | `(string $text, string $search, bool $returnIndex = false)` | `CONTAINS(<text>, <search>[, <returnIndex>])` |
-| `startsWith` | `(string $value, string $prefix)` | `STARTS_WITH(<value>, <prefix>)` |
+| `startsWith` | `(string $value, string\|array $prefix, ?int $minMatchCount = null)` | `STARTS_WITH(<value>, <prefix>[, <count>])` |
 | `like` | `(string $text, string $search, bool $caseSensitive = false)` | `LIKE(<text>, <search>[, <caseSensitive>])` |
 | `findFirst` | `(string $value, string $search, ?int $start, ?int $end)` | `FIND_FIRST(<value>, <search>[, <start>[, <end>]])` |
 | `findLast` | `(string $value, string $search, ?int $start, ?int $end)` | `FIND_LAST(<value>, <search>[, <start>[, <end>]])` |
@@ -84,6 +84,7 @@ concatSeparator( "'-'" , [ 'doc.year' , 'doc.month' , 'doc.day' ] ) ;
 ```php
 contains  ( 'doc.bio'   , "'php'"   , true ) ;     // "CONTAINS(doc.bio, 'php', true)"
 startsWith( 'doc.title' , "'Mr'"           ) ;     // "STARTS_WITH(doc.title, 'Mr')"
+startsWith( 'doc.title' , [ 'Mr' , 'Dr' ] , 1 ) ;  // "STARTS_WITH(doc.title,[\"Mr\",\"Dr\"],1)" (SEARCH form)
 like      ( 'doc.name'  , "'%john%'"       ) ;     // "LIKE(doc.name, '%john%')"
 ```
 

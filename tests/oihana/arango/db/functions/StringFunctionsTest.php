@@ -12,6 +12,7 @@ use function oihana\arango\db\functions\strings\concat;
 use function oihana\arango\db\functions\strings\concatSeparator;
 use function oihana\arango\db\functions\strings\contains;
 use function oihana\arango\db\functions\strings\like;
+use function oihana\arango\db\functions\strings\startsWith;
 use function oihana\arango\db\helpers\aqlValue;
 use function oihana\core\strings\betweenDoubleQuotes;
 
@@ -73,6 +74,25 @@ class StringFunctionsTest extends TestCase
         // caseInsensitive: true → emits AQL's third argument `true`.
         $this->assertSame( 'LIKE(doc.name,"john%",true)' , like( 'doc.name' , '"john%"' , true ) );
         $this->assertSame( 'LIKE(doc.name,"john%",true)' , like( 'doc.name' , '"john%"' , caseInsensitive: true ) );
+    }
+
+    public function testStartsWith() :void
+    {
+        // Legacy string form: the prefix is kept raw (callers quote it themselves).
+        $this->assertSame( 'STARTS_WITH(doc.name,"John")' , startsWith( 'doc.name' , '"John"' ) );
+        $this->assertSame( 'STARTS_WITH(doc.name,doc.prefix)' , startsWith( 'doc.name' , 'doc.prefix' ) );
+    }
+
+    public function testStartsWithArrayOfPrefixes() :void
+    {
+        // ArangoSearch form: an array of prefixes is JSON-encoded (strings quoted).
+        $this->assertSame( 'STARTS_WITH(doc.text,["lor","ips"])' , startsWith( 'doc.text' , [ 'lor' , 'ips' ] ) );
+    }
+
+    public function testStartsWithMinMatchCount() :void
+    {
+        $this->assertSame( 'STARTS_WITH(doc.text,["lor","ips"],1)' , startsWith( 'doc.text' , [ 'lor' , 'ips' ] , 1 ) );
+        $this->assertSame( 'STARTS_WITH(doc.text,["lor","ips"],2)' , startsWith( 'doc.text' , [ 'lor' , 'ips' ] , minMatchCount: 2 ) );
     }
 
     /**
