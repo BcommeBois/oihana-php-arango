@@ -93,7 +93,7 @@ exists( 'doc.text' ) . ' AND ' . inRange( 'doc.value' , 3 , 5 , true , true ) ;
 ## Voir aussi
 
 - [Fonctions strings `db/functions/strings/`](aql-functions-strings.md) — `startsWith` (forme tableau), `tokens`, `like`.
-- [Opérations AQL](aql-operations.md) — l'opération `aqlSearch()`.
+- [Opérations AQL](aql-operations.md) — l'opération `aqlSearch()` et le builder de requête `aqlScoredSearch()`.
 - [Clients ArangoSearch](../clients/arangosearch.md) — Views, links et Analyzers.
 - [Construire une requête AQL pas à pas](aql-building-queries.md).
 - [Documentation AQL officielle — fonctions ArangoSearch](https://docs.arangodb.com/stable/aql/functions/arangosearch/).

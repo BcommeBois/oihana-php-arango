@@ -22,6 +22,7 @@ use function oihana\arango\db\functions\search\phrase;
 use function oihana\arango\db\functions\search\tfidf;
 use function oihana\arango\db\functions\strings\startsWith;
 use function oihana\arango\db\operations\aqlFor;
+use function oihana\arango\db\operations\aqlScoredSearch;
 
 /**
  * Live validation of the `db/functions/search/` ArangoSearch helpers.
@@ -251,6 +252,37 @@ final class SearchIntegrationTest extends IntegrationTestCase
 
         $rows = iterator_to_array( self::$db->query( $aql ) , false ) ;
         $this->assertSame( [ 'A' , 'C' ] , $rows ) ;
+    }
+
+    /**
+     * The `aqlScoredSearch()` builder end to end: BM25 ranking (the shorter
+     * "lazy dog" document first) and the score exposed through `$return`.
+     */
+    public function testAqlScoredSearchBuilder() :void
+    {
+        $aql  = aqlScoredSearch
+        (
+            view     : self::VIEW ,
+            search   : phrase( 'doc.text' , 'lazy dog' ) ,
+            limit    : 10 ,
+            analyzer : 'text_en' ,
+        ) ;
+        $rows = iterator_to_array( self::$db->query( $aql ) , false ) ;
+        $this->assertSame( [ 'C' , 'A' ] , array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ) ;
+
+        $aql  = aqlScoredSearch
+        (
+            view     : self::VIEW ,
+            search   : phrase( 'doc.text' , 'lazy dog' ) ,
+            limit    : 1 ,
+            analyzer : 'text_en' ,
+            return   : '{ label: doc.label, score: score }' ,
+        ) ;
+        $rows = iterator_to_array( self::$db->query( $aql ) , false ) ;
+        $this->assertCount( 1 , $rows ) ;
+        $first = (array) $rows[0] ;
+        $this->assertSame( 'C' , $first[ 'label' ] ) ;
+        $this->assertGreaterThan( 0 , $first[ 'score' ] ) ;
     }
 
     /**

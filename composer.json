@@ -328,6 +328,7 @@
             "src/oihana/arango/db/operations/aqlReplace.php" ,
             "src/oihana/arango/db/operations/aqlRepsert.php" ,
             "src/oihana/arango/db/operations/aqlReturn.php" ,
+            "src/oihana/arango/db/operations/aqlScoredSearch.php" ,
             "src/oihana/arango/db/operations/aqlSearch.php" ,
             "src/oihana/arango/db/operations/aqlSort.php" ,
             "src/oihana/arango/db/operations/aqlTraversal.php" ,

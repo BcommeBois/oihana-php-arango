@@ -531,6 +531,58 @@ $rows = iterator_to_array( $db->query( $aql , [ 'query' => $embedding ] ) , fals
 
 The lower-level `approxNearCosine()` / `approxNearL2()` / `l1Distance()` / `l2Distance()` helpers are documented in [Numeric functions › Vectors](aql-functions-numerics.md#vectors).
 
+## Scored search (ArangoSearch)
+
+### `aqlScoredSearch()` — Relevance-ranked search over a View
+
+```php
+function aqlScoredSearch(
+    string                   $view ,
+    string|array             $search ,
+    int                      $limit ,
+    ?string                  $analyzer  = null ,
+    array|object|string|null $options   = null ,
+    string                   $scorer    = SearchScorer::BM25 , // 'bm25' or 'tfidf'
+    ?float                   $k         = null ,               // BM25 only
+    ?float                   $b         = null ,               // BM25 only
+    ?bool                    $normalize = null ,               // TFIDF only
+    int                      $offset    = 0 ,
+    string                   $docRef    = 'doc' ,
+    string                   $scoreRef  = 'score' ,
+    ?string                  $return    = null ,
+) : string
+```
+
+Builds a complete relevance-ranked search query over an ArangoSearch View, in the canonical form `FOR … SEARCH … [OPTIONS { … }] LET score = BM25(…)|TFIDF(…) SORT score DESC LIMIT … RETURN …`. It composes `aqlFor()` / `aqlSearch()` (so `$analyzer` and `$options` behave exactly like `AQL::ANALYZER` / `AQL::SEARCH_OPTIONS`), the `bm25()` / `tfidf()` [scorer helpers](aql-functions-search.md), `aqlLet()`, `aqlSort()`, `aqlLimit()` and `aqlReturn()`.
+
+Both scorers rank better matches **higher**, so the sort is always `DESC` — no direction to get wrong. The score lives in a `LET` variable (`$scoreRef`), so a custom `$return` can expose it. Guards throw `InvalidArgumentException`: unknown `$scorer`, `$k`/`$b` with TFIDF, `$normalize` with BM25.
+
+```php
+use function oihana\arango\db\functions\search\phrase ;
+use function oihana\arango\db\operations\aqlScoredSearch ;
+
+// Top-20 by BM25 relevance, French analyzer:
+aqlScoredSearch( view: 'placesView', search: phrase('doc.name', 'scierie'), limit: 20, analyzer: 'text_fr' ) ;
+// "FOR doc IN placesView SEARCH ANALYZER(PHRASE(doc.name,\"scierie\"),\"text_fr\")
+//   LET score = BM25(doc) SORT score DESC LIMIT 20 RETURN doc"
+
+// TF-IDF, pagination, and the score in the output:
+aqlScoredSearch(
+    view: 'articlesView', search: 'doc.text IN TOKENS(@q, "text_en")',
+    limit: 10, offset: 20, scorer: SearchScorer::TFIDF,
+    return: '{ doc: doc, score: score }' ,
+) ;
+```
+
+End-to-end (PHP client), most relevant documents first:
+
+```php
+$aql  = aqlScoredSearch( view: 'articlesView', search: 'doc.text IN TOKENS(@q, "text_en")', limit: 10 ) ;
+$rows = iterator_to_array( $db->query( $aql , [ 'q' => 'quick fox' ] ) , false ) ;
+```
+
+> The scorers require the indexed fields' Analyzers to have the `"frequency"` feature enabled (and `"norm"` for meaningful BM25 length normalization), otherwise every score is `0`. The search-expression helpers (`phrase`, `levenshteinMatch`, `boost`, …) are documented on the [ArangoSearch functions](aql-functions-search.md) page.
+
 ## Configuration
 
 ### `aqlOptions()`
