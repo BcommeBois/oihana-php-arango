@@ -74,26 +74,36 @@ trait CountQueryTrait
      */
     protected function buildCountQuery( array $init = [] , array &$bindVars = [] ) : string
     {
-        $collection = $this->bindCollection( $bindVars ) ;
-        $optimized  = $init[ Arango::OPTIMIZED ] ?? false ;
+        $optimized = $init[ Arango::OPTIMIZED ] ?? false ;
 
         if( $optimized === true )
         {
             // Fast count without any filters
-            return aqlReturn( length( $collection ) ) ;
+            return aqlReturn( length( $this->bindCollection( $bindVars ) ) ) ;
         }
+
+        // Active View search: count over the same View + SEARCH segment as the
+        // list query, so list() and count() always agree (the search leaves the
+        // FILTER). Otherwise the classic filtered collection count is kept.
+        // The collection (or the View) is bound only on its own branch — an
+        // unused bind variable would be rejected by the server.
+        $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
+
+        $for = $viewSearch !== null
+             ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
+             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
 
         // Full count with filtering layers
         return aqlReturn( length
         ([
-            aqlFor( [ AQL::IN => $collection ] ) ,
+            $for ,
             aqlFilter
             ([
                 ...$this->conditions ,
                 $this->prepareActive ( $init , $bindVars ) ,
                 $this->prepareFacets ( $init , $bindVars ) ,
                 $this->prepareFilter ( $init , $bindVars ) ,
-                $this->prepareSearch ( $init , $bindVars ) ,
+                $viewSearch === null ? $this->prepareSearch( $init , $bindVars ) : null ,
                 ...( $init[ Arango::CONDITIONS ] ?? [] )
             ]) ,
             aqlReturn( 1 )

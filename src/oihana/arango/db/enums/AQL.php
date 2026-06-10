@@ -108,6 +108,7 @@ class AQL
     public const string VALUES          = 'values' ;
     public const string VERTEX          = 'vertex' ;
     public const string VERTEX_REF      = 'vertexRef' ;
+    public const string VIEW            = 'view' ;
     public const string WITH            = 'with' ;
     public const string WITH_COUNT      = 'withCount' ;
 

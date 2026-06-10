@@ -115,6 +115,7 @@ Typical combination — the 10 **nearest** museums within 5 km:
 ## See also
 
 - [Search `?search=`](search.md) — the multi-field `LIKE` search.
+- [View search (ArangoSearch)](search-views.md) — the relevance-ranked `?search=` (model-declared View).
 - [Filters `?filter=`](filter.md) — comparators, `alt`, AND/OR/NOT, dates, `between`, `AT LEAST`, `distance`.
 - [Facets `?facets=`](facets.md) — the type catalogue (FIELD/IN/EDGE/JOIN/complex/aggregate).
 - [Internal filtering `AQL::CONDITIONS`](filter-internal.md) — server-only conditions (never exposed to the URL).

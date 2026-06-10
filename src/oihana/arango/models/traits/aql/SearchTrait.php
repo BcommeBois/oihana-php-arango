@@ -2,15 +2,25 @@
 
 namespace oihana\arango\models\traits\aql;
 
+use oihana\arango\clients\analyzer\enums\AnalyzerType;
+use oihana\arango\clients\view\ArangoSearchLink;
+use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Comparator;
+use oihana\arango\db\enums\functions\SearchFunction;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\Search;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 
+use function oihana\arango\db\functions\search\analyzer;
+use function oihana\arango\db\functions\search\boost;
 use function oihana\arango\db\functions\strings\like;
+use function oihana\arango\db\functions\strings\tokens;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\compile;
+use function oihana\core\strings\func;
 use function oihana\core\strings\key;
 
 /**
@@ -26,9 +36,45 @@ trait SearchTrait
     public ?array $searchable = [] ;
 
     /**
+     * The model-level ArangoSearch declaration (`AQL::VIEW` block, see {@see Search}).
+     * When present (with a {@see Search::NAME}), the `?search=` parameter switches
+     * from the simple `LIKE` sweep to an index-accelerated, relevance-ranked
+     * `SEARCH` against the declared View.
+     */
+    public ?array $view = null ;
+
+    /**
      * The 'searchable' parameter key.
      */
     public const string SEARCHABLE = 'searchable' ;
+
+    /**
+     * Indicates whether the View search is active: the model declares a named
+     * View (`AQL::VIEW` block) with at least one searched field, **and** the
+     * request carries a non-empty search term.
+     *
+     * @param array|string|null $search The `$init` array (reads `Arango::SEARCH`) or the search term itself.
+     *
+     * @return bool
+     */
+    public function hasViewSearch( array|string|null $search = [] ) :bool
+    {
+        if( is_array( $search ) )
+        {
+            $search = $search[ Arango::SEARCH ] ?? null ;
+        }
+
+        if( !is_string( $search ) || $search === Char::EMPTY )
+        {
+            return false ;
+        }
+
+        $name = is_array( $this->view ) ? ( $this->view[ Search::NAME ] ?? null ) : null ;
+
+        return is_string( $name )
+            && $name !== Char::EMPTY
+            && count( $this->getViewSearchFields() ) > 0 ;
+    }
 
     /**
      * Initialize the 'searchable' property.
@@ -40,6 +86,34 @@ trait SearchTrait
     public function initializeSearchable( array $init = [] ) :static
     {
         $this->searchable = $init[ self::SEARCHABLE ] ?? $this->searchable ;
+        return $this ;
+    }
+
+    /**
+     * Initialize the model-level ArangoSearch declaration (`AQL::VIEW` block)
+     * and lazily provision the View, mirroring the collection provisioning of
+     * `initializeCollection()`: when the model is lazy and the declared View
+     * does not exist, it is created from the declaration — the searched fields
+     * (dotted paths supported) are linked on the model's collection with the
+     * declared {@see Search::ANALYZER}. An existing View is never altered
+     * (no automatic resynchronization — use `updateProperties()` manually).
+     *
+     * @param array $init
+     *
+     * @return static
+     */
+    public function initializeView( array $init = [] ) :static
+    {
+        $this->view = $init[ AQL::VIEW ] ?? $this->view ;
+
+        $name = is_array( $this->view ) ? ( $this->view[ Search::NAME ] ?? null ) : null ;
+        $lazy = $init[ Arango::LAZY ] ?? $this->lazy ;
+
+        if( $lazy && is_string( $name ) && $name !== Char::EMPTY && !empty( $this->collection ) && !$this->viewExists( $name ) )
+        {
+            $this->viewCreate( $name , [ $this->collection => $this->buildViewLink() ] ) ;
+        }
+
         return $this ;
     }
 
@@ -103,5 +177,148 @@ trait SearchTrait
             }
         }
         return null ;
+    }
+
+    /**
+     * Prepare the relevance-ranked `SEARCH` expression of an active View search,
+     * or `null` when the View search is inactive (no `AQL::VIEW` declaration,
+     * no searched fields, or no search term) — the caller then falls back to
+     * the classic `LIKE` sweep of {@see prepareSearch()}.
+     *
+     * The grammar keeps the `?search=` contract (comma-separated terms, `OR`
+     * everywhere, values bound — never inlined). Per term and per field:
+     *
+     * - the base match `doc.<field> IN TOKENS(@search_N, "<analyzer>")`
+     *   (both sides analyzed), weighted by `BOOST(…, <boost>)` when the field
+     *   boost differs from `1`;
+     * - with {@see Search::PHRASE}, an exact-phrase bonus
+     *   `BOOST(PHRASE(doc.<field>, @search_N), <boost × 2>)`;
+     * - with {@see Search::FUZZY} `> 0`, a typo-tolerant
+     *   `LEVENSHTEIN_MATCH(doc.<field>, @search_N, <fuzzy>)`.
+     *
+     * The whole expression is wrapped in `ANALYZER(…, "<analyzer>")`.
+     *
+     * @param array|string|null $search The `$init` array (reads `Arango::SEARCH`) or the search term itself.
+     * @param ?array            $binds  Bind variables, populated by reference.
+     * @param string            $docRef The document variable the fields hang off.
+     *
+     * @return ?string The `SEARCH` expression, or `null` when the View search is inactive.
+     *
+     * @throws BindException
+     */
+    public function prepareViewSearch
+    (
+        array|string|null $search  = [] ,
+        ?array            &$binds  = null ,
+        string            $docRef  = AQL::DOC
+    )
+    :?string
+    {
+        if( !$this->hasViewSearch( $search ) )
+        {
+            return null ;
+        }
+
+        if( is_array( $search ) )
+        {
+            $search = $search[ Arango::SEARCH ] ?? null ;
+        }
+
+        $name     = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
+        $quoted   = json_encode( $name ) ;
+        $fields   = $this->getViewSearchFields() ;
+        $phrase   = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
+        $fuzzy    = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
+
+        $expressions = [] ;
+        $index       = 0 ;
+
+        foreach( explode( Char::COMMA , $search ) as $word )
+        {
+            $term = $this->bind( $word , $binds , AQL::SEARCH . Char::UNDERLINE . $index++ ) ;
+
+            foreach( $fields as $field => $weight )
+            {
+                $path  = key( $field , $docRef ) ;
+                $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , $quoted ) ;
+
+                $expressions[] = $weight == 1 ? $match : boost( $match , $weight ) ;
+
+                if( $phrase )
+                {
+                    $expressions[] = boost( func( SearchFunction::PHRASE , [ $path , $term ] ) , $weight * 2 ) ;
+                }
+
+                if( $fuzzy > 0 )
+                {
+                    $expressions[] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
+                }
+            }
+        }
+
+        return analyzer
+        (
+            compile( $expressions , Char::SPACE . Logic::OR . Char::SPACE ) ,
+            $name
+        ) ;
+    }
+
+    /**
+     * Builds the View link of the model's collection from the `AQL::VIEW`
+     * declaration: every searched field (dotted paths become nested fields)
+     * is indexed with the declared {@see Search::ANALYZER}.
+     *
+     * @return ArangoSearchLink
+     */
+    protected function buildViewLink() :ArangoSearchLink
+    {
+        $analyzers = [ $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ] ;
+
+        $fields = [] ;
+
+        foreach( array_keys( $this->getViewSearchFields() ) as $path )
+        {
+            $node = [ ViewField::ANALYZERS => $analyzers ] ;
+
+            $segments = explode( Char::DOT , (string) $path ) ;
+            while( count( $segments ) > 1 )
+            {
+                $segment = array_pop( $segments ) ;
+                $node    = [ ViewField::FIELDS => [ $segment => $node ] ] ;
+            }
+
+            $fields = array_replace_recursive( $fields , [ $segments[0] => $node ] ) ;
+        }
+
+        return new ArangoSearchLink( fields : $fields ) ;
+    }
+
+    /**
+     * Normalizes the searched fields of the `AQL::VIEW` declaration into a
+     * `field => boost` map: {@see Search::FIELDS} entries accept a numeric
+     * boost shorthand or an array carrying {@see Search::BOOST}; when the
+     * declaration has no fields, the model's `searchable` list is used with
+     * a boost of `1`.
+     *
+     * @return array<string, float|int>
+     */
+    protected function getViewSearchFields() :array
+    {
+        $fields = is_array( $this->view ) ? ( $this->view[ Search::FIELDS ] ?? null ) : null ;
+
+        if( !is_array( $fields ) || count( $fields ) === 0 )
+        {
+            $fields = is_array( $this->searchable ) ? array_fill_keys( $this->searchable , 1 ) : [] ;
+        }
+
+        $normalized = [] ;
+        foreach( $fields as $field => $options )
+        {
+            $normalized[ $field ] = is_numeric( $options )
+                                  ? +$options
+                                  : (float) ( ( is_array( $options ) ? ( $options[ Search::BOOST ] ?? 1 ) : 1 ) ) ;
+        }
+
+        return $normalized ;
     }
 }

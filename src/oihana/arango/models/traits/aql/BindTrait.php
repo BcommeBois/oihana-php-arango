@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits\aql;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\Search;
 use oihana\exceptions\BindException;
 
 use oihana\traits\QueryIDTrait;
@@ -55,5 +56,22 @@ trait BindTrait
         $collection = $init[ Arango::COLLECTION ] ?? $this->collection ;
         $to         = $init[ Arango::NAME       ] ?? AQL::COLLECTION ;
         return aqlBindCollection( $collection , $binds , $to , $this->getQueryID() ) ;
+    }
+
+    /**
+     * Bind the model's declared View name (`AQL::VIEW` block, {@see Search::NAME})
+     * to an AQL query variable — collection bind parameters (`@@view`) are valid
+     * for View names as well.
+     *
+     * @param array $binds Reference to the array of existing bind variables.
+     *
+     * @return string The formatted bind variable representing the View.
+     *
+     * @throws BindException If the bind variable name is invalid.
+     */
+    public function bindView( array &$binds = [] ) :string
+    {
+        $view = is_array( $this->view ) ? ( $this->view[ Search::NAME ] ?? null ) : null ;
+        return aqlBindCollection( $view , $binds , AQL::VIEW , $this->getQueryID() ) ;
     }
 }

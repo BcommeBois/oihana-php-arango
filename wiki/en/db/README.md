@@ -20,6 +20,7 @@ If you only need to **issue a query and read JSON**, use the client. If you want
 | 3 | [Bind variables `db/binds/`](binds.md) | Safe value injection — `aqlBind`, validation and formatting of placeholders. |
 | 4 | [Search & filtering](search-and-filtering.md) | **Overview** of the 3 levers (`?search` / `?filter` / `?facets`): mental model, comparison table, shared foundation (`op`, `alt`, binds, security), "when to use which". |
 | 5 | [HTTP search `?search=`](search.md) | Multi-field `LIKE` search (case-insensitive), `searchable` declaration, combining, limits (vs ArangoSearch). |
+| 5b | [View search (ArangoSearch)](search-views.md) | The `AQL::VIEW` declaration: `?search=` switches to an index-accelerated, **relevance-ranked** search (boosts, phrase bonus, fuzzy, `score` sort key, auto-provisioned View). |
 | 6 | [HTTP filters `?filter=`](filter.md) | `?filter=` URL syntax, comparators, `alt` transformations, chaining, `FilterType::*`. |
 | 7 | [Internal filtering — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Server-only conditions, `FilterType::VIRTUAL`, URL vs internal decision rule. |
 | 8 | [HTTP facets `?facets=`](facets.md) | `?facets=` URL syntax, `Arango::FACETS` / `Facet::TYPE` declaration, type catalogue (FIELD, IN, EDGE, JOIN, *_COMPLEX, *_AGGREGATE), operators, negation, security, **facet counts `?facetCounts=`**. |

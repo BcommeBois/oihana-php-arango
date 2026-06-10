@@ -428,18 +428,20 @@ GET /articles?facetCounts=category,keywords
 - v1 supporte les types `Facet::FIELD` (champ scalaire) et `Facet::IN` (appartenance à un tableau, dépliée) ; les autres types sont ignorés.
 - Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste).
 
-Les buckets sont renvoyés dans `options.facets`, à côté de `options.total`, **sans modifier** la liste de documents :
+Les buckets sont renvoyés sous la clé `facets` de l'enveloppe de succès standard,
+à côté de `total`, **sans modifier** la liste de documents :
 
 ```json
 {
-  "data": [ /* …documents filtrés… */ ],
-  "options": {
-    "total": 120,
-    "facets": {
-      "category": [ {"value":"Cuisine","count":42}, {"value":"Voyage","count":17} ],
-      "keywords": [ {"value":"bio","count":31}, {"value":"local","count":12} ]
-    }
-  }
+  "status": "success",
+  "url": "https://api.example.org/articles?facetCounts=category,keywords",
+  "count": 50,
+  "total": 120,
+  "facets": {
+    "category": [ {"value":"Cuisine","count":42}, {"value":"Voyage","count":17} ],
+    "keywords": [ {"value":"bio","count":31}, {"value":"local","count":12} ]
+  },
+  "result": [ /* …documents filtrés… */ ]
 }
 ```
 

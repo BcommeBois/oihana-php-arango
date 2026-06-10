@@ -469,19 +469,20 @@ GET /articles?facetCounts=category,keywords
 - v1 supports `Facet::FIELD` (scalar field) and `Facet::IN` (array membership, unwound); other types are skipped.
 - Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list).
 
-Buckets are returned under `options.facets`, next to `options.total`, **without
-changing** the document list:
+Buckets are returned under the `facets` key of the standard success envelope,
+next to `total`, **without changing** the document list:
 
 ```json
 {
-  "data": [ /* …filtered documents… */ ],
-  "options": {
-    "total": 120,
-    "facets": {
-      "category": [ {"value":"Cooking","count":42}, {"value":"Travel","count":17} ],
-      "keywords": [ {"value":"bio","count":31}, {"value":"local","count":12} ]
-    }
-  }
+  "status": "success",
+  "url": "https://api.example.org/articles?facetCounts=category,keywords",
+  "count": 50,
+  "total": 120,
+  "facets": {
+    "category": [ {"value":"Cooking","count":42}, {"value":"Travel","count":17} ],
+    "keywords": [ {"value":"bio","count":31}, {"value":"local","count":12} ]
+  },
+  "result": [ /* …filtered documents… */ ]
 }
 ```
 

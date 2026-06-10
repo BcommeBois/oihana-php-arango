@@ -255,7 +255,16 @@ trait ListQueryTrait
         $offset    = $init[ Arango::OFFSET    ] ?? 0  ;
         $variables = $init[ Arango::VARIABLES ] ?? [] ;
 
-        $for   = aqlFor( [ AQL::IN => $this->bindCollection($bindVars ) ] ) ;
+        // Active View search (AQL::VIEW declaration + ?search term): the FOR
+        // iterates the View with an index-accelerated SEARCH segment, and the
+        // search leaves the FILTER. Otherwise the classic collection FOR with
+        // the LIKE sweep in the FILTER is kept, byte-for-byte.
+        $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
+
+        $for = $viewSearch !== null
+             ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
+             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
+
         $limit = aqlLimit  ( $limit , $offset ) ;
 
         $filter = aqlFilter
@@ -264,7 +273,7 @@ trait ListQueryTrait
             $this->prepareActive( $init , $bindVars ) ,
             $this->prepareFacets( $init , $bindVars ) ,
             $this->prepareFilter( $init , $bindVars ) ,
-            $this->prepareSearch( $init , $bindVars ) ,
+            $viewSearch === null ? $this->prepareSearch( $init , $bindVars ) : null ,
             ...( $init[ AQL::CONDITIONS ] ?? [] )
         ]);
 

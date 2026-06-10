@@ -76,7 +76,7 @@ Voir [Recherche & filtrage](search-and-filtering.md) pour le tableau comparatif 
 
 `?search` est un **`LIKE` multi-champs** : pas de pertinence/scoring, pas de tokenisation, pas de stemming ni d'accents-insensibilité, pas de recherche par préfixe optimisée par index. C'est volontaire — c'est la recherche « suffisante » du quotidien.
 
-Pour du **vrai full-text** (analyseurs, scoring `BM25`/`TFIDF`, tokenisation, fuzzy), utilisez une **vue ArangoSearch** : voir [ArangoSearch (vues)](../clients/arangosearch.md). Les deux sont complémentaires : `?search` pour une barre de recherche simple sur un modèle, ArangoSearch pour un moteur de recherche à part entière.
+Pour du **vrai full-text** (analyseurs, scoring `BM25`/`TFIDF`, tokenisation, fuzzy), déclarez une **View ArangoSearch sur le modèle** (le bloc `AQL::VIEW`) : le même paramètre `?search=` bascule alors vers une recherche accélérée par index et classée par pertinence — voir [Recherche View (ArangoSearch)](search-views.md). Les deux sont complémentaires : `?search` sur `searchable` pour une barre de recherche simple, la déclaration View pour un moteur de recherche à part entière — sans changement d'URL entre les deux.
 
 ## Voir aussi
 

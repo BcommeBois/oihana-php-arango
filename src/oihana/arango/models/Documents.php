@@ -142,6 +142,7 @@ class Documents implements DocumentsModel
              ->initializeQueryID          ( $init )
              ->initializeSchema           ( $init )
              ->initializeSearchable       ( $init )
+             ->initializeView             ( $init ) # After the collection and the searchable fields
              ->initializeSortDefault      ( $init )
              ->initializeSortable         ( $init )
              ->initializeDocumentsMethods () ;

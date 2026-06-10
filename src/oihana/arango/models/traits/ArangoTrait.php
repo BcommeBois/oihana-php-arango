@@ -556,4 +556,26 @@ trait ArangoTrait
             yield from $generator ;
         }
     }
+
+    /**
+     * Creates an `arangosearch` View if it does not already exist.
+     * @param string $name    The name of the new View.
+     * @param array  $links   Per-collection link map (collection name → link definition).
+     * @param array  $options Extra arangosearch options forwarded verbatim.
+     * @return bool Returns true if the new View has been created.
+     */
+    public function viewCreate( string $name , array $links = [] , array $options = [] ) :bool
+    {
+        return $this->arangodb?->viewCreate( $name , $links , $options ) ?? false ;
+    }
+
+    /**
+     * Checks if a View exists.
+     * @param string $name The name of the View.
+     * @return bool
+     */
+    public function viewExists( string $name ) :bool
+    {
+        return $this->arangodb?->viewExists( $name ) ?? false ;
+    }
 }

@@ -76,7 +76,7 @@ See [Search & filtering](search-and-filtering.md) for the full comparison table.
 
 `?search` is a **multi-field `LIKE`**: no relevance/scoring, no tokenization, no stemming or accent-insensitivity, no index-optimized prefix search. This is deliberate — it is the "good enough" everyday search.
 
-For **real full-text** (analyzers, `BM25`/`TFIDF` scoring, tokenization, fuzzy), use an **ArangoSearch view**: see [ArangoSearch (views)](../clients/arangosearch.md). The two are complementary: `?search` for a simple search bar over a model, ArangoSearch for a full-blown search engine.
+For **real full-text** (analyzers, `BM25`/`TFIDF` scoring, tokenization, fuzzy), declare an **ArangoSearch View on the model** (the `AQL::VIEW` block): the same `?search=` parameter then switches to an index-accelerated, relevance-ranked search — see [View search (ArangoSearch)](search-views.md). The two are complementary: `?search` over `searchable` for a simple search bar, the View declaration for a full-blown search engine — with no URL change between them.
 
 ## See also
 

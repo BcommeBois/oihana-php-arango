@@ -5,6 +5,7 @@ namespace oihana\arango\models\traits\aql;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\arango\models\enums\Search;
 use oihana\enums\Char;
 use oihana\enums\Order;
 use oihana\exceptions\BindException;
@@ -14,6 +15,7 @@ use oihana\traits\SortDefaultTrait;
 use org\schema\constants\Schema;
 
 use function oihana\arango\db\functions\geo\distance;
+use function oihana\arango\db\functions\search\bm25;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\resolveGeoPoint;
 use function oihana\core\strings\compile;
@@ -135,8 +137,22 @@ trait SortTrait
 
         $nearActive = $binds !== null && is_array( $init[ Arango::NEAR ] ?? null ) ;
 
+        // Synthetic relevance key, driven by an active View search (AQL::VIEW
+        // declaration + ?search term) — the score counterpart of ?near=/distance.
+        $scoreActive = $binds !== null
+                    && is_callable( [ $this , 'hasViewSearch' ] )
+                    && $this->hasViewSearch( $init ) ;
+
+        $explicit = $init[ Arango::SORT ] ?? null ;
+
+        // An active search alone (no ?sort=) defaults to a most-relevant-first
+        // score sort (descending) — relevance outranks the model's sortDefault.
+        if( $scoreActive && ( $explicit === null || $explicit === Char::EMPTY ) )
+        {
+            $sort = Char::HYPHEN . Search::SCORE ;
+        }
         // ?near= alone (no ?sort=) defaults to a nearest-first distance sort.
-        if( $nearActive && ( $sort === null || $sort === Char::EMPTY ) )
+        elseif( $nearActive && ( $sort === null || $sort === Char::EMPTY ) )
         {
             $sort = Schema::DISTANCE ;
         }
@@ -163,6 +179,18 @@ trait SortTrait
                 else
                 {
                     $order = Order::ASC ;
+                }
+
+                // Synthetic relevance key, driven by the active View search:
+                // resolves to the BM25 score of the document (descending = most
+                // relevant first). Dropped when no View search is active.
+                if( $key === Search::SCORE )
+                {
+                    if( $scoreActive )
+                    {
+                        $orders[] = bm25( $docRef ) . Char::SPACE . $order ;
+                    }
+                    continue ;
                 }
 
                 // Synthetic distance key, driven by ?near= (bound lazily, only when emitted).
