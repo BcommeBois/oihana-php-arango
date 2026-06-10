@@ -2,7 +2,7 @@
 
 Declare an **ArangoSearch View** on a `Documents` model (the `AQL::VIEW` block) and the [`?search=`](search.md) parameter switches, automatically and **without any URL change**, from the simple `LIKE` sweep to an **index-accelerated, relevance-ranked** search: linguistic matching (tokenization, stemming, accents), per-field boosts, exact-phrase bonus, typo tolerance, and a `BM25` score ordering the best matches first.
 
-> New to ArangoSearch (Analyzers, Views, scoring)? Start with the primer on the [ArangoSearch functions](../aql/aql-functions-search.md) page and the [ArangoSearch clients](../clients/arangosearch.md) guide.
+> New to ArangoSearch (Analyzers, Views, scoring)? Start with the [Understanding ArangoSearch](../getting-started/arangosearch.md) primer.
 
 ## Model declaration
 

@@ -5,7 +5,7 @@ ArangoSearch is the full-text search engine built into ArangoDB. Two building bl
 - An **Analyzer** describes how text is tokenized and normalized — lowercasing, stemming, accent folding, language-aware splitting.
 - A **View** is a searchable inverted index that links one or more collections to one or more analyzers and exposes them through the AQL `SEARCH ... IN view` clause.
 
-This page covers both surfaces on the client side. For full-text on a **single** collection you can also use an [`InvertedIndex`](indexes.md#invertedindex--modern-full-text-310) — Views start paying off as soon as you need to search across several collections or rank results.
+New to the concepts? Start with the [Understanding ArangoSearch](../getting-started/arangosearch.md) primer. This page covers both surfaces on the client side. For full-text on a **single** collection you can also use an [`InvertedIndex`](indexes.md#invertedindex--modern-full-text-310) — Views start paying off as soon as you need to search across several collections or rank results.
 
 ## Analyzers
 
@@ -213,6 +213,9 @@ $hits = $db->query( aql(
 
 ## Where next
 
+- [Understanding ArangoSearch](../getting-started/arangosearch.md) — the concepts primer (Analyzers, Views, `SEARCH`, scoring) and the library layer-by-layer map.
+- [View search (ArangoSearch)](../db/search-views.md) — declare a View on a `Documents` model: relevance-ranked `?search=` with auto-provisioning.
+- [ArangoSearch functions](../aql/aql-functions-search.md) — the `SEARCH`-expression helpers (`phrase`, `boost`, `bm25`, …).
 - [AQL queries and Cursors](aql.md) — write the `SEARCH` queries that consume your views.
 - [Indexes](indexes.md) — for single-collection full-text via `InvertedIndex`.
 - [HTTP client overview](README.md) — architecture and configuration.

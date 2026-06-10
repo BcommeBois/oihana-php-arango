@@ -2,7 +2,7 @@
 
 The [`src/oihana/arango/db/functions/search/`](../../../src/oihana/arango/db/functions/search/) sub-folder groups the **11 helpers** that match the native AQL *ArangoSearch functions* — search-expression context, index-accelerated filtering, and relevance scoring.
 
-> **What is ArangoSearch?** ArangoDB's built-in search engine. An **Analyzer** turns text into normalized tokens (`"Quick Foxes"` → `["quick", "fox"]`), a **View** indexes one or more collections field by field through those Analyzers, and the **`SEARCH` operation** queries the View through its inverted index — unlike `FILTER`, which post-processes. **Scorers** (`BM25()`, `TFIDF()`) then rank the matches by relevance. See [ArangoSearch clients](../clients/arangosearch.md) for creating Views and Analyzers, and [`aqlSearch()`](aql-operations.md) for the operation itself.
+> **What is ArangoSearch?** ArangoDB's built-in search engine. An **Analyzer** turns text into normalized tokens (`"Quick Foxes"` → `["quick", "fox"]`), a **View** indexes one or more collections field by field through those Analyzers, and the **`SEARCH` operation** queries the View through its inverted index — unlike `FILTER`, which post-processes. **Scorers** (`BM25()`, `TFIDF()`) then rank the matches by relevance. See the [Understanding ArangoSearch](../getting-started/arangosearch.md) primer for the full picture, [ArangoSearch clients](../clients/arangosearch.md) for creating Views and Analyzers, and [`aqlSearch()`](aql-operations.md) for the operation itself.
 
 These expressions are only valid **inside a `SEARCH` operation** against a View (or a `FILTER` backed by an inverted index) — most of them throw when evaluated elsewhere.
 

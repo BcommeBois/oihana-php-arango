@@ -2,7 +2,7 @@
 
 Déclarez une **View ArangoSearch** sur un modèle `Documents` (le bloc `AQL::VIEW`) et le paramètre [`?search=`](search.md) bascule, automatiquement et **sans aucun changement d'URL**, du simple balayage `LIKE` vers une recherche **accélérée par index et classée par pertinence** : matching linguistique (tokenisation, stemming, accents), boosts par champ, bonus d'expression exacte, tolérance aux fautes, et un score `BM25` qui classe les meilleurs résultats d'abord.
 
-> ArangoSearch est nouveau pour vous (Analyzers, Views, scoring) ? Commencez par le primer de la page [Fonctions ArangoSearch](../aql/aql-functions-search.md) et le guide [Clients ArangoSearch](../clients/arangosearch.md).
+> ArangoSearch est nouveau pour vous (Analyzers, Views, scoring) ? Commencez par lire notre page dédiée [Comprendre ArangoSearch](../getting-started/arangosearch.md).
 
 ## Déclaration du modèle
 
@@ -117,6 +117,6 @@ L'enveloppe JSON est **identique** à une liste classique (l'enveloppe de succè
 
 - [Recherche `?search=`](search.md) — le balayage `LIKE` (modèles sans View).
 - [Recherche & filtrage](search-and-filtering.md) — vue d'ensemble des leviers.
-- [Fonctions ArangoSearch](../aql/aql-functions-search.md) — les helpers `SEARCH` sous-jacents et un primer.
+- [Fonctions ArangoSearch](../aql/aql-functions-search.md) — les helpers `SEARCH` sous-jacents.
 - [`aqlScoredSearch()`](../aql/aql-operations.md) — le builder de requête scorée autonome.
 - [Clients ArangoSearch](../clients/arangosearch.md) — gestion des Views et Analyzers.

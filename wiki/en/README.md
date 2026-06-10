@@ -47,6 +47,7 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 - [Introduction](getting-started/introduction.md) — what ArangoDB is, why the technology matters, the `oihana` philosophy, and why this library exists.
 - [Dependencies](getting-started/dependencies.md) — required `oihana/php-*` packages, *namespace* → package mapping, minimal `composer require` snippet for standalone use.
 - [Glossary](getting-started/glossary.md) — key framework terms: *bind variable*, *document reference*, *skin*, *facet*, *traversal*, *edge*.
+- [Understanding ArangoSearch](getting-started/arangosearch.md) — the search-engine primer: Analyzers, Views, `SEARCH`, scoring, what they make possible, and how every layer of the library maps onto them.
 
 ### HTTP client — [`clients/`](clients/)
 
