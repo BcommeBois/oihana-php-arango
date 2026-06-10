@@ -12,6 +12,7 @@ class AQL
 
     public const string AGGREGATE       = 'aggregate' ;
     public const string ALTERS          = 'alters' ;
+    public const string ANALYZER        = 'analyzer' ;
     public const string ANY_REF         = 'anyRef' ;
     public const string ARRAY           = 'array' ;
     public const string ARRAYS          = 'arrays' ;
@@ -90,6 +91,7 @@ class AQL
     public const string SCHEMA          = 'schema' ;
     public const string SEARCH          = 'search' ;
     public const string SEARCHABLE      = 'searchable' ;
+    public const string SEARCH_OPTIONS  = 'searchOptions' ;
     public const string SKIN            = 'skin' ;
     public const string SKIN_FIELDS     = 'skinFields' ;
     public const string SORT            = 'sort' ;

@@ -5,6 +5,9 @@ namespace tests\oihana\arango\integration;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\ArangoSearchLink;
+use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\ConditionOptimization;
+use oihana\arango\db\enums\CountApproximate;
 
 use PHPUnit\Framework\Attributes\Group;
 
@@ -18,6 +21,7 @@ use function oihana\arango\db\functions\search\minMatch;
 use function oihana\arango\db\functions\search\phrase;
 use function oihana\arango\db\functions\search\tfidf;
 use function oihana\arango\db\functions\strings\startsWith;
+use function oihana\arango\db\operations\aqlFor;
 
 /**
  * Live validation of the `db/functions/search/` ArangoSearch helpers.
@@ -222,6 +226,31 @@ final class SearchIntegrationTest extends IntegrationTestCase
         ) ;
         $rows = $this->search( $expr , 'SORT ' . bm25( 'doc' ) . ' DESC RETURN doc.label' ) ;
         $this->assertSame( 'A' , $rows[0] ) ;
+    }
+
+    /**
+     * The full `aqlFor()`/`aqlSearch()` form — `SEARCH` wrapped by `AQL::ANALYZER`
+     * plus a real `OPTIONS` object from `AQL::SEARCH_OPTIONS` — runs on the server
+     * and returns the same matches as the option-less query.
+     */
+    public function testAqlForWithSearchOptions() :void
+    {
+        $aql = aqlFor
+        ([
+            AQL::DOC_REF        => 'doc' ,
+            AQL::IN             => self::VIEW ,
+            AQL::SEARCH         => phrase( 'doc.text' , 'lazy dog' ) ,
+            AQL::ANALYZER       => 'text_en' ,
+            AQL::SEARCH_OPTIONS =>
+            [
+                'collections'           => [ self::COLLECTION ] ,
+                'conditionOptimization' => ConditionOptimization::NONE ,
+                'countApproximate'      => CountApproximate::COST ,
+            ] ,
+        ]) . ' SORT doc.label RETURN doc.label' ;
+
+        $rows = iterator_to_array( self::$db->query( $aql ) , false ) ;
+        $this->assertSame( [ 'A' , 'C' ] , $rows ) ;
     }
 
     /**

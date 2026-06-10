@@ -44,6 +44,31 @@ function aqlSearch( array $init = [] ) : string
 
 Builds the `SEARCH <expression>` clause used inside a `FOR` that iterates over an ArangoSearch view. Filtering is resolved by the view's inverted index, faster than a classic `FILTER` on large volumes, and enables scoring (BM25/TFIDF) and *analyzers*. Called internally by `aqlFor()` when `AQL::SEARCH` is supplied, but can be used standalone.
 
+`$init` keys:
+
+| Key | Type | Description |
+|---|---|---|
+| `AQL::SEARCH` | `string\|array` | The search expression (required — without it everything else is ignored). |
+| `AQL::ANALYZER` | `string` | Optional Analyzer name: the expression is wrapped in `ANALYZER(expr, "name")` via the [`analyzer()`](aql-functions-search.md) helper. |
+| `AQL::SEARCH_OPTIONS` | `array\|SearchOptions\|object\|string` | Optional `SEARCH … OPTIONS { … }` object: `collections`, `conditionOptimization` (`ConditionOptimization::AUTO/NONE`), `countApproximate` (`CountApproximate::EXACT/COST`), `parallelism`. Arrays are hydrated into `SearchOptions` (unknown keys dropped, null properties omitted). |
+
+> `AQL::SEARCH_OPTIONS` (the `SEARCH`-level options, for Views) is distinct from `AQL::OPTIONS` (the `FOR`-level options — `indexHint`, `useCache`, … — for collections). `aqlFor()` forwards its whole `$init`, so all three keys work through it directly.
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\db\enums\ConditionOptimization ;
+use function oihana\arango\db\functions\search\phrase ;
+use function oihana\arango\db\operations\aqlSearch ;
+
+aqlSearch
+([
+    AQL::SEARCH         => phrase( 'doc.body' , 'quick fox' ) ,
+    AQL::ANALYZER       => 'text_en' ,
+    AQL::SEARCH_OPTIONS => [ 'conditionOptimization' => ConditionOptimization::NONE ] ,
+]) ;
+// SEARCH ANALYZER(PHRASE(doc.body,"quick fox"),"text_en") OPTIONS {"conditionOptimization":"none"}
+```
+
 ```aql
 FOR doc IN articlesView
   SEARCH ANALYZER( doc.body IN TOKENS( @q , 'text_en' ) , 'text_en' )
@@ -51,7 +76,7 @@ FOR doc IN articlesView
   RETURN doc
 ```
 
-> `SEARCH` only applies to a *View*, not a collection. View and analyzer management is described in [`clients/arangosearch.md`](../clients/arangosearch.md).
+> `SEARCH` only applies to a *View*, not a collection. View and analyzer management is described in [`clients/arangosearch.md`](../clients/arangosearch.md); the search-expression helpers (`phrase`, `levenshteinMatch`, `bm25`, …) on the [ArangoSearch functions](aql-functions-search.md) page.
 
 Official docs: [`SEARCH`](https://docs.arangodb.com/stable/aql/high-level-operations/search/).
 
