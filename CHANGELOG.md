@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-10
+
 ### Added
 
 - Query profiling, wired through the façade and the model layer. A query can now be **run in profiled mode** and its real measurements read back as typed objects. On a model, pass `Arango::PROFILE` (`'profile'`) to `list()` / `get()` (`true` → profile level 2, or an explicit integer level) — the query executes normally and the next `getProfile()` / `getStats()` returns the measurements. On the façade, `ArangoDB::getStats(): ExecutionStats` and `ArangoDB::getProfile(): ProfileResult` read the last cursor's `extra`; the same delegations exist on every model via `ArangoTrait`. `ExecutionStats` (new `db/results/`) exposes `scannedFull()` / `scannedIndex()` / `filtered()` (the "needs an index" signal), `executionTime()`, `peakMemoryUsage()`, `fullCount()`, `writesExecuted()`, `documentLookups()`, cache counters, plus `get()` / `raw()`. `ProfileResult` adds `timings()` (per-phase seconds), `totalTime()`, `warnings()` and `plan()` on top of the `stats()`. New cursor option constants `CursorField::PROFILE` / `CursorField::OPTIMIZER`, new `Extra::PROFILE` / `Extra::PLAN` keys, and the `Arango::PROFILE` model option. Covered by unit tests (`ExecutionStatsTest`, `ProfileResultTest`, `ProfileFacadeTest`, `ProfileDelegationTest`, and profile-threading cases in `DocumentsListTraitTest` / `DocumentsGetTraitTest`) and a live integration test (`ProfileIntegrationTest`, asserting real scanned/filtered counts and per-phase timings). The `wiki/{fr,en}/db/explain-and-profiling.md` guide now documents both explain **and** profiling end to end.
