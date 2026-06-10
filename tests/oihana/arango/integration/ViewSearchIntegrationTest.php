@@ -21,6 +21,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
+use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\Search;
 
 use PHPUnit\Framework\Attributes\Group;
@@ -59,9 +60,9 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $places = $db->collection( self::COLLECTION ) ;
         $places->create() ;
 
-        $places->insert( [ 'label' => 'A' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' ] ) ;
-        $places->insert( [ 'label' => 'B' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             ] ) ;
-        $places->insert( [ 'label' => 'C' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              ] ) ;
+        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' ] ) ;
+        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             ] ) ;
+        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              ] ) ;
     }
 
     /**
@@ -92,6 +93,7 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         [
             Arango::DATABASE => $arangodb ,
             AQL::COLLECTION  => self::COLLECTION ,
+            AQL::FACETS      => [ 'kind' => [ Facet::TYPE => Facet::FIELD ] ] ,
             AQL::SEARCHABLE  => [ 'name' , 'description' ] ,
             AQL::SORTABLE    => [ 'name' => 'name' ] ,
             AQL::VIEW        => $view ??
@@ -191,6 +193,51 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
         $rows = $model->list( [ Arango::SEARCH => 'boi' ] ) ;
         $this->assertNotEmpty( $rows , 'A 1-edit typo must still match through LEVENSHTEIN_MATCH.' ) ;
+    }
+
+    /**
+     * Facet counts follow the same `SEARCH` as the list (Lot S4b): with
+     * `?search=bois` the `kind` buckets only count the two matching documents
+     * (and the View `SEARCH` is accepted inside the `LET` sub-queries on a
+     * real server); without a search the buckets cover the whole collection.
+     */
+    public function testFacetCountsFollowTheViewSearch() :void
+    {
+        $model = $this->model() ;
+        $this->waitForIndexing( 3 ) ;
+
+        // Buckets are sorted by count DESC: ties have no deterministic order,
+        // so the map is re-keyed and sorted by value before asserting.
+        $this->assertSame
+        (
+            [ 'atelier' => 1 , 'scierie' => 1 ] ,
+            $this->buckets( $model->facetCounts( [ Arango::SEARCH => 'bois' , Arango::FACET_COUNTS => 'kind' ] ) ) ,
+            'Buckets must only count the SEARCH-matched documents.'
+        ) ;
+
+        $this->assertSame
+        (
+            [ 'atelier' => 2 , 'scierie' => 1 ] ,
+            $this->buckets( $model->facetCounts( [ Arango::FACET_COUNTS => 'kind' ] ) ) ,
+            'Without a search the buckets cover the whole collection.'
+        ) ;
+    }
+
+    /**
+     * Re-keys one dimension's buckets as a `value => count` map, sorted by value.
+     *
+     * @return array<string,int>
+     */
+    private function buckets( array $counts , string $dimension = 'kind' ) :array
+    {
+        $buckets = [] ;
+        foreach ( (array) ( $counts[ $dimension ] ?? [] ) as $bucket )
+        {
+            $bucket = (array) $bucket ;
+            $buckets[ $bucket[ 'value' ] ] = $bucket[ 'count' ] ;
+        }
+        ksort( $buckets ) ;
+        return $buckets ;
     }
 
     /**

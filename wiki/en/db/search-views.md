@@ -93,7 +93,7 @@ The JSON envelope is **identical** to a classic list (the standard `status` / `u
 }
 ```
 
-`total` and [`?count`](../models.md) follow the same `SEARCH` — `list()` and `count()` always agree. [`?facetCounts=`](facets.md#facet-counts-facetcounts) currently keeps the `LIKE` restriction for its buckets (correct counts, not yet View-accelerated).
+`total`, [`?count`](../models.md) **and** [`?facetCounts=`](facets.md#facet-counts-facetcounts) all follow the same `SEARCH` — the list, the totals and the facet buckets always agree on the matched set.
 
 ## Recipes
 

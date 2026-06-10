@@ -103,7 +103,15 @@ trait FacetCountsQueryTrait
             return Char::EMPTY ;
         }
 
-        $collection = $this->bindCollection( $bindVars ) ;
+        // Active View search: every counting sub-query iterates the View with
+        // the same SEARCH segment as the list (and the search leaves the FILTER),
+        // so the buckets reflect exactly the displayed set. The expression and
+        // its binds are evaluated once and shared by all dimensions.
+        $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
+
+        $for = $viewSearch !== null
+             ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
+             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
 
         $filter = aqlFilter
         ([
@@ -111,7 +119,7 @@ trait FacetCountsQueryTrait
             $this->prepareActive( $init , $bindVars ) ,
             $this->prepareFacets( $init , $bindVars ) ,
             $this->prepareFilter( $init , $bindVars ) ,
-            $this->prepareSearch( $init , $bindVars ) ,
+            $viewSearch === null ? $this->prepareSearch( $init , $bindVars ) : null ,
             ...( $init[ AQL::CONDITIONS ] ?? [] )
         ]) ;
 
@@ -126,7 +134,7 @@ trait FacetCountsQueryTrait
                 continue ;
             }
 
-            $subquery = $this->buildFacetCountSubquery( $facet , $dimension , $collection , $filter , $docRef ) ;
+            $subquery = $this->buildFacetCountSubquery( $facet , $dimension , $for , $filter , $docRef ) ;
             if ( $subquery === null )
             {
                 continue ; // unsupported facet type (v1)
@@ -149,7 +157,9 @@ trait FacetCountsQueryTrait
      *
      * @param array       $facet The facet definition (`Facet::TYPE`, `Facet::PROPERTY`).
      * @param string      $key The facet key (default property).
-     * @param string      $collection The bound collection placeholder.
+     * @param string      $for The pre-built `FOR` segment shared by every dimension —
+     *                         the bound collection, or the bound View with its `SEARCH`
+     *                         segment when the View search is active.
      * @param string|null $filter The shared `FILTER` clause.
      * @param string      $docRef The document reference.
      *
@@ -159,14 +169,13 @@ trait FacetCountsQueryTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function buildFacetCountSubquery( array $facet , string $key , string $collection , ?string $filter , string $docRef ) :?string
+    private function buildFacetCountSubquery( array $facet , string $key , string $for , ?string $filter , string $docRef ) :?string
     {
         $type     = $facet[ Facet::TYPE     ] ?? Facet::FIELD ;
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
 
         assertAttributeName( $property ) ; // defensive: property is config-trusted, but cheap to guard.
 
-        $for  = aqlFor( [ AQL::IN => $collection ] ) ;
         $sort = aqlSort( compile( [ Group::COUNT_NAME , Order::DESC ] ) ) ;
 
         return match ( $type )

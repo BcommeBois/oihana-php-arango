@@ -93,7 +93,7 @@ L'enveloppe JSON est **identique** à une liste classique (l'enveloppe de succè
 }
 ```
 
-`total` et [`?count`](../models.md) suivent le même `SEARCH` — `list()` et `count()` sont toujours d'accord. [`?facetCounts=`](facets.md) garde pour l'instant la restriction `LIKE` pour ses buckets (comptes corrects, pas encore accélérés par la View).
+`total`, [`?count`](../models.md) **et** [`?facetCounts=`](facets.md) suivent tous le même `SEARCH` — la liste, les totaux et les buckets de facettes sont toujours d'accord sur l'ensemble matché.
 
 ## Recettes
 

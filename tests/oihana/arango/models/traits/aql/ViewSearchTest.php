@@ -19,6 +19,7 @@ use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
+use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\Search;
 
 /**
@@ -391,6 +392,78 @@ class ViewSearchTest extends TestCase
         $query = $method->invokeArgs( $model , [ [ Arango::OPTIMIZED => true ] , &$this->binds ] ) ;
 
         $this->assertSame( 'RETURN LENGTH(@@collection)' , $query ) ;
+    }
+
+    // ---------------------------------------------------------------- buildFacetCountsQuery
+
+    public function testFacetCountsQuerySwitchesToTheView() :void
+    {
+        $model = $this->viewModel( init: [ AQL::FACETS => [ 'kind' => [ Facet::TYPE => Facet::FIELD ] ] ] ) ;
+
+        $query = $model->buildFacetCountsQuery(
+        [
+            Arango::SEARCH       => 'bois' ,
+            Arango::FACET_COUNTS => 'kind' ,
+        ] , $this->binds ) ;
+
+        $this->assertStringStartsWith( 'LET kind = (FOR doc IN @@view SEARCH ANALYZER(' , $query ) ;
+        $this->assertStringNotContainsString( 'LIKE(' , $query ) ;
+        $this->assertSame( 'placesView' , $this->binds[ '@view' ] ?? null ) ;
+        $this->assertArrayNotHasKey( '@collection' , $this->binds ) ;
+    }
+
+    public function testFacetCountsQuerySharesOneSearchExpressionAcrossDimensions() :void
+    {
+        $model = $this->viewModel( init:
+        [
+            AQL::FACETS =>
+            [
+                'kind' => [ Facet::TYPE => Facet::FIELD ] ,
+                'tags' => [ Facet::TYPE => Facet::IN    ] ,
+            ] ,
+        ]) ;
+
+        $query = $model->buildFacetCountsQuery(
+        [
+            Arango::SEARCH       => 'bois' ,
+            Arango::FACET_COUNTS => 'kind,tags' ,
+        ] , $this->binds ) ;
+
+        $this->assertSame( 2 , substr_count( $query , 'FOR doc IN @@view SEARCH ' ) , 'Every dimension iterates the View.' ) ;
+        $this->assertStringContainsString( 'FOR item IN doc.tags' , $query , 'The IN facet still unwinds after the SEARCH.' ) ;
+        $this->assertSame( [ 'search_0' , '@view' ] , array_keys( $this->binds ) , 'One shared search bind and one View bind.' ) ;
+    }
+
+    public function testFacetCountsQueryClassicWithoutSearch() :void
+    {
+        $model = $this->viewModel( init: [ AQL::FACETS => [ 'kind' => [ Facet::TYPE => Facet::FIELD ] ] ] ) ;
+
+        $query = $model->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'kind' ] , $this->binds ) ;
+
+        $this->assertSame
+        (
+            'LET kind = (FOR doc IN @@collection COLLECT value = doc.kind WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {kind}' ,
+            $query
+        ) ;
+        $this->assertArrayNotHasKey( '@view' , $this->binds ) ;
+    }
+
+    public function testFacetCountsQueryKeepsTheLikeSweepWithoutViewDeclaration() :void
+    {
+        $model = $this->model(
+        [
+            AQL::SEARCHABLE => [ 'name' ] ,
+            AQL::FACETS     => [ 'kind' => [ Facet::TYPE => Facet::FIELD ] ] ,
+        ]) ;
+
+        $query = $model->buildFacetCountsQuery(
+        [
+            Arango::SEARCH       => 'bois' ,
+            Arango::FACET_COUNTS => 'kind' ,
+        ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'FOR doc IN @@collection FILTER (LIKE(doc.name' , $query ) ;
+        $this->assertSame( '%bois%' , $this->binds[ 'search_0' ] ?? null ) ;
     }
 
     // ---------------------------------------------------------------- buildViewLink

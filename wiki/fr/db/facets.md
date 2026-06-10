@@ -426,7 +426,7 @@ GET /articles?facetCounts=category,keywords
 
 - Les dimensions sont des **clés de `Arango::FACETS`** déjà déclarées (les facettes filtrables deviennent les facettes comptées) ; une clé inconnue est ignorée.
 - v1 supporte les types `Facet::FIELD` (champ scalaire) et `Facet::IN` (appartenance à un tableau, dépliée) ; les autres types sont ignorés.
-- Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste).
+- Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste). Avec une [recherche View](search-views.md) active, chaque sous-requête de comptage itère la View avec le **même `SEARCH`** que la liste, donc les buckets reflètent exactement l'ensemble affiché.
 
 Les buckets sont renvoyés sous la clé `facets` de l'enveloppe de succès standard,
 à côté de `total`, **sans modifier** la liste de documents :
