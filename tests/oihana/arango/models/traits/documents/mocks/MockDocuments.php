@@ -40,6 +40,9 @@ class MockDocuments extends Documents
     /** The last bind variables passed to a fetch seam. */
     public array $lastBinds = [] ;
 
+    /** The last cursor options passed to a fetch seam. */
+    public array $lastOptions = [] ;
+
     /** Canned value returned by {@see getObject()}. */
     public ?object $objectResult = null ;
 
@@ -145,8 +148,9 @@ class MockDocuments extends Documents
     )
     :?object
     {
-        $this->lastQuery = $query ;
-        $this->lastBinds = $bindVars ;
+        $this->lastQuery   = $query ;
+        $this->lastBinds   = $bindVars ;
+        $this->lastOptions = $options ;
         return $this->objectResult ;
     }
 
@@ -171,8 +175,9 @@ class MockDocuments extends Documents
     )
     :array
     {
-        $this->lastQuery = $query ;
-        $this->lastBinds = $bindVars ;
+        $this->lastQuery   = $query ;
+        $this->lastBinds   = $bindVars ;
+        $this->lastOptions = $options ;
         return $this->documentsResult ;
     }
 

@@ -49,6 +49,6 @@ trait DocumentsGetTrait
     {
         $bindVars = $this->prepareBindVars( $init ) ;
         $query    = $this->buildGetQuery( $init , $bindVars ) ;
-        return $this->getObject( $query ,  $bindVars ) ;
+        return $this->getObject( $query , $bindVars , $this->profileOptions( $init ) ) ;
     }
 }

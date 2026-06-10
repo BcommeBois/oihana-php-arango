@@ -22,7 +22,9 @@ use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\ArangoDB;
+use oihana\arango\db\results\ExecutionStats;
 use oihana\arango\db\results\ExplainResult;
+use oihana\arango\db\results\ProfileResult;
 use oihana\arango\enums\Arango;
 
 use oihana\enums\Char;
@@ -184,6 +186,49 @@ trait ArangoTrait
     public function getExtra():array
     {
         return $this->arangodb->getExtra() ;
+    }
+
+    /**
+     * Returns the typed execution statistics of the last query (scanned / filtered
+     * / time / memory …). Most meaningful right after a profiled `list()` / `get()`
+     * (see {@see Arango::PROFILE}).
+     *
+     * @return ExecutionStats
+     */
+    public function getStats():ExecutionStats
+    {
+        return $this->arangodb->getStats() ;
+    }
+
+    /**
+     * Returns the typed profile of the last profiled query run (per-phase timings,
+     * {@see ExecutionStats}, warnings).
+     *
+     * @return ProfileResult
+     */
+    public function getProfile():ProfileResult
+    {
+        return $this->arangodb->getProfile() ;
+    }
+
+    /**
+     * Merges the cursor `profile` option into `$options` when the `$init` array
+     * requests profiling via {@see Arango::PROFILE} (`true` → profile level 2, or
+     * an explicit integer level). Returns `$options` unchanged otherwise.
+     *
+     * @param array $init    The model input array (`list()` / `get()`).
+     * @param array $options The cursor options to augment.
+     *
+     * @return array
+     */
+    protected function profileOptions( array $init , array $options = [] ):array
+    {
+        $profile = $init[ Arango::PROFILE ] ?? null ;
+        if ( $profile )
+        {
+            $options[ CursorField::PROFILE ] = $profile === true ? 2 : (int) $profile ;
+        }
+        return $options ;
     }
 
     /**

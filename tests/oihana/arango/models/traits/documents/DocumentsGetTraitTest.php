@@ -2,6 +2,7 @@
 
 namespace tests\oihana\arango\models\traits\documents;
 
+use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\enums\Arango;
 
 use PHPUnit\Framework\TestCase;
@@ -39,5 +40,19 @@ final class DocumentsGetTraitTest extends TestCase
         $model->objectResult = null ;
 
         $this->assertNull( $model->get( [ Arango::VALUE => 'missing' ] ) ) ;
+    }
+
+    public function testGetWithoutProfilePassesNoProfileOption() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->get( [ Arango::VALUE => 'k1' ] ) ;
+        $this->assertArrayNotHasKey( CursorField::PROFILE , $model->lastOptions ) ;
+    }
+
+    public function testGetWithProfileThreadsTheProfileOption() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->get( [ Arango::VALUE => 'k1' , Arango::PROFILE => true ] ) ;
+        $this->assertSame( 2 , $model->lastOptions[ CursorField::PROFILE ] ) ;
     }
 }

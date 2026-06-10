@@ -292,7 +292,7 @@ trait DocumentsListTrait
         $limit    = $init[ Arango::LIMIT ] ?? 0 ;
         $query    = $this->buildListQuery( $init , $bindVars ) ;
 
-        return $this->getDocuments( $query , $bindVars , [ CursorField::FULL_COUNT => (bool) $limit ] ) ;
+        return $this->getDocuments( $query , $bindVars , $this->profileOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) ) ;
     }
 
 }

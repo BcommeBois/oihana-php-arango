@@ -13,8 +13,9 @@ The `db/` layer answers both with **typed result objects**, so you read `result-
 
 | You have… | Call | You get back |
 |---|---|---|
-| A raw AQL string | `ArangoDB::explain($query, $binds)` | [`ExplainResult`](#the-explainresult-object) |
+| A raw AQL string | `ArangoDB::explain($query, $binds)` | [`ExplainResult`](#the-explainresult-object) (plan, **without running**) |
 | A `Documents` model + list filters | `Documents::explainList($init)` | [`ExplainResult`](#explaining-a-model-list-query) for the exact `list()` query |
+| A list/get you want to **time** | `Documents::list([ …, 'profile' => true ])` then `getProfile()` / `getStats()` | [`ProfileResult`](#the-profileresult-object) / [`ExecutionStats`](#the-executionstats-object) (**runs** the query) |
 
 ## Explaining a raw query
 
@@ -136,9 +137,77 @@ echo $plan->indexesUsed()[ 0 ]->fields[ 0 ] ;   // "age"
 echo implode( ', ' , $plan->rules() ) ;          // "… use-indexes, remove-filter-covered-by-index …"
 ```
 
+## Profiling a query that ran (`profile`)
+
+`explain` tells you the *plan*; **profiling** tells you what actually happened when the query *ran* — how many rows were scanned from indexes vs. full collections, how many were filtered out, how long each phase took. Unlike `explain()`, profiling **executes the query**.
+
+### From a model — `?profile` / `Arango::PROFILE`
+
+Pass `Arango::PROFILE` (`'profile'`) in the `list()` / `get()` input. The query runs normally (you still get your documents), and the measurements are captured for the next `getProfile()` / `getStats()` call:
+
+```php
+use oihana\arango\enums\Arango ;
+
+// Runs the list AND profiles it (true → profile level 2; an int sets the level explicitly).
+$rows = $users->list( [ 'filter' => [ 'age' => [ '$gte' => 30 ] ] , 'profile' => true ] ) ;
+
+$stats = $users->getStats() ;     // typed ExecutionStats
+$stats->scannedFull() ;           // 50  → no index was used (full scan)
+$stats->scannedIndex() ;          // 0
+$stats->filtered() ;              // 11  → rows read then dropped by FILTER
+$stats->executionTime() ;        // 0.0004  (seconds)
+$stats->peakMemoryUsage() ;      // bytes
+
+$users->getProfile()->totalTime() ;          // sum of all phase timings
+$users->getProfile()->timings() ;            // ['parsing' => …, 'optimizing plan' => …, 'executing' => …, …]
+```
+
+`get( [ … , 'profile' => true ] )` profiles a single-document fetch the same way.
+
+### The `ExecutionStats` object
+
+[`oihana\arango\db\results\ExecutionStats`](../../../src/oihana/arango/db/results/ExecutionStats.php):
+
+| Method | Meaning |
+|---|---|
+| `scannedFull()` | Documents read by full collection scan (the number you want **low**). |
+| `scannedIndex()` | Documents read through an index. |
+| `filtered()` | Documents read then dropped by a `FILTER` (high = the index doesn't cover the filter). |
+| `executionTime()` | Total time, in seconds. |
+| `peakMemoryUsage()` | Peak memory, in bytes. |
+| `fullCount()` | Total count ignoring `LIMIT` (`null` unless `fullCount` was requested). |
+| `writesExecuted()` / `writesIgnored()` | Write counts for data-modification queries. |
+| `documentLookups()`, `httpRequests()`, `cacheHits()`, `cacheMisses()` | Finer-grained counters. |
+| `get($key, $default)` / `raw()` | Any other `Statistic` by key / the raw stats array. |
+
+> Reading `scannedFull()` high together with `filtered()` high is the classic "this query needs an index" signal — confirm with `explainList()` / `explain()` above.
+
+### The `ProfileResult` object
+
+[`oihana\arango\db\results\ProfileResult`](../../../src/oihana/arango/db/results/ProfileResult.php) wraps the whole profiled run: `stats()` (an `ExecutionStats`), `timings()` (per-phase seconds, keyed by phase name), `totalTime()` (their sum), `warnings()`, `plan()`, and `raw()`.
+
+### From the façade
+
+The façade exposes the same, around a manually-prepared query:
+
+```php
+use oihana\arango\clients\cursor\enums\CursorField ;
+
+$db->prepare([
+    CursorField::QUERY     => 'FOR u IN users FILTER u.age > @a RETURN u' ,
+    CursorField::BIND_VARS => [ 'a' => 30 ] ,
+    CursorField::PROFILE   => 2 ,
+])->execute() ;
+
+iterator_to_array( $db->getCursor() ) ;     // consume the result
+
+$db->getStats()->scannedFull() ;            // typed ExecutionStats
+$db->getProfile()->timings() ;              // typed ProfileResult
+```
+
 ## Wiring / DI
 
-`ArangoDB::explain()` needs nothing beyond a configured façade — the same `ArangoDB` instance your models already receive (see [Quickstart `ArangoDB`](quickstart.md) for construction and DI). `Documents::explainList()` is available on every `Documents` model out of the box. Nothing to register.
+`ArangoDB::explain()` / `getProfile()` / `getStats()` need nothing beyond a configured façade — the same `ArangoDB` instance your models already receive (see [Quickstart `ArangoDB`](quickstart.md) for construction and DI). `Documents::explainList()` and the `'profile'` option on `list()` / `get()` are available on every `Documents` model out of the box. Nothing to register.
 
 ## See also
 

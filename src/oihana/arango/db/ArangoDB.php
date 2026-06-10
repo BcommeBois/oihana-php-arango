@@ -22,7 +22,10 @@ use oihana\arango\clients\exceptions\ArangoException ;
 use oihana\arango\clients\options\ClientOptions ;
 
 use oihana\arango\db\enums\ArangoConfig ;
+use oihana\arango\db\enums\Extra ;
+use oihana\arango\db\results\ExecutionStats ;
 use oihana\arango\db\results\ExplainResult ;
+use oihana\arango\db\results\ProfileResult ;
 use oihana\arango\db\traits\CollectionManagementTrait ;
 
 /**
@@ -183,6 +186,30 @@ class ArangoDB
     public function getExtra() : array
     {
         return $this->cursor?->getExtra() ?? [] ;
+    }
+
+    /**
+     * Returns the typed execution statistics of the last query, read from the
+     * cursor's `extra.stats` (populated when the query ran with the `profile`
+     * option, or for the parts the server always reports).
+     *
+     * @return ExecutionStats
+     */
+    public function getStats() : ExecutionStats
+    {
+        $stats = $this->getExtra()[ Extra::STATS ] ?? [] ;
+        return new ExecutionStats( is_array( $stats ) ? $stats : [] ) ;
+    }
+
+    /**
+     * Returns the typed profile of the last **profiled** query run (per-phase
+     * timings + {@see ExecutionStats} + warnings), read from the cursor's `extra`.
+     *
+     * @return ProfileResult
+     */
+    public function getProfile() : ProfileResult
+    {
+        return new ProfileResult( $this->getExtra() ) ;
     }
 
     /**

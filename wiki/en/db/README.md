@@ -24,7 +24,7 @@ If you only need to **issue a query and read JSON**, use the client. If you want
 | 7 | [Internal filtering — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Server-only conditions, `FilterType::VIRTUAL`, URL vs internal decision rule. |
 | 8 | [HTTP facets `?facets=`](facets.md) | `?facets=` URL syntax, `Arango::FACETS` / `Facet::TYPE` declaration, type catalogue (FIELD, IN, EDGE, JOIN, *_COMPLEX, *_AGGREGATE), operators, negation, security, **facet counts `?facetCounts=`**. |
 | 9 | [HTTP grouping `?groupBy=` / `?group=`](grouping.md) | `GROUP BY` via `COLLECT`: URL syntax (`?groupBy=` CSV + `?group=` JSON), `Arango::GROUP` / `Group` vocabulary, the three uses (distinct / count / aggregates), group sorting, raw `Arango::COLLECT` spec, `groupable` whitelist and security. |
-| 10 | [Explaining and profiling queries](explain-and-profiling.md) | Typed `ArangoDB::explain()` / `Documents::explainList()` → `ExplainResult`: optimizer rules, collections, estimated cost, and **which indexes the query actually uses** (`usesIndex()` / `indexesUsed()`). |
+| 10 | [Explaining and profiling queries](explain-and-profiling.md) | Typed `explain()` / `explainList()` → `ExplainResult` (optimizer rules, **which indexes the query actually uses**) and profiling via the `'profile'` option → `getProfile()` / `getStats()` → `ProfileResult` / `ExecutionStats` (scanned / filtered / time / per-phase timings). |
 
 ## The `db/` source map
 

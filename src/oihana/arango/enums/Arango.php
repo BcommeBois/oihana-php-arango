@@ -284,6 +284,13 @@ class Arango
     public const string PREFIX = 'prefix' ;
 
     /**
+     * The 'profile' parameter — when truthy, `list()` / `get()` run the query in
+     * profiled mode (`true` → profile level 2) and the measurements are exposed
+     * through {@see \oihana\arango\models\traits\ArangoTrait::getProfile()}.
+     */
+    public const string PROFILE = 'profile' ;
+
+    /**
      * The 'property' parameter.
      */
     public const string PROPERTY = 'property' ;

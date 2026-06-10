@@ -107,6 +107,20 @@ class CursorField
     public const string RESULT = 'result' ;
 
     /**
+     * Nested cursor option — enable query profiling. `1` collects per-phase
+     * timings + statistics; `2` adds detailed per-node execution stats. Lives
+     * under {@see self::OPTIONS}. The results surface in the cursor's
+     * `extra` (`stats` / `profile`).
+     */
+    public const string PROFILE = 'profile' ;
+
+    /**
+     * Nested cursor option — optimizer control (e.g. `[ 'rules' => [ '-use-indexes' ] ]`).
+     * Lives under {@see self::OPTIONS}.
+     */
+    public const string OPTIMIZER = 'optimizer' ;
+
+    /**
      * Nested object on `POST /_api/cursor` carrying the non-root cursor
      * options recognised by the server (`fullCount`, `profile`, `stream`,
      * `maxRuntime`, `failOnWarning`, `optimizer`, …).
