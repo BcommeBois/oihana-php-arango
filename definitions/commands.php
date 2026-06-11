@@ -55,7 +55,7 @@ return
                 // [arango] section ; both can be overridden per run via
                 // --encrypt and --passphrase.
                 CommandOption::ENCRYPT     => (bool) ( $arango[ ArangoConfig::ENCRYPT ] ?? false ) ,
-                CommandOption::PASS_PHRASE => $arango[ 'passphrase' ] ?? null ,
+                CommandOption::PASS_PHRASE => $arango[ CommandOption::PASS_PHRASE ] ?? null ,
 
                 // Connection settings — spread the [arango] section so the
                 // ArangoConfigTrait keys (database, endpoint, user, password)
