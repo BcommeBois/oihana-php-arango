@@ -9,11 +9,16 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\functions\SearchFunction;
 use oihana\arango\db\enums\Logic;
+use oihana\arango\db\enums\ViewDiffStatus;
+use oihana\arango\db\results\ViewDiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Search;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
+use oihana\traits\LazyTrait;
 
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use function oihana\arango\db\functions\search\analyzer;
 use function oihana\arango\db\functions\search\boost;
 use function oihana\arango\db\functions\strings\like;
@@ -28,7 +33,8 @@ use function oihana\core\strings\key;
  */
 trait SearchTrait
 {
-    use BindTrait ;
+    use BindTrait ,
+        LazyTrait ;
 
     /**
      * The searchable fields.
@@ -47,6 +53,30 @@ trait SearchTrait
      * The 'searchable' parameter key.
      */
     public const string SEARCHABLE = 'searchable' ;
+
+    /**
+     * Returns the desired per-collection link map of the declared View —
+     * the model's collection linked with {@see buildViewLink()} — or an
+     * empty map when the model has no collection.
+     *
+     * @return array<string, ArangoSearchLink>
+     */
+    public function getViewLinks() :array
+    {
+        return empty( $this->collection ) ? [] : [ $this->collection => $this->buildViewLink() ] ;
+    }
+
+    /**
+     * Returns the name of the declared View ({@see Search::NAME} of the
+     * `AQL::VIEW` block), or `null` when the model declares none.
+     *
+     * @return ?string
+     */
+    public function getViewName() :?string
+    {
+        $name = is_array( $this->view ) ? ( $this->view[ Search::NAME ] ?? null ) : null ;
+        return is_string( $name ) && $name !== Char::EMPTY ? $name : null ;
+    }
 
     /**
      * Indicates whether the View search is active: the model declares a named
@@ -69,10 +99,7 @@ trait SearchTrait
             return false ;
         }
 
-        $name = is_array( $this->view ) ? ( $this->view[ Search::NAME ] ?? null ) : null ;
-
-        return is_string( $name )
-            && $name !== Char::EMPTY
+        return $this->getViewName() !== null
             && count( $this->getViewSearchFields() ) > 0 ;
     }
 
@@ -95,19 +122,23 @@ trait SearchTrait
      * `initializeCollection()`: when the model is lazy and the declared View
      * does not exist, it is created from the declaration — the searched fields
      * (dotted paths supported) are linked on the model's collection with the
-     * declared {@see Search::ANALYZER}. An existing View is never altered
-     * (no automatic resynchronization — use `updateProperties()` manually).
+     * declared {@see Search::ANALYZER}. An existing View is never altered —
+     * inspect and resynchronize explicitly with {@see viewDiff()} /
+     * {@see viewSync()} (or the `views` action of the `arangodb` command).
      *
      * @param array $init
      *
      * @return static
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
      */
     public function initializeView( array $init = [] ) :static
     {
         $this->view = $init[ AQL::VIEW ] ?? $this->view ;
 
         $name = is_array( $this->view ) ? ( $this->view[ Search::NAME ] ?? null ) : null ;
-        $lazy = $init[ Arango::LAZY ] ?? $this->lazy ;
+        $lazy = $this->initializeLazy( $init )->isLazy() ;
 
         if( $lazy && is_string( $name ) && $name !== Char::EMPTY && !empty( $this->collection ) && !$this->viewExists( $name ) )
         {
@@ -264,6 +295,90 @@ trait SearchTrait
     }
 
     /**
+     * Compares the model's View declaration with the server state and
+     * reports the differences, without touching anything.
+     *
+     * On top of the field/analyzer drift detected by
+     * {@see \oihana\arango\db\traits\ViewManagementTrait::viewDiff()}, the
+     * model-level report validates the coherence of the declaration itself:
+     * a missing {@see Search::NAME}, no searched field, no collection, an
+     * analyzer or a collection unknown to the server all resolve to
+     * {@see ViewDiffStatus::INVALID} — such a View is never created nor
+     * synchronized automatically.
+     *
+     * @return ViewDiffReport
+     */
+    public function viewDiff() :ViewDiffReport
+    {
+        $name   = $this->getViewName() ;
+        $errors = [] ;
+
+        if( $name === null )
+        {
+            $errors[] = 'declaration : no View name (Search::NAME)' ;
+        }
+        if( count( $this->getViewSearchFields() ) === 0 )
+        {
+            $errors[] = 'declaration : no searched field (Search::FIELDS or searchable)' ;
+        }
+        if( empty( $this->collection ) )
+        {
+            $errors[] = 'declaration : no collection' ;
+        }
+
+        if( $errors !== [] )
+        {
+            return new ViewDiffReport( $name ?? Char::EMPTY , ViewDiffStatus::INVALID , $errors ) ;
+        }
+
+        $report = $this->arangodb?->viewDiff( $name , $this->getViewLinks() )
+               ?? new ViewDiffReport( $name , ViewDiffStatus::UNREACHABLE , [ 'no database available' ] ) ;
+
+        if( $report->status === ViewDiffStatus::UNREACHABLE )
+        {
+            return $report ;
+        }
+
+        $analyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
+        if( !$this->analyzerExists( $analyzer ) )
+        {
+            $errors[] = sprintf( "analyzer '%s' not found on the server" , $analyzer ) ;
+        }
+        if( !$this->collectionExists( $this->collection ) )
+        {
+            $errors[] = sprintf( "collection '%s' not found on the server" , $this->collection ) ;
+        }
+
+        if( $errors !== [] )
+        {
+            return new ViewDiffReport( $name , ViewDiffStatus::INVALID , [ ...$errors , ...$report->changes ] ) ;
+        }
+
+        return $report ;
+    }
+
+    /**
+     * Reconciles the model's View with its declaration: creates it when
+     * missing, repairs a drift with `updateProperties()` (the View stays
+     * available while the inverted index rebuilds in the background), and
+     * leaves {@see ViewDiffStatus::IN_SYNC}, {@see ViewDiffStatus::INVALID}
+     * or {@see ViewDiffStatus::UNREACHABLE} reports untouched.
+     *
+     * @return ViewDiffReport The {@see viewDiff()} report, with `$applied` set when the View has been created or updated.
+     */
+    public function viewSync() :ViewDiffReport
+    {
+        $report = $this->viewDiff() ;
+
+        if( $report->status !== ViewDiffStatus::MISSING && $report->status !== ViewDiffStatus::DRIFTED )
+        {
+            return $report ;
+        }
+
+        return $this->arangodb?->viewSync( $this->getViewName() , $this->getViewLinks() ) ?? $report ;
+    }
+
+    /**
      * Builds the View link of the model's collection from the `AQL::VIEW`
      * declaration: every searched field (dotted paths become nested fields)
      * is indexed with the declared {@see Search::ANALYZER}.
@@ -311,14 +426,24 @@ trait SearchTrait
             $fields = is_array( $this->searchable ) ? array_fill_keys( $this->searchable , 1 ) : [] ;
         }
 
-        $normalized = [] ;
-        foreach( $fields as $field => $options )
-        {
-            $normalized[ $field ] = is_numeric( $options )
-                                  ? +$options
-                                  : (float) ( ( is_array( $options ) ? ( $options[ Search::BOOST ] ?? 1 ) : 1 ) ) ;
-        }
+        return array_map(
 
-        return $normalized ;
+            static function( mixed $options ) : float
+            {
+                if( is_numeric( $options ) )
+                {
+                    return (float) $options ;
+                }
+
+                if( is_array( $options ) )
+                {
+                    return (float) ( $options[ Search::BOOST ] ?? 1 ) ;
+                }
+
+                return 1.0 ;
+
+            },
+            $fields
+        ) ;
     }
 }

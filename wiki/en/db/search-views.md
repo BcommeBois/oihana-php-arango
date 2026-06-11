@@ -37,7 +37,7 @@ $places = new Documents( $container ,
 | `Search::PHRASE` | `bool` | Adds an exact-phrase bonus: a `PHRASE()` match weighs `boost × 2`. |
 | `Search::FUZZY` | `int` | Adds typo tolerance: `LEVENSHTEIN_MATCH` with this maximum edit distance. |
 
-**Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered** — after changing the declaration, update the View manually (`$db->view('placesView')->updateProperties([...])`) or drop it and let the model recreate it.
+**Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts.
 
 ## URLs and behavior
 

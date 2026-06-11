@@ -40,4 +40,10 @@ class ArangoAction
      * Retore the arangodb database.
      */
     public const string RESTORE = 'restore' ;
+
+    /**
+     * Manage the ArangoSearch views of the arangodb database
+     * (list, diff, sync, drop).
+     */
+    public const string VIEWS = 'views' ;
 }

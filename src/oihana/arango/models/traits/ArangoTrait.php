@@ -32,6 +32,7 @@ use oihana\enums\Char;
 use oihana\models\traits\AlterDocumentTrait;
 
 use oihana\traits\DebugTrait;
+use oihana\traits\LazyTrait;
 
 /**
  * This class is the generic Model class.
@@ -40,6 +41,7 @@ trait ArangoTrait
 {
     use AlterDocumentTrait ,
         DebugTrait         ,
+        LazyTrait          ,
         SchemaTrait        ;
 
     /**
@@ -54,14 +56,20 @@ trait ArangoTrait
     public ?string $collection ;
 
     /**
-     * Indicates the default lazy mode when we set a new collection with the setCollection method.
-     */
-    public bool $lazy = true ;
-
-    /**
      * Indicates the type of the collection when is created (document or edge).
      */
     protected int $type ;
+
+    /**
+     * Checks if an analyzer exists on the server (built-in analyzers are
+     * always reported).
+     * @param string $name The name of the analyzer.
+     * @return bool
+     */
+    public function analyzerExists( string $name ) :bool
+    {
+        return $this->arangodb?->analyzerExists( $name ) ?? false ;
+    }
 
     /**
      * Creates a new collection if not exist.
@@ -385,7 +393,9 @@ trait ArangoTrait
      * @param array $init The options to lazy creates the collection (document or edge) or not.
      *  - collection (string) Indicates if the name of the collection.
      *  - indexes (array) The optional list of indexes to creates (if not exist and lazy).
-     *  - lazy (bool) Indicates if the collection is created if not exist.
+     *  - lazy (bool) Indicates if the collection is created if not exist — resolved through
+     *    {@see LazyTrait::isLazy()}, so a `lazy` entry defined in the DI container always wins
+     *    (orchestration kill-switch), then this init key, then the property default.
      *  - options (array) The options are:
      *    - 'waitForSync'          : if set to true, then all removal operations will instantly be synchronised to disk / If this is not specified, then the collection's default sync behavior will be applied.
      *    - 'isSystem'             : false->user collection(default), true->system collection .
@@ -405,6 +415,8 @@ trait ArangoTrait
      * @return static
      *
      * @throws ReflectionException
+     * @throws ContainerExceptionInterface If an error occurs while reading the container `lazy` entry.
+     * @throws NotFoundExceptionInterface  If the container `lazy` entry vanishes between check and read.
      */
     public function initializeCollection
     (
@@ -415,8 +427,9 @@ trait ArangoTrait
     {
         $this->collection = $init[ Arango::COLLECTION ] ?? null ;
         $this->type       = $init[ Arango::TYPE       ] ?? $type ;
-        $lazy             = $init[ Arango::LAZY       ] ?? $this->lazy ;
-        $options          = $init[ Arango::OPTIONS    ] ?? [] ;
+
+        $lazy    = $this->initializeLazy( $init )->isLazy() ;
+        $options = $init[ Arango::OPTIONS ] ?? [] ;
 
         if( $lazy && !empty( $this->collection ) && !$this->collectionExists( $this->collection ) )
         {

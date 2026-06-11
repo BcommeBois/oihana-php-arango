@@ -41,13 +41,14 @@ return
             container : $container ,
             init      :
             [
-                CommandParam::DESCRIPTION    => 'Manage the ArangoDB database (dump / restore / list dumps).' ,
-                CommandParam::HELP           => 'Generic dump and restore runner for an ArangoDB database. Connection settings come from the [arango] section of configs/config.toml ; the dumps directory comes from [app].dumps (see config.example.toml). Override any field on the CLI: --endpoint, --user, --password, --database, --directory, --passphrase, --encrypt. Action is the first positional argument: dump, restore, listDumps. Examples: `php bin/console.php command:arangodb dump`, `php bin/console.php command:arangodb dump --list`, `php bin/console.php command:arangodb restore --last`.' ,
+                CommandParam::DESCRIPTION    => 'Manage the ArangoDB database (dump / restore / list dumps / views).' ,
+                CommandParam::HELP           => 'Generic dump and restore runner for an ArangoDB database. Connection settings come from the [arango] section of configs/config.toml ; the dumps directory comes from [app].dumps (see config.example.toml). Override any field on the CLI: --endpoint, --user, --password, --database, --directory, --passphrase, --encrypt. Action is the first positional argument: dump, restore, listDumps, collections, views. Examples: `php bin/console.php command:arangodb dump`, `php bin/console.php command:arangodb dump --list`, `php bin/console.php command:arangodb restore --last`, `php bin/console.php command:arangodb views --diff`. The views --diff/--sync modes inspect the AQL::VIEW declarations of the models listed by the `models` init key (container ids) — none are wired in the library bootstrap, host projects supply their own.' ,
                 CommandParam::ACTIONS        =>
                 [
                     ArangoAction::COLLECTIONS ,
                     ArangoAction::DUMP        ,
                     ArangoAction::RESTORE     ,
+                    ArangoAction::VIEWS       ,
                 ] ,
                 ArangoCommandParam::DIRECTORY => $container->get( 'app.dumps' ) ,
 

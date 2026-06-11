@@ -43,7 +43,8 @@
         "arango"          : "php bin/console.php command:arangodb" ,
         "arango:dump"     : "php bin/console.php command:arangodb dump" ,
         "arango:restore"  : "php bin/console.php command:arangodb restore" ,
-        "arango:list"     : "php bin/console.php command:arangodb dump --list"
+        "arango:list"     : "php bin/console.php command:arangodb dump --list" ,
+        "arango:views"    : "php bin/console.php command:arangodb views"
     } ,
     "scripts-descriptions" : {
         "doc"             : "Generate the phpDocumentor API documentation under docs/." ,
@@ -55,7 +56,8 @@
         "arango"          : "Proxy to bin/console.php command:arangodb (pass action + flags after `--`)." ,
         "arango:dump"     : "Dump the ArangoDB database (flags after `--`, e.g. `composer arango:dump -- --encrypt --passphrase X`)." ,
         "arango:restore"  : "Restore the ArangoDB database (flags after `--`, e.g. `composer arango:restore -- --last`)." ,
-        "arango:list"     : "List existing dump archives in the configured dumps directory."
+        "arango:list"     : "List existing dump archives in the configured dumps directory." ,
+        "arango:views"    : "Manage the ArangoSearch Views (list by default; flags after `--`, e.g. `composer arango:views -- --diff`, `-- --sync`, `-- --drop=a,b`)."
     } ,
     "autoload" : {
         "psr-4" : {

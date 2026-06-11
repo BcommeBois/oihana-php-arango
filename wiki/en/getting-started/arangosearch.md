@@ -103,14 +103,15 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 - **Never `==` with a text Analyzer** — indexed tokens are stemmed, a raw literal is not: `ANALYZER(doc.name == "bois", "text_fr")` matches nothing. Use `doc.name IN TOKENS(@q, "text_fr")` (both sides analyzed) or `PHRASE` — the model grammar does this for you.
 - **Analyzer features matter** — `BM25` needs `frequency` (+ `norm` for length normalization), `PHRASE` needs `position` + `frequency`. Built-in text Analyzers have them; custom ones must declare them.
 - **`FILTER` after `SEARCH` is legal but unaccelerated** — fine when the `SEARCH` already narrowed the set; prefer `SEARCH`-able predicates (`EXISTS`, `IN_RANGE`) for heavy structured conditions.
-- **Declaration drift** — the model's View provisioning is create-if-missing: changing the `AQL::VIEW` block does **not** update an existing View (a new field is silently not indexed). Update it manually for now (`updateProperties()`); a management command is planned.
+- **Declaration drift** — the model's View provisioning is create-if-missing: changing the `AQL::VIEW` block does **not** update an existing View (a new field is silently not indexed). Detect the gap with `$model->viewDiff()` and repair it with `$model->viewSync()` — or from the CLI: `command:arangodb views --diff` / `--sync` ([doc](../commands/arangodb.md#views--arangosearch-view-management)).
 
 ## Planned evolutions
 
 - **Per-field Analyzers** (`'description.en' => [Search::ANALYZER => 'text_en']`) and **`?lang=`-driven field selection** for i18n attributes.
 - **Federated multi-collection search** — one View over several collections, exposed by a dedicated read-only model/controller/route triple.
 - **Permission-scoped search** — restricting searchable fields per role, like `?skin` whitelists.
-- **View management command** — list/drop/sync Views from the model declarations, for migrations and refresh scripts.
+
+> The View management command, long listed here, has shipped: see the [`views` action of `command:arangodb`](../commands/arangodb.md#views--arangosearch-view-management) (list, `--diff`, `--sync`, `--drop`).
 
 ## See also
 

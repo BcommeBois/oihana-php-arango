@@ -10,5 +10,6 @@ trait ArangoActions
     use ArangoDumpAction ,
         ArangoListCollectionsAction ,
         ArangoListDumpsAction ,
-        ArangoRestoreAction ;
+        ArangoRestoreAction ,
+        ArangoViewsAction ;
 }

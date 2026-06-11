@@ -26,6 +26,7 @@ use oihana\arango\db\enums\Extra ;
 use oihana\arango\db\results\ExecutionStats ;
 use oihana\arango\db\results\ExplainResult ;
 use oihana\arango\db\results\ProfileResult ;
+use oihana\arango\db\traits\AnalyzerManagementTrait ;
 use oihana\arango\db\traits\CollectionManagementTrait ;
 use oihana\arango\db\traits\ViewManagementTrait ;
 
@@ -78,9 +79,10 @@ class ArangoDB
         }
     }
 
-    use CollectionManagementTrait ,
-        ToStringTrait ,
-        ViewManagementTrait ;
+    use AnalyzerManagementTrait   ,
+        CollectionManagementTrait ,
+        ToStringTrait             ,
+        ViewManagementTrait       ;
 
     /**
      * @var int Default batch size for queries.

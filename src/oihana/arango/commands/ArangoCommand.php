@@ -54,6 +54,7 @@ class ArangoCommand extends Kernel
     {
         parent::__construct( $name , $container , $init );
         $this->dateFormat = $init[ ArangoCommandParam::DATE_FORMAT ] ?? $this->dateFormat ;
+        $this->models     = $init[ ArangoCommandParam::MODELS      ] ?? $this->models ;
         $this->timezone   = $init[ ArangoCommandParam::TIMEZONE    ] ?? $this->timezone ;
         $this->initializeDirectory( $init );
         $this->initializeArangoDB( $init );
@@ -91,13 +92,16 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::ALL               , null  , InputOption::VALUE_NONE      , 'List every collection, including system ones (collections action).' ) ;
         $this->addOption   ( ArangoCommandOption::COLLECTION        , 'c'   , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Restrict the dump/restore to these collections (repeatable or comma-separated).' ) ;
         $this->addOption   ( ArangoCommandOption::DATE              , 'd'   , InputOption::VALUE_OPTIONAL  , 'The Date of the dump to backup or restore.' ) ;
+        $this->addOption   ( ArangoCommandOption::DIFF              , null  , InputOption::VALUE_NONE      , 'Compare the declared Views of the configured models with the server (views action).' ) ;
         $this->addOption   ( ArangoCommandOption::DIRECTORY         , 'dir' , InputOption::VALUE_OPTIONAL  , 'The directory to dump and restore the database.' ) ;
+        $this->addOption   ( ArangoCommandOption::DROP              , null  , InputOption::VALUE_OPTIONAL  , 'Drop the given Views (comma-separated) or select them interactively (views action).' , false ) ;
         $this->addOption   ( ArangoCommandOption::ENCRYPT           , 'e'   , InputOption::VALUE_NONE      , 'Enabled the encryption to dump/restore the database.' ) ;
         $this->addOption   ( ArangoCommandOption::FILE              , 'f'   , InputOption::VALUE_OPTIONAL  , 'The file to dump/restore.' ) ;
         $this->addOption   ( ArangoCommandOption::IGNORE_COLLECTION , null  , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Exclude these collections from the dump (repeatable or comma-separated, dump only).' ) ;
         $this->addOption   ( ArangoCommandOption::LABEL             , 'L'   , InputOption::VALUE_REQUIRED  , 'Optional label appended to the archive name (e.g. "pre-migration").' ) ;
         $this->addOption   ( ArangoCommandOption::LAST              , 'la'  , InputOption::VALUE_NONE      , 'Search the last dump file and restore it.' ) ;
         $this->addOption   ( ArangoCommandOption::LIST              , 'l'   , InputOption::VALUE_NONE      , 'Display a list of files.' ) ;
+        $this->addOption   ( ArangoCommandOption::SYNC              , null  , InputOption::VALUE_OPTIONAL  , 'Create or resynchronize the declared Views, all or comma-separated names (views action).' , false ) ;
         $this->addOption   ( ArangoCommandOption::SYSTEM            , null  , InputOption::VALUE_NONE      , 'List only system collections (collections action).' ) ;
 
         $this->addOption ( ArangoConfig::DATABASE , null  , InputOption::VALUE_OPTIONAL  , 'The arangoDB database name.' ) ;

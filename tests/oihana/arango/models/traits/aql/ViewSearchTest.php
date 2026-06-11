@@ -17,6 +17,8 @@ use ReflectionMethod;
 use oihana\arango\clients\view\ArangoSearchLink;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\ViewDiffStatus;
+use oihana\arango\db\results\ViewDiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Facet;
@@ -495,5 +497,267 @@ class ViewSearchTest extends TestCase
             ] ,
             $link->toArray()
         ) ;
+    }
+
+    public function testGetViewSearchFieldsNormalizesEveryDeclarationShape() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS =>
+                [
+                    'name'        => 3 ,                        // numeric shorthand
+                    'description' => [ Search::BOOST => 2 ] ,   // array with boost
+                    'label'       => null ,                     // anything else → neutral boost
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'getViewSearchFields' ) ;
+
+        $this->assertSame
+        (
+            [ 'name' => 3.0 , 'description' => 2.0 , 'label' => 1.0 ] ,
+            $method->invoke( $model )
+        ) ;
+    }
+
+    // ---------------------------------------------------------------- getViewName / getViewLinks
+
+    public function testGetViewNameReturnsTheDeclaredName() :void
+    {
+        $this->assertSame( 'placesView' , $this->viewModel()->getViewName() ) ;
+    }
+
+    public function testGetViewNameIsNullWithoutDeclaration() :void
+    {
+        $this->assertNull( $this->model()->getViewName() ) ;
+    }
+
+    public function testGetViewLinksMapsTheCollectionToTheBuiltLink() :void
+    {
+        $links = $this->viewModel()->getViewLinks() ;
+
+        $this->assertSame( [ 'places' ] , array_keys( $links ) ) ;
+        $this->assertInstanceOf( ArangoSearchLink::class , $links[ 'places' ] ) ;
+    }
+
+    public function testGetViewLinksIsEmptyWithoutCollection() :void
+    {
+        $model = $this->model( [ AQL::COLLECTION => null ] ) ;
+        $this->assertSame( [] , $model->getViewLinks() ) ;
+    }
+
+    // ---------------------------------------------------------------- viewDiff (model level)
+
+    /**
+     * A model bound to a mocked façade, declaring the fixture View.
+     */
+    private function facadeModel( ArangoDB $facade , array $view = [] , array $init = [] ) :Documents
+    {
+        return $this->viewModel( $view ,
+        [
+            Arango::DATABASE => $facade ,
+            ...$init ,
+        ]) ;
+    }
+
+    /**
+     * A façade double answering a healthy server : analyzer and collection
+     * known, `viewDiff()` returning the given report.
+     */
+    private function healthyFacade( ViewDiffReport $report ) :ArangoDB
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'analyzerExists'   )->willReturn( true ) ;
+        $facade->method( 'collectionExists' )->willReturn( true ) ;
+        $facade->method( 'viewDiff'         )->willReturn( $report ) ;
+        return $facade ;
+    }
+
+    public function testViewDiffIsInvalidWithoutDeclaration() :void
+    {
+        $report = $this->model()->viewDiff() ;
+
+        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertContains( 'declaration : no View name (Search::NAME)' , $report->changes ) ;
+    }
+
+    public function testViewDiffIsInvalidWithoutSearchedFields() :void
+    {
+        $report = $this->model( [ AQL::VIEW => [ Search::NAME => 'placesView' ] ] )->viewDiff() ;
+
+        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertContains( 'declaration : no searched field (Search::FIELDS or searchable)' , $report->changes ) ;
+    }
+
+    public function testViewDiffIsInvalidWithoutCollection() :void
+    {
+        $model = $this->model(
+        [
+            AQL::COLLECTION => null ,
+            AQL::VIEW       => [ Search::NAME => 'placesView' , Search::FIELDS => [ 'name' => 1 ] ] ,
+        ]) ;
+
+        $report = $model->viewDiff() ;
+
+        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertContains( 'declaration : no collection' , $report->changes ) ;
+    }
+
+    public function testViewDiffIsUnreachableWithoutDatabase() :void
+    {
+        $report = $this->viewModel()->viewDiff() ;
+
+        $this->assertSame( ViewDiffStatus::UNREACHABLE , $report->status ) ;
+        $this->assertSame( [ 'no database available' ] , $report->changes ) ;
+    }
+
+    public function testViewDiffForwardsAHealthyFacadeReport() :void
+    {
+        $expected = new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ;
+        $report   = $this->facadeModel( $this->healthyFacade( $expected ) )->viewDiff() ;
+
+        $this->assertSame( $expected , $report ) ;
+    }
+
+    public function testViewDiffIsInvalidWhenTheAnalyzerIsUnknown() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'analyzerExists'   )->willReturn( false ) ;
+        $facade->method( 'collectionExists' )->willReturn( true ) ;
+        $facade->method( 'viewDiff'         )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ) ;
+
+        $report = $this->facadeModel( $facade )->viewDiff() ;
+
+        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertContains( "analyzer 'text_fr' not found on the server" , $report->changes ) ;
+    }
+
+    public function testViewDiffIsInvalidWhenTheCollectionIsUnknownAndKeepsTheDriftLines() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'analyzerExists'   )->willReturn( true ) ;
+        $facade->method( 'collectionExists' )->willReturn( false ) ;
+        $facade->method( 'viewDiff'         )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] ) ) ;
+
+        $report = $this->facadeModel( $facade )->viewDiff() ;
+
+        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertContains( "collection 'places' not found on the server" , $report->changes ) ;
+        $this->assertContains( 'places.fields.name : not indexed on the server' , $report->changes ) ;
+    }
+
+    public function testViewDiffReturnsAnUnreachableFacadeReportWithoutCoherenceChecks() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'viewDiff' )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::UNREACHABLE , [ 'boom' ] ) ) ;
+        $facade->expects( $this->never() )->method( 'analyzerExists' ) ;
+        $facade->expects( $this->never() )->method( 'collectionExists' ) ;
+
+        $report = $this->facadeModel( $facade )->viewDiff() ;
+
+        $this->assertSame( ViewDiffStatus::UNREACHABLE , $report->status ) ;
+    }
+
+    // ---------------------------------------------------------------- viewSync (model level)
+
+    public function testViewSyncLeavesAnInSyncReportUntouched() :void
+    {
+        $facade = $this->healthyFacade( new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ) ;
+        $facade->expects( $this->never() )->method( 'viewSync' ) ;
+
+        $report = $this->facadeModel( $facade )->viewSync() ;
+
+        $this->assertSame( ViewDiffStatus::IN_SYNC , $report->status ) ;
+        $this->assertFalse( $report->applied ) ;
+    }
+
+    public function testViewSyncLeavesAnInvalidReportUntouched() :void
+    {
+        $report = $this->model()->viewSync() ;
+
+        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertFalse( $report->applied ) ;
+    }
+
+    public function testViewSyncDelegatesToTheFacadeWhenActionable() :void
+    {
+        $applied = new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING , [] , true ) ;
+
+        $facade = $this->healthyFacade( new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING ) ) ;
+        $facade->expects( $this->once() )
+               ->method( 'viewSync' )
+               ->with( 'placesView' , $this->callback(
+                   fn( array $links ) => ( $links[ 'places' ] ?? null ) instanceof ArangoSearchLink
+               ) )
+               ->willReturn( $applied ) ;
+
+        $this->assertSame( $applied , $this->facadeModel( $facade )->viewSync() ) ;
+    }
+
+    // ---------------------------------------------------------------- LazyTrait container kill-switch
+
+    public function testContainerLazyEntryDisablesTheViewProvisioning() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'viewExists' )->willReturn( false ) ;
+        $facade->expects( $this->never() )->method( 'viewCreate' ) ;
+
+        $container = new Container() ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
+        $container->set( Arango::LAZY , false ) ;
+
+        new Documents( $container ,
+        [
+            Arango::DATABASE => $facade ,
+            AQL::COLLECTION  => 'places' ,
+            AQL::LAZY        => true ,
+            AQL::VIEW        => [ Search::NAME => 'placesView' , Search::FIELDS => [ 'name' => 1 ] ] ,
+        ]) ;
+    }
+
+    public function testContainerLazyEntryDisablesTheCollectionProvisioning() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'collectionExists' )->willReturn( false ) ;
+        $facade->expects( $this->never() )->method( 'collectionCreate' ) ;
+
+        $container = new Container() ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
+        $container->set( Arango::LAZY , false ) ;
+
+        new Documents( $container ,
+        [
+            Arango::DATABASE => $facade ,
+            AQL::COLLECTION  => 'places' ,
+            AQL::LAZY        => true ,
+        ]) ;
+    }
+
+    public function testContainerLazyEntryWinsOverTheInitKey() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'viewExists' )->willReturn( false ) ;
+        $facade->expects( $this->once() )->method( 'viewCreate' )->willReturn( true ) ;
+
+        $container = new Container() ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
+        $container->set( Arango::LAZY , true ) ;
+
+        new Documents( $container ,
+        [
+            Arango::DATABASE => $facade ,
+            AQL::COLLECTION  => 'places' ,
+            AQL::LAZY        => false ,
+            AQL::VIEW        => [ Search::NAME => 'placesView' , Search::FIELDS => [ 'name' => 1 ] ] ,
+        ]) ;
+    }
+
+    public function testAnalyzerExistsDelegationIsNullSafeWithoutDatabase() :void
+    {
+        $this->assertFalse( $this->viewModel()->analyzerExists( 'text_fr' ) ) ;
     }
 }

@@ -22,6 +22,12 @@ class ArangoCommandParam
     public const string DIRECTORY = 'directory' ;
 
     /**
+     * The 'models' parameter — the container ids of the `Documents`
+     * models whose View declarations the `views` action inspects.
+     */
+    public const string MODELS = 'models' ;
+
+    /**
      * The 'timezone' parameter.
      */
     public const string TIMEZONE = 'timezone' ;

@@ -1,6 +1,6 @@
-# `command:arangodb` — dump / restore / collections
+# `command:arangodb` — dump / restore / collections / views
 
-`ArangoCommand` est la commande de maintenance d'une base ArangoDB : **sauvegarde** (`dump`), **restauration** (`restore`) et **inventaire des collections** (`collections`). Elle est livrée pré-câblée par la lib sous le nom `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) et s'utilise via `php bin/console.php command:arangodb <action> [options]`.
+`ArangoCommand` est la commande de maintenance d'une base ArangoDB : **sauvegarde** (`dump`), **restauration** (`restore`), **inventaire des collections** (`collections`) et **gestion des Views ArangoSearch** (`views`). Elle est livrée pré-câblée par la lib sous le nom `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) et s'utilise via `php bin/console.php command:arangodb <action> [options]`.
 
 Elle hérite du squelette [`oihana/php-commands`](../getting-started/dependencies.md#oihanaphp-commands) (gestion des arguments/options/sorties via **Symfony Console**) : `Kernel` (classe de base), `CommandArg` (arguments), `CommandOption` (options communes : `--clear`, `--passphrase`, …), `ExitCode`, et des traits utilitaires (`IOTrait`, `EncryptTrait`). Le contexte est donc une application Symfony Console standard, alimentée par un conteneur **PHP-DI**.
 
@@ -16,6 +16,7 @@ Elle hérite du squelette [`oihana/php-commands`](../getting-started/dependencie
 | `restore` | [`ArangoRestoreAction`](../../../src/oihana/arango/commands/actions/ArangoRestoreAction.php) | Réinjection via `arangorestore` depuis une archive sélectionnée par `--last`, `--date`, `--file` ou interactivement. Restauration de tout ou d'un sous-ensemble (`--collection`). |
 | `collections` | [`ArangoListCollectionsAction`](../../../src/oihana/arango/commands/actions/ArangoListCollectionsAction.php) | Liste les collections de la base via l'API HTTP. Portées : métier (défaut), `--system`, `--all`. |
 | `listDumps` (`--list`) | [`ArangoListDumpsAction`](../../../src/oihana/arango/commands/actions/ArangoListDumpsAction.php) | Liste les fichiers d'archive présents dans le dossier de dumps. |
+| `views` | [`ArangoViewsAction`](../../../src/oihana/arango/commands/actions/ArangoViewsAction.php) | Gestion des Views ArangoSearch via l'API HTTP : liste (défaut), `--diff` / `--sync` contre les déclarations `AQL::VIEW` des modèles, `--drop` ciblé ou interactif. |
 
 ---
 
@@ -78,8 +79,13 @@ return
                 ArangoAction::COLLECTIONS ,
                 ArangoAction::DUMP        ,
                 ArangoAction::RESTORE     ,
+                ArangoAction::VIEWS       ,
             ] ,
             ArangoCommandParam::DIRECTORY => $c->get( 'paths.dumps' ) , // votre propre définition
+
+            // Modèles dont l'action `views` inspecte les déclarations AQL::VIEW
+            // (ids de conteneur, comme Arango::MODEL côté contrôleurs).
+            ArangoCommandParam::MODELS    => [ Models::PLACES , Models::PRODUCTS ] ,
             CommandOption::ENCRYPT        => true ,
             CommandOption::PASS_PHRASE    => $c->get( 'arango.config' )[ 'passphrase' ] ?? null ,
 
@@ -112,6 +118,9 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--passphrase` | `-p` | dump, restore | Passphrase pour `--encrypt`. Prompt interactif sinon. |
 | `--directory` | `-dir` | toutes | Override du dossier de dump/restore. |
 | `--list` | `-l` | dump, restore | Liste les archives présentes au lieu d'agir. |
+| `--diff` | — | views | Compare les déclarations `AQL::VIEW` des modèles configurés à l'état serveur (lecture seule). |
+| `--sync[=a,b]` | — | views | Crée les Views manquantes et resynchronise les driftées — toutes, ou les noms donnés (virgules). |
+| `--drop[=a,b]` | — | views | Supprime les Views nommées (virgules), ou sélection interactive sans valeur. |
 | `--last` | `-la` | restore | Sélectionne l'archive la plus récente. |
 | `--date` | `-d` | restore | Sélectionne l'archive correspondant à une date ISO 8601. |
 | `--file` | `-f` | restore | Chemin explicite vers une archive. |
@@ -254,6 +263,70 @@ php bin/console.php command:arangodb collections --all     # toutes
 ```
 
 Lecture seule, via l'API HTTP. Pratique pour préparer un `--collection` / `--ignore-collection` correct.
+
+---
+
+## `views` — gestion des Views ArangoSearch
+
+```bash
+php bin/console.php command:arangodb views                    # liste les Views (nom, type, collections liées)
+php bin/console.php command:arangodb views --diff             # compare les déclarations des modèles au serveur
+php bin/console.php command:arangodb views --sync             # crée les manquantes, resynchronise les driftées
+php bin/console.php command:arangodb views --sync=placesView  # synchronisation ciblée (virgules acceptées)
+php bin/console.php command:arangodb views --drop=a,b         # suppression ciblée
+php bin/console.php command:arangodb views --drop             # sélection interactive (multi-choix)
+```
+
+Raccourci composer : `composer arango:views` (drapeaux après `--`, ex. `composer arango:views -- --diff`).
+
+### Pourquoi
+
+Le provisioning des modèles ([recherche View](../db/search-views.md)) est *create-if-missing* : changer le bloc `AQL::VIEW` ne met **pas** à jour une View existante — un champ ajouté n'est silencieusement pas indexé, un Analyzer changé ne matche presque plus rien. `views --diff` détecte ce drift, `views --sync` le répare via `updateProperties()` : la View reste interrogeable pendant que l'index inversé se reconstruit en arrière-plan, les options de la View (`commitIntervalMsec`, …) et les links d'autres collections ne sont pas touchés.
+
+### Câbler `--diff` / `--sync` dans un projet hôte (notice)
+
+`--list` et `--drop` marchent sans aucune configuration (connexion `[arango]` / options CLI). En revanche, `--diff` / `--sync` lisent les déclarations `AQL::VIEW` de **vos modèles** — trois étapes dans le projet hôte :
+
+1. **Activer l'action** — ajouter `ArangoAction::VIEWS` au tableau `CommandParam::ACTIONS` de la définition DI de la commande (voir [Câblage DI](#câblage-di) plus haut).
+2. **Lister les modèles à inspecter** — `ArangoCommandParam::MODELS => [ Models::PLACES , Models::PRODUCTS ]` : les **ids de conteneur** des définitions `Documents`, exactement comme `Arango::MODEL` côté contrôleurs.
+3. **Déclarer la View au modèle** — chaque modèle inspecté porte son bloc `AQL::VIEW` (`Search::NAME` / `Search::ANALYZER` / `Search::FIELDS`, voir [Recherche View](../db/search-views.md)).
+
+Un modèle listé sans bloc `AQL::VIEW` est simplement signalé « no View declared » et ignoré. Chaque modèle est interrogé sur **sa** base (`AQL::DATABASE`).
+
+```bash
+$ php bin/console.php command:arangodb views --diff
+
+ Diff the declared views
+ -----------------------
+
+ ~ placesView (models.places) — drifted
+     · places.fields.description : not indexed on the server
+ ✓ productsView (models.products) — in sync
+
+ Orphan views (declared by no configured model) : legacyView
+ Use `views --drop=name` to remove them explicitly.
+
+$ php bin/console.php command:arangodb views --sync
+ ✓ placesView (models.places) — resynchronized
+ ✓ productsView (models.products) — in sync
+```
+
+### Statuts du rapport
+
+| Statut | Signification | Effet de `--sync` |
+|---|---|---|
+| `inSync` | la View serveur correspond à la déclaration | aucun |
+| `missing` | déclarée mais absente du serveur | création |
+| `drifted` | champ non indexé, Analyzer différent, champ retiré encore indexé, … | `updateProperties()` |
+| `invalid` | déclaration mal formée, Analyzer ou collection introuvable, conflit de type | jamais touché |
+| `unreachable` | serveur injoignable | jamais touché |
+
+À savoir :
+
+- `--diff` est **sans effet de bord** : la commande coupe le provisioning lazy des modèles inspectés via l'entrée `lazy` du conteneur (`LazyTrait`) avant de les résoudre — rien n'est créé pendant un rapport.
+- Les **Views orphelines** (sur le serveur, déclarées par aucun modèle configuré) sont listées en pied de rapport — rapport seul, la suppression passe toujours par un `--drop` explicite.
+- Le code de sortie est en échec dès qu'un modèle est `unreachable` — intégrable tel quel dans un script de déploiement (`bun pull`, CI, …).
+- En PHP, les mêmes primitives sont disponibles directement : `$model->viewDiff()` / `$model->viewSync()` (retournent un `ViewDiffReport`), et côté façade `$db->viewDiff( $name , $links )` / `$db->viewSync( $name , $links )`.
 
 ---
 
