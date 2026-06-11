@@ -17,8 +17,8 @@ use ReflectionMethod;
 use oihana\arango\clients\view\ArangoSearchLink;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\ViewDiffStatus;
-use oihana\arango\db\results\ViewDiffReport;
+use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Facet;
@@ -568,7 +568,7 @@ class ViewSearchTest extends TestCase
      * A façade double answering a healthy server : analyzer and collection
      * known, `viewDiff()` returning the given report.
      */
-    private function healthyFacade( ViewDiffReport $report ) :ArangoDB
+    private function healthyFacade( DiffReport $report ) :ArangoDB
     {
         $facade = $this->createMock( ArangoDB::class ) ;
         $facade->method( 'analyzerExists'   )->willReturn( true ) ;
@@ -581,7 +581,7 @@ class ViewSearchTest extends TestCase
     {
         $report = $this->model()->viewDiff() ;
 
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertContains( 'declaration : no View name (Search::NAME)' , $report->changes ) ;
     }
 
@@ -589,7 +589,7 @@ class ViewSearchTest extends TestCase
     {
         $report = $this->model( [ AQL::VIEW => [ Search::NAME => 'placesView' ] ] )->viewDiff() ;
 
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertContains( 'declaration : no searched field (Search::FIELDS or searchable)' , $report->changes ) ;
     }
 
@@ -603,7 +603,7 @@ class ViewSearchTest extends TestCase
 
         $report = $model->viewDiff() ;
 
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertContains( 'declaration : no collection' , $report->changes ) ;
     }
 
@@ -611,13 +611,13 @@ class ViewSearchTest extends TestCase
     {
         $report = $this->viewModel()->viewDiff() ;
 
-        $this->assertSame( ViewDiffStatus::UNREACHABLE , $report->status ) ;
+        $this->assertSame( DiffStatus::UNREACHABLE , $report->status ) ;
         $this->assertSame( [ 'no database available' ] , $report->changes ) ;
     }
 
     public function testViewDiffForwardsAHealthyFacadeReport() :void
     {
-        $expected = new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ;
+        $expected = new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ;
         $report   = $this->facadeModel( $this->healthyFacade( $expected ) )->viewDiff() ;
 
         $this->assertSame( $expected , $report ) ;
@@ -628,11 +628,11 @@ class ViewSearchTest extends TestCase
         $facade = $this->createMock( ArangoDB::class ) ;
         $facade->method( 'analyzerExists'   )->willReturn( false ) ;
         $facade->method( 'collectionExists' )->willReturn( true ) ;
-        $facade->method( 'viewDiff'         )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ) ;
+        $facade->method( 'viewDiff'         )->willReturn( new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ) ;
 
         $report = $this->facadeModel( $facade )->viewDiff() ;
 
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertContains( "analyzer 'text_fr' not found on the server" , $report->changes ) ;
     }
 
@@ -641,11 +641,11 @@ class ViewSearchTest extends TestCase
         $facade = $this->createMock( ArangoDB::class ) ;
         $facade->method( 'analyzerExists'   )->willReturn( true ) ;
         $facade->method( 'collectionExists' )->willReturn( false ) ;
-        $facade->method( 'viewDiff'         )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] ) ) ;
+        $facade->method( 'viewDiff'         )->willReturn( new DiffReport( 'placesView' , DiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] ) ) ;
 
         $report = $this->facadeModel( $facade )->viewDiff() ;
 
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertContains( "collection 'places' not found on the server" , $report->changes ) ;
         $this->assertContains( 'places.fields.name : not indexed on the server' , $report->changes ) ;
     }
@@ -653,25 +653,25 @@ class ViewSearchTest extends TestCase
     public function testViewDiffReturnsAnUnreachableFacadeReportWithoutCoherenceChecks() :void
     {
         $facade = $this->createMock( ArangoDB::class ) ;
-        $facade->method( 'viewDiff' )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::UNREACHABLE , [ 'boom' ] ) ) ;
+        $facade->method( 'viewDiff' )->willReturn( new DiffReport( 'placesView' , DiffStatus::UNREACHABLE , [ 'boom' ] ) ) ;
         $facade->expects( $this->never() )->method( 'analyzerExists' ) ;
         $facade->expects( $this->never() )->method( 'collectionExists' ) ;
 
         $report = $this->facadeModel( $facade )->viewDiff() ;
 
-        $this->assertSame( ViewDiffStatus::UNREACHABLE , $report->status ) ;
+        $this->assertSame( DiffStatus::UNREACHABLE , $report->status ) ;
     }
 
     // ---------------------------------------------------------------- viewSync (model level)
 
     public function testViewSyncLeavesAnInSyncReportUntouched() :void
     {
-        $facade = $this->healthyFacade( new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ) ;
+        $facade = $this->healthyFacade( new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ) ;
         $facade->expects( $this->never() )->method( 'viewSync' ) ;
 
         $report = $this->facadeModel( $facade )->viewSync() ;
 
-        $this->assertSame( ViewDiffStatus::IN_SYNC , $report->status ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status ) ;
         $this->assertFalse( $report->applied ) ;
     }
 
@@ -679,15 +679,15 @@ class ViewSearchTest extends TestCase
     {
         $report = $this->model()->viewSync() ;
 
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertFalse( $report->applied ) ;
     }
 
     public function testViewSyncDelegatesToTheFacadeWhenActionable() :void
     {
-        $applied = new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING , [] , true ) ;
+        $applied = new DiffReport( 'placesView' , DiffStatus::MISSING , [] , true ) ;
 
-        $facade = $this->healthyFacade( new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING ) ) ;
+        $facade = $this->healthyFacade( new DiffReport( 'placesView' , DiffStatus::MISSING ) ) ;
         $facade->expects( $this->once() )
                ->method( 'viewSync' )
                ->with( 'placesView' , $this->callback(

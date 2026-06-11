@@ -13,8 +13,8 @@ use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\traits\ArangoConfigTrait;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\ViewDiffStatus;
-use oihana\arango\db\results\ViewDiffReport;
+use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Search;
@@ -160,7 +160,7 @@ class ArangoViewsActionTest extends TestCase
     }
 
     /** A façade double answering a healthy server with the given report. */
-    private function facade( ViewDiffReport $report , ?ViewDiffReport $synced = null ) :ArangoDB
+    private function facade( DiffReport $report , ?DiffReport $synced = null ) :ArangoDB
     {
         $facade = $this->createMock( ArangoDB::class ) ;
         $facade->method( 'analyzerExists'   )->willReturn( true ) ;
@@ -284,7 +284,7 @@ class ArangoViewsActionTest extends TestCase
 
     public function testDiffRendersInSyncAndTheOrphanFootnote() :void
     {
-        $model = $this->model( $this->facade( new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ) ) ;
+        $model = $this->model( $this->facade( new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ) ) ;
 
         $host = $this->host( [ 'models.places' => $model ] ) ;
         $host->fakeDatabase = $this->databaseListing(
@@ -306,7 +306,7 @@ class ArangoViewsActionTest extends TestCase
 
     public function testDiffRendersADriftWithItsChanges() :void
     {
-        $report = new ViewDiffReport( 'placesView' , ViewDiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] ) ;
+        $report = new DiffReport( 'placesView' , DiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] ) ;
         $model  = $this->model( $this->facade( $report ) ) ;
 
         $host = $this->host( [ 'models.places' => $model ] ) ;
@@ -322,12 +322,12 @@ class ArangoViewsActionTest extends TestCase
 
     public function testDiffRendersMissingAndInvalid() :void
     {
-        $missing = $this->model( $this->facade( new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING ) ) ) ;
+        $missing = $this->model( $this->facade( new DiffReport( 'placesView' , DiffStatus::MISSING ) ) ) ;
 
         $invalidFacade = $this->createMock( ArangoDB::class ) ;
         $invalidFacade->method( 'analyzerExists'   )->willReturn( false ) ;
         $invalidFacade->method( 'collectionExists' )->willReturn( true ) ;
-        $invalidFacade->method( 'viewDiff' )->willReturn( new ViewDiffReport( 'badView' , ViewDiffStatus::IN_SYNC ) ) ;
+        $invalidFacade->method( 'viewDiff' )->willReturn( new DiffReport( 'badView' , DiffStatus::IN_SYNC ) ) ;
 
         $invalid = $this->model( $invalidFacade , view : [ Search::NAME => 'badView' ] ) ;
 
@@ -346,7 +346,7 @@ class ArangoViewsActionTest extends TestCase
     public function testDiffMarksUnreachableAsFailure() :void
     {
         $facade = $this->createMock( ArangoDB::class ) ;
-        $facade->method( 'viewDiff' )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::UNREACHABLE , [ 'boom' ] ) ) ;
+        $facade->method( 'viewDiff' )->willReturn( new DiffReport( 'placesView' , DiffStatus::UNREACHABLE , [ 'boom' ] ) ) ;
 
         $host = $this->host( [ 'models.places' => $this->model( $facade ) ] ) ;
         $output = new BufferedOutput() ;
@@ -393,7 +393,7 @@ class ArangoViewsActionTest extends TestCase
     {
         $facade = $this->createMock( ArangoDB::class ) ;
         $facade->method( 'viewExists' )->willReturn( false ) ;
-        $facade->method( 'viewDiff' )->willReturn( new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING ) ) ;
+        $facade->method( 'viewDiff' )->willReturn( new DiffReport( 'placesView' , DiffStatus::MISSING ) ) ;
         $facade->method( 'analyzerExists' )->willReturn( true ) ;
         $facade->method( 'collectionExists' )->willReturn( true ) ;
         $facade->expects( $this->never() )->method( 'viewCreate' ) ;
@@ -421,7 +421,7 @@ class ArangoViewsActionTest extends TestCase
 
     public function testDiffSkipsTheOrphanFootnoteWhenEveryViewIsDeclared() :void
     {
-        $model = $this->model( $this->facade( new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ) ) ;
+        $model = $this->model( $this->facade( new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ) ) ;
 
         $host = $this->host( [ 'models.places' => $model ] ) ;
         $host->fakeDatabase = $this->databaseListing( [ [ 'name' => 'placesView' , 'type' => 'arangosearch' ] ] ) ;
@@ -438,7 +438,7 @@ class ArangoViewsActionTest extends TestCase
         $db = $this->createMock( Database::class ) ;
         $db->method( 'listViews' )->willThrowException( new ArangoException( 'boom' ) ) ;
 
-        $model = $this->model( $this->facade( new ViewDiffReport( 'placesView' , ViewDiffStatus::IN_SYNC ) ) ) ;
+        $model = $this->model( $this->facade( new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ) ) ;
 
         $host = $this->host( [ 'models.places' => $model ] ) ;
         $host->fakeDatabase = $db ;
@@ -456,14 +456,14 @@ class ArangoViewsActionTest extends TestCase
     {
         $created = $this->model( $this->facade
         (
-            new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING ) ,
-            new ViewDiffReport( 'placesView' , ViewDiffStatus::MISSING , [] , true )
+            new DiffReport( 'placesView' , DiffStatus::MISSING ) ,
+            new DiffReport( 'placesView' , DiffStatus::MISSING , [] , true )
         ) ) ;
 
         $repaired = $this->model( $this->facade
         (
-            new ViewDiffReport( 'reviewsView' , ViewDiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] ) ,
-            new ViewDiffReport( 'reviewsView' , ViewDiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] , true )
+            new DiffReport( 'reviewsView' , DiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] ) ,
+            new DiffReport( 'reviewsView' , DiffStatus::DRIFTED , [ 'places.fields.name : not indexed on the server' ] , true )
         ) , view : [ Search::NAME => 'reviewsView' ] ) ;
 
         $host = $this->host( [ 'models.a' => $created , 'models.b' => $repaired ] ) ;
@@ -479,7 +479,7 @@ class ArangoViewsActionTest extends TestCase
 
     public function testSyncFlagsAFailedApply() :void
     {
-        $report = new ViewDiffReport( 'placesView' , ViewDiffStatus::DRIFTED , [ 'sync failed : boom' ] ) ;
+        $report = new DiffReport( 'placesView' , DiffStatus::DRIFTED , [ 'sync failed : boom' ] ) ;
         $model  = $this->model( $this->facade( $report , $report ) ) ;
 
         $host = $this->host( [ 'models.places' => $model ] ) ;

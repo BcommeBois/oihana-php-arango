@@ -6,8 +6,8 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\ArangoSearchLink;
 use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\clients\view\enums\ViewType;
-use oihana\arango\db\enums\ViewDiffStatus;
-use oihana\arango\db\results\ViewDiffReport;
+use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\results\DiffReport;
 
 /**
  * View management methods shared by the {@see \oihana\arango\db\ArangoDB}
@@ -64,9 +64,9 @@ trait ViewManagementTrait
      * @param string                                               $name  The name of the View.
      * @param array<string, ArangoSearchLink|array<string, mixed>> $links Desired per-collection link map (collection name → link definition).
      *
-     * @return ViewDiffReport The typed report — see {@see ViewDiffStatus} for the possible statuses.
+     * @return DiffReport The typed report — see {@see DiffStatus} for the possible statuses.
      */
-    public function viewDiff( string $name , array $links ) : ViewDiffReport
+    public function viewDiff( string $name , array $links ) : DiffReport
     {
         try
         {
@@ -74,7 +74,7 @@ trait ViewManagementTrait
 
             if ( !$view->exists() )
             {
-                return new ViewDiffReport( $name , ViewDiffStatus::MISSING ) ;
+                return new DiffReport( $name , DiffStatus::MISSING ) ;
             }
 
             $properties = $view->properties() ;
@@ -82,7 +82,7 @@ trait ViewManagementTrait
             $type = $properties[ ViewField::TYPE ] ?? null ;
             if ( $type !== ViewType::ARANGOSEARCH )
             {
-                return new ViewDiffReport( $name , ViewDiffStatus::INVALID ,
+                return new DiffReport( $name , DiffStatus::INVALID ,
                 [
                     sprintf( "%s : the server entity is of type '%s', not '%s'" , $name , $type , ViewType::ARANGOSEARCH )
                 ] ) ;
@@ -90,11 +90,11 @@ trait ViewManagementTrait
 
             $changes = $this->compareViewLinks( $links , $properties[ ViewField::LINKS ] ?? [] ) ;
 
-            return new ViewDiffReport( $name , $changes === [] ? ViewDiffStatus::IN_SYNC : ViewDiffStatus::DRIFTED , $changes ) ;
+            return new DiffReport( $name , $changes === [] ? DiffStatus::IN_SYNC : DiffStatus::DRIFTED , $changes ) ;
         }
         catch ( ArangoException $exception )
         {
-            return new ViewDiffReport( $name , ViewDiffStatus::UNREACHABLE , [ $exception->getMessage() ] ) ;
+            return new DiffReport( $name , DiffStatus::UNREACHABLE , [ $exception->getMessage() ] ) ;
         }
     }
 
@@ -154,9 +154,9 @@ trait ViewManagementTrait
      * @param string                                               $name  The name of the View.
      * @param array<string, ArangoSearchLink|array<string, mixed>> $links Desired per-collection link map (collection name → link definition).
      *
-     * @return ViewDiffReport The {@see viewDiff()} report, with `$applied` set when the View has been created or updated.
+     * @return DiffReport The {@see viewDiff()} report, with `$applied` set when the View has been created or updated.
      */
-    public function viewSync( string $name , array $links ) : ViewDiffReport
+    public function viewSync( string $name , array $links ) : DiffReport
     {
         $report = $this->viewDiff( $name , $links ) ;
 
@@ -164,16 +164,16 @@ trait ViewManagementTrait
         {
             $applied = match( $report->status )
             {
-                ViewDiffStatus::MISSING => $this->viewCreate( $name , $links ) ,
-                ViewDiffStatus::DRIFTED => $this->database->view( $name )->updateProperties( [ ViewField::LINKS => $links ] ) !== [] ,
+                DiffStatus::MISSING => $this->viewCreate( $name , $links ) ,
+                DiffStatus::DRIFTED => $this->database->view( $name )->updateProperties( [ ViewField::LINKS => $links ] ) !== [] ,
                 default                 => false ,
             } ;
 
-            return new ViewDiffReport( $report->name , $report->status , $report->changes , $applied ) ;
+            return new DiffReport( $report->name , $report->status , $report->changes , $applied ) ;
         }
         catch ( ArangoException $exception )
         {
-            return new ViewDiffReport( $report->name , $report->status , [ ...$report->changes , 'sync failed : ' . $exception->getMessage() ] ) ;
+            return new DiffReport( $report->name , $report->status , [ ...$report->changes , 'sync failed : ' . $exception->getMessage() ] ) ;
         }
     }
 

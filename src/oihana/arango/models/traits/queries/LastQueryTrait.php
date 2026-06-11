@@ -2,8 +2,6 @@
 
 namespace oihana\arango\models\traits\queries;
 
-use oihana\arango\models\traits\aql\FieldsTrait;
-use oihana\traits\DebugTrait;
 use ReflectionException;
 
 use Psr\Container\ContainerExceptionInterface;
@@ -13,8 +11,10 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\aql\ActiveTrait;
 use oihana\arango\models\traits\aql\BindTrait;
+use oihana\arango\models\traits\aql\FieldsTrait;
 use oihana\arango\models\traits\aql\SearchTrait;
 use oihana\exceptions\BindException;
+use oihana\logging\DebugTrait;
 use oihana\models\traits\ConditionsTrait;
 
 use org\schema\constants\Schema;

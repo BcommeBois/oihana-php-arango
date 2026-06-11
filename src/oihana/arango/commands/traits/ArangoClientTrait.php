@@ -4,9 +4,12 @@ namespace oihana\arango\commands\traits;
 
 use Throwable;
 
+use Symfony\Component\Console\Input\InputInterface;
+
 use oihana\arango\clients\ArangoClient;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\options\ClientOptions;
+use oihana\arango\commands\options\ArangoCommandOption;
 
 use oihana\enums\Char;
 
@@ -31,6 +34,32 @@ use oihana\enums\Char;
  */
 trait ArangoClientTrait
 {
+    use ArangoConfigTrait ;
+
+    /**
+     * Builds the best-effort {@see Database} HTTP client of an action run:
+     * every connection setting reads its CLI option first
+     * (`--database` / `--endpoint` / `--user` / `--password`) and falls
+     * back on the command configuration ({@see ArangoConfigTrait}).
+     *
+     * One-stop shop for the actions — see {@see buildDatabase()} for the
+     * null-on-failure semantics.
+     *
+     * @param InputInterface $input The action input carrying the optional CLI overrides.
+     *
+     * @return Database|null
+     */
+    protected function resolveDatabase( InputInterface $input ) :?Database
+    {
+        return $this->buildDatabase
+        (
+            endpoint : $input->getOption( ArangoCommandOption::ENDPOINT ) ?? $this->getEndpoint() ,
+            username : $input->getOption( ArangoCommandOption::USER     ) ?? $this->getUsername() ,
+            password : $input->getOption( ArangoCommandOption::PASSWORD ) ?? $this->getPassword() ,
+            database : $input->getOption( ArangoCommandOption::DATABASE ) ?? $this->getDatabase() ,
+        ) ;
+    }
+
     /**
      * Builds a best-effort {@see Database} HTTP client from the resolved
      * connection settings, or null when no usable endpoint/database is

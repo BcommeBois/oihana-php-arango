@@ -1,6 +1,6 @@
-# `command:arangodb` — dump / restore / collections / views
+# `command:arangodb` — dump / restore / collections / views / doctor
 
-`ArangoCommand` is the maintenance command for an ArangoDB database: **backup** (`dump`), **restore** (`restore`), **collection inventory** (`collections`) and **ArangoSearch View management** (`views`). It ships pre-wired by the library under the name `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) and is used through `php bin/console.php command:arangodb <action> [options]`.
+`ArangoCommand` is the maintenance command for an ArangoDB database: **backup** (`dump`), **restore** (`restore`), **collection inventory** (`collections`), **ArangoSearch View management** (`views`) and **structure health check** (`doctor`). It ships pre-wired by the library under the name `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) and is used through `php bin/console.php command:arangodb <action> [options]`.
 
 It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oihanaphp-commands) skeleton (argument/option/output handling via **Symfony Console**): `Kernel` (base class), `CommandArg` (arguments), `CommandOption` (shared options: `--clear`, `--passphrase`, …), `ExitCode`, plus utility traits (`IOTrait`, `EncryptTrait`). The runtime context is therefore a standard Symfony Console application, fed by a **PHP-DI** container.
 
@@ -17,6 +17,7 @@ It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oiha
 | `collections` | [`ArangoListCollectionsAction`](../../../src/oihana/arango/commands/actions/ArangoListCollectionsAction.php) | Lists the database collections via the HTTP API. Scopes: user (default), `--system`, `--all`. |
 | `listDumps` (`--list`) | [`ArangoListDumpsAction`](../../../src/oihana/arango/commands/actions/ArangoListDumpsAction.php) | Lists the archive files present in the dumps directory. |
 | `views` | [`ArangoViewsAction`](../../../src/oihana/arango/commands/actions/ArangoViewsAction.php) | ArangoSearch View management via the HTTP API: list (default), `--diff` / `--sync` against the models' `AQL::VIEW` declarations, targeted or interactive `--drop`. |
+| `doctor` | [`ArangoDoctorAction`](../../../src/oihana/arango/commands/actions/ArangoDoctorAction.php) | Declarations ↔ server health check of the whole structure of the configured models (collections, indexes, Views) + orphans. Report by default, `--apply` repairs, interactive `--prune`. |
 
 ---
 
@@ -118,6 +119,9 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--passphrase` | `-p` | dump, restore | Passphrase for `--encrypt`. Interactive prompt otherwise. |
 | `--directory` | `-dir` | all | Override the dump/restore directory. |
 | `--list` | `-l` | dump, restore | List the present archives instead of acting. |
+| `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
+| `--force` | — | doctor | With `--apply`: allow the drop + recreate of drifted indexes. |
+| `--prune` | — | doctor | Interactive selection of the orphans (collections, Views) to remove. |
 | `--diff` | — | views | Compare the `AQL::VIEW` declarations of the configured models with the server state (read-only). |
 | `--sync[=a,b]` | — | views | Create the missing Views and resynchronize the drifted ones — all, or the given names (comma-separated). |
 | `--drop[=a,b]` | — | views | Drop the named Views (comma-separated), or interactive selection without a value. |
@@ -326,7 +330,64 @@ Worth knowing:
 - `--diff` is **side-effect free**: the command disables the lazy provisioning of the inspected models through the container `lazy` entry (`LazyTrait`) before resolving them — nothing gets created during a report.
 - **Orphan views** (on the server, declared by no configured model) are listed as a report footnote — report only, removal always goes through an explicit `--drop`.
 - The exit code fails as soon as a model is `unreachable` — usable as-is in a deployment script (`bun pull`, CI, …).
-- The same primitives are available straight from PHP: `$model->viewDiff()` / `$model->viewSync()` (returning a `ViewDiffReport`), and on the façade `$db->viewDiff( $name , $links )` / `$db->viewSync( $name , $links )`.
+- The same primitives are available straight from PHP: `$model->viewDiff()` / `$model->viewSync()` (returning a `DiffReport`), and on the façade `$db->viewDiff( $name , $links )` / `$db->viewSync( $name , $links )`.
+
+---
+
+## `doctor` — structure health check
+
+```bash
+php bin/console.php command:arangodb doctor                  # report : collections, indexes, Views + orphans
+php bin/console.php command:arangodb doctor --apply          # create what is missing, resync the Views
+php bin/console.php command:arangodb doctor --apply --force  # + drop & recreate the drifted indexes
+php bin/console.php command:arangodb doctor --prune          # interactive removal of the orphans
+```
+
+Composer shortcut: `composer arango:doctor` (flags after `--`, e.g. `composer arango:doctor -- --apply`).
+
+### Why
+
+The lazy model provisioning is *create-if-missing* — and for indexes it only ever runs **when the collection itself is created**: an index added to the `AQL::INDEXES` block of a model whose collection already exists is **never created**, on any environment, with no error whatsoever (queries silently fall back to full scans). `doctor` is the conformity command: it compares everything the models declare (`AQL::COLLECTION` + type, `AQL::INDEXES`, `AQL::VIEW`) with the actual server state, and `--apply` repairs.
+
+```bash
+$ php bin/console.php command:arangodb doctor
+
+ Diagnose the declared structure
+ -------------------------------
+
+ models.places
+   ✓ places [collection] — in sync
+   ~ places [indexes] — drifted
+       · byName : missing on the server
+   ✓ placesView [view] — in sync
+
+ Orphans (declared by no configured model) :
+     · collection : old_imports
+ Use `doctor --prune` (interactive) to remove them explicitly.
+
+ 1 model(s) — 2 in sync, 0 missing, 1 drifted, 0 invalid, 0 unreachable ; 1 orphan(s).
+```
+
+### What the report checks
+
+| Object | Checks | `--apply` repair |
+|---|---|---|
+| Collection | existence, type (2 = document, 3 = edge) | creation (with its indexes); a drifted type is **never** repaired (recreating means losing the documents → that is a migration) |
+| Indexes | presence of every declared index, field-by-field definition (**ordered** `fields`, `unique`, `sparse`, …), undeclared server indexes | missing ones created; drifted ones are **announced** and only rebuilt (drop + recreate) with `--force` |
+| View | the full `views --diff` report (fields, analyzers, declaration coherence) | `viewSync()` (`updateProperties()`) |
+| Orphans | collections (non-system) and Views on the server declared by no model | never automatic — interactive `--prune` only |
+
+Why `--force` is separate: an index is **immutable** — repairing it means dropping then recreating it, with a window where queries lose it, and a `unique` index may fail to recreate if duplicates appeared in the meantime. Not something a routine `--apply` should do on its own.
+
+### Health-check exit code
+
+The report mode fails (exit ≠ 0) as soon as something is `missing`, `drifted`, `invalid` or `unreachable` — a green `doctor` guarantees the structure matches the declarations (CI-friendly). **Orphans never fail** (they are a warning). In `--apply` mode the command only fails when something could not be repaired.
+
+### Wiring and PHP usage
+
+The wiring is **the same as `views`** ([notice](#wiring---diff----sync-in-a-host-project-notice)): `ArangoAction::DOCTOR` in `ACTIONS`, and the same `ArangoCommandParam::MODELS` key feeds both actions. Typical deployment workflow: `git pull` → `composer install` → `arangodb doctor --apply` → the structure is conform.
+
+The same operations are available straight on the models — `$model->diagnose()` (read-only, a list of `DiffReport`: collection, indexes, View) and `$model->repair( force: bool )` — and on the façade: `$db->collectionDiff()`, `$db->indexesDiff()` / `indexesSync()`, `$db->viewDiff()` / `viewSync()`.
 
 ---
 

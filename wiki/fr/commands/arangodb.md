@@ -1,6 +1,6 @@
-# `command:arangodb` — dump / restore / collections / views
+# `command:arangodb` — dump / restore / collections / views / doctor
 
-`ArangoCommand` est la commande de maintenance d'une base ArangoDB : **sauvegarde** (`dump`), **restauration** (`restore`), **inventaire des collections** (`collections`) et **gestion des Views ArangoSearch** (`views`). Elle est livrée pré-câblée par la lib sous le nom `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) et s'utilise via `php bin/console.php command:arangodb <action> [options]`.
+`ArangoCommand` est la commande de maintenance d'une base ArangoDB : **sauvegarde** (`dump`), **restauration** (`restore`), **inventaire des collections** (`collections`), **gestion des Views ArangoSearch** (`views`) et **bilan de santé de la structure** (`doctor`). Elle est livrée pré-câblée par la lib sous le nom `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) et s'utilise via `php bin/console.php command:arangodb <action> [options]`.
 
 Elle hérite du squelette [`oihana/php-commands`](../getting-started/dependencies.md#oihanaphp-commands) (gestion des arguments/options/sorties via **Symfony Console**) : `Kernel` (classe de base), `CommandArg` (arguments), `CommandOption` (options communes : `--clear`, `--passphrase`, …), `ExitCode`, et des traits utilitaires (`IOTrait`, `EncryptTrait`). Le contexte est donc une application Symfony Console standard, alimentée par un conteneur **PHP-DI**.
 
@@ -17,6 +17,7 @@ Elle hérite du squelette [`oihana/php-commands`](../getting-started/dependencie
 | `collections` | [`ArangoListCollectionsAction`](../../../src/oihana/arango/commands/actions/ArangoListCollectionsAction.php) | Liste les collections de la base via l'API HTTP. Portées : métier (défaut), `--system`, `--all`. |
 | `listDumps` (`--list`) | [`ArangoListDumpsAction`](../../../src/oihana/arango/commands/actions/ArangoListDumpsAction.php) | Liste les fichiers d'archive présents dans le dossier de dumps. |
 | `views` | [`ArangoViewsAction`](../../../src/oihana/arango/commands/actions/ArangoViewsAction.php) | Gestion des Views ArangoSearch via l'API HTTP : liste (défaut), `--diff` / `--sync` contre les déclarations `AQL::VIEW` des modèles, `--drop` ciblé ou interactif. |
+| `doctor` | [`ArangoDoctorAction`](../../../src/oihana/arango/commands/actions/ArangoDoctorAction.php) | Bilan de santé déclarations ↔ serveur pour toute la structure des modèles configurés (collections, index, Views) + orphelins. Rapport par défaut, `--apply` répare, `--prune` interactif. |
 
 ---
 
@@ -118,6 +119,9 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--passphrase` | `-p` | dump, restore | Passphrase pour `--encrypt`. Prompt interactif sinon. |
 | `--directory` | `-dir` | toutes | Override du dossier de dump/restore. |
 | `--list` | `-l` | dump, restore | Liste les archives présentes au lieu d'agir. |
+| `--apply` | — | doctor | Répare : crée le manquant (collections, index, Views), resynchronise les Views. |
+| `--force` | — | doctor | Avec `--apply` : autorise le drop + recreate des index driftés. |
+| `--prune` | — | doctor | Sélection interactive des orphelins (collections, Views) à supprimer. |
 | `--diff` | — | views | Compare les déclarations `AQL::VIEW` des modèles configurés à l'état serveur (lecture seule). |
 | `--sync[=a,b]` | — | views | Crée les Views manquantes et resynchronise les driftées — toutes, ou les noms donnés (virgules). |
 | `--drop[=a,b]` | — | views | Supprime les Views nommées (virgules), ou sélection interactive sans valeur. |
@@ -326,7 +330,64 @@ $ php bin/console.php command:arangodb views --sync
 - `--diff` est **sans effet de bord** : la commande coupe le provisioning lazy des modèles inspectés via l'entrée `lazy` du conteneur (`LazyTrait`) avant de les résoudre — rien n'est créé pendant un rapport.
 - Les **Views orphelines** (sur le serveur, déclarées par aucun modèle configuré) sont listées en pied de rapport — rapport seul, la suppression passe toujours par un `--drop` explicite.
 - Le code de sortie est en échec dès qu'un modèle est `unreachable` — intégrable tel quel dans un script de déploiement (`bun pull`, CI, …).
-- En PHP, les mêmes primitives sont disponibles directement : `$model->viewDiff()` / `$model->viewSync()` (retournent un `ViewDiffReport`), et côté façade `$db->viewDiff( $name , $links )` / `$db->viewSync( $name , $links )`.
+- En PHP, les mêmes primitives sont disponibles directement : `$model->viewDiff()` / `$model->viewSync()` (retournent un `DiffReport`), et côté façade `$db->viewDiff( $name , $links )` / `$db->viewSync( $name , $links )`.
+
+---
+
+## `doctor` — bilan de santé de la structure
+
+```bash
+php bin/console.php command:arangodb doctor                  # rapport : collections, index, Views + orphelins
+php bin/console.php command:arangodb doctor --apply          # crée le manquant, resynchronise les Views
+php bin/console.php command:arangodb doctor --apply --force  # + drop & recreate des index driftés
+php bin/console.php command:arangodb doctor --prune          # suppression interactive des orphelins
+```
+
+Raccourci composer : `composer arango:doctor` (drapeaux après `--`, ex. `composer arango:doctor -- --apply`).
+
+### Pourquoi
+
+Le provisioning lazy des modèles est *create-if-missing* — et pour les index, il ne joue même **qu'à la création de la collection** : un index ajouté au bloc `AQL::INDEXES` d'un modèle dont la collection existe déjà n'est **jamais créé**, sur aucun environnement, sans aucune erreur (les requêtes passent en full scan en silence). `doctor` est la commande de mise en conformité : elle compare tout ce que les modèles déclarent (`AQL::COLLECTION` + type, `AQL::INDEXES`, `AQL::VIEW`) à l'état réel du serveur, et `--apply` répare.
+
+```bash
+$ php bin/console.php command:arangodb doctor
+
+ Diagnose the declared structure
+ -------------------------------
+
+ models.places
+   ✓ places [collection] — in sync
+   ~ places [indexes] — drifted
+       · byName : missing on the server
+   ✓ placesView [view] — in sync
+
+ Orphans (declared by no configured model) :
+     · collection : old_imports
+ Use `doctor --prune` (interactive) to remove them explicitly.
+
+ 1 model(s) — 2 in sync, 0 missing, 1 drifted, 0 invalid, 0 unreachable ; 1 orphan(s).
+```
+
+### Ce que vérifie le rapport
+
+| Objet | Vérifications | Réparation `--apply` |
+|---|---|---|
+| Collection | existence, type (2 = document, 3 = edge) | création (avec ses index) ; un type drifté n'est **jamais** réparé (recréer = perdre les documents → migration) |
+| Index | présence de chaque index déclaré, définition champ à champ (`fields` **ordonnés**, `unique`, `sparse`, …), index serveur non déclarés | création des manquants ; les driftés sont **annoncés** et rebâtis (drop + recreate) seulement avec `--force` |
+| View | le rapport `views --diff` complet (champs, analyzers, cohérence de la déclaration) | `viewSync()` (`updateProperties()`) |
+| Orphelins | collections (non-système) et Views du serveur déclarées par aucun modèle | jamais automatique — `--prune` interactif uniquement |
+
+Pourquoi `--force` est séparé : un index est **immuable** — le réparer signifie le supprimer puis le recréer, avec une fenêtre où les requêtes le perdent, et un index `unique` peut échouer à se recréer si des doublons sont apparus entre-temps. On ne fait pas ça d'office dans un `--apply` de routine.
+
+### Code de sortie « bilan de santé »
+
+Le mode rapport échoue (exit ≠ 0) dès que quelque chose est `missing`, `drifted`, `invalid` ou `unreachable` — `doctor` vert garantit que la structure correspond aux déclarations (intégrable en CI). Les **orphelins ne font pas échouer** (c'est un avertissement). En mode `--apply`, la commande échoue seulement si quelque chose n'a pas pu être réparé.
+
+### Câblage et usage en PHP
+
+Le câblage est **le même que `views`** ([notice](#câbler---diff----sync-dans-un-projet-hôte-notice)) : `ArangoAction::DOCTOR` dans `ACTIONS`, et la même clé `ArangoCommandParam::MODELS` sert aux deux actions. Workflow de déploiement type : `git pull` → `composer install` → `arangodb doctor --apply` → la structure est conforme.
+
+Les mêmes opérations sont disponibles directement sur les modèles — `$model->diagnose()` (lecture seule, liste de `DiffReport` : collection, index, View) et `$model->repair( force: bool )` — et sur la façade : `$db->collectionDiff()`, `$db->indexesDiff()` / `indexesSync()`, `$db->viewDiff()` / `viewSync()`.
 
 ---
 

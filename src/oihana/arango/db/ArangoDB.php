@@ -28,6 +28,7 @@ use oihana\arango\db\results\ExplainResult ;
 use oihana\arango\db\results\ProfileResult ;
 use oihana\arango\db\traits\AnalyzerManagementTrait ;
 use oihana\arango\db\traits\CollectionManagementTrait ;
+use oihana\arango\db\traits\IndexManagementTrait ;
 use oihana\arango\db\traits\ViewManagementTrait ;
 
 /**
@@ -81,6 +82,7 @@ class ArangoDB
 
     use AnalyzerManagementTrait   ,
         CollectionManagementTrait ,
+        IndexManagementTrait      ,
         ToStringTrait             ,
         ViewManagementTrait       ;
 

@@ -27,6 +27,12 @@ class ArangoAction
     public const string DEFAULT = 'default' ;
 
     /**
+     * Diagnose / repair the declared structure of the arangodb database
+     * (collections, indexes, views, orphans).
+     */
+    public const string DOCTOR = 'doctor' ;
+
+    /**
      * Dump the arangodb database.
      */
     public const string DUMP = 'dump' ;

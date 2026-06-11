@@ -4,10 +4,8 @@ namespace oihana\arango\models\traits;
 
 use Closure;
 use Generator;
-use oihana\arango\db\options\indexes\IndexOptions;
-use oihana\models\traits\SchemaTrait;
-use org\schema\helpers\SchemaResolver;
 use ReflectionException;
+use org\schema\helpers\SchemaResolver;
 
 use DI\DependencyException;
 use DI\NotFoundException;
@@ -17,21 +15,22 @@ use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\clients\aql\AqlQuery;
+use oihana\arango\clients\collection\Collection;
 use oihana\arango\clients\collection\enums\CollectionField;
 use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\ArangoDB;
+use oihana\arango\db\options\indexes\IndexOptions;
 use oihana\arango\db\results\ExecutionStats;
 use oihana\arango\db\results\ExplainResult;
 use oihana\arango\db\results\ProfileResult;
 use oihana\arango\enums\Arango;
 
 use oihana\enums\Char;
-
+use oihana\logging\DebugTrait;
 use oihana\models\traits\AlterDocumentTrait;
-
-use oihana\traits\DebugTrait;
+use oihana\models\traits\SchemaTrait;
 use oihana\traits\LazyTrait;
 
 /**
@@ -54,6 +53,15 @@ trait ArangoTrait
      * @var string|null
      */
     public ?string $collection ;
+
+    /**
+     * The declared indexes of the collection (the `AQL::INDEXES` list of
+     * {@see IndexOptions} or raw definitions). Retained at initialization —
+     * whether the lazy provisioning ran or not — so the declaration can be
+     * compared with the server later ({@see DoctorTrait::diagnose()}).
+     * @var array|null
+     */
+    public ?array $indexes = null ;
 
     /**
      * Indicates the type of the collection when is created (document or edge).
@@ -141,14 +149,14 @@ trait ArangoTrait
     /**
      * Creates an index on a collection on the server.
      *
-     * @param mixed $collection Collection as string or object
+     * @param string|Collection $collection Collection name or {@see Collection} client handle.
      * @param array|IndexOptions $indexOptions An IndexOptions definition or an associative array of options for the index like array('type' => 'persistent', 'fields' => ['id','additionalType'], 'sparse' => false)
      *
      * @return array|null The server response of the created index or null
      *
      * @throws ReflectionException
      */
-    public function createIndex( mixed $collection, array|IndexOptions $indexOptions ) :?array
+    public function createIndex( string|Collection $collection, array|IndexOptions $indexOptions ) :?array
     {
         return $this->arangodb->createIndex( $collection , $indexOptions ) ;
     }
@@ -426,6 +434,7 @@ trait ArangoTrait
     :static
     {
         $this->collection = $init[ Arango::COLLECTION ] ?? null ;
+        $this->indexes    = $init[ Arango::INDEXES    ] ?? $this->indexes ;
         $this->type       = $init[ Arango::TYPE       ] ?? $type ;
 
         $lazy    = $this->initializeLazy( $init )->isLazy() ;
@@ -443,10 +452,9 @@ trait ArangoTrait
             ) ;
 
             // optional index registration when the collection is created.
-            $indexes = $init[ Arango::INDEXES ] ?? null ;
-            if( !empty( $indexes ) )
+            if( !empty( $this->indexes ) )
             {
-                foreach( $indexes as $options )
+                foreach( $this->indexes as $options )
                 {
                     $this->createIndex( $this->collection , $options ) ;
                 }

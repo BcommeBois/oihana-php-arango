@@ -52,13 +52,10 @@ trait ArangoListCollectionsAction
         $io = $this->getIO( $input , $output ) ;
 
         $database = $input->getOption( ArangoCommandOption::DATABASE ) ?? $this->getDatabase() ;
-        $endpoint = $input->getOption( ArangoCommandOption::ENDPOINT ) ?? $this->getEndpoint() ;
-        $password = $input->getOption( ArangoCommandOption::PASSWORD ) ?? $this->getPassword() ;
-        $username = $input->getOption( ArangoCommandOption::USER     ) ?? $this->getUsername() ;
 
         $io->section( sprintf( "List the collections of the '%s' database" , $database ) ) ;
 
-        $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+        $db = $this->resolveDatabase( $input ) ;
         if( $db === null )
         {
             $io->error( 'No ArangoDB HTTP client available (check the endpoint and database configuration).' ) ;

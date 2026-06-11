@@ -9,8 +9,8 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\functions\SearchFunction;
 use oihana\arango\db\enums\Logic;
-use oihana\arango\db\enums\ViewDiffStatus;
-use oihana\arango\db\results\ViewDiffReport;
+use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Search;
 use oihana\enums\Char;
@@ -303,12 +303,12 @@ trait SearchTrait
      * model-level report validates the coherence of the declaration itself:
      * a missing {@see Search::NAME}, no searched field, no collection, an
      * analyzer or a collection unknown to the server all resolve to
-     * {@see ViewDiffStatus::INVALID} — such a View is never created nor
+     * {@see DiffStatus::INVALID} — such a View is never created nor
      * synchronized automatically.
      *
-     * @return ViewDiffReport
+     * @return DiffReport
      */
-    public function viewDiff() :ViewDiffReport
+    public function viewDiff() :DiffReport
     {
         $name   = $this->getViewName() ;
         $errors = [] ;
@@ -328,13 +328,13 @@ trait SearchTrait
 
         if( $errors !== [] )
         {
-            return new ViewDiffReport( $name ?? Char::EMPTY , ViewDiffStatus::INVALID , $errors ) ;
+            return new DiffReport( $name ?? Char::EMPTY , DiffStatus::INVALID , $errors ) ;
         }
 
         $report = $this->arangodb?->viewDiff( $name , $this->getViewLinks() )
-               ?? new ViewDiffReport( $name , ViewDiffStatus::UNREACHABLE , [ 'no database available' ] ) ;
+               ?? new DiffReport( $name , DiffStatus::UNREACHABLE , [ 'no database available' ] ) ;
 
-        if( $report->status === ViewDiffStatus::UNREACHABLE )
+        if( $report->status === DiffStatus::UNREACHABLE )
         {
             return $report ;
         }
@@ -351,7 +351,7 @@ trait SearchTrait
 
         if( $errors !== [] )
         {
-            return new ViewDiffReport( $name , ViewDiffStatus::INVALID , [ ...$errors , ...$report->changes ] ) ;
+            return new DiffReport( $name , DiffStatus::INVALID , [ ...$errors , ...$report->changes ] ) ;
         }
 
         return $report ;
@@ -361,16 +361,16 @@ trait SearchTrait
      * Reconciles the model's View with its declaration: creates it when
      * missing, repairs a drift with `updateProperties()` (the View stays
      * available while the inverted index rebuilds in the background), and
-     * leaves {@see ViewDiffStatus::IN_SYNC}, {@see ViewDiffStatus::INVALID}
-     * or {@see ViewDiffStatus::UNREACHABLE} reports untouched.
+     * leaves {@see DiffStatus::IN_SYNC}, {@see DiffStatus::INVALID}
+     * or {@see DiffStatus::UNREACHABLE} reports untouched.
      *
-     * @return ViewDiffReport The {@see viewDiff()} report, with `$applied` set when the View has been created or updated.
+     * @return DiffReport The {@see viewDiff()} report, with `$applied` set when the View has been created or updated.
      */
-    public function viewSync() :ViewDiffReport
+    public function viewSync() :DiffReport
     {
         $report = $this->viewDiff() ;
 
-        if( $report->status !== ViewDiffStatus::MISSING && $report->status !== ViewDiffStatus::DRIFTED )
+        if( $report->status !== DiffStatus::MISSING && $report->status !== DiffStatus::DRIFTED )
         {
             return $report ;
         }

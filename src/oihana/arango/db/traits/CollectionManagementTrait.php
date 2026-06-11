@@ -2,14 +2,15 @@
 
 namespace oihana\arango\db\traits ;
 
-use ReflectionException ;
-
 use oihana\arango\clients\exceptions\ArangoException ;
 
 use oihana\arango\clients\Database ;
-use oihana\arango\clients\collection\indexes\RawIndexDefinition ;
+use oihana\arango\clients\collection\Collection ;
+use oihana\arango\clients\collection\enums\CollectionField ;
 
-use oihana\arango\db\options\indexes\IndexOptions ;
+use oihana\arango\db\enums\DiffKind ;
+use oihana\arango\db\enums\DiffStatus ;
+use oihana\arango\db\results\DiffReport ;
 
 /**
  * Collection-management surface of the {@see \oihana\arango\db\ArangoDB}
@@ -18,10 +19,10 @@ use oihana\arango\db\options\indexes\IndexOptions ;
  * to the new `clients/Collection` (and `clients/Database`).
  *
  * Every method returning `bool` maps server-side exceptions to `false`
- * silently; `createIndex()` / `dropIndex()` log a warning and return
- * `null` / `false`. The throwing methods (`collectionRename` / `getIndex`
- * / `getIndexes`) let the `oihana\arango\clients\exceptions\ArangoException`
- * propagate directly.
+ * silently; `collectionRename()` lets the
+ * `oihana\arango\clients\exceptions\ArangoException` propagate directly.
+ * The index surface lives in {@see IndexManagementTrait}, which composes
+ * this trait.
  *
  * @package oihana\arango\db\traits
  */
@@ -31,10 +32,6 @@ trait CollectionManagementTrait
      * @var Database Database scope shared with the parent façade.
      */
     protected Database $database ;
-
-    // =========================================================================
-    // Collections (alphabetical)
-    // =========================================================================
 
     /**
      * Creates a new collection if it does not already exist.
@@ -58,6 +55,52 @@ trait CollectionManagementTrait
         catch ( ArangoException ) {}
 
         return false ;
+    }
+
+    /**
+     * Compares a declared collection with the server state and reports the
+     * difference — the collection half of the `doctor` diagnosis.
+     *
+     * The check is existence first ({@see DiffStatus::MISSING} when the
+     * collection is absent), then — when `$type` is given — the collection
+     * type (`2` document / `3` edge): a mismatch is reported as
+     * {@see DiffStatus::DRIFTED} (a collection type cannot be changed, the
+     * repair is manual by design).
+     *
+     * @param string   $name The name of the collection.
+     * @param int|null $type The declared collection type (`2` document, `3` edge), or null to skip the type check.
+     *
+     * @return DiffReport The typed report ({@see DiffKind::COLLECTION}).
+     */
+    public function collectionDiff( string $name , ?int $type = null ) : DiffReport
+    {
+        try
+        {
+            $collection = $this->database->collection( $name ) ;
+
+            if ( !$collection->exists() )
+            {
+                return new DiffReport( $name , DiffStatus::MISSING , kind : DiffKind::COLLECTION ) ;
+            }
+
+            if ( $type !== null )
+            {
+                $serverType = $collection->properties()[ CollectionField::TYPE ] ?? null ;
+                if ( $serverType !== $type )
+                {
+                    return new DiffReport( $name , DiffStatus::DRIFTED ,
+                    [
+                        sprintf( 'type : server %s ≠ declared %s (2 = document, 3 = edge)' , json_encode( $serverType ) , $type )
+                    ] , kind : DiffKind::COLLECTION ) ;
+                }
+            }
+
+            return new DiffReport( $name , DiffStatus::IN_SYNC , kind : DiffKind::COLLECTION ) ;
+        }
+        catch ( ArangoException $exception )
+        {
+            return new DiffReport( $name , DiffStatus::UNREACHABLE , [ $exception->getMessage() ] , kind : DiffKind::COLLECTION ) ;
+        }
     }
 
     /**
@@ -149,122 +192,16 @@ trait CollectionManagementTrait
         return false ;
     }
 
-    // =========================================================================
-    // Indexes
-    // =========================================================================
-
     /**
-     * Creates an index on a collection.
+     * Resolves a collection reference (string name or {@see Collection}
+     * client handle) to its string name.
      *
-     * @param mixed              $collection   Collection as string (name) or object exposing `getName()`.
-     * @param array|IndexOptions $indexOptions An {@see IndexOptions} value object or a raw associative array matching the `POST /_api/index` body.
-     *
-     * @return array|null The server response of the created index, or null on failure.
-     *
-     * @throws ReflectionException When the {@see IndexOptions} cannot be serialised.
-     */
-    public function createIndex( mixed $collection , array|IndexOptions $indexOptions ) : ?array
-    {
-        try
-        {
-            $body = $indexOptions instanceof IndexOptions
-                ? $indexOptions->jsonSerialize()
-                : $indexOptions ;
-
-            return $this->database
-                        ->collection( $this->resolveCollectionName( $collection ) )
-                        ->createIndex( new RawIndexDefinition( $body ) ) ;
-        }
-        catch ( ArangoException $exception )
-        {
-            $this->logger?->warning( $exception->getMessage() ) ;
-        }
-
-        return null ;
-    }
-
-    /**
-     * Drops an index from a collection.
-     *
-     * @param mixed      $collection  Collection name or full index handle (`collection/indexId`) when `$indexHandle` is null.
-     * @param mixed|null $indexHandle Index id / name suffix; when null, `$collection` is treated as the full handle.
-     *
-     * @return bool TRUE when the index has been dropped.
-     */
-    public function dropIndex( mixed $collection , mixed $indexHandle = null ) : bool
-    {
-        try
-        {
-            if ( $indexHandle === null )
-            {
-                $parts = explode( '/' , (string) $collection , 2 ) ;
-                if ( count( $parts ) !== 2 )
-                {
-                    return false ;
-                }
-                [ $collectionName , $indexKey ] = $parts ;
-            }
-            else
-            {
-                $collectionName = $this->resolveCollectionName( $collection ) ;
-                $indexKey       = (string) $indexHandle ;
-            }
-
-            $this->database->collection( $collectionName )->dropIndex( $indexKey ) ;
-            return true ;
-        }
-        catch ( ArangoException $exception )
-        {
-            $this->logger?->warning( $exception->getMessage() ) ;
-        }
-
-        return false ;
-    }
-
-    /**
-     * Returns a specific index of a collection by its ID.
-     *
-     * @param string $collection The name of the collection.
-     * @param string $indexId    The index ID (full handle or bare key — bare keys are auto-prefixed with the collection name).
-     *
-     * @return array The index definition from the server.
-     *
-     * @throws ArangoException When the index is missing or the request fails.
-     */
-    public function getIndex( string $collection , string $indexId ) : array
-    {
-        return $this->database->collection( $collection )->index( $indexId ) ;
-    }
-
-    /**
-     * Returns all indexes of a collection.
-     *
-     * @param string $name The name of the collection.
-     *
-     * @return array The indexes array from the server response.
-     *
-     * @throws ArangoException When the request fails.
-     */
-    public function getIndexes( string $name ) : array
-    {
-        return $this->database->collection( $name )->indexes() ;
-    }
-
-    /**
-     * Resolves a collection reference (string name or object exposing
-     * `getName()`) to its string name.
-     *
-     * @param mixed $collection
+     * @param string|Collection $collection
      *
      * @return string
      */
-    private function resolveCollectionName( mixed $collection ) : string
+    protected function resolveCollectionName( string|Collection $collection ) : string
     {
-        if ( is_object( $collection ) && method_exists( $collection , 'getName' ) )
-        {
-            return (string) $collection->getName() ;
-        }
-
-        return (string) $collection ;
+        return $collection instanceof Collection ? $collection->getName() : $collection ;
     }
 }

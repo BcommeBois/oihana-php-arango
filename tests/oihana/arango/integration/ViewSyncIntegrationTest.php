@@ -19,7 +19,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\ArangoConfig;
-use oihana\arango\db\enums\ViewDiffStatus;
+use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Search;
@@ -142,7 +142,7 @@ final class ViewSyncIntegrationTest extends IntegrationTestCase
 
         $this->assertTrue( $narrow->viewExists( self::VIEW ) , 'The model construction must create the declared View.' ) ;
         $this->waitForSearchCount( $narrow , 'bois' , 1 ) ; // B (name) only — A.description is not indexed
-        $this->assertSame( ViewDiffStatus::IN_SYNC , $narrow->viewDiff()->status ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $narrow->viewDiff()->status ) ;
 
         // 2 — the declaration evolves : drift detected, field silently unsearchable.
 
@@ -151,17 +151,17 @@ final class ViewSyncIntegrationTest extends IntegrationTestCase
         $this->assertSame( 0 , $wide->count( [ Arango::SEARCH => 'sapin' ] ) , 'The new field must NOT be searchable before the sync (the drift).' ) ;
 
         $report = $wide->viewDiff() ;
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertContains( 'places.fields.description : not indexed on the server' , $report->changes ) ;
 
         // 3 — sync repairs : the report is applied, the View converges, the search finds A.
 
         $report = $wide->viewSync() ;
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertTrue( $report->applied ) ;
 
         $this->waitForSearchCount( $wide , 'sapin' , 1 ) ;
-        $this->assertSame( ViewDiffStatus::IN_SYNC , $wide->viewDiff()->status ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $wide->viewDiff()->status ) ;
 
         $rows   = $wide->list( [ Arango::SEARCH => 'sapin' ] ) ;
         $labels = array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
@@ -169,13 +169,13 @@ final class ViewSyncIntegrationTest extends IntegrationTestCase
 
         // 4 — narrowing the declaration and syncing unindexes the removed field.
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $narrow->viewDiff()->status , 'The narrow declaration must now drift (extra indexed field).' ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $narrow->viewDiff()->status , 'The narrow declaration must now drift (extra indexed field).' ) ;
 
         $report = $narrow->viewSync() ;
         $this->assertTrue( $report->applied ) ;
 
         $this->waitForSearchCount( $narrow , 'sapin' , 0 ) ;
-        $this->assertSame( ViewDiffStatus::IN_SYNC , $narrow->viewDiff()->status ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $narrow->viewDiff()->status ) ;
     }
 
     /**
@@ -189,7 +189,7 @@ final class ViewSyncIntegrationTest extends IntegrationTestCase
         $this->assertFalse( $model->viewExists( 'badView' ) , 'The defensive lazy provisioning must not leave a broken View behind.' ) ;
 
         $report = $model->viewDiff() ;
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertContains( "analyzer 'no_such_analyzer' not found on the server" , $report->changes ) ;
 
         $this->assertFalse( $model->viewSync()->applied , 'An INVALID report must never be applied.' ) ;

@@ -6,7 +6,7 @@ use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\ArangoSearchLink;
 use oihana\arango\clients\view\View;
-use oihana\arango\db\enums\ViewDiffStatus;
+use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\traits\ViewManagementTrait;
 
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -166,36 +166,36 @@ class ViewManagementTraitTest extends ArangoDBTestCase
         return $view ;
     }
 
-    public function testViewDiffReportsMissingWhenTheViewDoesNotExist() :void
+    public function testDiffReportsMissingWhenTheViewDoesNotExist() :void
     {
         $view = $this->createMock( View::class ) ;
         $view->method( 'exists' )->willReturn( false ) ;
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::MISSING , $report->status ) ;
+        $this->assertSame( DiffStatus::MISSING , $report->status ) ;
         $this->assertSame( 'placesView' , $report->name ) ;
         $this->assertSame( [] , $report->changes ) ;
     }
 
-    public function testViewDiffReportsUnreachableOnClientException() :void
+    public function testDiffReportsUnreachableOnClientException() :void
     {
         $database = $this->createMock( Database::class ) ;
         $database->method( 'view' )->willThrowException( new ArangoException( 'connection refused' ) ) ;
 
         $report = $this->newArangoDB( $database )->viewDiff( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::UNREACHABLE , $report->status ) ;
+        $this->assertSame( DiffStatus::UNREACHABLE , $report->status ) ;
         $this->assertSame( [ 'connection refused' ] , $report->changes ) ;
     }
 
-    public function testViewDiffReportsInvalidOnViewTypeConflict() :void
+    public function testDiffReportsInvalidOnViewTypeConflict() :void
     {
         $view = $this->viewWithProperties( $this->serverProperties( [] , type : 'search-alias' ) ) ;
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::INVALID , $report->status ) ;
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertStringContainsString( "'search-alias'" , $report->changes[0] ) ;
     }
 
@@ -205,7 +205,7 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::IN_SYNC , $report->status ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status ) ;
         $this->assertTrue( $report->inSync() ) ;
         $this->assertSame( [] , $report->changes ) ;
     }
@@ -218,7 +218,7 @@ class ViewManagementTraitTest extends ArangoDBTestCase
         $this->assertTrue( $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $links )->inSync() ) ;
     }
 
-    public function testViewDiffReportsAFieldMissingOnTheServer() :void
+    public function testDiffReportsAFieldMissingOnTheServer() :void
     {
         $links = [ 'places' => new ArangoSearchLink( fields :
         [
@@ -230,21 +230,21 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $links ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertSame( [ 'places.fields.description : not indexed on the server' ] , $report->changes ) ;
     }
 
-    public function testViewDiffReportsAnAnalyzerMismatch() :void
+    public function testDiffReportsAnAnalyzerMismatch() :void
     {
         $view = $this->viewWithProperties( $this->serverProperties( [ 'name' => [ 'analyzers' => [ 'text_en' ] ] ] ) ) ;
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertSame( [ 'places.fields.name.analyzers : server ["text_en"] ≠ declared ["text_fr"]' ] , $report->changes ) ;
     }
 
-    public function testViewDiffReportsAFieldIndexedButNotDeclared() :void
+    public function testDiffReportsAFieldIndexedButNotDeclared() :void
     {
         $view = $this->viewWithProperties( $this->serverProperties(
         [
@@ -254,33 +254,33 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertSame( [ 'places.fields.old : indexed on the server but not declared' ] , $report->changes ) ;
     }
 
-    public function testViewDiffReportsAScalarMismatch() :void
+    public function testDiffReportsAScalarMismatch() :void
     {
         $links = [ 'places' => new ArangoSearchLink( includeAllFields : true ) ] ;
         $view  = $this->viewWithProperties( $this->serverProperties( [] ) ) ;
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $links ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertSame( [ 'places.includeAllFields : server false ≠ declared true' ] , $report->changes ) ;
     }
 
-    public function testViewDiffReportsAMissingCollectionLink() :void
+    public function testDiffReportsAMissingCollectionLink() :void
     {
         $links = [ ...$this->declaredLinks() , 'reviews' => new ArangoSearchLink( fields : [ 'body' => new ArangoSearchLink( analyzers : [ 'text_fr' ] ) ] ) ] ;
         $view  = $this->viewWithProperties( $this->serverProperties( [ 'name' => [ 'analyzers' => [ 'text_fr' ] ] ] ) ) ;
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $links ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertSame( [ 'reviews : not linked on the server' ] , $report->changes ) ;
     }
 
-    public function testViewDiffReportsACollectionLinkedButNotDeclared() :void
+    public function testDiffReportsACollectionLinkedButNotDeclared() :void
     {
         $properties = $this->serverProperties( [ 'name' => [ 'analyzers' => [ 'text_fr' ] ] ] ) ;
         $properties[ 'links' ][ 'reviews' ] = [ 'fields' => [] ] ;
@@ -289,7 +289,7 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewDiff( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertSame( [ 'reviews : linked on the server but not declared' ] , $report->changes ) ;
     }
 
@@ -311,7 +311,7 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewSync( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::MISSING , $report->status ) ;
+        $this->assertSame( DiffStatus::MISSING , $report->status ) ;
         $this->assertTrue( $report->applied ) ;
     }
 
@@ -328,7 +328,7 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewSync( 'placesView' , $links ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertTrue( $report->applied ) ;
         $this->assertNotSame( [] , $report->changes ) ;
     }
@@ -341,7 +341,7 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewSync( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::IN_SYNC , $report->status ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status ) ;
         $this->assertFalse( $report->applied ) ;
     }
 
@@ -352,7 +352,7 @@ class ViewManagementTraitTest extends ArangoDBTestCase
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewSync( 'placesView' , $this->declaredLinks() ) ;
 
-        $this->assertSame( ViewDiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertFalse( $report->applied ) ;
         $this->assertContains( 'sync failed : boom' , $report->changes ) ;
     }

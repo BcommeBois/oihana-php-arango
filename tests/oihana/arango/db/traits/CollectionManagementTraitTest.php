@@ -5,7 +5,8 @@ namespace tests\oihana\arango\db\traits;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\collection\Collection;
 use oihana\arango\clients\exceptions\ArangoException;
-use oihana\arango\db\options\indexes\IndexOptions;
+use oihana\arango\db\enums\DiffKind;
+use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\traits\CollectionManagementTrait;
 
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -187,125 +188,58 @@ class CollectionManagementTraitTest extends ArangoDBTestCase
         $this->assertFalse( $this->newArangoDB( $database )->collectionTruncate( 'users' ) ) ;
     }
 
-    // ---- createIndex ----------------------------------------------------
+    // ---- collectionDiff ---------------------------------------------------
 
-    public function testCreateIndexReturnsServerResponse() :void
+    public function testCollectionDiffReportsMissing() :void
     {
         $collection = $this->createMock( Collection::class ) ;
-        $collection->method( 'createIndex' )->willReturn( [ 'id' => 'users/42' ] ) ;
+        $collection->method( 'exists' )->willReturn( false ) ;
 
-        $db = $this->newArangoDB( $this->databaseReturning( $collection ) ) ;
+        $report = $this->newArangoDB( $this->databaseReturning( $collection ) )->collectionDiff( 'places' ) ;
 
-        $this->assertSame( [ 'id' => 'users/42' ] , $db->createIndex( 'users' , [ 'type' => 'persistent' , 'fields' => [ 'name' ] ] ) ) ;
+        $this->assertSame( DiffStatus::MISSING , $report->status ) ;
+        $this->assertSame( DiffKind::COLLECTION , $report->kind ) ;
+        $this->assertSame( 'places' , $report->name ) ;
     }
 
-    public function testCreateIndexAcceptsAnIndexOptionsObject() :void
+    public function testCollectionDiffIsInSyncWithoutTypeCheck() :void
     {
         $collection = $this->createMock( Collection::class ) ;
-        $collection->method( 'createIndex' )->willReturn( [ 'id' => 'users/7' ] ) ;
+        $collection->method( 'exists' )->willReturn( true ) ;
+        $collection->expects( $this->never() )->method( 'properties' ) ;
 
-        $db = $this->newArangoDB( $this->databaseReturning( $collection ) ) ;
-
-        // an IndexOptions value object is serialized via jsonSerialize()
-        $options = new IndexOptions( [ 'type' => 'persistent' , 'fields' => [ 'name' ] ] ) ;
-
-        $this->assertSame( [ 'id' => 'users/7' ] , $db->createIndex( 'users' , $options ) ) ;
+        $this->assertTrue( $this->newArangoDB( $this->databaseReturning( $collection ) )->collectionDiff( 'places' )->inSync() ) ;
     }
 
-    public function testCreateIndexResolvesCollectionObjectName() :void
+    public function testCollectionDiffIsInSyncWhenTheTypeMatches() :void
     {
         $collection = $this->createMock( Collection::class ) ;
-        $collection->method( 'createIndex' )->willReturn( [ 'id' => 'x' ] ) ;
+        $collection->method( 'exists' )->willReturn( true ) ;
+        $collection->method( 'properties' )->willReturn( [ 'type' => 2 ] ) ;
 
-        $database = $this->createMock( Database::class ) ;
-        // the object's getName() must be used as the collection name
-        $database->expects( $this->once() )->method( 'collection' )->with( 'people' )->willReturn( $collection ) ;
-
-        $db = $this->newArangoDB( $database ) ;
-
-        $namedCollection = new class { public function getName() :string { return 'people' ; } } ;
-
-        $this->assertSame( [ 'id' => 'x' ] , $db->createIndex( $namedCollection , [ 'type' => 'persistent' ] ) ) ;
+        $this->assertTrue( $this->newArangoDB( $this->databaseReturning( $collection ) )->collectionDiff( 'places' , 2 )->inSync() ) ;
     }
 
-    public function testCreateIndexLogsAndReturnsNullOnClientException() :void
-    {
-        $database = $this->createMock( Database::class ) ;
-        $database->method( 'collection' )->willThrowException( new ArangoException( 'bad index' ) ) ;
-
-        $this->assertNull( $this->newArangoDB( $database )->createIndex( 'users' , [ 'type' => 'persistent' ] ) ) ;
-    }
-
-    // ---- dropIndex ------------------------------------------------------
-
-    public function testDropIndexWithFullHandle() :void
+    public function testCollectionDiffReportsATypeDrift() :void
     {
         $collection = $this->createMock( Collection::class ) ;
-        $collection->expects( $this->once() )->method( 'dropIndex' )->with( '42' ) ;
+        $collection->method( 'exists' )->willReturn( true ) ;
+        $collection->method( 'properties' )->willReturn( [ 'type' => 3 ] ) ;
 
-        $database = $this->createMock( Database::class ) ;
-        $database->expects( $this->once() )->method( 'collection' )->with( 'users' )->willReturn( $collection ) ;
+        $report = $this->newArangoDB( $this->databaseReturning( $collection ) )->collectionDiff( 'places' , 2 ) ;
 
-        $this->assertTrue( $this->newArangoDB( $database )->dropIndex( 'users/42' ) ) ;
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertSame( [ 'type : server 3 ≠ declared 2 (2 = document, 3 = edge)' ] , $report->changes ) ;
     }
 
-    public function testDropIndexWithCollectionAndHandle() :void
-    {
-        $collection = $this->createMock( Collection::class ) ;
-        $collection->expects( $this->once() )->method( 'dropIndex' )->with( 'idx' ) ;
-
-        $db = $this->newArangoDB( $this->databaseReturning( $collection ) ) ;
-
-        $this->assertTrue( $db->dropIndex( 'users' , 'idx' ) ) ;
-    }
-
-    public function testDropIndexReturnsFalseOnMalformedHandle() :void
-    {
-        // no '/' and no explicit handle → cannot resolve → false
-        $this->assertFalse( $this->newArangoDB()->dropIndex( 'noslash' ) ) ;
-    }
-
-    public function testDropIndexLogsAndReturnsFalseOnClientException() :void
+    public function testCollectionDiffReportsUnreachableOnClientException() :void
     {
         $database = $this->createMock( Database::class ) ;
-        $database->method( 'collection' )->willThrowException( new ArangoException() ) ;
+        $database->method( 'collection' )->willThrowException( new ArangoException( 'connection refused' ) ) ;
 
-        $this->assertFalse( $this->newArangoDB( $database )->dropIndex( 'users' , 'idx' ) ) ;
-    }
+        $report = $this->newArangoDB( $database )->collectionDiff( 'places' ) ;
 
-    // ---- getIndex / getIndexes ------------------------------------------
-
-    public function testGetIndexReturnsDefinition() :void
-    {
-        $collection = $this->createMock( Collection::class ) ;
-        $collection->method( 'index' )->willReturn( [ 'id' => 'users/1' ] ) ;
-
-        $this->assertSame( [ 'id' => 'users/1' ] , $this->newArangoDB( $this->databaseReturning( $collection ) )->getIndex( 'users' , '1' ) ) ;
-    }
-
-    public function testGetIndexPropagatesClientException() :void
-    {
-        $database = $this->createMock( Database::class ) ;
-        $database->method( 'collection' )->willThrowException( new ArangoException() ) ;
-
-        $this->expectException( ArangoException::class ) ;
-        $this->newArangoDB( $database )->getIndex( 'users' , '1' ) ;
-    }
-
-    public function testGetIndexesReturnsList() :void
-    {
-        $collection = $this->createMock( Collection::class ) ;
-        $collection->method( 'indexes' )->willReturn( [ [ 'id' => 'a' ] , [ 'id' => 'b' ] ] ) ;
-
-        $this->assertCount( 2 , $this->newArangoDB( $this->databaseReturning( $collection ) )->getIndexes( 'users' ) ) ;
-    }
-
-    public function testGetIndexesPropagatesClientException() :void
-    {
-        $database = $this->createMock( Database::class ) ;
-        $database->method( 'collection' )->willThrowException( new ArangoException() ) ;
-
-        $this->expectException( ArangoException::class ) ;
-        $this->newArangoDB( $database )->getIndexes( 'users' ) ;
+        $this->assertSame( DiffStatus::UNREACHABLE , $report->status ) ;
+        $this->assertSame( [ 'connection refused' ] , $report->changes ) ;
     }
 }

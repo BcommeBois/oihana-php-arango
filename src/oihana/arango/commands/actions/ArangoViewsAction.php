@@ -14,8 +14,9 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\traits\ArangoClientTrait;
-use oihana\arango\db\enums\ViewDiffStatus;
-use oihana\arango\db\results\ViewDiffReport;
+use oihana\arango\commands\traits\ArangoModelsTrait;
+use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 
@@ -42,7 +43,7 @@ use oihana\enums\Char;
  *
  * - `--diff`        : compares the `AQL::VIEW` declaration of every configured
  *                     model with the server state and reports the differences
- *                     ({@see ViewDiffStatus}), plus the
+ *                     ({@see DiffStatus}), plus the
  *                     orphan views (on the server, declared by no model).
  *                     Read-only — the lazy provisioning of the inspected
  *                     models is disabled through the container `lazy` entry.
@@ -63,15 +64,8 @@ use oihana\enums\Char;
 trait ArangoViewsAction
 {
     use ArangoClientTrait ,
+        ArangoModelsTrait ,
         IOTrait ;
-
-    /**
-     * Container ids of the `Documents` models whose View declarations
-     * the `--diff` / `--sync` modes inspect.
-     *
-     * @var array<int, string>
-     */
-    public array $models = [] ;
 
     /**
      * Manages the views of the database.
@@ -111,12 +105,7 @@ trait ArangoViewsAction
      */
     private function viewsDatabase( InputInterface $input , SymfonyStyle $io ) :?Database
     {
-        $database = $input->getOption( ArangoCommandOption::DATABASE ) ?? $this->getDatabase() ;
-        $endpoint = $input->getOption( ArangoCommandOption::ENDPOINT ) ?? $this->getEndpoint() ;
-        $password = $input->getOption( ArangoCommandOption::PASSWORD ) ?? $this->getPassword() ;
-        $username = $input->getOption( ArangoCommandOption::USER     ) ?? $this->getUsername() ;
-
-        $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+        $db = $this->resolveDatabase( $input ) ;
         if( $db === null )
         {
             $io->error( 'No ArangoDB HTTP client available (check the endpoint and database configuration).' ) ;
@@ -344,7 +333,7 @@ trait ArangoViewsAction
 
             $this->viewsRenderReport( $io , $id , $report , $apply ) ;
 
-            if( $report->status === ViewDiffStatus::UNREACHABLE )
+            if( $report->status === DiffStatus::UNREACHABLE )
             {
                 $status = ExitCode::FAILURE ;
             }
@@ -372,12 +361,7 @@ trait ArangoViewsAction
      */
     private function viewsRenderOrphans( InputInterface $input , SymfonyStyle $io , array $declared ) :void
     {
-        $database = $input->getOption( ArangoCommandOption::DATABASE ) ?? $this->getDatabase() ;
-        $endpoint = $input->getOption( ArangoCommandOption::ENDPOINT ) ?? $this->getEndpoint() ;
-        $password = $input->getOption( ArangoCommandOption::PASSWORD ) ?? $this->getPassword() ;
-        $username = $input->getOption( ArangoCommandOption::USER     ) ?? $this->getUsername() ;
-
-        $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+        $db = $this->resolveDatabase( $input ) ;
         if( $db === null )
         {
             return ;
@@ -406,31 +390,31 @@ trait ArangoViewsAction
     }
 
     /**
-     * Prints one model's {@see ViewDiffReport} as a status line plus one
+     * Prints one model's {@see DiffReport} as a status line plus one
      * indented line per change.
      *
      * @param SymfonyStyle   $io
      * @param string         $id     The container id of the model.
-     * @param ViewDiffReport $report The report to render.
+     * @param DiffReport $report The report to render.
      * @param bool           $apply  Whether the report comes from `viewSync()`.
      * @return void
      */
-    private function viewsRenderReport( SymfonyStyle $io , string $id , ViewDiffReport $report , bool $apply ) :void
+    private function viewsRenderReport( SymfonyStyle $io , string $id , DiffReport $report , bool $apply ) :void
     {
         $label = sprintf( '%s (%s)' , $report->name , $id ) ;
 
         $line = match( true )
         {
-            $report->status === ViewDiffStatus::IN_SYNC                       => sprintf( '<info>✓</info> %s — in sync' , $label ) ,
-            $report->status === ViewDiffStatus::MISSING && $report->applied   => sprintf( '<info>✓</info> %s — created' , $label ) ,
-            $report->status === ViewDiffStatus::MISSING                       => sprintf( '<error>✗</error> %s — missing on the server' , $label ) ,
-            $report->status === ViewDiffStatus::DRIFTED && $report->applied   => sprintf( '<info>✓</info> %s — resynchronized' , $label ) ,
-            $report->status === ViewDiffStatus::DRIFTED                       => sprintf( '<comment>~</comment> %s — drifted' , $label ) ,
-            $report->status === ViewDiffStatus::INVALID                       => sprintf( '<error>!</error> %s — invalid' , $label ) ,
+            $report->status === DiffStatus::IN_SYNC                       => sprintf( '<info>✓</info> %s — in sync' , $label ) ,
+            $report->status === DiffStatus::MISSING && $report->applied   => sprintf( '<info>✓</info> %s — created' , $label ) ,
+            $report->status === DiffStatus::MISSING                       => sprintf( '<error>✗</error> %s — missing on the server' , $label ) ,
+            $report->status === DiffStatus::DRIFTED && $report->applied   => sprintf( '<info>✓</info> %s — resynchronized' , $label ) ,
+            $report->status === DiffStatus::DRIFTED                       => sprintf( '<comment>~</comment> %s — drifted' , $label ) ,
+            $report->status === DiffStatus::INVALID                       => sprintf( '<error>!</error> %s — invalid' , $label ) ,
             default                                                           => sprintf( '<error>!</error> %s — unreachable' , $label ) ,
         } ;
 
-        if( $apply && !$report->applied && in_array( $report->status , [ ViewDiffStatus::MISSING , ViewDiffStatus::DRIFTED ] , true ) )
+        if( $apply && !$report->applied && in_array( $report->status , [ DiffStatus::MISSING , DiffStatus::DRIFTED ] , true ) )
         {
             $line .= ' (sync failed)' ;
         }

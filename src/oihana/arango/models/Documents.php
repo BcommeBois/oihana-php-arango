@@ -8,6 +8,7 @@ use DI\NotFoundException;
 use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\models\traits\aql\FieldsTrait;
 use oihana\arango\models\traits\AQLQueryTrait;
+use oihana\arango\models\traits\DoctorTrait;
 use oihana\arango\models\traits\documents\DocumentsMethodsTrait;
 use oihana\arango\models\traits\DocumentsArrayTrait;
 use oihana\models\interfaces\DocumentsModel;
@@ -153,6 +154,7 @@ class Documents implements DocumentsModel
     BindsTrait ,
     ConfigTrait ,
     ContainerTrait ,
+    DoctorTrait ,
     DocumentsArrayTrait ,
     DocumentsMethodsTrait,
     FieldsTrait ,
