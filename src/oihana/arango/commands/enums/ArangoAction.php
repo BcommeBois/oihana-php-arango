@@ -43,6 +43,11 @@ class ArangoAction
     public const string LIST_DUMPS = 'listDumps' ;
 
     /**
+     * Apply / rollback the versioned data migrations of the arangodb database.
+     */
+    public const string MIGRATE = 'migrate' ;
+
+    /**
      * Retore the arangodb database.
      */
     public const string RESTORE = 'restore' ;

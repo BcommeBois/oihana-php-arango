@@ -48,6 +48,7 @@ return
                     ArangoAction::COLLECTIONS ,
                     ArangoAction::DOCTOR      ,
                     ArangoAction::DUMP        ,
+                    ArangoAction::MIGRATE     ,
                     ArangoAction::RESTORE     ,
                     ArangoAction::VIEWS       ,
                 ] ,

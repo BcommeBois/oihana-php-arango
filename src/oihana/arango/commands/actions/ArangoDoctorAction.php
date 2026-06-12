@@ -14,10 +14,15 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\traits\ArangoClientTrait;
+use oihana\arango\commands\traits\ArangoMigrationsTrait;
 use oihana\arango\commands\traits\ArangoModelsTrait;
 use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
+use oihana\arango\migrations\enums\MigrationKind;
+use oihana\arango\migrations\enums\MigrationStatus;
+use oihana\arango\migrations\MigrationAction;
+use oihana\arango\migrations\MigrationStore;
 use oihana\arango\models\Documents;
 
 use oihana\commands\enums\ExitCode;
@@ -70,6 +75,7 @@ use oihana\enums\Char;
 trait ArangoDoctorAction
 {
     use ArangoClientTrait ,
+        ArangoMigrationsTrait ,
         ArangoModelsTrait ,
         IOTrait ;
 
@@ -107,6 +113,7 @@ trait ArangoDoctorAction
         $declaredCollections = [] ;
         $declaredViews       = [] ;
         $counters            = [] ;
+        $applied             = [] ;
         $healthy             = true ;
 
         foreach( $this->models as $id )
@@ -142,6 +149,11 @@ trait ArangoDoctorAction
                 {
                     $healthy = false ;
                 }
+
+                if( $apply && $report->applied )
+                {
+                    $applied[] = $report ;
+                }
             }
 
             if( !empty( $model->collection ) )
@@ -153,6 +165,8 @@ trait ArangoDoctorAction
                 $declaredViews[] = $model->getViewName() ;
             }
         }
+
+        $this->doctorJournal( $input , $applied ) ;
 
         $orphans = $this->doctorOrphans( $input , $io , $declaredCollections , $declaredViews ) ;
 
@@ -177,6 +191,58 @@ trait ArangoDoctorAction
         $io->newLine() ;
 
         return $healthy ? ExitCode::SUCCESS : ExitCode::FAILURE ;
+    }
+
+    /**
+     * Journals each applied object as a `CreateAction` in the tracking
+     * collection — the audit trail of `doctor --apply`, told apart from the
+     * versioned migrations by its `additionalType` ({@see MigrationKind::DOCTOR}).
+     *
+     * Best-effort: nothing is journaled when nothing was applied or the
+     * database is unreachable, and a journal failure never fails the run.
+     * The migration runner ignores these rows.
+     *
+     * @param InputInterface     $input
+     * @param array<int, DiffReport> $applied The reports actually created / repaired.
+     *
+     * @return void
+     */
+    private function doctorJournal( InputInterface $input , array $applied ) :void
+    {
+        if( $applied === [] )
+        {
+            return ;
+        }
+
+        $db = $this->resolveDatabase( $input ) ;
+        if( $db === null )
+        {
+            return ;
+        }
+
+        $store     = new MigrationStore( $db , $this->migrationsCollection ) ;
+        $agent     = $this->agent() ;
+        $gitCommit = $this->gitCommit() ;
+
+        try
+        {
+            foreach( $applied as $report )
+            {
+                $action = new MigrationAction() ;
+                $action->name           = sprintf( 'doctor: %s %s' , $report->kind , $report->name ) ;
+                $action->description    = sprintf( '%s — %s' , $report->status , implode( ' ; ' , $report->changes ) ) ;
+                $action->additionalType = MigrationKind::DOCTOR ;
+                $action->actionStatus   = MigrationStatus::COMPLETED ;
+                $action->agent          = $agent ;
+                $action->gitCommit      = $gitCommit ;
+
+                $store->append( $action ) ;
+            }
+        }
+        catch( ArangoException )
+        {
+            // the audit journal must never fail the doctor run
+        }
     }
 
     /**

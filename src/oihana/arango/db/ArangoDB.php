@@ -16,6 +16,7 @@ use oihana\traits\ToStringTrait ;
 
 use oihana\arango\clients\aql\AqlQuery ;
 use oihana\arango\clients\ArangoClient ;
+use oihana\arango\clients\Database ;
 use oihana\arango\clients\cursor\Cursor ;
 use oihana\arango\clients\cursor\enums\CursorField ;
 use oihana\arango\clients\exceptions\ArangoException ;
@@ -174,6 +175,19 @@ class ArangoDB
     // --- Metadata Getters ---
 
     /**
+     * Returns the underlying low-level {@see Database} client — the direct
+     * access to `query()` and `collection()` used by the migration engine
+     * (and available to a {@see \oihana\arango\migrations\Migration} through
+     * `$this->db->database()`).
+     *
+     * @return Database
+     */
+    public function database() : Database
+    {
+        return $this->database ;
+    }
+
+    /**
      * Returns the current Cursor reference, or null when no query has been
      * executed yet (or after {@see streamDocuments()} reset the state).
      *
@@ -195,16 +209,14 @@ class ArangoDB
     }
 
     /**
-     * Returns the typed execution statistics of the last query, read from the
-     * cursor's `extra.stats` (populated when the query ran with the `profile`
-     * option, or for the parts the server always reports).
+     * Returns the total number of rows of the last query (when
+     * `fullCount: true` was requested on the cursor options).
      *
-     * @return ExecutionStats
+     * @return int
      */
-    public function getStats() : ExecutionStats
+    public function getFoundRows() : int
     {
-        $stats = $this->getExtra()[ Extra::STATS ] ?? [] ;
-        return new ExecutionStats( is_array( $stats ) ? $stats : [] ) ;
+        return $this->cursor?->getFullCount() ?? 0 ;
     }
 
     /**
@@ -219,14 +231,16 @@ class ArangoDB
     }
 
     /**
-     * Returns the total number of rows of the last query (when
-     * `fullCount: true` was requested on the cursor options).
+     * Returns the typed execution statistics of the last query, read from the
+     * cursor's `extra.stats` (populated when the query ran with the `profile`
+     * option, or for the parts the server always reports).
      *
-     * @return int
+     * @return ExecutionStats
      */
-    public function getFoundRows() : int
+    public function getStats() : ExecutionStats
     {
-        return $this->cursor?->getFullCount() ?? 0 ;
+        $stats = $this->getExtra()[ Extra::STATS ] ?? [] ;
+        return new ExecutionStats( is_array( $stats ) ? $stats : [] ) ;
     }
 
     // --- Query Execution & Results ---

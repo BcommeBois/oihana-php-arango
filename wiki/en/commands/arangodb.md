@@ -1,6 +1,6 @@
-# `command:arangodb` — dump / restore / collections / views / doctor
+# `command:arangodb` — dump / restore / collections / views / doctor / migrate
 
-`ArangoCommand` is the maintenance command for an ArangoDB database: **backup** (`dump`), **restore** (`restore`), **collection inventory** (`collections`), **ArangoSearch View management** (`views`) and **structure health check** (`doctor`). It ships pre-wired by the library under the name `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) and is used through `php bin/console.php command:arangodb <action> [options]`.
+`ArangoCommand` is the maintenance command for an ArangoDB database: **backup** (`dump`), **restore** (`restore`), **collection inventory** (`collections`), **ArangoSearch View management** (`views`), **structure health check** (`doctor`) and **versioned data migrations** (`migrate`). It ships pre-wired by the library under the name `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) and is used through `php bin/console.php command:arangodb <action> [options]`.
 
 It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oihanaphp-commands) skeleton (argument/option/output handling via **Symfony Console**): `Kernel` (base class), `CommandArg` (arguments), `CommandOption` (shared options: `--clear`, `--passphrase`, …), `ExitCode`, plus utility traits (`IOTrait`, `EncryptTrait`). The runtime context is therefore a standard Symfony Console application, fed by a **PHP-DI** container.
 
@@ -18,6 +18,7 @@ It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oiha
 | `listDumps` (`--list`) | [`ArangoListDumpsAction`](../../../src/oihana/arango/commands/actions/ArangoListDumpsAction.php) | Lists the archive files present in the dumps directory. |
 | `views` | [`ArangoViewsAction`](../../../src/oihana/arango/commands/actions/ArangoViewsAction.php) | ArangoSearch View management via the HTTP API: list (default), `--diff` / `--sync` against the models' `AQL::VIEW` declarations, targeted or interactive `--drop`. |
 | `doctor` | [`ArangoDoctorAction`](../../../src/oihana/arango/commands/actions/ArangoDoctorAction.php) | Declarations ↔ server health check of the whole structure of the configured models (collections, indexes, Views) + orphans. Report by default, `--apply` repairs, interactive `--prune`. |
+| `migrate` | [`ArangoMigrateAction`](../../../src/oihana/arango/commands/actions/ArangoMigrateAction.php) | Versioned **data** migrations: PHP `up()`/`down()` classes run once per database, tracked in the database. `--status`, `--dry-run`, apply (with confirmation), `--down[=n]`, `--forget`, `--create`. |
 
 ---
 
@@ -122,6 +123,12 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
 | `--force` | — | doctor | With `--apply`: allow the drop + recreate of drifted indexes. |
 | `--prune` | — | doctor | Interactive selection of the orphans (collections, Views) to remove. |
+| `--create` | — | migrate | Generate an empty migration shell with this description. |
+| `--status` | — | migrate | Table of applied / pending migrations for this database. |
+| `--dry-run` | — | migrate | List the pending migrations without running them. |
+| `--yes` | `-y` | migrate | Apply without the confirmation prompt (scripts / CI). |
+| `--down` | — | migrate | Roll back the last N applied migrations, default 1 (LIFO). |
+| `--forget` | — | migrate | Rescue: drop a tracking row **without** running its `down()`. |
 | `--diff` | — | views | Compare the `AQL::VIEW` declarations of the configured models with the server state (read-only). |
 | `--sync[=a,b]` | — | views | Create the missing Views and resynchronize the drifted ones — all, or the given names (comma-separated). |
 | `--drop[=a,b]` | — | views | Drop the named Views (comma-separated), or interactive selection without a value. |
@@ -388,6 +395,119 @@ The report mode fails (exit ≠ 0) as soon as something is `missing`, `drifted`,
 The wiring is **the same as `views`** ([notice](#wiring---diff----sync-in-a-host-project-notice)): `ArangoAction::DOCTOR` in `ACTIONS`, and the same `ArangoCommandParam::MODELS` key feeds both actions. Typical deployment workflow: `git pull` → `composer install` → `arangodb doctor --apply` → the structure is conform.
 
 The same operations are available straight on the models — `$model->diagnose()` (read-only, a list of `DiffReport`: collection, indexes, View) and `$model->repair( force: bool )` — and on the façade: `$db->collectionDiff()`, `$db->indexesDiff()` / `indexesSync()`, `$db->viewDiff()` / `viewSync()`.
+
+---
+
+## `migrate` — versioned data migrations
+
+```bash
+php bin/console.php command:arangodb migrate --create "multilingual description"  # generate a shell
+php bin/console.php command:arangodb migrate --status      # applied / pending, for THIS database
+php bin/console.php command:arangodb migrate --dry-run     # list the pending ones, without running them
+php bin/console.php command:arangodb migrate              # apply the pending ones (with confirmation)
+php bin/console.php command:arangodb migrate --yes        # apply without confirmation (bun pull / CI)
+php bin/console.php command:arangodb migrate --down       # roll back the last applied one
+php bin/console.php command:arangodb migrate --down=3     # roll back the last 3
+php bin/console.php command:arangodb migrate --forget=20260612090000_AddKind   # rescue
+```
+
+Composer shortcut: `composer arango:migrate -- --status`.
+
+### `doctor` or `migrate`? The "from where you sit" rule
+
+These are **two separate worlds that never cross**:
+
+| You change… | Tool | Migration? |
+|---|---|---|
+| a DI declaration — collection, index, Analyzer, `AQL::VIEW` block (the **structure**) | `doctor --apply` | **no**, ever |
+| the **content** of documents already in the database — transform, normalize, dedupe, backfill | `migrate` | **yes**, a small migration |
+
+`doctor` **never** asks for a migration. You write a migration only the day you must rework existing data — in practice a handful per year. Example: `description` goes from a plain string to `{ fr, en }`. Adding the multilingual field to the DI declaration → `doctor`. Transforming the old documents (`"text"` → `{ fr: "text", en: null }`) → a migration, because a data transformation is an **algorithm**, not a state expressible as configuration.
+
+### Anatomy of a migration
+
+`migrate --create "…"` generates an **empty shell** — the class, the timestamp, empty `up()`/`down()` — and prints its path. The tool guesses nothing: you write the intent in `up()`.
+
+```php
+// api/src/fr/bouney/migrations/Version20260612090000_DescriptionMultilingue.php
+namespace fr\bouney\migrations ;
+
+use oihana\arango\migrations\Migration ;
+
+class Version20260612090000_DescriptionMultilingue extends Migration
+{
+    public function description() : string { return 'description string → { fr, en }' ; }
+
+    public function up() : void
+    {
+        // free AQL — the escape hatch for any transformation
+        $this->query( 'FOR doc IN places FILTER TYPENAME(doc.description) == "string"
+                       UPDATE doc WITH { description: { fr: doc.description, en: null } } IN places' ) ;
+    }
+
+    public function down() : void
+    {
+        $this->query( 'FOR doc IN places FILTER TYPENAME(doc.description) == "object"
+                       UPDATE doc WITH { description: doc.description.fr } IN places' ) ;
+    }
+}
+```
+
+The `Migration` class receives the `ArangoDB` façade (`$this->db`) — so free AQL via `$this->query()`, the collection CRUD and even the doctor primitives — plus a **toolbox** of common operations to avoid hand-writing AQL:
+
+```php
+public function up() : void
+{
+    $this->renameField( 'contacts' , 'tel' , 'phone' ) ;   // "tel" → "phone" on every document
+    $this->dropField( 'places' , 'legacy' ) ;              // remove an obsolete attribute
+    $this->setDefault( 'orders' , 'status' , 'pending' ) ; // backfill where the field is missing / null
+}
+```
+
+### The golden rule about editing
+
+A migration has two lives:
+
+- **not yet applied** (on your machine, locally) → you edit it **freely**; you can test it in a loop (`migrate`, `migrate --down`, re-edit, `migrate`);
+- **already applied** (committed, gone to staging/prod) → **never edit it again**: it is marked "done" in each database's tracking, so a re-edit would go nowhere. A fix is a **new migration**.
+
+This is what guarantees prod = staging = local.
+
+### Where the files live, and the wiring
+
+The `Version*.php` files live in **your host project** (e.g. `api/src/fr/bouney/migrations/`, under the `fr\bouney\migrations` namespace). The library only provides the `Migration` base class and the engine. Three command init keys:
+
+```php
+// api/definitions/@commands/arangodb.php
+ArangoCommandParam::MIGRATIONS_PATH      => $c->get( Paths::MIGRATIONS ) ,   // the Version*.php directory
+ArangoCommandParam::MIGRATIONS_NAMESPACE => 'fr\\bouney\\migrations' ,        // their PHP namespace
+ArangoCommandParam::MIGRATIONS_COLLECTION => 'migrations' ,                   // the tracking collection (default)
+```
+
+plus `ArangoAction::MIGRATE` in `CommandParam::ACTIONS`.
+
+### The database tracking
+
+Every applied migration writes **one row** in the tracking collection (`migrations`, one per database — because staging, prod and your machine are at different levels that the code alone cannot know). The document is a schema.org value-object (`MigrationAction` ⊂ `UpdateAction`): `_key` = version, `actionStatus` (`active` → `completed` | `failed`), `startTime`/`endTime`, `agent` (`user@host`), `error`, plus the **`gitCommit`** hash of the current commit — the link between the database and the source tree. A nominal run inserts the row as `active`, runs `up()`, flips it to `completed`; if `up()` throws, the row flips to `failed` and the run **stops immediately** (never a half-migrated database).
+
+> The tracking is **shared with `doctor --apply`**: each structure object actually created/repaired is journaled as a `CreateAction` (told apart from migrations by its `additionalType`). One collection, one vocabulary, two event families — `migrate` ignores the `doctor` rows.
+
+### Safety
+
+- **Confirmation**: an interactive `migrate` lists the pending migrations then asks `[y/N]`. `--yes` skips it (scripts); a **non-interactive run without `--yes` stops** (never a silent data migration).
+- **LIFO rollback**: `--down` rewinds **from the end** (the stack), never a migration in the middle. A migration with no `down()` (the no-op default) is un-tracked with no effect on the data.
+- **`--forget`** is a **rescue** operation: it drops a tracking row **without** running `down()` — to repair a drifted tracking (a migration undone by hand). Dangerous: the migration becomes pending again.
+
+### Typical deployment
+
+```bash
+git pull                                  # the code + the new migrations
+composer install
+arango doctor --apply                     # 1) the structure conforms (declarative)
+arango migrate --yes                      # 2) the data transforms (versioned)
+```
+
+The order is always **structure then data**: `doctor` first, `migrate` next.
 
 ---
 

@@ -3,6 +3,12 @@
 namespace tests\oihana\arango\commands\actions;
 
 use DI\Container;
+use DI\DependencyException;
+use DI\NotFoundException;
+use PHPUnit\Framework\MockObject\Exception;
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+use ReflectionException;
 use stdClass;
 
 use oihana\arango\clients\Database;
@@ -81,7 +87,17 @@ class ArangoDoctorActionHost
         return new QuestionHelper() ;
     }
 
-    /** Public proxy to the protected action under test. */
+    /**
+     * Public proxy to the protected action under test.
+     *
+     * @param $input
+     * @param $output
+     *
+     * @return int
+     *
+     * @throws ExitException
+     * @throws ReflectionException
+     */
     public function run( $input , $output ) :int
     {
         return $this->doctor( $input , $output ) ;
@@ -132,7 +148,18 @@ class ArangoDoctorActionTest extends TestCase
         return $input ;
     }
 
-    /** A Documents model declaring collection + index + View, bound to the given façade. */
+    /**
+     * A Documents model declaring collection + index + View, bound to the given façade.
+     *
+     * @param ArangoDB $facade
+     *
+     * @throws ContainerExceptionInterface
+     * @return Documents
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     private function model( ArangoDB $facade ) :Documents
     {
         $container = new Container() ;
@@ -190,15 +217,20 @@ class ArangoDoctorActionTest extends TestCase
     /** A bare collection-like object exposing only getName(). */
     private function namedCollection( string $name ) :object
     {
-        return new class( $name )
+        return new readonly class( $name )
         {
-            public function __construct( private readonly string $name ) {}
+            public function __construct( private string $name ) {}
             public function getName() :string { return $this->name ; }
         } ;
     }
 
     // ---- report mode --------------------------------------------------------
 
+    /**
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
     public function testDoctorWarnsWithoutConfiguredModels() :void
     {
         $host = new ArangoDoctorActionHost() ;
@@ -210,6 +242,15 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( 'No models configured' , $output->fetch() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testDoctorIsGreenWhenEverythingIsInSync() :void
     {
         $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
@@ -225,6 +266,15 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '1 model(s) — 3 in sync, 0 missing, 0 drifted, 0 invalid, 0 unreachable ; 0 orphan(s).' , $text ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testDoctorFailsOnDriftInReportMode() :void
     {
         $facade = $this->facade
@@ -245,6 +295,15 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '· id : missing on the server' , $text ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testDoctorFailsOnMissingInReportMode() :void
     {
         $facade = $this->facade
@@ -265,6 +324,11 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '! places [indexes] — invalid' , $text ) ;
     }
 
+    /**
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
     public function testDoctorSkipsNonDocumentsAndReportsResolutionFailures() :void
     {
         $host = $this->host( [ 'models.alien' => new stdClass() ] ) ;
@@ -279,6 +343,15 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '✗ models.ghost' , $text ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testDoctorDisablesTheLazyProvisioningThroughTheContainer() :void
     {
         $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
@@ -291,6 +364,15 @@ class ArangoDoctorActionTest extends TestCase
 
     // ---- apply mode ---------------------------------------------------------
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testApplyRendersCreatedAndRepaired() :void
     {
         $facade = $this->facade
@@ -312,6 +394,89 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '✓ placesView [view] — created' , $text ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws Exception
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testApplyJournalsCreateActionsInTheTrackingCollection() :void
+    {
+        $facade = $this->facade
+        (
+            new DiffReport( 'places' , DiffStatus::IN_SYNC , kind : DiffKind::COLLECTION ) ,
+            new DiffReport( 'places' , DiffStatus::MISSING , [ 'byName : missing on the server' ] , true , DiffKind::INDEXES ) ,
+            new DiffReport( 'placesView' , DiffStatus::MISSING , [] , true )
+        ) ;
+
+        // the journal appends one CreateAction per applied report.
+        $collection = $this->createMock( Collection::class ) ;
+        $collection->method( 'exists' )->willReturn( true ) ;
+        $collection->expects( $this->exactly( 2 ) )->method( 'insert' ) ;
+
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collection' )->willReturn( $collection ) ;
+        $db->method( 'collections' )->willReturn( [] ) ;
+        $db->method( 'listViews' )->willReturn( [] ) ;
+
+        $host = $this->host( [ 'models.places' => $this->model( $facade ) ] ) ;
+        $host->fakeDatabase = $db ;
+        $output = new BufferedOutput() ;
+
+        $host->run( $this->input( [ '--' . ArangoCommandOption::APPLY => true ] ) , $output ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Exception
+     */
+    public function testApplyJournalSwallowsAWriteFailure() :void
+    {
+        $facade = $this->facade
+        (
+            new DiffReport( 'places' , DiffStatus::MISSING , [] , true , DiffKind::COLLECTION ) ,
+            new DiffReport( 'places' , DiffStatus::IN_SYNC , kind : DiffKind::INDEXES ) ,
+            new DiffReport( 'placesView' , DiffStatus::IN_SYNC )
+        ) ;
+
+        $facade->method( 'collectionCreate' )->willReturn( true ) ;
+
+        $collection = $this->createMock( Collection::class ) ;
+        $collection->method( 'exists' )->willReturn( true ) ;
+        $collection->method( 'insert' )->willThrowException( new ArangoException( 'boom' ) ) ;
+
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collection' )->willReturn( $collection ) ;
+        $db->method( 'collections' )->willReturn( [] ) ;
+        $db->method( 'listViews' )->willReturn( [] ) ;
+
+        $host = $this->host( [ 'models.places' => $this->model( $facade ) ] ) ;
+        $host->fakeDatabase = $db ;
+        $output = new BufferedOutput() ;
+
+        // the audit journal must never fail the doctor run
+        $this->assertSame( ExitCode::SUCCESS , $host->run( $this->input( [ '--' . ArangoCommandOption::APPLY => true ] ) , $output ) ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testApplyFlagsAndFailsOnAnUnrepairedDrift() :void
     {
         $facade = $this->facade
@@ -342,6 +507,15 @@ class ArangoDoctorActionTest extends TestCase
         return $db ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testOrphansAreReportedButDoNotFail() :void
     {
         $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
@@ -359,6 +533,15 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '2 orphan(s)' , $text ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testPruneWarnsWhenNotInteractive() :void
     {
         $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
@@ -370,6 +553,16 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( 'interactive only' , $output->fetch() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws Exception
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testPruneDropsTheSelectedOrphan() :void
     {
         $ghost = $this->createMock( Collection::class ) ;
@@ -395,6 +588,15 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '✓ collection : ghost — dropped' , $output->fetch() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testPruneExitThrowsTheExitException() :void
     {
         $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
@@ -408,6 +610,16 @@ class ArangoDoctorActionTest extends TestCase
         $host->run( $input , new BufferedOutput() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws Exception
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testDoctorRendersAnUnreachableModelAndFails() :void
     {
         $facade = $this->createMock( ArangoDB::class ) ;
@@ -428,6 +640,16 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '! places [collection] — unreachable' , $text ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws Exception
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testOrphansAreSkippedWhenTheListingFails() :void
     {
         $db = $this->createMock( Database::class ) ;
@@ -443,6 +665,15 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '0 orphan(s)' , $output->fetch() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testPruneStopsWhenTheHttpClientVanishes() :void
     {
         $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
@@ -458,6 +689,16 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringNotContainsString( 'dropped' , $output->fetch() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws Exception
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testPruneDropsTheSelectedView() :void
     {
         $view = $this->createMock( View::class ) ;
@@ -478,6 +719,16 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertStringContainsString( '✓ view : legacyView — dropped' , $output->fetch() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws Exception
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testPruneReportsADropFailure() :void
     {
         $ghost = $this->createMock( Collection::class ) ;

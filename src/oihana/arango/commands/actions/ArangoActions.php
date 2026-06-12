@@ -11,6 +11,7 @@ trait ArangoActions
         ArangoDumpAction ,
         ArangoListCollectionsAction ,
         ArangoListDumpsAction ,
+        ArangoMigrateAction ,
         ArangoRestoreAction ,
         ArangoViewsAction ;
 }

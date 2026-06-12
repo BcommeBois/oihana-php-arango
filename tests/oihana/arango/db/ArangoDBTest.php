@@ -337,4 +337,11 @@ class ArangoDBTest extends ArangoDBTestCase
 
         $this->assertInstanceOf( stdClass::class , $result[ 0 ] ) ;
     }
+
+    public function testDatabaseExposesTheLowLevelClient() :void
+    {
+        $database = $this->createMock( Database::class ) ;
+
+        $this->assertSame( $database , $this->newArangoDB( $database )->database() ) ;
+    }
 }
