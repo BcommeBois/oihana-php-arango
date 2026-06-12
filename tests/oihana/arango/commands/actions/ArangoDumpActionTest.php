@@ -9,6 +9,7 @@ use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\commands\actions\ArangoDumpAction;
 use oihana\arango\commands\enums\ArangoCommandParam;
+use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\options\ArangoDumpOptions;
@@ -150,6 +151,8 @@ class ArangoDumpActionTest extends TestCase
             new InputOption( ArangoCommandOption::ALL_DATABASES     , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::OVERWRITE         , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::THREADS           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::PROFILE           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DRY_RUN           , null , InputOption::VALUE_NONE ) ,
             new InputOption( CommandOption::ENCRYPT                 , null , InputOption::VALUE_OPTIONAL ) ,
         ]) ;
     }
@@ -443,5 +446,83 @@ class ArangoDumpActionTest extends TestCase
         $host->dump( $this->input( [ '--' . ArangoCommandOption::THREADS => '8' ] ) , $output ) ;
 
         $this->assertSame( 8 , $host->capturedDumpOptions[ ArangoDumpOption::THREADS ] ) ;
+    }
+
+    // ---------------------------------------------------------------- D2 profiles + dry-run
+
+    public function testProfileSelectionForwardsTheCollectionList() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'test' => [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' , 'orders' ] ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'test' ] ) , $output ) ;
+
+        $this->assertSame( [ 'users' , 'orders' ] , array_values( $host->capturedDumpOptions[ ArangoDumpOption::COLLECTION ] ) ) ;
+    }
+
+    public function testExcludeOnlyProfileComputesTheComplementFromTheServer() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' , 'orders' , 'logs' ] ) ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [ ArangoCommandParam::PROFILE_EXCLUDE => [ 'logs' ] ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , $output ) ;
+
+        $this->assertSame( [ 'users' , 'orders' ] , array_values( $host->capturedDumpOptions[ ArangoDumpOption::COLLECTION ] ) ) ;
+    }
+
+    public function testProfileSourceConnectionOverridesTheConfiguredDatabase() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ,
+            ArangoConfig::DATABASE                  => 'app_staging' ,
+        ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , $output ) ;
+
+        $this->assertSame( 'app_staging' , $host->capturedDumpOptions[ ArangoDumpOption::SERVER_DATABASE ] ) ;
+    }
+
+    public function testProfileAndCollectionAreMutuallyExclusive() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::PROFILE    => 'p' ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'orders' ] ,
+        ]) , $output ) ;
+    }
+
+    public function testEmptyProfileSelectsNothingAndThrows() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' ] ) ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [ ArangoCommandParam::PROFILE_EXCLUDE => [ 'users' ] ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'profile selects no collection' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , $output ) ;
+    }
+
+    public function testDryRunDoesNotDump() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->dump( $this->input( [ '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertFalse( $host->dumpCalled ) ;
+        $this->assertStringContainsString( 'Dry run' , $output->fetch() ) ;
     }
 }

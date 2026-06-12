@@ -5,8 +5,10 @@ namespace tests\oihana\arango\integration;
 use Throwable;
 
 use oihana\arango\clients\Database;
+use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\traits\ArangoDumpTrait;
+use oihana\arango\commands\traits\ArangoProfileTrait;
 
 use PHPUnit\Framework\Attributes\Group;
 
@@ -15,11 +17,13 @@ use function oihana\files\makeTemporaryDirectory;
 use function oihana\init\initConfig;
 
 /**
- * Bare host running the real `arangodump` binary through {@see ArangoDumpTrait}.
+ * Bare host running the real `arangodump` binary through {@see ArangoDumpTrait},
+ * with the profile resolver wired in.
  */
 class DumpRestoreIntegrationHost
 {
     use ArangoDumpTrait ;
+    use ArangoProfileTrait ;
 }
 
 /**
@@ -47,9 +51,12 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
 
     protected static function seed( Database $db ) :void
     {
-        $widgets = $db->collection( 'widgets' ) ;
-        $widgets->create() ;
-        $widgets->insert( [ '_key' => 'w1' , 'name' => 'gauge' ] ) ;
+        foreach ( [ 'widgets' , 'gadgets' , 'secrets' ] as $name )
+        {
+            $collection = $db->collection( $name ) ;
+            $collection->create() ;
+            $collection->insert( [ '_key' => 'k1' , 'name' => $name ] ) ;
+        }
     }
 
     public static function setUpBeforeClass() :void
@@ -118,6 +125,23 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
         return $names ;
     }
 
+    /** Returns the collection names declared by a dump (read from `parameters.name`). */
+    private function structureNames( string $directory ) :array
+    {
+        $names = [] ;
+        foreach ( glob( $directory . DIRECTORY_SEPARATOR . '*.structure.json' ) ?: [] as $path )
+        {
+            $data = json_decode( (string) file_get_contents( $path ) , true ) ;
+            $name = is_array( $data ) ? ( $data[ 'parameters' ][ 'name' ] ?? null ) : null ;
+            if ( is_string( $name ) && $name !== '' )
+            {
+                $names[] = $name ;
+            }
+        }
+        sort( $names ) ;
+        return $names ;
+    }
+
     public function testIncludeSystemCollectionsPullsTheSystemCollections() :void
     {
         $host = new DumpRestoreIntegrationHost() ;
@@ -154,5 +178,38 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
         {
             $this->assertStringStartsNotWith( '_' , $name , 'A default dump must not contain system collections.' ) ;
         }
+    }
+
+    public function testProfileDumpsOnlyTheSelectedCollections() :void
+    {
+        $host = new DumpRestoreIntegrationHost() ;
+
+        // A profile selecting widgets + gadgets, excluding secrets — resolved
+        // exactly as the dump action does, then run through a real arangodump.
+        $profile =
+        [
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'widgets' , 'gadgets' , 'secrets' ] ,
+            ArangoCommandParam::PROFILE_EXCLUDE     => [ 'secrets' ] ,
+        ] ;
+
+        $selection = $host->profileSelection( $profile ) ;
+        $this->assertSame( [ 'widgets' , 'gadgets' ] , $selection ) ;
+
+        $out = $this->tmp . DIRECTORY_SEPARATOR . 'profile' ;
+
+        $status = $host->arangoDump
+        (
+            $this->connection( $out ) + [ ArangoDumpOption::COLLECTION => $selection ] ,
+            silent : true ,
+        ) ;
+
+        $this->assertSame( 0 , $status ) ;
+
+        $this->assertSame
+        (
+            [ 'gadgets' , 'widgets' ] ,
+            $this->structureNames( $out ) ,
+            'The profile dump must contain exactly the selected collections.' ,
+        ) ;
     }
 }

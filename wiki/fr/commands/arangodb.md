@@ -162,12 +162,13 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--overwrite` | — | dump | Écrase le dossier de sortie s'il existe déjà. |
 | `--threads` | — | dump, restore | Nombre de threads parallèles. |
 | `--view` | — | restore | Restreint la restauration à ces Views (répétable / séparées par virgules). |
+| `--profile` | — | dump, restore | Profil nommé (`[arango.profiles.<nom>]`) ou chemin vers un fichier de profil `.toml` — voir [Profils](#profils). |
+| `--dry-run` | — | dump, restore, migrate | Affiche le plan résolu (et les migrations en attente) sans rien exécuter. |
 | `--apply` | — | doctor | Répare : crée le manquant (collections, index, Views), resynchronise les Views. |
 | `--force` | — | doctor | Avec `--apply` : autorise le drop + recreate des index driftés. |
 | `--prune` | — | doctor | Sélection interactive des orphelins (collections, Views) à supprimer. |
 | `--create` | — | migrate | Génère la coquille vide d'une migration avec cette description. |
 | `--status` | — | migrate | Tableau des migrations appliquées / en attente pour cette base. |
-| `--dry-run` | — | migrate | Liste les migrations en attente sans les exécuter. |
 | `--yes` | `-y` | migrate | Applique sans la demande de confirmation (scripts / CI). |
 | `--down` | — | migrate | Annule les N dernières migrations appliquées, défaut 1 (rembobinage LIFO). |
 | `--forget` | — | migrate | Secours : retire une ligne de suivi **sans** exécuter son `down()`. |
@@ -304,6 +305,96 @@ php bin/console.php command:arangodb restore --date 2026-06-01T14:30:00 -c users
 ```
 
 > Plus simple pour les dumps partiels : `--last` ou `--file` (qui n'ont pas besoin de reconstruire le nom).
+
+---
+
+## Profils
+
+Un **profil** est une sélection nommée et réutilisable — *quoi* extraire, et en
+option *d'où*. Au lieu de retaper un long `--collection a --collection b …` à
+chaque fois, on le nomme une fois et on passe `--profile <nom>`.
+
+### La recette staging → local
+
+Le cas motivant : récupérer un sous-ensemble du **staging** dans sa base
+**locale** pour tester sur des données réelles — **sans jamais écraser ses
+collections d'authentification locales**.
+
+```toml
+# config.toml (projet) — ou un fichier autonome (voir plus bas)
+[arango.profiles.test-local]
+collections = ["thesaurus", "produits", "clients", "commerciaux"]
+edges       = ["produit_thesaurus", "client_commercial"]
+exclude     = ["_users", "sessions"]
+```
+
+```bash
+# Récupère le sous-ensemble depuis le staging :
+php bin/console.php command:arangodb dump --profile test-local
+# Restaure-le dans la base locale :
+php bin/console.php command:arangodb restore --profile test-local --last
+```
+
+Comme le dump ne **contient** que les collections sélectionnées, la restauration
+locale **ne peut pas** écraser ton `_users` local — la liste positive *est* la
+protection.
+
+### Clés d'un profil
+
+| Clé | Signification |
+|---|---|
+| `collections` / `edges` | La sélection positive (fusionnées en une seule liste). |
+| `exclude` | Noms retirés de l'ensemble résolu (soustraction). |
+| `endpoint` / `database` / `user` / `password` | Une connexion **source** optionnelle — utilisée par `dump` uniquement (voir sécurité). |
+
+La sélection se résout en `(collections + edges) − exclude`. Un profil avec
+**seulement `exclude`** (sans liste positive) signifie *« tout sauf exclude »* —
+l'univers est constitué des collections du serveur pour `dump`, et des
+collections de l'archive pour `restore`.
+
+### Nommé ou fichier externe
+
+`--profile` accepte les deux formes :
+
+- `--profile test-local` → la section `[arango.profiles.test-local]` de `config.toml`.
+- `--profile ./profils/test-local.toml` (ou un chemin absolu) → un fichier
+  autonome dont les clés racine *sont* le profil. Portable — pose-le sur un
+  serveur ou partage-le entre machines.
+
+```toml
+# /srv/arango/profils/staging-extract.toml — auto-suffisant
+collections = ["thesaurus", "produits"]
+exclude     = ["_users"]
+endpoint    = "tcp://staging.internal:8529"
+database    = "app_staging"
+user        = "readonly"
+password    = "•••"
+```
+
+> Un fichier de profil peut porter des identifiants → garde-le **hors du dépôt**,
+> avec des permissions restreintes, comme `config.toml`.
+
+### Sécurité
+
+- **La connexion d'un profil est la source.** `dump` l'utilise (pomper *depuis*
+  là) ; `restore` l'**ignore** et écrit toujours dans la cible **locale**
+  (`[arango]` / CLI). Un profil ne peut jamais repousser ses données sur le
+  serveur dont elles viennent.
+- **`--profile` est exclusif** de `--collection` / `--ignore-collection` —
+  choisis un seul mode de sélection.
+- **La précédence** reste `défaut binaire → [arango.dump]/[arango.restore] → profil → CLI`.
+
+### Dry run
+
+`--dry-run` affiche le plan résolu — connexion, archive et la liste exacte des
+collections — et n'exécute **rien** :
+
+```bash
+php bin/console.php command:arangodb restore --profile test-local --last --dry-run
+# Target  : app @ tcp://127.0.0.1:8529 (local)
+# Collections : thesaurus, produits, clients, commerciaux
+# [OK] Dry run — nothing was restored.
+```
 
 ---
 

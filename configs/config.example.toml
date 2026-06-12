@@ -65,3 +65,23 @@ type       = "Basic"
 
 # [arango.restore]
 # threads = 4
+
+# ----------------------------------------------------------------------------
+# [arango.profiles.<name>] — reusable named dump/restore selections.
+#
+# A profile names WHAT to extract (and, optionally, the dump SOURCE). Pass it
+# with `--profile <name>`, or point to a standalone .toml file with
+# `--profile path/to/file.toml`. The restore borrows the selection only — never
+# the connection (it always writes to the local target). See
+# wiki/{fr,en}/commands/arangodb.md → "Profiles".
+# ----------------------------------------------------------------------------
+
+# [arango.profiles.test-local]
+# collections = ["thesaurus", "products", "clients"]
+# edges       = ["product_thesaurus"]
+# exclude     = ["_users", "sessions"]
+# # optional SOURCE connection (used by `dump` only):
+# endpoint    = "tcp://staging.internal:8529"
+# database    = "app_staging"
+# user        = "readonly"
+# password    = ""

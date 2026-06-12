@@ -29,6 +29,7 @@ class ArangoCommandOption
     public const string LIST              = 'list' ;
     public const string NO_VIEWS          = 'no-views' ;
     public const string OVERWRITE         = 'overwrite' ;
+    public const string PROFILE           = 'profile' ;
     public const string PRUNE             = 'prune' ;
     public const string STATUS            = 'status' ;
     public const string SYNC              = 'sync' ;

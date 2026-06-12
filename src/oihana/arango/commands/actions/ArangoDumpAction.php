@@ -2,6 +2,7 @@
 
 namespace oihana\arango\commands\actions;
 
+use InvalidArgumentException;
 use oihana\commands\enums\ExitCode;
 use RuntimeException;
 
@@ -11,6 +12,7 @@ use oihana\arango\commands\traits\ArangoClientTrait;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoDumpTrait;
 use oihana\arango\commands\traits\ArangoOptionsTrait;
+use oihana\arango\commands\traits\ArangoProfileTrait;
 use oihana\arango\commands\traits\DirectoryTrait;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\db\enums\ArangoConfig;
@@ -56,6 +58,7 @@ trait ArangoDumpAction
         ArangoDumpTrait ,
         ArangoListDumpsAction ,
         ArangoOptionsTrait ,
+        ArangoProfileTrait ,
         DirectoryTrait ,
         EncryptTrait ;
 
@@ -86,59 +89,68 @@ trait ArangoDumpAction
 
         // 00 - Initialize the process
 
-        $action   = $input->getArgument( CommandArg::ACTION ) ?? Char::EMPTY ;
-        $database = $input->getOption( ArangoConfig::DATABASE ) ?? $this->getDatabase() ;
-        $endpoint = $input->getOption( ArangoConfig::ENDPOINT ) ??$this->getEndpoint() ;
-        $password = $input->getOption( ArangoConfig::PASSWORD ) ??$this->getPassword() ;
-        $username = $input->getOption( ArangoConfig::USER     ) ??$this->getUsername() ;
+        $action = $input->getArgument( CommandArg::ACTION ) ?? Char::EMPTY ;
+
+        // --- Selection: a profile, or the --collection / --ignore-collection flags ---
+
+        $profileName = $input->getOption( ArangoCommandOption::PROFILE ) ;
+        $profile     = $this->resolveProfile( $profileName ) ;
 
         $collection = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::COLLECTION        ) ) ;
         $ignore     = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::IGNORE_COLLECTION ) ) ;
         $label      = $this->sanitizeLabel( $input->getOption( ArangoCommandOption::LABEL ) ) ;
 
+        if( $profile !== null && ( $collection !== [] || $ignore !== [] ) )
+        {
+            throw new InvalidArgumentException( '--profile cannot be combined with --collection / --ignore-collection (choose one selection mode).' ) ;
+        }
+
         $this->assertCollectionTargeting( $collection , $ignore ) ;
 
-        $partial = $collection !== [] || $ignore !== [] ;
+        // Connection — the CLI wins over the profile **source** connection
+        // (dump only), which wins over the [arango] configuration.
+        $connection = $profile !== null ? $this->profileConnection( $profile ) : [] ;
+        $database   = $input->getOption( ArangoConfig::DATABASE ) ?? $connection[ ArangoConfig::DATABASE ] ?? $this->getDatabase() ;
+        $endpoint   = $input->getOption( ArangoConfig::ENDPOINT ) ?? $connection[ ArangoConfig::ENDPOINT ] ?? $this->getEndpoint() ;
+        $password   = $input->getOption( ArangoConfig::PASSWORD ) ?? $connection[ ArangoConfig::PASSWORD ] ?? $this->getPassword() ;
+        $username   = $input->getOption( ArangoConfig::USER     ) ?? $connection[ ArangoConfig::USER     ] ?? $this->getUsername() ;
+
+        $partial = $collection !== [] || $ignore !== [] || $profile !== null ;
 
         $io->section( sprintf( "Dump the '%s' database" , $database ) ) ;
 
-        if( $collection !== [] )
+        // Resolve the effective list of collections to pass to arangodump.
+        //
+        // - --profile : the positive selection minus exclude; an exclude-only
+        //   profile means "everything minus exclude" (needs the HTTP API).
+        // - --collection : validated best-effort against the live database
+        //   (skipped with a warning when the HTTP API is unreachable).
+        // - --ignore-collection : arangodump has no exclusion option, so the
+        //   complement is computed client-side and passed as --collection.
+
+        $targetCollections = $collection ;
+
+        if( $profile !== null )
         {
-            $io->text( 'Collections : ' . implode( ', ' , $collection ) ) ;
+            $io->text( sprintf( 'Profile : %s' , $profileName ) ) ;
+
+            $available         = $this->profilePositive( $profile ) === []
+                               ? $this->dumpAvailableCollections( $endpoint , $username , $password , $database )
+                               : [] ;
+            $targetCollections = $this->profileSelection( $profile , $available ) ;
+
+            if( $targetCollections === [] )
+            {
+                throw new RuntimeException( 'Nothing to dump: the profile selects no collection.' ) ;
+            }
+
+            $io->text( sprintf( '→ %d collection(s) will be dumped.' , count( $targetCollections ) ) ) ;
         }
         elseif( $ignore !== [] )
         {
             $io->text( 'Ignored collections : ' . implode( ', ' , $ignore ) ) ;
-        }
 
-        // Resolve the effective list of collections to pass to arangodump.
-        //
-        // - --collection : validated best-effort against the live database
-        //   (skipped with a warning when the HTTP API is unreachable, since
-        //   arangodump may still succeed).
-        // - --ignore-collection : arangodump has no exclusion option, so the
-        //   complement (all user collections minus the excluded ones) is
-        //   computed client-side and passed as --collection. This REQUIRES
-        //   the HTTP API to be reachable.
-
-        $targetCollections = $collection ;
-
-        if( $ignore !== [] )
-        {
-            $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
-            if( $db === null )
-            {
-                throw new RuntimeException( '--ignore-collection requires the ArangoDB HTTP API, but no client is available (check endpoint/database).' ) ;
-            }
-
-            try
-            {
-                $available = array_map( fn( $c ) => $c->getName() , $db->collections( false ) ) ;
-            }
-            catch( ArangoException $exception )
-            {
-                throw new RuntimeException( '--ignore-collection requires the ArangoDB HTTP API, which is unreachable: ' . $exception->getMessage() , 0 , $exception ) ;
-            }
+            $available = $this->dumpAvailableCollections( $endpoint , $username , $password , $database ) ;
 
             $missing = $this->missingCollections( $ignore , $available ) ;
             if( $missing !== [] )
@@ -164,6 +176,8 @@ trait ArangoDumpAction
         }
         elseif( $collection !== [] )
         {
+            $io->text( 'Collections : ' . implode( ', ' , $collection ) ) ;
+
             $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
             if( $db === null )
             {
@@ -194,6 +208,15 @@ trait ArangoDumpAction
                     $io->warning( 'Collection validation skipped — ArangoDB HTTP API unreachable: ' . $exception->getMessage() ) ;
                 }
             }
+        }
+
+        // --dry-run : report the resolved plan, run nothing.
+        if( $input->getOption( ArangoCommandOption::DRY_RUN ) )
+        {
+            $io->text( sprintf( 'Source  : %s @ %s' , $database , $endpoint ) ) ;
+            $io->text( 'Collections : ' . ( $targetCollections === [] ? 'all' : implode( ', ' , $targetCollections ) ) ) ;
+            $io->success( 'Dry run — nothing was dumped.' ) ;
+            return ExitCode::SUCCESS ;
         }
 
         $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
@@ -273,5 +296,34 @@ trait ArangoDumpAction
         $io->success( 'Database dump completed successfully.' ) ;
 
         return ExitCode::SUCCESS ;
+    }
+
+    /**
+     * Returns the user (non-system) collection names of the live database, or
+     * throws when the HTTP API is unavailable — used by the exclusion paths
+     * (`--ignore-collection` and exclude-only profiles) that need the universe.
+     *
+     * @param string $endpoint
+     * @param string $username
+     * @param string $password
+     * @param string $database
+     * @return array<int,string>
+     */
+    private function dumpAvailableCollections( string $endpoint , string $username , string $password , string $database ) :array
+    {
+        $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+        if( $db === null )
+        {
+            throw new RuntimeException( 'This selection requires the ArangoDB HTTP API, but no client is available (check endpoint/database).' ) ;
+        }
+
+        try
+        {
+            return array_map( fn( $c ) => $c->getName() , $db->collections( false ) ) ;
+        }
+        catch( ArangoException $exception )
+        {
+            throw new RuntimeException( 'This selection requires the ArangoDB HTTP API, which is unreachable: ' . $exception->getMessage() , 0 , $exception ) ;
+        }
     }
 }

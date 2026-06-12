@@ -52,6 +52,28 @@ class ArangoCommandParam
     public const string MODELS = 'models' ;
 
     /**
+     * The 'profiles' parameter — the `[arango.profiles]` config section (named
+     * dump/restore selection profiles, keyed by name).
+     */
+    public const string PROFILES = 'profiles' ;
+
+    /**
+     * The 'collections' key of a profile — the positive document-collection selection.
+     */
+    public const string PROFILE_COLLECTIONS = 'collections' ;
+
+    /**
+     * The 'edges' key of a profile — the positive edge-collection selection
+     * (merged with the collections into a single list).
+     */
+    public const string PROFILE_EDGES = 'edges' ;
+
+    /**
+     * The 'exclude' key of a profile — names removed from the resolved selection.
+     */
+    public const string PROFILE_EXCLUDE = 'exclude' ;
+
+    /**
      * The 'restore' parameter — the `[arango.restore]` config section (option
      * defaults applied to the `restore` action, overridable on the CLI).
      */

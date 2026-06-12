@@ -2,10 +2,14 @@
 
 namespace oihana\arango\commands\actions;
 
+use InvalidArgumentException;
+use RuntimeException;
+
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoRestoreOption;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoOptionsTrait;
+use oihana\arango\commands\traits\ArangoProfileTrait;
 use oihana\arango\commands\traits\ArangoRestoreTrait;
 use oihana\arango\commands\traits\DirectoryTrait;
 
@@ -69,6 +73,7 @@ trait ArangoRestoreAction
     use ArangoCollectionsTrait ,
         ArangoListDumpsAction ,
         ArangoOptionsTrait ,
+        ArangoProfileTrait ,
         ArangoRestoreTrait ,
         DirectoryTrait ,
         EncryptTrait ;
@@ -121,9 +126,25 @@ trait ArangoRestoreAction
         $collection = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::COLLECTION ) ) ;
         $label      = $this->sanitizeLabel( $input->getOption( ArangoCommandOption::LABEL ) ) ;
 
+        // A profile borrows only its selection — never its (source) connection:
+        // the restore always writes to the local target resolved above.
+        $profileName = $input->getOption( ArangoCommandOption::PROFILE ) ;
+        $profile     = $this->resolveProfile( $profileName ) ;
+
+        if( $profile !== null && $collection !== [] )
+        {
+            throw new InvalidArgumentException( '--profile cannot be combined with --collection (choose one selection mode).' ) ;
+        }
+
+        $partial = $collection !== [] || $profile !== null ;
+
         $io->section( sprintf( "Restore the '%s' database" , $database ) ) ;
 
-        if( $collection !== [] )
+        if( $profile !== null )
+        {
+            $io->text( sprintf( 'Profile : %s' , $profileName ) ) ;
+        }
+        elseif( $collection !== [] )
         {
             $io->text( 'Collections : ' . implode( ', ' , $collection ) ) ;
         }
@@ -147,7 +168,7 @@ trait ArangoRestoreAction
                 (
                     date       : $date ,
                     basePath   : $inputDirectory ,
-                    suffix     : static::getArchiveFileSuffix( $database , $shouldEncrypt , $collection !== [] , $label ) ,
+                    suffix     : static::getArchiveFileSuffix( $database , $shouldEncrypt , $partial , $label ) ,
                     timezone   : $this->timezone   ?? self::DEFAULT_TIMEZONE ,
                     format     : $this->dateFormat ?? self::DEFAULT_DATE_FORMAT ,
                     // assertable : true -> default
@@ -209,6 +230,15 @@ trait ArangoRestoreAction
 
         $io->text( sprintf( 'Restore the database with the file: %s' , $inputFile ) ) ;
 
+        // --dry-run : report the resolved plan, restore nothing (no untar).
+        if( $input->getOption( ArangoCommandOption::DRY_RUN ) )
+        {
+            $io->text( sprintf( 'Target  : %s @ %s (local)' , $database , $endpoint ) ) ;
+            $io->text( 'Collections : ' . $this->restoreSelectionLabel( $profile , $collection ) ) ;
+            $io->success( 'Dry run — nothing was restored.' ) ;
+            return ExitCode::SUCCESS ;
+        }
+
         $inputDirectory = makeTemporaryDirectory( [ $this->id , $this->getName() , $action , Uuid::v4() ] ) ;
 
         $io->text( 'The temporary input directory : ' . json_encode( $inputDirectory , JSON_UNESCAPED_SLASHES) ) ;
@@ -242,6 +272,25 @@ trait ArangoRestoreAction
 
         // 06 - Restore the database
 
+        // Resolve the effective collection filter. A profile borrows the
+        // selection only: a positive list (minus exclude), or — for an
+        // exclude-only profile — every collection in the archive minus exclude.
+        if( $profile !== null )
+        {
+            $selection = $this->profilePositive( $profile ) !== []
+                       ? $this->profileSelection( $profile )
+                       : $this->profileSelection( $profile , $this->archiveCollections( $inputDirectory ) ) ;
+
+            if( $selection === [] )
+            {
+                throw new RuntimeException( 'Nothing to restore: the profile selects no collection.' ) ;
+            }
+        }
+        else
+        {
+            $selection = $collection ;
+        }
+
         $explicit =
         [
             ArangoRestoreOption::SERVER_DATABASE   => $database ,
@@ -253,9 +302,9 @@ trait ArangoRestoreAction
             ArangoRestoreOption::CREATE_DATABASE   => true
         ] ;
 
-        if( $collection !== [] )
+        if( $selection !== [] )
         {
-            $explicit[ ArangoRestoreOption::COLLECTION ] = $collection ;
+            $explicit[ ArangoRestoreOption::COLLECTION ] = $selection ;
         }
 
         // Layer the [arango.restore] config defaults under the resolved
@@ -294,5 +343,56 @@ trait ArangoRestoreAction
     {
         return static::getArchiveNameSuffix( $database , $partial , $label )
              . ( $encrypt ? FileExtension::TAR_GZ_ENCRYPTED : FileExtension::TAR_GZ ) ;
+    }
+
+    /**
+     * The collection names declared by the `*.structure.json` files of an
+     * untarred dump — the universe used by an exclude-only profile on restore.
+     *
+     * @param string $directory The untarred dump directory.
+     * @return array<int,string>
+     */
+    private function archiveCollections( string $directory ) :array
+    {
+        $names = [] ;
+        foreach ( glob( $directory . DIRECTORY_SEPARATOR . '*.structure.json' ) ?: [] as $path )
+        {
+            $data = json_decode( (string) file_get_contents( $path ) , true ) ;
+            $name = is_array( $data ) ? ( $data[ 'parameters' ][ 'name' ] ?? null ) : null ;
+            if( is_string( $name ) && $name !== '' )
+            {
+                $names[] = $name ;
+            }
+        }
+        return array_values( array_unique( $names ) ) ;
+    }
+
+    /**
+     * A human-readable description of the restore selection, for `--dry-run`
+     * (the exact exclude-only list is only known once the archive is untarred).
+     *
+     * @param array|null $profile
+     * @param array      $collection The CLI `--collection` selection.
+     * @return string
+     */
+    private function restoreSelectionLabel( ?array $profile , array $collection ) :string
+    {
+        if( $collection !== [] )
+        {
+            return implode( ', ' , $collection ) ;
+        }
+
+        if( $profile !== null )
+        {
+            if( $this->profilePositive( $profile ) !== [] )
+            {
+                return implode( ', ' , $this->profileSelection( $profile ) ) ;
+            }
+
+            $exclude = $this->profileExclude( $profile ) ;
+            return 'all in archive' . ( $exclude === [] ? '' : ' except: ' . implode( ', ' , $exclude ) ) ;
+        }
+
+        return 'all' ;
     }
 }

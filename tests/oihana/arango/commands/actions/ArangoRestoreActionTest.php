@@ -2,8 +2,10 @@
 
 namespace tests\oihana\arango\commands\actions;
 
+use InvalidArgumentException;
 use Phar;
 use PharData;
+use RuntimeException;
 
 use oihana\arango\commands\actions\ArangoRestoreAction;
 use oihana\arango\commands\enums\ArangoCommandParam;
@@ -213,6 +215,8 @@ class ArangoRestoreActionTest extends TestCase
             new InputOption( ArangoCommandOption::ALL_DATABASES  , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::THREADS        , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::VIEW           , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
+            new InputOption( ArangoCommandOption::PROFILE        , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DRY_RUN        , null , InputOption::VALUE_NONE ) ,
             new InputOption( 'encrypt'    , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( 'passphrase' , null , InputOption::VALUE_OPTIONAL ) ,
         ]) ;
@@ -456,5 +460,143 @@ class ArangoRestoreActionTest extends TestCase
         // CLI wins over the config default
         $options = $this->captureOptions( [ '--' . ArangoCommandOption::THREADS => '9' ] , [ ArangoRestoreOption::THREADS => 3 ] ) ;
         $this->assertSame( 9 , $options[ ArangoRestoreOption::THREADS ] ) ;
+    }
+
+    // ------------------------------------------------------------------ D2 profiles + dry-run
+
+    /** Builds a gzip tarball whose root holds one `<name>.structure.json` per collection. */
+    private function makeArchiveWithStructures( string $path , array $collections ) :void
+    {
+        $tarPath = $this->dumpDir . DIRECTORY_SEPARATOR . 'build_' . bin2hex( random_bytes( 4 ) ) . '.tar' ;
+
+        $tar = new PharData( $tarPath ) ;
+        foreach ( $collections as $name )
+        {
+            $tar->addFromString( $name . '.structure.json' , json_encode( [ 'parameters' => [ 'name' => $name ] ] ) ) ;
+        }
+        $tar->addFromString( 'sample.data.json' , '{"_key":"1"}' ) ;
+        $tar->compress( Phar::GZ ) ;
+        unset( $tar ) ;
+
+        @unlink( $tarPath ) ;
+        rename( $tarPath . '.gz' , $path ) ;
+    }
+
+    private function restoreHostWithProfile( string $name , array $profile ) :ArangoRestoreActionHost
+    {
+        return new ArangoRestoreActionHost( $this->dumpDir )
+            ->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ $name => $profile ] ] ) ;
+    }
+
+    public function testProfilePositiveForwardsTheSelection() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' , 'orders' ] ] ) ;
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive ] ) , new BufferedOutput() ) ;
+
+        $this->assertSame( [ 'users' , 'orders' ] , array_values( $host->capturedRestoreOptions[ ArangoRestoreOption::COLLECTION ] ) ) ;
+    }
+
+    public function testExcludeOnlyProfileIntrospectsTheArchive() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchiveWithStructures( $archive , [ 'users' , 'orders' , 'sessions' ] ) ;
+
+        $host = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_EXCLUDE => [ 'sessions' ] ] ) ;
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive ] ) , new BufferedOutput() ) ;
+
+        $selection = $host->capturedRestoreOptions[ ArangoRestoreOption::COLLECTION ] ;
+        sort( $selection ) ;
+        $this->assertSame( [ 'orders' , 'users' ] , $selection ) ;
+    }
+
+    public function testProfileAndCollectionAreMutuallyExclusive() :void
+    {
+        $host = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ] ) ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $host->restore( $this->input
+        ([
+            '--' . ArangoCommandOption::PROFILE    => 'p' ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'orders' ] ,
+        ]) , new BufferedOutput() ) ;
+    }
+
+    public function testExcludeEverythingProfileThrows() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchiveWithStructures( $archive , [ 'users' ] ) ;
+
+        $host = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_EXCLUDE => [ 'users' ] ] ) ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'profile selects no collection' ) ;
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive ] ) , new BufferedOutput() ) ;
+    }
+
+    public function testDryRunDoesNotRestore() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host   = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
+        $this->assertStringContainsString( 'Dry run' , $output->fetch() ) ;
+        // the archive is preserved on a dry run (no untar consumes it)
+        $this->assertFileExists( $archive ) ;
+    }
+
+    public function testDryRunLabelsTheCliCollectionSelection() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $output = new BufferedOutput() ;
+
+        $host->restore( $this->input
+        ([
+            '--' . ArangoCommandOption::COLLECTION => [ 'users' , 'orders' ] ,
+            '--' . ArangoCommandOption::FILE       => $archive ,
+            '--' . ArangoCommandOption::DRY_RUN    => true ,
+        ]) , $output ) ;
+
+        $this->assertStringContainsString( 'users, orders' , $output->fetch() ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
+    }
+
+    public function testDryRunLabelsAnExcludeOnlyProfile() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host   = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_EXCLUDE => [ 'sessions' ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertStringContainsString( 'except: sessions' , $output->fetch() ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
+    }
+
+    public function testDryRunLabelsTheWholeArchive() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $output = new BufferedOutput() ;
+
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertStringContainsString( 'Collections : all' , $output->fetch() ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
     }
 }
