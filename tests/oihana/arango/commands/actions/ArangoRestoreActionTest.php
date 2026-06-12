@@ -6,6 +6,7 @@ use Phar;
 use PharData;
 
 use oihana\arango\commands\actions\ArangoRestoreAction;
+use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoRestoreOption;
 use oihana\arango\commands\options\ArangoRestoreOptions;
@@ -208,6 +209,10 @@ class ArangoRestoreActionTest extends TestCase
             new InputOption( ArangoCommandOption::ENDPOINT   , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::PASSWORD   , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::USER       , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::INCLUDE_SYSTEM , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::ALL_DATABASES  , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::THREADS        , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::VIEW           , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
             new InputOption( 'encrypt'    , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( 'passphrase' , null , InputOption::VALUE_OPTIONAL ) ,
         ]) ;
@@ -392,5 +397,64 @@ class ArangoRestoreActionTest extends TestCase
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertTrue( $host->restoreCalled ) ;
+    }
+
+    // ------------------------------------------------------------------ D1 options
+
+    /** Restores from a fresh archive and returns the captured restore options. */
+    private function captureOptions( array $cliOptions , ?array $config = null ) :array
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        if( $config !== null )
+        {
+            $host->initializeArangoOptions( [ ArangoCommandParam::RESTORE => $config ] ) ;
+        }
+
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive ] + $cliOptions ) , new BufferedOutput() ) ;
+
+        return $host->capturedRestoreOptions ;
+    }
+
+    public function testIncludeSystemFlagForwardsTheOption() :void
+    {
+        $options = $this->captureOptions( [ '--' . ArangoCommandOption::INCLUDE_SYSTEM => true ] ) ;
+        $this->assertTrue( $options[ ArangoRestoreOption::INCLUDE_SYSTEM_COLLECTIONS ] ) ;
+    }
+
+    public function testThreadsAndAllDatabasesFlagsForward() :void
+    {
+        $options = $this->captureOptions
+        ([
+            '--' . ArangoCommandOption::THREADS       => '6' ,
+            '--' . ArangoCommandOption::ALL_DATABASES => true ,
+        ]) ;
+
+        $this->assertSame( 6 , $options[ ArangoRestoreOption::THREADS ] ) ;
+        $this->assertTrue( $options[ ArangoRestoreOption::ALL_DATABASES ] ) ;
+    }
+
+    public function testViewFlagSplitsCommaSeparatedNames() :void
+    {
+        $options = $this->captureOptions( [ '--' . ArangoCommandOption::VIEW => [ 'places_view,products_view' , 'clients_view' ] ] ) ;
+
+        $this->assertSame
+        (
+            [ 'places_view' , 'products_view' , 'clients_view' ] ,
+            $options[ ArangoRestoreOption::VIEW ] ,
+        ) ;
+    }
+
+    public function testRestoreConfigDefaultsAreAppliedAndOverridable() :void
+    {
+        // config default applied
+        $options = $this->captureOptions( [] , [ ArangoRestoreOption::THREADS => 3 ] ) ;
+        $this->assertSame( 3 , $options[ ArangoRestoreOption::THREADS ] ) ;
+
+        // CLI wins over the config default
+        $options = $this->captureOptions( [ '--' . ArangoCommandOption::THREADS => '9' ] , [ ArangoRestoreOption::THREADS => 3 ] ) ;
+        $this->assertSame( 9 , $options[ ArangoRestoreOption::THREADS ] ) ;
     }
 }

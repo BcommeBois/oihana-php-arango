@@ -5,6 +5,7 @@ namespace oihana\arango\commands\actions;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoRestoreOption;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
+use oihana\arango\commands\traits\ArangoOptionsTrait;
 use oihana\arango\commands\traits\ArangoRestoreTrait;
 use oihana\arango\commands\traits\DirectoryTrait;
 
@@ -67,6 +68,7 @@ trait ArangoRestoreAction
 {
     use ArangoCollectionsTrait ,
         ArangoListDumpsAction ,
+        ArangoOptionsTrait ,
         ArangoRestoreTrait ,
         DirectoryTrait ,
         EncryptTrait ;
@@ -240,7 +242,7 @@ trait ArangoRestoreAction
 
         // 06 - Restore the database
 
-        $options =
+        $explicit =
         [
             ArangoRestoreOption::SERVER_DATABASE   => $database ,
             ArangoRestoreOption::SERVER_ENDPOINT   => $endpoint ,
@@ -253,8 +255,12 @@ trait ArangoRestoreAction
 
         if( $collection !== [] )
         {
-            $options[ ArangoRestoreOption::COLLECTION ] = $collection ;
+            $explicit[ ArangoRestoreOption::COLLECTION ] = $collection ;
         }
+
+        // Layer the [arango.restore] config defaults under the resolved
+        // connection/input, then let the curated CLI flags override.
+        $options = $this->resolveRestoreOptions( $explicit , $input ) ;
 
         $this->arangoRestore( $options , $output->isQuiet() );
 

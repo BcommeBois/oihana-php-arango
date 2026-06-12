@@ -8,6 +8,7 @@ use RuntimeException;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\commands\actions\ArangoDumpAction;
+use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\options\ArangoDumpOptions;
@@ -144,6 +145,11 @@ class ArangoDumpActionTest extends TestCase
             new InputOption( ArangoCommandOption::LABEL             , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::DIRECTORY         , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::DATE              , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::INCLUDE_SYSTEM    , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::NO_VIEWS          , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::ALL_DATABASES     , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::OVERWRITE         , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::THREADS           , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( CommandOption::ENCRYPT                 , null , InputOption::VALUE_OPTIONAL ) ,
         ]) ;
     }
@@ -360,5 +366,82 @@ class ArangoDumpActionTest extends TestCase
             '--' . ArangoCommandOption::COLLECTION        => [ 'users' ] ,
             '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'logs' ] ,
         ]) , $output ) ;
+    }
+
+    // ---------------------------------------------------------------- D1 options
+
+    public function testIncludeSystemFlagForwardsTheOption() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::INCLUDE_SYSTEM => true ] ) , $output ) ;
+
+        $this->assertTrue( $host->capturedDumpOptions[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] ) ;
+    }
+
+    public function testNoViewsFlagDisablesTheViewDump() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::NO_VIEWS => true ] ) , $output ) ;
+
+        $this->assertFalse( $host->capturedDumpOptions[ ArangoDumpOption::DUMP_VIEWS ] ) ;
+    }
+
+    public function testThreadsFlagForwardsAsAnInteger() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::THREADS => '4' ] ) , $output ) ;
+
+        $this->assertSame( 4 , $host->capturedDumpOptions[ ArangoDumpOption::THREADS ] ) ;
+    }
+
+    public function testAllDatabasesAndOverwriteFlagsForwardTrue() :void
+    {
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::ALL_DATABASES => true ,
+            '--' . ArangoCommandOption::OVERWRITE     => true ,
+        ]) , $output ) ;
+
+        $this->assertTrue( $host->capturedDumpOptions[ ArangoDumpOption::ALL_DATABASES ] ) ;
+        $this->assertTrue( $host->capturedDumpOptions[ ArangoDumpOption::OVERWRITE ] ) ;
+    }
+
+    public function testDumpConfigDefaultsAreApplied() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoOptions
+        ([
+            ArangoCommandParam::DUMP =>
+            [
+                ArangoDumpOption::THREADS   => 2 ,
+                ArangoDumpOption::OVERWRITE => true ,
+            ]
+        ]) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input() , $output ) ;
+
+        $this->assertSame( 2 , $host->capturedDumpOptions[ ArangoDumpOption::THREADS ] ) ;
+        $this->assertTrue( $host->capturedDumpOptions[ ArangoDumpOption::OVERWRITE ] ) ;
+    }
+
+    public function testCliFlagOverridesTheDumpConfigDefault() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::DUMP => [ ArangoDumpOption::THREADS => 2 ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::THREADS => '8' ] ) , $output ) ;
+
+        $this->assertSame( 8 , $host->capturedDumpOptions[ ArangoDumpOption::THREADS ] ) ;
     }
 }

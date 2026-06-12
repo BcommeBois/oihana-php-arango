@@ -10,6 +10,7 @@ use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\traits\ArangoClientTrait;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoDumpTrait;
+use oihana\arango\commands\traits\ArangoOptionsTrait;
 use oihana\arango\commands\traits\DirectoryTrait;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\db\enums\ArangoConfig;
@@ -54,6 +55,7 @@ trait ArangoDumpAction
         ArangoCollectionsTrait ,
         ArangoDumpTrait ,
         ArangoListDumpsAction ,
+        ArangoOptionsTrait ,
         DirectoryTrait ,
         EncryptTrait ;
 
@@ -84,7 +86,7 @@ trait ArangoDumpAction
 
         // 00 - Initialize the process
 
-        $action   = $input->getArgument(CommandArg::ACTION ) ?? Char::EMPTY ;
+        $action   = $input->getArgument( CommandArg::ACTION ) ?? Char::EMPTY ;
         $database = $input->getOption( ArangoConfig::DATABASE ) ?? $this->getDatabase() ;
         $endpoint = $input->getOption( ArangoConfig::ENDPOINT ) ??$this->getEndpoint() ;
         $password = $input->getOption( ArangoConfig::PASSWORD ) ??$this->getPassword() ;
@@ -212,7 +214,7 @@ trait ArangoDumpAction
 
         // 02. Dump the ArangoDB database
 
-        $options =
+        $explicit =
         [
             ArangoDumpOption::SERVER_DATABASE  => $database ,
             ArangoDumpOption::SERVER_ENDPOINT  => $endpoint ,
@@ -223,8 +225,12 @@ trait ArangoDumpAction
 
         if( $targetCollections !== [] )
         {
-            $options[ ArangoDumpOption::COLLECTION ] = $targetCollections ;
+            $explicit[ ArangoDumpOption::COLLECTION ] = $targetCollections ;
         }
+
+        // Layer the [arango.dump] config defaults under the resolved
+        // connection/output, then let the curated CLI flags override.
+        $options = $this->resolveDumpOptions( $explicit , $input ) ;
 
         $this->arangoDump( options : $options , silent : $output->isQuiet() ) ;
 

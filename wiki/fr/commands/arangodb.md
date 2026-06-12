@@ -29,6 +29,7 @@ Deux sources alimentent la commande :
 | Source | Clés | Lecture |
 |---|---|---|
 | `[arango]` de `configs/config.toml` | `database`, `endpoint`, `user`, `password`, `encrypt`, `passphrase` | [`definitions/config.php`](../../../definitions/config.php) → `arango.config` |
+| `[arango.dump]` / `[arango.restore]` | Toute option `arangodump` / `arangorestore` (voir ci-dessous) | `ArangoOptionsTrait` via les clés d'init `dump` / `restore` |
 | `[app].dumps` de `configs/config.toml` | Dossier des archives | [`definitions/config.php`](../../../definitions/config.php) → `app.dumps` |
 
 Résolution du dossier de dumps : chemin **absolu** → tel quel ; **relatif** → résolu contre la racine de la lib (`__LIB__`) ; **absent** → `<racine-lib>/dumps`.
@@ -45,6 +46,41 @@ password   = "secret"
 passphrase = ""                       # passphrase par défaut pour --encrypt
 encrypt    = false                    # true pour chiffrer par défaut
 ```
+
+### Configurer les défauts des options
+
+Au-delà de la connexion, les actions `dump` et `restore` acceptent **toutes**
+les options d'`arangodump` / `arangorestore`. Les plus courantes ont un flag
+CLI dédié (voir [Options CLI](#options-cli)) ; **toutes** peuvent être posées
+comme défauts persistants dans deux sections facultatives de `config.toml` :
+
+| Section | S'applique à | Exemples de clés |
+|---|---|---|
+| `[arango.dump]` | `dump` | `threads`, `overwrite`, `includeSystemCollections`, `dumpViews`, `compressOutput`, `splitFiles` |
+| `[arango.restore]` | `restore` | `threads`, `includeSystemCollections`, `view`, `forceSameDatabase`, `numberOfShards` |
+
+Les clés sont les **noms de propriété** des options de `ArangoDumpOptions` /
+`ArangoRestoreOptions` (camelCase). Les clés inconnues sont ignorées silencieusement.
+
+```toml
+[arango.dump]
+threads                  = 4
+overwrite                = true
+includeSystemCollections = false      # valeur par défaut
+
+[arango.restore]
+threads = 4
+```
+
+**Précédence** — chaque couche écrase la précédente :
+
+| Couche | Source |
+|---|---|
+| 1. défaut du binaire | `arangodump` / `arangorestore` |
+| 2. défaut de config | `[arango.dump]` / `[arango.restore]` |
+| 3. flag CLI | `--threads`, `--include-system`, … |
+
+Un lancement ponctuel affine donc un défaut configuré sans toucher à `config.toml`.
 
 ---
 
@@ -120,6 +156,12 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--passphrase` | `-p` | dump, restore | Passphrase pour `--encrypt`. Prompt interactif sinon. |
 | `--directory` | `-dir` | toutes | Override du dossier de dump/restore. |
 | `--list` | `-l` | dump, restore | Liste les archives présentes au lieu d'agir. |
+| `--include-system` | — | dump, restore | Inclut les collections système (`_analyzers`, `_graphs`, …). |
+| `--no-views` | — | dump | Ignore les définitions de Views ArangoSearch (dumpées par défaut). |
+| `--all-databases` | — | dump, restore | Dump / restaure **toutes** les bases au lieu d'une seule. |
+| `--overwrite` | — | dump | Écrase le dossier de sortie s'il existe déjà. |
+| `--threads` | — | dump, restore | Nombre de threads parallèles. |
+| `--view` | — | restore | Restreint la restauration à ces Views (répétable / séparées par virgules). |
 | `--apply` | — | doctor | Répare : crée le manquant (collections, index, Views), resynchronise les Views. |
 | `--force` | — | doctor | Avec `--apply` : autorise le drop + recreate des index driftés. |
 | `--prune` | — | doctor | Sélection interactive des orphelins (collections, Views) à supprimer. |

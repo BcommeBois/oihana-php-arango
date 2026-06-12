@@ -47,3 +47,21 @@ lazy       = true
 reconnect  = true
 timeout    = 6
 type       = "Basic"
+
+# ----------------------------------------------------------------------------
+# [arango.dump] / [arango.restore] — optional default options for the
+# `command:arangodb dump` and `restore` actions.
+#
+# Keys are the option property names of ArangoDumpOptions / ArangoRestoreOptions
+# (camelCase). They become persistent defaults; the CLI always overrides them
+# (precedence: binary default → these sections → CLI flag). Unknown keys are
+# ignored. See wiki/{fr,en}/commands/arangodb.md → "Configuring option defaults".
+# ----------------------------------------------------------------------------
+
+# [arango.dump]
+# threads                  = 4
+# overwrite                = true
+# includeSystemCollections = false   # true to pull _analyzers, _graphs, …
+
+# [arango.restore]
+# threads = 4

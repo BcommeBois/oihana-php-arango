@@ -22,6 +22,12 @@ class ArangoCommandParam
     public const string DIRECTORY = 'directory' ;
 
     /**
+     * The 'dump' parameter — the `[arango.dump]` config section (option
+     * defaults applied to the `dump` action, overridable on the CLI).
+     */
+    public const string DUMP = 'dump' ;
+
+    /**
      * The 'migrationsCollection' parameter — the tracking collection name
      * of the `migrate` action (default `migrations`).
      */
@@ -44,6 +50,12 @@ class ArangoCommandParam
      * models whose View declarations the `views` action inspects.
      */
     public const string MODELS = 'models' ;
+
+    /**
+     * The 'restore' parameter — the `[arango.restore]` config section (option
+     * defaults applied to the `restore` action, overridable on the CLI).
+     */
+    public const string RESTORE = 'restore' ;
 
     /**
      * The 'timezone' parameter.

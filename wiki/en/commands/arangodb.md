@@ -29,6 +29,7 @@ Two sources feed the command:
 | Source | Keys | Read by |
 |---|---|---|
 | `[arango]` in `configs/config.toml` | `database`, `endpoint`, `user`, `password`, `encrypt`, `passphrase` | [`definitions/config.php`](../../../definitions/config.php) → `arango.config` |
+| `[arango.dump]` / `[arango.restore]` | Any `arangodump` / `arangorestore` option (see below) | `ArangoOptionsTrait` via the `dump` / `restore` init keys |
 | `[app].dumps` in `configs/config.toml` | Archive directory | [`definitions/config.php`](../../../definitions/config.php) → `app.dumps` |
 
 Dumps directory resolution: **absolute** path → as-is; **relative** → resolved against the library root (`__LIB__`); **missing** → `<library-root>/dumps`.
@@ -45,6 +46,41 @@ password   = "secret"
 passphrase = ""                       # default passphrase for --encrypt
 encrypt    = false                    # true to encrypt by default
 ```
+
+### Configuring option defaults
+
+Beyond the connection, the `dump` and `restore` actions accept **every**
+`arangodump` / `arangorestore` option. The most common ones have a dedicated
+CLI flag (see [CLI options](#cli-options)); **all** of them can be set as
+persistent defaults in two optional sections of `config.toml`:
+
+| Section | Applies to | Example keys |
+|---|---|---|
+| `[arango.dump]` | `dump` | `threads`, `overwrite`, `includeSystemCollections`, `dumpViews`, `compressOutput`, `splitFiles` |
+| `[arango.restore]` | `restore` | `threads`, `includeSystemCollections`, `view`, `forceSameDatabase`, `numberOfShards` |
+
+The keys are the option **property names** of `ArangoDumpOptions` /
+`ArangoRestoreOptions` (camelCase). Unknown keys are silently ignored.
+
+```toml
+[arango.dump]
+threads                  = 4
+overwrite                = true
+includeSystemCollections = false      # default
+
+[arango.restore]
+threads = 4
+```
+
+**Precedence** — each layer overrides the previous one:
+
+| Layer | Source |
+|---|---|
+| 1. binary default | `arangodump` / `arangorestore` built-in |
+| 2. config default | `[arango.dump]` / `[arango.restore]` |
+| 3. CLI flag | `--threads`, `--include-system`, … |
+
+A one-off run therefore refines a configured default without editing `config.toml`.
 
 ---
 
@@ -120,6 +156,12 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--passphrase` | `-p` | dump, restore | Passphrase for `--encrypt`. Interactive prompt otherwise. |
 | `--directory` | `-dir` | all | Override the dump/restore directory. |
 | `--list` | `-l` | dump, restore | List the present archives instead of acting. |
+| `--include-system` | — | dump, restore | Include the system collections (`_analyzers`, `_graphs`, …). |
+| `--no-views` | — | dump | Skip the ArangoSearch View definitions (dumped by default). |
+| `--all-databases` | — | dump, restore | Dump / restore **every** database instead of a single one. |
+| `--overwrite` | — | dump | Overwrite the output directory if it already exists. |
+| `--threads` | — | dump, restore | Number of parallel threads. |
+| `--view` | — | restore | Restrict the restore to these Views (repeatable / comma-separated). |
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
 | `--force` | — | doctor | With `--apply`: allow the drop + recreate of drifted indexes. |
 | `--prune` | — | doctor | Interactive selection of the orphans (collections, Views) to remove. |
