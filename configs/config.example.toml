@@ -62,6 +62,9 @@ type       = "Basic"
 # threads                  = 4
 # overwrite                = true
 # includeSystemCollections = false   # true to pull _analyzers, _graphs, …
+# complete                 = true     # surgical complete backup: every user
+#                                     # collection + _analyzers + _graphs only
+#                                     # (same as the --complete flag)
 
 # [arango.restore]
 # threads = 4

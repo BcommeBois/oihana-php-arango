@@ -12,6 +12,7 @@ class ArangoCommandOption
     public const string ALL_DATABASES     = 'all-databases' ;
     public const string APPLY             = 'apply' ;
     public const string COLLECTION        = 'collection' ;
+    public const string COMPLETE          = 'complete' ;
     public const string CREATE            = 'create' ;
     public const string DATE              = 'date' ;
     public const string DIFF              = 'diff' ;

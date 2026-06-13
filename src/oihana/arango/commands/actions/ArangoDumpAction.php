@@ -63,6 +63,12 @@ trait ArangoDumpAction
         EncryptTrait ;
 
     /**
+     * The system collections added by a `--complete` backup (the custom
+     * analyzers and the named graph definitions).
+     */
+    private const array COMPLETE_SYSTEM_COLLECTIONS = [ '_analyzers' , '_graphs' ] ;
+
+    /**
      * The compression of the dump file.
      * @var string|null
      */
@@ -91,7 +97,10 @@ trait ArangoDumpAction
 
         $action = $input->getArgument( CommandArg::ACTION ) ?? Char::EMPTY ;
 
-        // --- Selection: a profile, or the --collection / --ignore-collection flags ---
+        // --- Selection: --complete, a profile, or the --collection / --ignore-collection flags ---
+
+        $complete = (bool) $input->getOption( ArangoCommandOption::COMPLETE )
+                 || (bool) ( $this->dumpConfig[ ArangoCommandOption::COMPLETE ] ?? false ) ;
 
         $profileName = $input->getOption( ArangoCommandOption::PROFILE ) ;
         $profile     = $this->resolveProfile( $profileName ) ;
@@ -99,6 +108,11 @@ trait ArangoDumpAction
         $collection = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::COLLECTION        ) ) ;
         $ignore     = $this->normalizeCollections( (array) $input->getOption( ArangoCommandOption::IGNORE_COLLECTION ) ) ;
         $label      = $this->sanitizeLabel( $input->getOption( ArangoCommandOption::LABEL ) ) ;
+
+        if( $complete && ( $collection !== [] || $ignore !== [] || $profile !== null ) )
+        {
+            throw new InvalidArgumentException( '--complete backs up the whole database (plus _analyzers and _graphs) and cannot be combined with --collection / --ignore-collection / --profile.' ) ;
+        }
 
         if( $profile !== null && ( $collection !== [] || $ignore !== [] ) )
         {
@@ -130,7 +144,15 @@ trait ArangoDumpAction
 
         $targetCollections = $collection ;
 
-        if( $profile !== null )
+        if( $complete )
+        {
+            $io->text( 'Complete backup (+ system: ' . implode( ', ' , self::COMPLETE_SYSTEM_COLLECTIONS ) . ')' ) ;
+
+            $targetCollections = $this->dumpCompleteCollections( $endpoint , $username , $password , $database ) ;
+
+            $io->text( sprintf( '→ %d collection(s) will be dumped.' , count( $targetCollections ) ) ) ;
+        }
+        elseif( $profile !== null )
         {
             $io->text( sprintf( 'Profile : %s' , $profileName ) ) ;
 
@@ -251,6 +273,13 @@ trait ArangoDumpAction
             $explicit[ ArangoDumpOption::COLLECTION ] = $targetCollections ;
         }
 
+        // A complete backup lists the system collections explicitly, so
+        // arangodump must be allowed to dump them.
+        if( $complete )
+        {
+            $explicit[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] = true ;
+        }
+
         // Layer the [arango.dump] config defaults under the resolved
         // connection/output, then let the curated CLI flags override.
         $options = $this->resolveDumpOptions( $explicit , $input ) ;
@@ -325,5 +354,40 @@ trait ArangoDumpAction
         {
             throw new RuntimeException( 'This selection requires the ArangoDB HTTP API, which is unreachable: ' . $exception->getMessage() , 0 , $exception ) ;
         }
+    }
+
+    /**
+     * Returns the collection list of a `--complete` backup: every user
+     * collection plus the {@see COMPLETE_SYSTEM_COLLECTIONS} that exist on the
+     * server. Throws when the HTTP API is unavailable.
+     *
+     * @param string $endpoint
+     * @param string $username
+     * @param string $password
+     * @param string $database
+     * @return array<int,string>
+     */
+    private function dumpCompleteCollections( string $endpoint , string $username , string $password , string $database ) :array
+    {
+        $db = $this->buildDatabase( $endpoint , $username , $password , $database ) ;
+        if( $db === null )
+        {
+            throw new RuntimeException( '--complete requires the ArangoDB HTTP API, but no client is available (check endpoint/database).' ) ;
+        }
+
+        try
+        {
+            $all = array_map( fn( $c ) => $c->getName() , $db->collections( true ) ) ;
+        }
+        catch( ArangoException $exception )
+        {
+            throw new RuntimeException( '--complete requires the ArangoDB HTTP API, which is unreachable: ' . $exception->getMessage() , 0 , $exception ) ;
+        }
+
+        return array_values( array_filter
+        (
+            $all ,
+            fn( string $name ) => !str_starts_with( $name , '_' ) || in_array( $name , self::COMPLETE_SYSTEM_COLLECTIONS , true ) ,
+        ) ) ;
     }
 }

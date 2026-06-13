@@ -149,6 +149,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 |---|---|---|---|
 | `--collection` | `-c` | dump, restore | Restrict to these collections. **Repeatable** *or* comma-separated (or both). |
 | `--ignore-collection` | — | dump | Exclude these collections from the dump (repeatable / comma). Resolved client-side (see below). |
+| `--complete` | — | dump | Complete backup: every user collection **plus** `_analyzers` and `_graphs` — see [Complete backup](#complete-backup). |
 | `--label` | `-L` | dump, restore | Optional label appended to the archive name (e.g. `pre-migration`). |
 | `--all` | — | collections | List **all** collections (system + user). |
 | `--system` | — | collections | List **only** system collections (`_…`). |
@@ -246,6 +247,50 @@ php bin/console.php command:arangodb dump -c users,prodcts
 ```
 
 If the HTTP API is **unreachable** for a `--collection` (inclusion), validation is **skipped** with a warning and the dump proceeds (`arangodump` may still succeed). For `--ignore-collection`, the API is mandatory (see above).
+
+### Complete backup — `--complete`
+
+A default dump backs up the user collections, their indexes and the
+ArangoSearch **View definitions** — but **not** the custom **analyzers**
+(`_analyzers`) or the **named graphs** (`_graphs`), which live in system
+collections. On a restore into a *fresh* server this gap can break a View that
+references a custom analyzer.
+
+`--complete` closes the gap **surgically**: it backs up every user collection
+**plus** `_analyzers` and `_graphs` — and *only* those two system collections
+(never `_users`, `_jobs`, `_queues`, …).
+
+```bash
+php bin/console.php command:arangodb dump --complete
+```
+
+It can also be the default via config:
+
+```toml
+[arango.dump]
+complete = true
+```
+
+What a backup covers:
+
+| Layer | Default dump | `--complete` |
+|---|---|---|
+| User collections + data | ✅ | ✅ |
+| Indexes | ✅ | ✅ |
+| ArangoSearch View definitions | ✅ | ✅ |
+| Custom analyzers (`_analyzers`) | ❌ | ✅ |
+| Named graphs (`_graphs`) | ❌ | ✅ |
+| Users / permissions (`_users`) | ❌ | ❌ |
+| Foxx services (`_apps`) | ❌ | ❌ |
+
+`--complete` requires the HTTP API (it enumerates the collections) and is
+mutually exclusive with `--collection` / `--ignore-collection` / `--profile`
+(it backs up the whole database, not a subset). To restore it, re-include the
+system collections:
+
+```bash
+php bin/console.php command:arangodb restore --last --include-system
+```
 
 ---
 

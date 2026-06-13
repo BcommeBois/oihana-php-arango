@@ -212,4 +212,37 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
             'The profile dump must contain exactly the selected collections.' ,
         ) ;
     }
+
+    public function testCompleteBackupAddsOnlyAnalyzersAndGraphs() :void
+    {
+        $host = new DumpRestoreIntegrationHost() ;
+
+        // The collection list of a --complete backup: every user collection
+        // plus the _analyzers / _graphs system collections present.
+        $targets = [ '_analyzers' , '_graphs' ] ;
+        $all     = array_map( fn( $c ) => $c->getName() , self::$db->collections( true ) ) ;
+        $list    = array_values( array_filter
+        (
+            $all ,
+            fn( string $name ) => !str_starts_with( $name , '_' ) || in_array( $name , $targets , true ) ,
+        ) ) ;
+
+        $out = $this->tmp . DIRECTORY_SEPARATOR . 'complete' ;
+
+        $status = $host->arangoDump
+        (
+            $this->connection( $out ) + [ ArangoDumpOption::COLLECTION => $list , ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS => true ] ,
+            silent : true ,
+        ) ;
+
+        $this->assertSame( 0 , $status ) ;
+
+        $names  = $this->structureNames( $out ) ;
+        $system = array_values( array_filter( $names , fn( string $n ) => str_starts_with( $n , '_' ) ) ) ;
+        sort( $system ) ;
+
+        // Surgical: only _analyzers + _graphs, never _jobs / _queues / _apps / …
+        $this->assertSame( [ '_analyzers' , '_graphs' ] , $system ) ;
+        $this->assertContains( 'widgets' , $names ) ;
+    }
 }

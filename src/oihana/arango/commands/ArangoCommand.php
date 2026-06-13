@@ -99,6 +99,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::APPLY             , null  , InputOption::VALUE_NONE      , 'Repair the declared structure: create what is missing, resync the Views (doctor action).' ) ;
         $this->addOption   ( ArangoCommandOption::CREATE            , null  , InputOption::VALUE_REQUIRED  , 'Generate an empty migration shell with this description (migrate action).' ) ;
         $this->addOption   ( ArangoCommandOption::COLLECTION        , 'c'   , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Restrict the dump/restore to these collections (repeatable or comma-separated).' ) ;
+        $this->addOption   ( ArangoCommandOption::COMPLETE          , null  , InputOption::VALUE_NONE      , 'Complete backup: every user collection plus the _analyzers and _graphs system collections (dump action).' ) ;
         $this->addOption   ( ArangoCommandOption::DATE              , 'd'   , InputOption::VALUE_OPTIONAL  , 'The Date of the dump to backup or restore.' ) ;
         $this->addOption   ( ArangoCommandOption::DIFF              , null  , InputOption::VALUE_NONE      , 'Compare the declared Views of the configured models with the server (views action).' ) ;
         $this->addOption   ( ArangoCommandOption::DIRECTORY         , 'dir' , InputOption::VALUE_OPTIONAL  , 'The directory to dump and restore the database.' ) ;

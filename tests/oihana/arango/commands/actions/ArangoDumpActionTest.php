@@ -152,6 +152,7 @@ class ArangoDumpActionTest extends TestCase
             new InputOption( ArangoCommandOption::OVERWRITE         , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::THREADS           , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::PROFILE           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::COMPLETE          , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::DRY_RUN           , null , InputOption::VALUE_NONE ) ,
             new InputOption( CommandOption::ENCRYPT                 , null , InputOption::VALUE_OPTIONAL ) ,
         ]) ;
@@ -524,5 +525,100 @@ class ArangoDumpActionTest extends TestCase
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertFalse( $host->dumpCalled ) ;
         $this->assertStringContainsString( 'Dry run' , $output->fetch() ) ;
+    }
+
+    // ---------------------------------------------------------------- D3 complete preset
+
+    public function testCompleteDumpsUserCollectionsPlusTheSystemTargets() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' , 'orders' , '_analyzers' , '_graphs' , '_jobs' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::COMPLETE => true ] ) , $output ) ;
+
+        $this->assertSame
+        (
+            [ 'users' , 'orders' , '_analyzers' , '_graphs' ] ,
+            array_values( $host->capturedDumpOptions[ ArangoDumpOption::COLLECTION ] ) ,
+        ) ;
+        $this->assertTrue( $host->capturedDumpOptions[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] ) ;
+    }
+
+    public function testCompleteConfigDefaultEnablesTheCompletePreset() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' , '_graphs' ] ) ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::DUMP => [ ArangoCommandOption::COMPLETE => true ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input() , $output ) ;
+
+        $this->assertSame( [ 'users' , '_graphs' ] , array_values( $host->capturedDumpOptions[ ArangoDumpOption::COLLECTION ] ) ) ;
+        $this->assertTrue( $host->capturedDumpOptions[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] ) ;
+    }
+
+    public function testCompleteRequiresTheHttpApi() :void
+    {
+        $host = $this->host() ;
+        $host->returnNullDatabase = true ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( '--complete requires the ArangoDB HTTP API' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::COMPLETE => true ] ) , $output ) ;
+    }
+
+    public function testCompleteThrowsWhenTheApiIsUnreachable() :void
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willThrowException( new ArangoException( 'down' ) ) ;
+
+        $host = $this->host() ;
+        $host->fakeDatabase = $db ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'unreachable' ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::COMPLETE => true ] ) , $output ) ;
+    }
+
+    public function testCompleteIsMutuallyExclusiveWithACollectionSubset() :void
+    {
+        $host = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::COMPLETE   => true ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'users' ] ,
+        ]) , $output ) ;
+    }
+
+    public function testCompleteIsMutuallyExclusiveWithAProfile() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::COMPLETE => true ,
+            '--' . ArangoCommandOption::PROFILE  => 'p' ,
+        ]) , $output ) ;
+    }
+
+    public function testCompleteDryRunListsTheSelectionWithoutDumping() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->databaseReturning( [ 'users' , '_analyzers' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::COMPLETE => true , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertFalse( $host->dumpCalled ) ;
+        $this->assertStringContainsString( '_analyzers' , $output->fetch() ) ;
     }
 }
