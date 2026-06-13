@@ -30,6 +30,7 @@ use oihana\files\openssl\OpenSSLFileEncryption;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ChoiceQuestion;
+use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Uid\Uuid;
 
 use function oihana\files\archive\tar\untar;
@@ -64,6 +65,28 @@ use function oihana\files\makeTemporaryDirectory;
 // Pick by explicit file
 // $ composer arango:restore -- -f /var/data/arango/dumps/2025-07-05T18:14:22-mydb.tar.gz.enc
 // $ composer arango:restore -- --file /var/data/arango/dumps/2025-07-05T18:14:22-mydb.tar.gz.enc
+
+// Restrict the restore to a subset of the archive (filter, repeatable / comma-separated)
+// $ composer arango:restore -- --last --collection users,products
+// $ composer arango:restore -- --last --view places_view,products_view
+// $ composer arango:restore -- --last --include-system
+
+// Restore a named profile or an external .toml profile (selection only — never its source connection)
+// $ composer arango:restore -- --last --profile test-local
+// $ composer arango:restore -- --last --profile /etc/oihana/profiles/test-local.toml
+
+// Preview the resolved plan (target, collections, guard warnings) without writing anything
+// $ composer arango:restore -- --last --dry-run
+
+// --- Guard-rails (D4) -------------------------------------------------------
+// Confirm before the destructive write: --yes skips the prompt (CI / bun pull);
+// a non-interactive run without --yes stops, by safety.
+// $ composer arango:restore -- --last            # asks "Restore into '<db>' ? [y/N]"
+// $ composer arango:restore -- --last --yes
+
+// Protected collections ([arango.restore] protected = [...]) are refused unless
+// --force; a non-local target (not localhost / 127.0.0.1 / ::1) is warned about.
+// $ composer arango:restore -- --last --force --yes
 
 /**
  * The command to manage an ArangoDB database.
@@ -233,8 +256,24 @@ trait ArangoRestoreAction
         // --dry-run : report the resolved plan, restore nothing (no untar).
         if( $input->getOption( ArangoCommandOption::DRY_RUN ) )
         {
-            $io->text( sprintf( 'Target  : %s @ %s (local)' , $database , $endpoint ) ) ;
+            $local = $this->isLocalEndpoint( $endpoint ) ;
+            $io->text( sprintf( 'Target  : %s @ %s%s' , $database , $endpoint , $local ? ' (local)' : '' ) ) ;
             $io->text( 'Collections : ' . $this->restoreSelectionLabel( $profile , $collection ) ) ;
+
+            if( !$local )
+            {
+                $io->warning( sprintf( 'The target endpoint is NOT local: %s — make sure you are not overwriting a staging/production database.' , $endpoint ) ) ;
+            }
+
+            // Protected collections in the *known* selection (the exact
+            // exclude-only / whole-archive set is only known after untar).
+            $known   = $collection !== [] ? $collection : ( $profile !== null ? $this->profileSelection( $profile ) : [] ) ;
+            $blocked = array_values( array_intersect( $known , $this->restoreProtectedCollections() ) ) ;
+            if( $blocked !== [] )
+            {
+                $io->warning( 'Protected collection(s) in the selection — blocked without --force: ' . implode( ', ' , $blocked ) ) ;
+            }
+
             $io->success( 'Dry run — nothing was restored.' ) ;
             return ExitCode::SUCCESS ;
         }
@@ -268,9 +307,9 @@ trait ArangoRestoreAction
 
         untar( $inputFile , $inputDirectory ) ;
 
-        unlink( $inputFile ) ;
-
         // 06 - Restore the database
+
+        $archive = $this->archiveCollections( $inputDirectory ) ;
 
         // Resolve the effective collection filter. A profile borrows the
         // selection only: a positive list (minus exclude), or — for an
@@ -279,7 +318,7 @@ trait ArangoRestoreAction
         {
             $selection = $this->profilePositive( $profile ) !== []
                        ? $this->profileSelection( $profile )
-                       : $this->profileSelection( $profile , $this->archiveCollections( $inputDirectory ) ) ;
+                       : $this->profileSelection( $profile , $archive ) ;
 
             if( $selection === [] )
             {
@@ -289,6 +328,59 @@ trait ArangoRestoreAction
         else
         {
             $selection = $collection ;
+        }
+
+        // --- D4 guard-rails -------------------------------------------------
+        // The collections this restore will actually write into the target
+        // (an empty selection means "every collection in the archive").
+        $effective = $selection !== [] ? $selection : $archive ;
+        $forced    = (bool) $input->getOption( ArangoCommandOption::FORCE ) ;
+
+        // (4) Warn about a requested collection absent from the archive.
+        $missing = $selection !== [] ? array_values( array_diff( $selection , $archive ) ) : [] ;
+        if( $missing !== [] )
+        {
+            $io->warning( 'Not in the archive — nothing to restore for: ' . implode( ', ' , $missing ) ) ;
+        }
+
+        // (1) Refuse to overwrite a protected collection unless forced.
+        $blocked = array_values( array_intersect( $effective , $this->restoreProtectedCollections() ) ) ;
+        if( $blocked !== [] && !$forced )
+        {
+            $io->error( sprintf( 'Refusing to overwrite protected collection(s): %s — rerun with --force to override.' , implode( ', ' , $blocked ) ) ) ;
+            return ExitCode::FAILURE ;
+        }
+
+        // (2)(3) Confirm before the destructive write, warning on a non-local target.
+        $local = $this->isLocalEndpoint( $endpoint ) ;
+        $io->text( sprintf( 'Target  : %s @ %s%s' , $database , $endpoint , $local ? ' (local)' : '' ) ) ;
+        $io->text( 'Collections : ' . ( $effective === [] ? 'all' : implode( ', ' , $effective ) ) ) ;
+
+        if( !$local )
+        {
+            $io->warning( sprintf( 'The target endpoint is NOT local: %s — make sure you are not overwriting a staging/production database.' , $endpoint ) ) ;
+        }
+
+        if( $blocked !== [] )
+        {
+            $io->warning( '--force: this WILL overwrite protected collection(s): ' . implode( ', ' , $blocked ) ) ;
+        }
+
+        if( !$input->getOption( ArangoCommandOption::YES ) )
+        {
+            if( !$input->isInteractive() )
+            {
+                $io->error( 'Refusing to restore without confirmation — rerun with --yes.' ) ;
+                return ExitCode::FAILURE ;
+            }
+
+            $question = new ConfirmationQuestion( sprintf( "Restore into '%s' ? [y/N] " , $database ) , false ) ;
+            if( !$this->getQuestionHelper()->ask( $input , $output , $question ) )
+            {
+                $io->text( 'Aborted.' ) ;
+                $io->newLine() ;
+                return ExitCode::SUCCESS ;
+            }
         }
 
         $explicit =
@@ -312,6 +404,10 @@ trait ArangoRestoreAction
         $options = $this->resolveRestoreOptions( $explicit , $input ) ;
 
         $this->arangoRestore( $options , $output->isQuiet() );
+
+        // The source archive is consumed only on success — a restore refused by
+        // a guard-rail (protected, confirmation) leaves the backup untouched.
+        unlink( $inputFile ) ;
 
         // deleteDirectory( $inputDirectory ) ;
 
@@ -365,6 +461,37 @@ trait ArangoRestoreAction
             }
         }
         return array_values( array_unique( $names ) ) ;
+    }
+
+    /**
+     * True when an ArangoDB endpoint targets the local machine.
+     *
+     * The host is extracted from the endpoint (e.g. `tcp://127.0.0.1:8529`,
+     * `ssl://localhost:8529`, `http+tcp://[::1]:8529`) and matched against the
+     * loopback names. Anything else — a remote host or an unparsable value — is
+     * treated as non-local, so the restore warns rather than staying silent.
+     *
+     * @param string|null $endpoint
+     * @return bool
+     */
+    private function isLocalEndpoint( ?string $endpoint ) :bool
+    {
+        if( $endpoint === null || $endpoint === '' )
+        {
+            return false ;
+        }
+
+        $host = parse_url( $endpoint , PHP_URL_HOST ) ;
+
+        if( !is_string( $host ) || $host === '' )
+        {
+            // No scheme (e.g. "127.0.0.1:8529") — take the part before the port.
+            $host = preg_replace( '/:\d+$/' , '' , $endpoint ) ;
+        }
+
+        $host = strtolower( trim( (string) $host , '[]' ) ) ;
+
+        return in_array( $host , [ 'localhost' , '127.0.0.1' , '::1' ] , true ) ;
     }
 
     /**

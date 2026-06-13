@@ -68,6 +68,11 @@ type       = "Basic"
 
 # [arango.restore]
 # threads = 4
+# # Safety guard-rail: the restore REFUSES to overwrite these collections unless
+# # --force is passed (a deployment policy — never an arangorestore option). Keep
+# # your authentication collections here so a stray full restore cannot clobber
+# # them. See wiki/{fr,en}/commands/arangodb.md → "Restore guard-rails".
+# protected = ["users", "sessions", "permissions"]
 
 # ----------------------------------------------------------------------------
 # [arango.profiles.<name>] — reusable named dump/restore selections.

@@ -69,8 +69,13 @@ overwrite                = true
 includeSystemCollections = false      # valeur par défaut
 
 [arango.restore]
-threads = 4
+threads   = 4
+protected = ["users", "sessions"]    # garde-fou, pas une option — voir « Garde-fous du restore »
 ```
+
+> `protected` est la seule clé de `[arango.restore]` qui **n'est pas** une option
+> d'`arangorestore` : c'est une politique de sécurité (voir
+> [Garde-fous du restore](#garde-fous-du-restore)), retirée avant le lancement du binaire.
 
 **Précédence** — chaque couche écrase la précédente :
 
@@ -166,11 +171,11 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--profile` | — | dump, restore | Profil nommé (`[arango.profiles.<nom>]`) ou chemin vers un fichier de profil `.toml` — voir [Profils](#profils). |
 | `--dry-run` | — | dump, restore, migrate | Affiche le plan résolu (et les migrations en attente) sans rien exécuter. |
 | `--apply` | — | doctor | Répare : crée le manquant (collections, index, Views), resynchronise les Views. |
-| `--force` | — | doctor | Avec `--apply` : autorise le drop + recreate des index driftés. |
+| `--force` | — | doctor, restore | doctor : avec `--apply`, autorise le drop + recreate des index driftés. restore : écrase les collections **protégées** (voir [Garde-fous du restore](#garde-fous-du-restore)). |
 | `--prune` | — | doctor | Sélection interactive des orphelins (collections, Views) à supprimer. |
 | `--create` | — | migrate | Génère la coquille vide d'une migration avec cette description. |
 | `--status` | — | migrate | Tableau des migrations appliquées / en attente pour cette base. |
-| `--yes` | `-y` | migrate | Applique sans la demande de confirmation (scripts / CI). |
+| `--yes` | `-y` | migrate, restore | Saute la demande de confirmation (applique les migrations / restaure). |
 | `--down` | — | migrate | Annule les N dernières migrations appliquées, défaut 1 (rembobinage LIFO). |
 | `--forget` | — | migrate | Secours : retire une ligne de suivi **sans** exécuter son `down()`. |
 | `--diff` | — | views | Compare les déclarations `AQL::VIEW` des modèles configurés à l'état serveur (lecture seule). |
@@ -350,6 +355,63 @@ php bin/console.php command:arangodb restore --date 2026-06-01T14:30:00 -c users
 ```
 
 > Plus simple pour les dumps partiels : `--last` ou `--file` (qui n'ont pas besoin de reconstruire le nom).
+
+### Garde-fous du restore
+
+Le `restore` est la **seule action destructrice** : il écrit dans une base réelle.
+Quatre garde-fous l'encadrent.
+
+**1. Collections protégées (`[arango.restore] protected`).** Liste déclarée côté
+déploiement — le restore **refuse** d'écraser ces collections **sauf `--force`**.
+À mettre vos collections d'authentification, pour qu'un restore complet lancé par
+erreur ne les écrase jamais.
+
+```toml
+# config.toml
+[arango.restore]
+protected = ["users", "sessions", "permissions"]
+```
+
+```bash
+php bin/console.php command:arangodb restore --last
+# [ERROR] Refusing to overwrite protected collection(s): users — rerun with --force to override.
+
+php bin/console.php command:arangodb restore --last --force --yes
+# [WARNING] --force: this WILL overwrite protected collection(s): users
+```
+
+> `protected` est une **politique**, jamais une option d'`arangorestore` : la clé
+> est retirée des options passées au binaire. C'est `--force` qui la lève, par run.
+
+**2. Confirmation (`--yes`).** Avant l'écriture, le restore demande confirmation
+(comme `migrate`). `--yes` saute le prompt (CI, `bun pull`). Un run
+**non-interactif sans `--yes`** s'arrête, par sécurité — jamais d'écrasement
+silencieux.
+
+```bash
+php bin/console.php command:arangodb restore --last          # demande « Restore into 'app' ? [y/N] »
+php bin/console.php command:arangodb restore --last --yes    # sans prompt
+```
+
+**3. Avertissement cible non-locale.** Si l'endpoint cible n'est pas local
+(`localhost` / `127.0.0.1` / `::1`), un avertissement est affiché — pour éviter de
+restaurer sur staging/prod en croyant viser local. C'est un **avertissement**, pas
+un blocage (on restaure parfois à distance volontairement).
+
+```
+[WARNING] The target endpoint is NOT local: tcp://staging.internal:8529 — make sure
+you are not overwriting a staging/production database.
+```
+
+**4. Validation de la sélection.** Une collection demandée (`--collection` ou profil)
+**absente de l'archive** déclenche un avertissement (typo / mauvaise archive). Non
+bloquant.
+
+> **L'archive source n'est consommée qu'en cas de succès.** Un restore refusé par un
+> garde-fou (protégé, confirmation déclinée) laisse la sauvegarde **intacte**.
+
+Tous ces garde-fous sont visibles à blanc avec `--dry-run` (cible, liste, conflits
+protégés connus, avertissement non-local), sans rien écrire.
 
 ---
 

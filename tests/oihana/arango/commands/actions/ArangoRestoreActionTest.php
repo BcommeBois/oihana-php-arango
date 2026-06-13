@@ -95,6 +95,11 @@ class ArangoRestoreActionStub
     {
         return static::getArchiveFileSuffix( $database , $encrypt , $partial , $label ) ;
     }
+
+    public function localEndpoint( ?string $endpoint ) :bool
+    {
+        return $this->isLocalEndpoint( $endpoint ) ;
+    }
 }
 
 /**
@@ -217,6 +222,8 @@ class ArangoRestoreActionTest extends TestCase
             new InputOption( ArangoCommandOption::VIEW           , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
             new InputOption( ArangoCommandOption::PROFILE        , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::DRY_RUN        , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::FORCE          , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::YES            , null , InputOption::VALUE_NONE ) ,
             new InputOption( 'encrypt'    , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( 'passphrase' , null , InputOption::VALUE_OPTIONAL ) ,
         ]) ;
@@ -278,7 +285,7 @@ class ArangoRestoreActionTest extends TestCase
         $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
         $output = new BufferedOutput() ;
 
-        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive ] ) , $output ) ;
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::YES => true ] ) , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertTrue( $host->restoreCalled ) ;
@@ -300,6 +307,7 @@ class ArangoRestoreActionTest extends TestCase
         ([
             '--' . ArangoCommandOption::FILE       => $archive ,
             '--' . ArangoCommandOption::COLLECTION => [ 'users' , 'orders' ] ,
+            '--' . ArangoCommandOption::YES        => true ,
         ]) , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
@@ -315,7 +323,7 @@ class ArangoRestoreActionTest extends TestCase
         $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
         $output = new BufferedOutput() ;
 
-        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::LAST => true ] ) , $output ) ;
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::LAST => true , '--' . ArangoCommandOption::YES => true ] ) , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertTrue( $host->restoreCalled ) ;
@@ -351,7 +359,7 @@ class ArangoRestoreActionTest extends TestCase
         $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
         $output = new BufferedOutput() ;
 
-        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::DATE => '2025-07-05T18:14:22' ] ) , $output ) ;
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::DATE => '2025-07-05T18:14:22' , '--' . ArangoCommandOption::YES => true ] ) , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertTrue( $host->restoreCalled ) ;
@@ -366,7 +374,8 @@ class ArangoRestoreActionTest extends TestCase
         $output                = new BufferedOutput() ;
 
         // Choice index 0 → the (only) archive (the appended "Exit" entry is index 1).
-        $code = $host->restore( $this->interactiveInput( [] , '0' ) , $output ) ;
+        // --yes skips the post-selection restore confirmation (tested separately).
+        $code = $host->restore( $this->interactiveInput( [ '--' . ArangoCommandOption::YES => true ] , '0' ) , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertTrue( $host->restoreCalled ) ;
@@ -397,7 +406,7 @@ class ArangoRestoreActionTest extends TestCase
         $host->encrypt = true ;                                                 // enable the decrypt branch
         $output        = new BufferedOutput() ;
 
-        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive . FileExtension::ENCRYPTED ] ) , $output ) ;
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive . FileExtension::ENCRYPTED , '--' . ArangoCommandOption::YES => true ] ) , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertTrue( $host->restoreCalled ) ;
@@ -417,7 +426,7 @@ class ArangoRestoreActionTest extends TestCase
             $host->initializeArangoOptions( [ ArangoCommandParam::RESTORE => $config ] ) ;
         }
 
-        $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive ] + $cliOptions ) , new BufferedOutput() ) ;
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::YES => true ] + $cliOptions ) , new BufferedOutput() ) ;
 
         return $host->capturedRestoreOptions ;
     }
@@ -494,7 +503,7 @@ class ArangoRestoreActionTest extends TestCase
         $this->makeArchive( $archive ) ;
 
         $host = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' , 'orders' ] ] ) ;
-        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive ] ) , new BufferedOutput() ) ;
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::YES => true ] ) , new BufferedOutput() ) ;
 
         $this->assertSame( [ 'users' , 'orders' ] , array_values( $host->capturedRestoreOptions[ ArangoRestoreOption::COLLECTION ] ) ) ;
     }
@@ -505,7 +514,7 @@ class ArangoRestoreActionTest extends TestCase
         $this->makeArchiveWithStructures( $archive , [ 'users' , 'orders' , 'sessions' ] ) ;
 
         $host = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_EXCLUDE => [ 'sessions' ] ] ) ;
-        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive ] ) , new BufferedOutput() ) ;
+        $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::YES => true ] ) , new BufferedOutput() ) ;
 
         $selection = $host->capturedRestoreOptions[ ArangoRestoreOption::COLLECTION ] ;
         sort( $selection ) ;
@@ -598,5 +607,176 @@ class ArangoRestoreActionTest extends TestCase
 
         $this->assertStringContainsString( 'Collections : all' , $output->fetch() ) ;
         $this->assertFalse( $host->restoreCalled ) ;
+    }
+
+    // ------------------------------------------------------------------ D4 guard-rails
+
+    /** A restore host whose `[arango.restore] protected` list is $protected. */
+    private function restoreHostWithProtected( array $protected ) :ArangoRestoreActionHost
+    {
+        $host = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::RESTORE => [ ArangoCommandParam::PROTECTED => $protected ] ] ) ;
+        return $host ;
+    }
+
+    public function testProtectedCollectionBlocksTheRestoreWithoutForce() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchiveWithStructures( $archive , [ 'users' , 'orders' ] ) ;
+
+        $host   = $this->restoreHostWithProtected( [ 'users' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive , '--' . ArangoCommandOption::YES => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
+        $text = $output->fetch() ;
+        $this->assertStringContainsString( 'protected' , $text ) ;
+        $this->assertStringContainsString( 'users' , $text ) ;
+    }
+
+    public function testProtectedCollectionRestoresWithForce() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchiveWithStructures( $archive , [ 'users' , 'orders' ] ) ;
+
+        $host   = $this->restoreHostWithProtected( [ 'users' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input
+        ([
+            '--' . ArangoCommandOption::FILE  => $archive ,
+            '--' . ArangoCommandOption::FORCE => true ,
+            '--' . ArangoCommandOption::YES   => true ,
+        ]) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->restoreCalled ) ;
+        $this->assertStringContainsString( 'WILL overwrite protected' , $output->fetch() ) ;
+    }
+
+    public function testNonInteractiveRestoreWithoutYesIsRefused() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input( [ '--' . ArangoCommandOption::FILE => $archive ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
+        $this->assertStringContainsString( '--yes' , $output->fetch() ) ;
+    }
+
+    public function testInteractiveConfirmationYesRestores() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host                 = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $host->questionHelper = new QuestionHelper() ;
+        $output               = new BufferedOutput() ;
+
+        $code = $host->restore( $this->interactiveInput( [ '--' . ArangoCommandOption::FILE => $archive ] , 'yes' ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->restoreCalled ) ;
+    }
+
+    public function testInteractiveConfirmationNoAborts() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host                 = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $host->questionHelper = new QuestionHelper() ;
+        $output               = new BufferedOutput() ;
+
+        $code = $host->restore( $this->interactiveInput( [ '--' . ArangoCommandOption::FILE => $archive ] , 'no' ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
+        $this->assertStringContainsString( 'Aborted' , $output->fetch() ) ;
+    }
+
+    public function testNonLocalEndpointEmitsAWarning() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input
+        ([
+            '--' . ArangoCommandOption::FILE     => $archive ,
+            '--' . ArangoCommandOption::ENDPOINT => 'tcp://staging.internal:8529' ,
+            '--' . ArangoCommandOption::YES      => true ,
+        ]) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->restoreCalled ) ;
+        $this->assertStringContainsString( 'NOT local' , $output->fetch() ) ;
+    }
+
+    public function testRequestedCollectionAbsentFromArchiveWarns() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchiveWithStructures( $archive , [ 'users' ] ) ;
+
+        $host   = new ArangoRestoreActionHost( $this->dumpDir ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input
+        ([
+            '--' . ArangoCommandOption::FILE       => $archive ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'ghost' ] ,
+            '--' . ArangoCommandOption::YES        => true ,
+        ]) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->restoreCalled ) ;
+        $this->assertStringContainsString( 'ghost' , $output->fetch() ) ;
+    }
+
+    public function testDryRunWarnsOnProtectedSelectionAndNonLocalTarget() :void
+    {
+        $archive = $this->dumpDir . DIRECTORY_SEPARATOR . 'backup_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        $this->makeArchive( $archive ) ;
+
+        $host   = $this->restoreHostWithProtected( [ 'users' ] ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->restore( $this->input
+        ([
+            '--' . ArangoCommandOption::FILE       => $archive ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'users' , 'orders' ] ,
+            '--' . ArangoCommandOption::ENDPOINT   => 'tcp://staging.internal:8529' ,
+            '--' . ArangoCommandOption::DRY_RUN    => true ,
+        ]) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertFalse( $host->restoreCalled ) ;
+        $text = $output->fetch() ;
+        $this->assertStringContainsString( 'Protected collection' , $text ) ;
+        $this->assertStringContainsString( 'NOT local' , $text ) ;
+    }
+
+    public function testIsLocalEndpointRecognizesLoopbackForms() :void
+    {
+        $stub = new ArangoRestoreActionStub() ;
+
+        $this->assertTrue ( $stub->localEndpoint( 'tcp://127.0.0.1:8529' ) ) ;
+        $this->assertTrue ( $stub->localEndpoint( 'ssl://localhost:8529' ) ) ;
+        $this->assertTrue ( $stub->localEndpoint( 'http+tcp://[::1]:8529' ) ) ;
+        $this->assertTrue ( $stub->localEndpoint( '127.0.0.1:8529' ) ) ;         // no scheme
+        $this->assertTrue ( $stub->localEndpoint( 'localhost' ) ) ;              // bare host, no scheme nor port
+        $this->assertFalse( $stub->localEndpoint( 'tcp://staging.internal:8529' ) ) ;
+        $this->assertFalse( $stub->localEndpoint( 'tcp://10.0.0.5:8529' ) ) ;
+        $this->assertFalse( $stub->localEndpoint( null ) ) ;
+        $this->assertFalse( $stub->localEndpoint( '' ) ) ;
     }
 }

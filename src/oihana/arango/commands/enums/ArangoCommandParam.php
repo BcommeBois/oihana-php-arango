@@ -74,6 +74,14 @@ class ArangoCommandParam
     public const string PROFILE_EXCLUDE = 'exclude' ;
 
     /**
+     * The 'protected' key of the `[arango.restore]` config section — the list
+     * of collection names the `restore` action refuses to overwrite unless
+     * `--force` is passed (a deployment-level safety policy, never an option of
+     * the `arangorestore` binary).
+     */
+    public const string PROTECTED = 'protected' ;
+
+    /**
      * The 'restore' parameter — the `[arango.restore]` config section (option
      * defaults applied to the `restore` action, overridable on the CLI).
      */

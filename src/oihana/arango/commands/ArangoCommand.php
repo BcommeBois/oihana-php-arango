@@ -108,7 +108,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::DRY_RUN           , null  , InputOption::VALUE_NONE      , 'List the pending migrations without running them (migrate action).' ) ;
         $this->addOption   ( ArangoCommandOption::ENCRYPT           , 'e'   , InputOption::VALUE_NONE      , 'Enabled the encryption to dump/restore the database.' ) ;
         $this->addOption   ( ArangoCommandOption::FILE              , 'f'   , InputOption::VALUE_OPTIONAL  , 'The file to dump/restore.' ) ;
-        $this->addOption   ( ArangoCommandOption::FORCE             , null  , InputOption::VALUE_NONE      , 'Allow the drop + recreate of drifted indexes with --apply (doctor action).' ) ;
+        $this->addOption   ( ArangoCommandOption::FORCE             , null  , InputOption::VALUE_NONE      , 'Allow the drop + recreate of drifted indexes with --apply (doctor action), or overwrite protected collections on restore.' ) ;
         $this->addOption   ( ArangoCommandOption::FORGET            , null  , InputOption::VALUE_REQUIRED  , 'Rescue: drop a migration tracking row WITHOUT running its down() (migrate action).' ) ;
         $this->addOption   ( ArangoCommandOption::IGNORE_COLLECTION , null  , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Exclude these collections from the dump (repeatable or comma-separated, dump only).' ) ;
         $this->addOption   ( ArangoCommandOption::INCLUDE_SYSTEM    , null  , InputOption::VALUE_NONE      , 'Include the system collections (_analyzers, _graphs, …) in the dump/restore.' ) ;
@@ -124,7 +124,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::SYSTEM            , null  , InputOption::VALUE_NONE      , 'List only system collections (collections action).' ) ;
         $this->addOption   ( ArangoCommandOption::THREADS           , null  , InputOption::VALUE_REQUIRED  , 'Number of parallel threads for the dump/restore.' ) ;
         $this->addOption   ( ArangoCommandOption::VIEW              , null  , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Restrict the restore to these Views (repeatable or comma-separated, restore action).' ) ;
-        $this->addOption   ( ArangoCommandOption::YES               , 'y'   , InputOption::VALUE_NONE      , 'Apply migrations without the confirmation prompt (migrate action).' ) ;
+        $this->addOption   ( ArangoCommandOption::YES               , 'y'   , InputOption::VALUE_NONE      , 'Skip the confirmation prompt (apply migrations / restore the database).' ) ;
 
         $this->addOption ( ArangoConfig::DATABASE , null  , InputOption::VALUE_OPTIONAL  , 'The arangoDB database name.' ) ;
         $this->addOption ( ArangoConfig::ENDPOINT , null  , InputOption::VALUE_OPTIONAL  , 'The endpoint of the arangoDB server.' ) ;

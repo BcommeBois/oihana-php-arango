@@ -26,6 +26,11 @@ class ArangoOptionsTraitHost
         return $this->resolveDumpOptions( $explicit , $input ) ;
     }
 
+    public function protectedCollections() :array
+    {
+        return $this->restoreProtectedCollections() ;
+    }
+
     public function resolveRestore( array $explicit , InputInterface $input ) :array
     {
         return $this->resolveRestoreOptions( $explicit , $input ) ;
@@ -174,6 +179,51 @@ class ArangoOptionsTraitTest extends TestCase
 
         $options = $host->resolveRestore( [] , $this->input() ) ;
 
+        $this->assertTrue( $options[ ArangoRestoreOption::INCLUDE_SYSTEM_COLLECTIONS ] ) ;
+    }
+
+    // ------------------------------------------------------------------ protected (D4)
+
+    public function testProtectedCollectionsReadsTheConfigList() :void
+    {
+        $host = new ArangoOptionsTraitHost() ;
+        $host->initializeArangoOptions
+        ([
+            ArangoCommandParam::RESTORE =>
+            [
+                ArangoCommandParam::PROTECTED => [ 'users' , 'users' , '' , 'sessions' , 42 ] ,
+            ]
+        ]) ;
+
+        // de-duplicated, empty and non-string entries dropped
+        $this->assertSame( [ 'users' , 'sessions' ] , $host->protectedCollections() ) ;
+    }
+
+    public function testProtectedCollectionsDefaultsToEmpty() :void
+    {
+        $host = new ArangoOptionsTraitHost() ;
+        $this->assertSame( [] , $host->protectedCollections() ) ;
+
+        $host->initializeArangoOptions( [ ArangoCommandParam::RESTORE => [ ArangoCommandParam::PROTECTED => 'oops' ] ] ) ;
+        $this->assertSame( [] , $host->protectedCollections() ) ;
+    }
+
+    public function testProtectedKeyIsStrippedFromResolvedRestoreOptions() :void
+    {
+        $host = new ArangoOptionsTraitHost() ;
+        $host->initializeArangoOptions
+        ([
+            ArangoCommandParam::RESTORE =>
+            [
+                ArangoCommandParam::PROTECTED          => [ 'users' ] ,
+                ArangoRestoreOption::INCLUDE_SYSTEM_COLLECTIONS => true ,
+            ]
+        ]) ;
+
+        $options = $host->resolveRestore( [] , $this->input() ) ;
+
+        // the policy key never leaks into the arangorestore option set
+        $this->assertArrayNotHasKey( ArangoCommandParam::PROTECTED , $options ) ;
         $this->assertTrue( $options[ ArangoRestoreOption::INCLUDE_SYSTEM_COLLECTIONS ] ) ;
     }
 }

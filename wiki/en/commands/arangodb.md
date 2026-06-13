@@ -69,8 +69,13 @@ overwrite                = true
 includeSystemCollections = false      # default
 
 [arango.restore]
-threads = 4
+threads   = 4
+protected = ["users", "sessions"]    # guard-rail, not an option — see "Restore guard-rails"
 ```
+
+> `protected` is the one key in `[arango.restore]` that is **not** an
+> `arangorestore` option: it is a safety policy (see
+> [Restore guard-rails](#restore-guard-rails)), stripped before the binary runs.
 
 **Precedence** — each layer overrides the previous one:
 
@@ -166,11 +171,11 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--profile` | — | dump, restore | Named profile (`[arango.profiles.<name>]`) or a path to a `.toml` profile file — see [Profiles](#profiles). |
 | `--dry-run` | — | dump, restore, migrate | Report the resolved plan (and the pending migrations) without running anything. |
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
-| `--force` | — | doctor | With `--apply`: allow the drop + recreate of drifted indexes. |
+| `--force` | — | doctor, restore | doctor: with `--apply`, allow the drop + recreate of drifted indexes. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)). |
 | `--prune` | — | doctor | Interactive selection of the orphans (collections, Views) to remove. |
 | `--create` | — | migrate | Generate an empty migration shell with this description. |
 | `--status` | — | migrate | Table of applied / pending migrations for this database. |
-| `--yes` | `-y` | migrate | Apply without the confirmation prompt (scripts / CI). |
+| `--yes` | `-y` | migrate, restore | Skip the confirmation prompt (apply migrations / restore). |
 | `--down` | — | migrate | Roll back the last N applied migrations, default 1 (LIFO). |
 | `--forget` | — | migrate | Rescue: drop a tracking row **without** running its `down()`. |
 | `--diff` | — | views | Compare the `AQL::VIEW` declarations of the configured models with the server state (read-only). |
@@ -350,6 +355,61 @@ php bin/console.php command:arangodb restore --date 2026-06-01T14:30:00 -c users
 ```
 
 > Simpler for partial dumps: `--last` or `--file` (which don't need to rebuild the name).
+
+### Restore guard-rails
+
+`restore` is the **only destructive action**: it writes into a real database.
+Four guard-rails frame it.
+
+**1. Protected collections (`[arango.restore] protected`).** A deployment-level
+list — the restore **refuses** to overwrite these collections **unless `--force`**.
+Put your authentication collections here so a full restore launched by mistake can
+never clobber them.
+
+```toml
+# config.toml
+[arango.restore]
+protected = ["users", "sessions", "permissions"]
+```
+
+```bash
+php bin/console.php command:arangodb restore --last
+# [ERROR] Refusing to overwrite protected collection(s): users — rerun with --force to override.
+
+php bin/console.php command:arangodb restore --last --force --yes
+# [WARNING] --force: this WILL overwrite protected collection(s): users
+```
+
+> `protected` is a **policy**, never an `arangorestore` option: the key is stripped
+> from the options passed to the binary. `--force` lifts it, per run.
+
+**2. Confirmation (`--yes`).** Before writing, the restore asks for confirmation
+(like `migrate`). `--yes` skips the prompt (CI, `bun pull`). A **non-interactive run
+without `--yes`** stops, by safety — never a silent overwrite.
+
+```bash
+php bin/console.php command:arangodb restore --last          # asks "Restore into 'app' ? [y/N]"
+php bin/console.php command:arangodb restore --last --yes    # no prompt
+```
+
+**3. Non-local target warning.** When the target endpoint is not local
+(`localhost` / `127.0.0.1` / `::1`), a warning is printed — to avoid restoring onto
+staging/prod while believing you target local. It is a **warning**, not a block (a
+remote restore is sometimes intentional).
+
+```
+[WARNING] The target endpoint is NOT local: tcp://staging.internal:8529 — make sure
+you are not overwriting a staging/production database.
+```
+
+**4. Selection validation.** A requested collection (`--collection` or a profile)
+**absent from the archive** triggers a warning (typo / wrong archive). Non-blocking.
+
+> **The source archive is consumed only on success.** A restore refused by a
+> guard-rail (protected, declined confirmation) leaves the backup **untouched**.
+
+All these guard-rails are previewable with `--dry-run` (target, list, known protected
+conflicts, non-local warning), writing nothing.
 
 ---
 

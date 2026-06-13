@@ -2,15 +2,30 @@
 
 namespace tests\oihana\arango\integration;
 
+use Phar;
+use PharData;
 use Throwable;
 
 use oihana\arango\clients\Database;
 use oihana\arango\commands\enums\ArangoCommandParam;
+use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoDumpOption;
+use oihana\arango\commands\actions\ArangoRestoreAction;
 use oihana\arango\commands\traits\ArangoDumpTrait;
 use oihana\arango\commands\traits\ArangoProfileTrait;
 
+use oihana\commands\enums\ExitCode;
+use oihana\commands\traits\HelperTrait;
+
+use oihana\date\traits\DateTrait;
+
 use PHPUnit\Framework\Attributes\Group;
+
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 use function oihana\files\deleteDirectory;
 use function oihana\files\makeTemporaryDirectory;
@@ -24,6 +39,34 @@ class DumpRestoreIntegrationHost
 {
     use ArangoDumpTrait ;
     use ArangoProfileTrait ;
+}
+
+/**
+ * Host driving the real {@see ArangoRestoreAction::restore()} end-to-end — the
+ * actual `arangorestore` binary, untar and guard-rails — against a live server.
+ */
+class RestoreIntegrationHost
+{
+    use ArangoRestoreAction ;
+    use DateTrait ;
+    use HelperTrait ;
+
+    public string $id = 'live' ;
+
+    public function __construct( array $arango , string $database , string $directory )
+    {
+        $this->directory = $directory ;
+        $this->encrypt   = false ;
+        $this->database  = $database ;
+        $this->endpoint  = $arango[ 'endpoint' ] ?? 'tcp://127.0.0.1:8529' ;
+        $this->password  = $arango[ 'password' ] ?? '' ;
+        $this->username  = $arango[ 'user' ]     ?? 'root' ;
+    }
+
+    public function getName() :string
+    {
+        return 'restore' ;
+    }
 }
 
 /**
@@ -244,5 +287,132 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
         // Surgical: only _analyzers + _graphs, never _jobs / _queues / _apps / …
         $this->assertSame( [ '_analyzers' , '_graphs' ] , $system ) ;
         $this->assertContains( 'widgets' , $names ) ;
+    }
+
+    // ------------------------------------------------------------------ D4 restore guard-rails
+
+    /** Dumps the seeded database and tars it into a fresh `.tar.gz` the restore action can read. */
+    private function buildArchive() :string
+    {
+        $source = $this->tmp . DIRECTORY_SEPARATOR . 'src_' . bin2hex( random_bytes( 4 ) ) ;
+        new DumpRestoreIntegrationHost()->arangoDump( $this->connection( $source ) , silent : true ) ;
+
+        $tarPath = $this->tmp . DIRECTORY_SEPARATOR . 'build_' . bin2hex( random_bytes( 4 ) ) . '.tar' ;
+        $tar     = new PharData( $tarPath ) ;
+        foreach ( glob( $source . DIRECTORY_SEPARATOR . '*' ) ?: [] as $path )
+        {
+            if ( is_file( $path ) )
+            {
+                $tar->addFile( $path , basename( $path ) ) ;   // flatten at the archive root
+            }
+        }
+        $tar->compress( Phar::GZ ) ;
+        unset( $tar ) ;
+
+        // Rename to a distinct base: untar() derives the inner `.tar` name from
+        // the `.tar.gz` name, and PharData caches phar names per process — a
+        // shared base would collide with the build tar created just above.
+        @unlink( $tarPath ) ;
+        $archive = $this->tmp . DIRECTORY_SEPARATOR . 'restore_' . bin2hex( random_bytes( 4 ) ) . '.tar.gz' ;
+        rename( $tarPath . '.gz' , $archive ) ;
+        return $archive ;
+    }
+
+    /** A non-interactive ArrayInput exposing the option surface restore() reads. */
+    private function restoreInput( array $options ) :ArrayInput
+    {
+        $definition = new InputDefinition
+        ([
+            new InputArgument( 'action' , InputArgument::OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::LIST           , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::LAST           , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::DIRECTORY      , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::FILE           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DATE           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::LABEL          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::COLLECTION     , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
+            new InputOption( ArangoCommandOption::DATABASE       , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::ENDPOINT       , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::PASSWORD       , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::USER           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::INCLUDE_SYSTEM , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::ALL_DATABASES  , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::THREADS        , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::VIEW           , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
+            new InputOption( ArangoCommandOption::PROFILE        , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DRY_RUN        , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::FORCE          , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::YES            , null , InputOption::VALUE_NONE ) ,
+            new InputOption( 'encrypt'    , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( 'passphrase' , null , InputOption::VALUE_OPTIONAL ) ,
+        ]) ;
+
+        $input = new ArrayInput( $options , $definition ) ;
+        $input->setInteractive( false ) ;
+        return $input ;
+    }
+
+    public function testRestoreActionRoundTripWithYes() :void
+    {
+        $archive = $this->buildArchive() ;
+
+        // Drop a collection: a real arangorestore must recreate it with its data.
+        if ( self::$db->collection( 'gadgets' )->exists() )
+        {
+            self::$db->collection( 'gadgets' )->drop() ;
+        }
+        $this->assertFalse( self::$db->collection( 'gadgets' )->exists() ) ;
+
+        $host = new RestoreIntegrationHost( self::$arango , static::$database , $this->tmp ) ;
+        $code = $host->restore( $this->restoreInput
+        ([
+            '--' . ArangoCommandOption::FILE       => $archive ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'gadgets' ] ,
+            '--' . ArangoCommandOption::YES        => true ,
+        ]) , new BufferedOutput() ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( self::$db->collection( 'gadgets' )->exists() ) ;
+        $this->assertSame( 1 , self::$db->collection( 'gadgets' )->count() ) ;
+    }
+
+    public function testProtectedCollectionGuardsTheLiveRestore() :void
+    {
+        // Archive the collection *while it still exists* (two distinct archives:
+        // the blocked restore untars the first, PharData caches names per process).
+        $blockedArchive = $this->buildArchive() ;
+        $forcedArchive  = $this->buildArchive() ;
+
+        if ( self::$db->collection( 'gadgets' )->exists() )
+        {
+            self::$db->collection( 'gadgets' )->drop() ;
+        }
+
+        $host = new RestoreIntegrationHost( self::$arango , static::$database , $this->tmp ) ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::RESTORE => [ ArangoCommandParam::PROTECTED => [ 'gadgets' ] ] ] ) ;
+
+        // Blocked without --force: nothing is written, the archive is preserved.
+        $code = $host->restore( $this->restoreInput
+        ([
+            '--' . ArangoCommandOption::FILE       => $blockedArchive ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'gadgets' ] ,
+            '--' . ArangoCommandOption::YES        => true ,
+        ]) , new BufferedOutput() ) ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertFalse( self::$db->collection( 'gadgets' )->exists() , 'A protected collection must not be restored without --force.' ) ;
+        $this->assertFileExists( $blockedArchive , 'A refused restore must not consume the source archive.' ) ;
+
+        // --force overrides the guard: the protected collection is restored.
+        $code = $host->restore( $this->restoreInput
+        ([
+            '--' . ArangoCommandOption::FILE       => $forcedArchive ,
+            '--' . ArangoCommandOption::COLLECTION => [ 'gadgets' ] ,
+            '--' . ArangoCommandOption::FORCE      => true ,
+            '--' . ArangoCommandOption::YES        => true ,
+        ]) , new BufferedOutput() ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( self::$db->collection( 'gadgets' )->exists() ) ;
     }
 }

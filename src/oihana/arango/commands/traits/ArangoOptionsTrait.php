@@ -117,6 +117,9 @@ trait ArangoOptionsTrait
     {
         $options = array_merge( $this->restoreConfig , $explicit ) ;
 
+        // `protected` is a guard-rail policy, not an `arangorestore` option.
+        unset( $options[ ArangoCommandParam::PROTECTED ] ) ;
+
         if( $input->getOption( ArangoCommandOption::INCLUDE_SYSTEM ) )
         {
             $options[ ArangoRestoreOption::INCLUDE_SYSTEM_COLLECTIONS ] = true ;
@@ -152,5 +155,32 @@ trait ArangoOptionsTrait
         }
 
         return $options ;
+    }
+
+    /**
+     * The collection names the `restore` action refuses to overwrite unless
+     * `--force` is passed, read from the `protected` key of the
+     * `[arango.restore]` config section ({@see ArangoCommandParam::PROTECTED}).
+     * Non-array values and non-string entries are ignored.
+     * @return array<int,string>
+     */
+    protected function restoreProtectedCollections() :array
+    {
+        $protected = $this->restoreConfig[ ArangoCommandParam::PROTECTED ] ?? null ;
+        if( !is_array( $protected ) )
+        {
+            return [] ;
+        }
+
+        $names = [] ;
+        foreach( $protected as $name )
+        {
+            if( is_string( $name ) && $name !== '' )
+            {
+                $names[] = $name ;
+            }
+        }
+
+        return array_values( array_unique( $names ) ) ;
     }
 }
