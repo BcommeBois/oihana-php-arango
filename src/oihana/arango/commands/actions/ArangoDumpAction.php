@@ -51,10 +51,11 @@ use function oihana\files\makeTimestampedDirectory;
 // $ composer arango:list
 // $ php bin/console.php command:arangodb dump --list
 
-// Anonymize at dump time (dump-only). A native arangodump maskings file:
-// $ php bin/console.php command:arangodb dump --maskings /etc/oihana/maskings.json
-// Or the convenient form via a profile / [arango.dump.masking] (compiled to a temp file):
+// Anonymize at dump time (dump-only). The convenient form via a profile /
+// [arango.dump.masking] is applied by the portable PHP engine (any edition):
 // $ php bin/console.php command:arangodb dump --profile test-local
+// Or a native arangodump maskings file (Enterprise edition only):
+// $ php bin/console.php command:arangodb dump --maskings /etc/oihana/maskings.json
 
 /**
  * The command to manage an ArangoDB database.
@@ -241,10 +242,12 @@ trait ArangoDumpAction
             }
         }
 
-        // --- Masking (dump-only): a convenient table (profile overrides the
-        //     [arango.dump.masking] default) compiled to a temp file, or a
-        //     native file (--maskings, highest). The [arango.dump] maskings
-        //     native default, if any, flows through resolveDumpOptions. ---
+        // --- Masking (dump-only) ---
+        // The convenient table (profile overrides the [arango.dump.masking]
+        // default) is applied by the portable PHP engine after the dump — it
+        // works on any edition. A native maskings file (--maskings, or the
+        // [arango.dump] maskings config default) drives arangodump's own masking
+        // (Enterprise only) and, when present, takes over: the PHP engine is off.
 
         $maskingTable = $this->dumpConfig[ ArangoCommandParam::MASKING ] ?? null ;
         if( is_array( $profile ) && isset( $profile[ ArangoCommandParam::MASKING ] ) )
@@ -252,7 +255,16 @@ trait ArangoDumpAction
             $maskingTable = $profile[ ArangoCommandParam::MASKING ] ;
         }
 
-        $maskingFileCli = $input->getOption( ArangoCommandOption::MASKINGS ) ;
+        $nativeMaskingsCli = $input->getOption( ArangoCommandOption::MASKINGS ) ;
+        $nativeMaskingsCli = ( is_string( $nativeMaskingsCli ) && $nativeMaskingsCli !== '' ) ? $nativeMaskingsCli : null ;
+
+        $configMaskings = $this->dumpConfig[ ArangoDumpOption::MASKINGS ] ?? null ;
+        $nativePresent  = $nativeMaskingsCli !== null || ( is_string( $configMaskings ) && $configMaskings !== '' ) ;
+
+        $usePhpMasking = !$nativePresent && is_array( $maskingTable ) && $maskingTable !== [] ;
+
+        // Compile early so an invalid masker/mode fails before the dump runs.
+        $compiledMasking = $usePhpMasking ? $this->compileMaskings( $maskingTable ) : [] ;
 
         // --dry-run : report the resolved plan, run nothing.
         if( $input->getOption( ArangoCommandOption::DRY_RUN ) )
@@ -260,30 +272,22 @@ trait ArangoDumpAction
             $io->text( sprintf( 'Source  : %s @ %s' , $database , $endpoint ) ) ;
             $io->text( 'Collections : ' . ( $targetCollections === [] ? 'all' : implode( ', ' , $targetCollections ) ) ) ;
 
-            if( is_string( $maskingFileCli ) && $maskingFileCli !== '' )
+            if( $nativePresent )
             {
-                $io->text( 'Masking : native file ' . $maskingFileCli ) ;
+                $io->text( 'Masking : native arangodump file (Enterprise)' ) ;
             }
-            elseif( is_array( $maskingTable ) && $maskingTable !== [] )
+            elseif( $usePhpMasking )
             {
-                $io->text( sprintf( 'Masking : %d entry(ies) compiled from the convenient table' , count( $maskingTable ) ) ) ;
+                $io->text( sprintf( 'Masking : %d convenient entry(ies) — PHP engine' , count( $maskingTable ) ) ) ;
             }
 
             $io->success( 'Dry run — nothing was dumped.' ) ;
             return ExitCode::SUCCESS ;
         }
 
-        // Resolve the effective maskings file (native CLI wins over the compiled table).
-        $maskingsFile = null ;
-        if( is_string( $maskingFileCli ) && $maskingFileCli !== '' )
+        if( $nativeMaskingsCli !== null )
         {
-            assertFile( $maskingFileCli ) ;
-            $maskingsFile = $maskingFileCli ;
-        }
-        elseif( is_array( $maskingTable ) && $maskingTable !== [] )
-        {
-            $maskingsFile = $this->materializeMaskings( $maskingTable , [ $this->id , $this->getName() , $action , 'maskings' , Uuid::v4() ] ) ;
-            $io->text( sprintf( 'Masking : %d entry(ies) → %s' , count( $maskingTable ) , basename( $maskingsFile ) ) ) ;
+            assertFile( $nativeMaskingsCli ) ;
         }
 
         $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
@@ -325,10 +329,16 @@ trait ArangoDumpAction
             $explicit[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] = true ;
         }
 
-        // Anonymize at dump time (native file, or the compiled convenient table).
-        if( $maskingsFile !== null )
+        // Native arangodump masking (Enterprise): a CLI file overrides the config.
+        if( $nativeMaskingsCli !== null )
         {
-            $explicit[ ArangoDumpOption::MASKINGS ] = $maskingsFile ;
+            $explicit[ ArangoDumpOption::MASKINGS ] = $nativeMaskingsCli ;
+        }
+
+        // PHP masking post-processes the dumped data files, so keep them plain.
+        if( $usePhpMasking )
+        {
+            $explicit[ ArangoDumpOption::COMPRESS_OUTPUT ] = false ;
         }
 
         // Layer the [arango.dump] config defaults under the resolved
@@ -336,6 +346,13 @@ trait ArangoDumpAction
         $options = $this->resolveDumpOptions( $explicit , $input ) ;
 
         $this->arangoDump( options : $options , silent : $output->isQuiet() ) ;
+
+        // Anonymize the dumped data with the portable PHP engine (any edition).
+        if( $usePhpMasking )
+        {
+            $count = $this->maskDumpDirectory( $timestampedDirectory , $compiledMasking ) ;
+            $io->text( sprintf( 'Masking : %d data file(s) anonymized (PHP engine).' , $count ) ) ;
+        }
 
         $io->newLine() ;
 

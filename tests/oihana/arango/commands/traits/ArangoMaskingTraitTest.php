@@ -26,14 +26,47 @@ class ArangoMaskingTraitHost
 
 /**
  * Unit coverage for {@see ArangoMaskingTrait} — the convenient masking table
- * compiler and its native-JSON materialization.
+ * compiler and the dump-directory PHP masking pass.
  */
 #[CoversTrait(ArangoMaskingTrait::class)]
 class ArangoMaskingTraitTest extends TestCase
 {
+    private array $tmpDirs = [] ;
+
+    protected function tearDown() :void
+    {
+        foreach( $this->tmpDirs as $dir )
+        {
+            foreach( glob( $dir . DIRECTORY_SEPARATOR . '*' ) ?: [] as $file )
+            {
+                @unlink( $file ) ;
+            }
+            @rmdir( $dir ) ;
+        }
+    }
+
     private function host() :ArangoMaskingTraitHost
     {
         return new ArangoMaskingTraitHost() ;
+    }
+
+    /** Creates a dump directory and writes a `<name>_h` data (+ optional structure) pair. */
+    private function dumpDirWith( array $collections , bool $withStructure = true ) :string
+    {
+        $dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mask_dir_' . bin2hex( random_bytes( 6 ) ) ;
+        mkdir( $dir , 0o777 , true ) ;
+        $this->tmpDirs[] = $dir ;
+
+        foreach( $collections as $name => $lines )
+        {
+            file_put_contents( $dir . DIRECTORY_SEPARATOR . $name . '_h.data.json' , implode( "\n" , $lines ) . "\n" ) ;
+            if( $withStructure )
+            {
+                file_put_contents( $dir . DIRECTORY_SEPARATOR . $name . '_h.structure.json' , json_encode( [ 'parameters' => [ 'name' => $name ] ] ) ) ;
+            }
+        }
+
+        return $dir ;
     }
 
     // ------------------------------------------------------------------ compileMaskings
@@ -139,25 +172,86 @@ class ArangoMaskingTraitTest extends TestCase
         $this->host()->compileMaskings( [ 'users.' => 'email' ] ) ;
     }
 
-    // ------------------------------------------------------------------ materializeMaskings
+    // ------------------------------------------------------------------ maskDumpDirectory
 
-    public function testMaterializeWritesTheNativeJsonFile() :void
+    private function dataOf( string $dir , string $collection ) :string
     {
-        $file = $this->host()->materializeMaskings
-        (
-            [ 'users.email' => 'email' , '*' => 'structure' ] ,
-            [ 'test' , 'dump' , 'mask-test-' . bin2hex( random_bytes( 4 ) ) ] ,
-        ) ;
+        return (string) file_get_contents( $dir . DIRECTORY_SEPARATOR . $collection . '_h.data.json' ) ;
+    }
 
-        $this->assertFileExists( $file ) ;
-        $this->assertStringEndsWith( 'maskings.json' , $file ) ;
+    public function testMaskDumpDirectoryAnonymizesMatchedCollectionOnly() :void
+    {
+        $dir = $this->dumpDirWith
+        ([
+            'people'  => [ json_encode( [ '_key' => 'a' , 'email' => 'real@example.com' ] ) ] ,
+            'secrets' => [ json_encode( [ '_key' => 'b' , 'token' => 'keepme' ] ) ] ,
+        ]) ;
 
-        $decoded = json_decode( (string) file_get_contents( $file ) , true ) ;
-        $this->assertSame( 'masked'    , $decoded[ 'users' ][ 'type' ] ) ;
-        $this->assertSame( 'email'     , $decoded[ 'users' ][ 'maskings' ][ 0 ][ 'type' ] ) ;
-        $this->assertSame( 'structure' , $decoded[ '*' ][ 'type' ] ) ;
+        $count = $this->host()->maskDumpDirectory( $dir , $this->host()->compileMaskings( [ 'people.email' => 'email' ] ) ) ;
 
-        @unlink( $file ) ;
-        @rmdir( dirname( $file ) ) ;
+        $this->assertSame( 1 , $count ) ;
+        $this->assertStringNotContainsString( 'real@example.com' , $this->dataOf( $dir , 'people' ) ) ;
+        $this->assertStringContainsString( '"_key":"a"' , $this->dataOf( $dir , 'people' ) ) ;
+        $this->assertStringContainsString( 'keepme' , $this->dataOf( $dir , 'secrets' ) ) ; // no rule, untouched
+    }
+
+    public function testMaskDumpDirectoryWildcardDefaultAppliesToEveryCollection() :void
+    {
+        $dir   = $this->dumpDirWith( [ 'people' => [ json_encode( [ 'email' => 'real@example.com' ] ) ] ] ) ;
+        $count = $this->host()->maskDumpDirectory( $dir , $this->host()->compileMaskings( [ '*.email' => 'email' ] ) ) ;
+
+        $this->assertSame( 1 , $count ) ;
+        $this->assertStringNotContainsString( 'real@example.com' , $this->dataOf( $dir , 'people' ) ) ;
+    }
+
+    public function testMaskDumpDirectoryFallsBackToFileNameWithoutStructure() :void
+    {
+        $dir   = $this->dumpDirWith( [ 'people' => [ json_encode( [ 'email' => 'real@example.com' ] ) ] ] , withStructure : false ) ;
+        $count = $this->host()->maskDumpDirectory( $dir , $this->host()->compileMaskings( [ 'people.email' => 'email' ] ) ) ;
+
+        $this->assertSame( 1 , $count ) ;
+        $this->assertStringNotContainsString( 'real@example.com' , $this->dataOf( $dir , 'people' ) ) ;
+    }
+
+    public function testMaskDumpDirectorySkipsUnmatchedAndEmptyRuleCollections() :void
+    {
+        $dir = $this->dumpDirWith
+        ([
+            'orders' => [ json_encode( [ 'total' => 9 ] ) ] ,                 // no matching entry
+            'people' => [ json_encode( [ 'email' => 'real@example.com' ] ) ] , // matched but mode-only (no rules)
+        ]) ;
+
+        // 'people' = masked mode with no attribute rules; 'orders' has no entry at all.
+        $count = $this->host()->maskDumpDirectory( $dir , $this->host()->compileMaskings( [ 'people' => 'masked' ] ) ) ;
+
+        $this->assertSame( 0 , $count ) ;
+        $this->assertStringContainsString( 'real@example.com' , $this->dataOf( $dir , 'people' ) ) ;
+        $this->assertStringContainsString( '"total":9' , $this->dataOf( $dir , 'orders' ) ) ;
+    }
+
+    public function testMaskDumpDirectoryKeepsNonJsonLines() :void
+    {
+        $dir = $this->dumpDirWith( [ 'people' => [ 'not-json' , json_encode( [ 'email' => 'real@example.com' ] ) ] ] ) ;
+
+        $this->host()->maskDumpDirectory( $dir , $this->host()->compileMaskings( [ 'people.email' => 'email' ] ) ) ;
+
+        $data = $this->dataOf( $dir , 'people' ) ;
+        $this->assertStringContainsString( 'not-json' , $data ) ;                 // preserved verbatim
+        $this->assertStringNotContainsString( 'real@example.com' , $data ) ;
+    }
+
+    public function testMaskDumpDirectoryRejectsNonMaskedMode() :void
+    {
+        $dir = $this->dumpDirWith( [ 'people' => [ json_encode( [ 'email' => 'x' ] ) ] ] ) ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $this->expectExceptionMessage( 'not supported by the PHP masking engine' ) ;
+        $this->host()->maskDumpDirectory( $dir , $this->host()->compileMaskings( [ 'people' => 'structure' ] ) ) ;
+    }
+
+    public function testMaskDumpDirectoryEmptyCompiledReturnsZero() :void
+    {
+        $dir = $this->dumpDirWith( [ 'people' => [ json_encode( [ 'email' => 'x' ] ) ] ] ) ;
+        $this->assertSame( 0 , $this->host()->maskDumpDirectory( $dir , [] ) ) ;
     }
 }

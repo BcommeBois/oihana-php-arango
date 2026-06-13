@@ -66,19 +66,22 @@ type       = "Basic"
 #                                     # collection + _analyzers + _graphs only
 #                                     # (same as the --complete flag)
 # maskings                 = "/etc/oihana/maskings.json"  # native arangodump
-#                                     # maskings file (escape hatch, full power)
+#                                     # maskings file — Enterprise edition only
+#                                     # (escape hatch; takes over the PHP engine)
 
-# Convenient masking applied to ANY dump (compiled to a native maskings file).
-# Anonymizes at dump time — the archive itself is clean. Dump-only.
-# NB: arangodump data masking requires the ArangoDB Enterprise Edition.
-# Keys: "<collection>" = "<mode>" (exclude/structure/masked/full) ; "<collection>.<path>"
-# = "<masker>" (email/phone/creditCard/zip/random/randomString/xifyFront/…) or an
-# inline table for parameters. See wiki/{fr,en}/commands/arangodb.md → "Masking".
+# Convenient masking applied to ANY dump by the built-in PHP engine (works on every
+# ArangoDB edition, Community included). Anonymizes at dump time — the archive itself
+# is clean. Dump-only. Keys: "<collection>.<path>" = "<masker>"
+# (email/phone/creditCard/zip/random/randomString/xifyFront/datetime/integer/decimal)
+# or an inline table for parameters; "<collection>" = "masked" sets the mode (only
+# `masked` is supported — exclude collections via --collection / the profile). The
+# system attributes _key/_id/_rev/_from/_to are never masked.
+# See wiki/{fr,en}/commands/arangodb.md → "Masking".
 # [arango.dump.masking]
-# "*"           = "structure"
-# "users"       = "masked"
-# "users.email" = "email"
-# "users.card"  = { type = "xifyFront", unmaskedLength = 4 }
+# "users.email"          = "email"
+# "users.phone"          = "phone"
+# "users.card"           = { type = "xifyFront", unmaskedLength = 4 }
+# "users.address.city"   = "random"
 
 # [arango.restore]
 # threads = 4

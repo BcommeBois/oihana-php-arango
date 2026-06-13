@@ -507,44 +507,57 @@ php bin/console.php command:arangodb restore --profile test-local --last --dry-r
 ## Masking — anonymizing the dump
 
 Extracting a **staging → local** subset (the profiles) means handling **real PII**.
-The `arangodump` masking anonymizes **as the dump is written**: the archive itself
-is clean, so it can travel and be restored without risk. **Dump-only.**
+Masking anonymizes the data at dump time: the archive itself is clean, so it can
+travel and be restored without risk. **Dump-only.**
 
-> ⚠ **`arangodump` data masking requires the ArangoDB Enterprise Edition.** The
-> Community binary rejects every masker.
+Two independent ways:
 
-Two ways, in increasing precedence: `[arango.dump] maskings` (native file) →
-`[arango.dump.masking]` (compiled table) → profile `[…masking]` (compiled) →
-`--maskings` CLI (native file, wins).
+1. **Convenient form → built-in PHP engine** (recommended). The `[…masking]` table
+   is applied by a **PHP** masking engine that post-processes the dump files. It
+   works on **every ArangoDB edition** (Community included) — the common case.
+2. **Native file `--maskings`** → `arangodump`'s own masking.
+   > ⚠ Native `arangodump` data masking requires the **Enterprise** edition.
 
-### Convenient form (the common case)
+When a native file is present (CLI `--maskings` or `[arango.dump] maskings`), it
+takes over and the PHP engine is disabled.
 
-A flat, dotted-key table compiled to a native maskings file (in a temp, cleaned up
-after the dump). In a profile or in `[arango.dump.masking]`:
+### Convenient form (the common case, any edition)
+
+A flat, dotted-key table, in a profile or in `[arango.dump.masking]`:
 
 ```toml
 [arango.profiles.test-local.masking]
-"*"             = "structure"                                # collection mode (default for all)
-"clients"       = "masked"                                   # collection mode
+"clients"       = "masked"                                   # collection mode (optional)
 "clients.email" = "email"                                    # simple masker → implies "masked"
 "clients.phone" = "phone"
 "clients.card"  = { type = "xifyFront", unmaskedLength = 4 } # parameterized masker (inline table)
+"clients.address.city" = "random"                            # nested path
 ```
 
-- A key **without a dot** = `<collection>` (or `*`) → **mode**: `exclude` (ignored),
-  `structure` (schema, no data), `masked` (obfuscated data), `full` (everything).
+- A key **without a dot** = `<collection>` (or `*`, default for all) → **mode**. The
+  PHP engine handles the `masked` mode; to exclude collections use the selection
+  (`--collection` / the profile) instead — a `structure`/`exclude`/`full` mode
+  declared here raises a clear error.
 - A key **with a dot** = `<collection>.<path>` (first segment is the collection, the
   rest the path, nested allowed) → attribute rule; the collection becomes `masked`.
 - Value = a masker name, or an inline table `{ type = …, param = … }` for parameters.
 - Maskers: `email`, `phone` (`default`), `creditCard`, `zip` (`default`), `random`,
   `randomString`, `xifyFront` (`unmaskedLength`/`hash`/`seed`), `datetime`
   (`begin`/`end`/`format`), `integer` (`lower`/`upper`), `decimal` (`lower`/`upper`/`scale`).
+- Paths: `email` (top-level leaf), `a.b` (exact path), `.email` (any depth), `*` (all
+  leaves), arrays masked per element. The system attributes
+  `_key`/`_id`/`_rev`/`_from`/`_to` are **never** masked.
 - An unknown masker/mode → a clear error listing the valid vocabulary.
 
-### Native file (escape hatch, full power)
+```bash
+php bin/console.php command:arangodb dump --profile test-local
+# … Masking : 3 data file(s) anonymized (PHP engine).
+```
 
-For what the convenient form cannot express (path wildcards `.name`, quoted names),
-pass ArangoDB's native JSON file directly:
+### Native file (Enterprise escape hatch, full power)
+
+For the full power of `arangodump` (on Enterprise), pass ArangoDB's native JSON file
+directly:
 
 ```bash
 php bin/console.php command:arangodb dump --maskings /etc/oihana/maskings.json
@@ -555,10 +568,11 @@ php bin/console.php command:arangodb dump --maskings /etc/oihana/maskings.json
 maskings = "/etc/oihana/maskings.json"
 ```
 
-`--dry-run` reports the masking source (native file or N compiled entries) without writing.
+`--dry-run` reports the chosen masking path (native file, or N entries via the PHP
+engine) without writing.
 
-> Masking acts on **data**; a `structure`/`exclude` mode dumps no data, so attribute
-> rules then have no effect.
+> The PHP engine aims for **semantic equivalence** (PII removed as valid, typed
+> values), not byte-identical output with the Enterprise binary.
 
 ---
 
