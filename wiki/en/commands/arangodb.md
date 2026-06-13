@@ -67,15 +67,17 @@ The keys are the option **property names** of `ArangoDumpOptions` /
 threads                  = 4
 overwrite                = true
 includeSystemCollections = false      # default
+# maskings               = "/etc/oihana/maskings.json"   # native file (see "Masking")
 
 [arango.restore]
 threads   = 4
 protected = ["users", "sessions"]    # guard-rail, not an option — see "Restore guard-rails"
 ```
 
-> `protected` is the one key in `[arango.restore]` that is **not** an
-> `arangorestore` option: it is a safety policy (see
-> [Restore guard-rails](#restore-guard-rails)), stripped before the binary runs.
+> `protected` (restore) and `masking` (`[arango.dump.masking]`, a compiled table)
+> are keys that are **not** binary options: the first is a safety policy (see
+> [Restore guard-rails](#restore-guard-rails)), the second a convenient form (see
+> [Masking](#masking--anonymizing-the-dump)) — both stripped before the binary runs.
 
 **Precedence** — each layer overrides the previous one:
 
@@ -163,6 +165,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--directory` | `-dir` | all | Override the dump/restore directory. |
 | `--list` | `-l` | dump, restore | List the present archives instead of acting. |
 | `--include-system` | — | dump, restore | Include the system collections (`_analyzers`, `_graphs`, …). |
+| `--maskings` | — | dump | Path to a native `arangodump` maskings JSON file — anonymize the dump (wins over any configured masking). See [Masking](#masking--anonymizing-the-dump). |
 | `--no-views` | — | dump | Skip the ArangoSearch View definitions (dumped by default). |
 | `--all-databases` | — | dump, restore | Dump / restore **every** database instead of a single one. |
 | `--overwrite` | — | dump | Overwrite the output directory if it already exists. |
@@ -498,6 +501,64 @@ php bin/console.php command:arangodb restore --profile test-local --last --dry-r
 # Collections : thesaurus, products, clients, sales-reps
 # [OK] Dry run — nothing was restored.
 ```
+
+---
+
+## Masking — anonymizing the dump
+
+Extracting a **staging → local** subset (the profiles) means handling **real PII**.
+The `arangodump` masking anonymizes **as the dump is written**: the archive itself
+is clean, so it can travel and be restored without risk. **Dump-only.**
+
+> ⚠ **`arangodump` data masking requires the ArangoDB Enterprise Edition.** The
+> Community binary rejects every masker.
+
+Two ways, in increasing precedence: `[arango.dump] maskings` (native file) →
+`[arango.dump.masking]` (compiled table) → profile `[…masking]` (compiled) →
+`--maskings` CLI (native file, wins).
+
+### Convenient form (the common case)
+
+A flat, dotted-key table compiled to a native maskings file (in a temp, cleaned up
+after the dump). In a profile or in `[arango.dump.masking]`:
+
+```toml
+[arango.profiles.test-local.masking]
+"*"             = "structure"                                # collection mode (default for all)
+"clients"       = "masked"                                   # collection mode
+"clients.email" = "email"                                    # simple masker → implies "masked"
+"clients.phone" = "phone"
+"clients.card"  = { type = "xifyFront", unmaskedLength = 4 } # parameterized masker (inline table)
+```
+
+- A key **without a dot** = `<collection>` (or `*`) → **mode**: `exclude` (ignored),
+  `structure` (schema, no data), `masked` (obfuscated data), `full` (everything).
+- A key **with a dot** = `<collection>.<path>` (first segment is the collection, the
+  rest the path, nested allowed) → attribute rule; the collection becomes `masked`.
+- Value = a masker name, or an inline table `{ type = …, param = … }` for parameters.
+- Maskers: `email`, `phone` (`default`), `creditCard`, `zip` (`default`), `random`,
+  `randomString`, `xifyFront` (`unmaskedLength`/`hash`/`seed`), `datetime`
+  (`begin`/`end`/`format`), `integer` (`lower`/`upper`), `decimal` (`lower`/`upper`/`scale`).
+- An unknown masker/mode → a clear error listing the valid vocabulary.
+
+### Native file (escape hatch, full power)
+
+For what the convenient form cannot express (path wildcards `.name`, quoted names),
+pass ArangoDB's native JSON file directly:
+
+```bash
+php bin/console.php command:arangodb dump --maskings /etc/oihana/maskings.json
+```
+
+```toml
+[arango.dump]
+maskings = "/etc/oihana/maskings.json"
+```
+
+`--dry-run` reports the masking source (native file or N compiled entries) without writing.
+
+> Masking acts on **data**; a `structure`/`exclude` mode dumps no data, so attribute
+> rules then have no effect.
 
 ---
 

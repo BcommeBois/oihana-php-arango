@@ -12,6 +12,7 @@ use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\actions\ArangoRestoreAction;
 use oihana\arango\commands\traits\ArangoDumpTrait;
+use oihana\arango\commands\traits\ArangoMaskingTrait;
 use oihana\arango\commands\traits\ArangoProfileTrait;
 
 use oihana\commands\enums\ExitCode;
@@ -38,6 +39,7 @@ use function oihana\init\initConfig;
 class DumpRestoreIntegrationHost
 {
     use ArangoDumpTrait ;
+    use ArangoMaskingTrait ;
     use ArangoProfileTrait ;
 }
 
@@ -287,6 +289,59 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
         // Surgical: only _analyzers + _graphs, never _jobs / _queues / _apps / …
         $this->assertSame( [ '_analyzers' , '_graphs' ] , $system ) ;
         $this->assertContains( 'widgets' , $names ) ;
+    }
+
+    // ------------------------------------------------------------------ D5 masking
+
+    public function testCompiledMaskingAnonymizesTheDumpedData() :void
+    {
+        // arangodump data masking is an Enterprise Edition feature; the
+        // Community binary rejects every masker type. Skip when unsupported.
+        if ( !str_contains( (string) @shell_exec( 'arangodump --version 2>&1' ) , 'enterprise' ) )
+        {
+            $this->markTestSkipped( 'arangodump data masking requires the ArangoDB Enterprise Edition.' ) ;
+        }
+
+        // A document carrying real PII in a collection we will dump masked.
+        self::$db->collection( 'widgets' )->insert
+        (
+            [ '_key' => 'pii1' , 'email' => 'real.person@example.com' ] ,
+            [ 'overwrite' => true ] ,
+        ) ;
+
+        $host = new DumpRestoreIntegrationHost() ;
+
+        // Convenient form → native maskings file (the exact path the dump action feeds arangodump).
+        $maskings = $host->materializeMaskings
+        (
+            [ 'widgets.email' => 'email' ] ,
+            [ 'mask_live' , bin2hex( random_bytes( 6 ) ) ] ,
+        ) ;
+
+        $out    = $this->tmp . DIRECTORY_SEPARATOR . 'masked' ;
+        $status = $host->arangoDump
+        (
+            $this->connection( $out ) +
+            [
+                ArangoDumpOption::COLLECTION     => [ 'widgets' ] ,
+                ArangoDumpOption::MASKINGS       => $maskings ,
+                ArangoDumpOption::COMPRESS_OUTPUT => false ,   // keep the data file readable
+            ] ,
+            silent : true ,
+        ) ;
+
+        $this->assertSame( 0 , $status ) ;
+
+        // Read the widgets data file: the original email must be gone (masked).
+        $data = '' ;
+        foreach ( glob( $out . DIRECTORY_SEPARATOR . '*widgets*.data.json' ) ?: [] as $path )
+        {
+            $data .= (string) file_get_contents( $path ) ;
+        }
+
+        $this->assertNotSame( '' , $data , 'Expected a widgets data file in the dump.' ) ;
+        $this->assertStringContainsString( 'pii1' , $data , 'The masked document is still present (only its values change).' ) ;
+        $this->assertStringNotContainsString( 'real.person@example.com' , $data , 'The email must be anonymized in the dump.' ) ;
     }
 
     // ------------------------------------------------------------------ D4 restore guard-rails

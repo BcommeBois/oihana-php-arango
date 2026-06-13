@@ -115,6 +115,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::LABEL             , 'L'   , InputOption::VALUE_REQUIRED  , 'Optional label appended to the archive name (e.g. "pre-migration").' ) ;
         $this->addOption   ( ArangoCommandOption::LAST              , 'la'  , InputOption::VALUE_NONE      , 'Search the last dump file and restore it.' ) ;
         $this->addOption   ( ArangoCommandOption::LIST              , 'l'   , InputOption::VALUE_NONE      , 'Display a list of files.' ) ;
+        $this->addOption   ( ArangoCommandOption::MASKINGS          , null  , InputOption::VALUE_REQUIRED  , 'Path to a native arangodump maskings JSON file — anonymize the dump (dump action, overrides any configured masking).' ) ;
         $this->addOption   ( ArangoCommandOption::NO_VIEWS          , null  , InputOption::VALUE_NONE      , 'Skip the ArangoSearch View definitions in the dump (dump action).' ) ;
         $this->addOption   ( ArangoCommandOption::OVERWRITE         , null  , InputOption::VALUE_NONE      , 'Overwrite the output directory if it already exists (dump action).' ) ;
         $this->addOption   ( ArangoCommandOption::PROFILE           , null  , InputOption::VALUE_REQUIRED  , 'Named profile ([arango.profiles.<name>]) or a path to a .toml profile file (dump/restore selection).' ) ;

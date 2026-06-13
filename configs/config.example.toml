@@ -65,6 +65,20 @@ type       = "Basic"
 # complete                 = true     # surgical complete backup: every user
 #                                     # collection + _analyzers + _graphs only
 #                                     # (same as the --complete flag)
+# maskings                 = "/etc/oihana/maskings.json"  # native arangodump
+#                                     # maskings file (escape hatch, full power)
+
+# Convenient masking applied to ANY dump (compiled to a native maskings file).
+# Anonymizes at dump time — the archive itself is clean. Dump-only.
+# NB: arangodump data masking requires the ArangoDB Enterprise Edition.
+# Keys: "<collection>" = "<mode>" (exclude/structure/masked/full) ; "<collection>.<path>"
+# = "<masker>" (email/phone/creditCard/zip/random/randomString/xifyFront/…) or an
+# inline table for parameters. See wiki/{fr,en}/commands/arangodb.md → "Masking".
+# [arango.dump.masking]
+# "*"           = "structure"
+# "users"       = "masked"
+# "users.email" = "email"
+# "users.card"  = { type = "xifyFront", unmaskedLength = 4 }
 
 # [arango.restore]
 # threads = 4
@@ -93,3 +107,7 @@ type       = "Basic"
 # database    = "app_staging"
 # user        = "readonly"
 # password    = ""
+# # optional masking compiled to a native file (dump-only, Enterprise Edition):
+# [arango.profiles.test-local.masking]
+# "clients.email" = "email"
+# "clients.phone" = "phone"

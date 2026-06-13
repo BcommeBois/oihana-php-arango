@@ -147,6 +147,7 @@ class ArangoDumpActionTest extends TestCase
             new InputOption( ArangoCommandOption::DIRECTORY         , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::DATE              , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::INCLUDE_SYSTEM    , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::MASKINGS          , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::NO_VIEWS          , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::ALL_DATABASES     , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::OVERWRITE         , null , InputOption::VALUE_NONE ) ,
@@ -620,5 +621,151 @@ class ArangoDumpActionTest extends TestCase
 
         $this->assertFalse( $host->dumpCalled ) ;
         $this->assertStringContainsString( '_analyzers' , $output->fetch() ) ;
+    }
+
+    // ---------------------------------------------------------------- D5 masking
+
+    /** Writes a native maskings JSON fixture and returns its path. */
+    private function nativeMaskingsFile() :string
+    {
+        $path = $this->dir . DIRECTORY_SEPARATOR . 'native_' . bin2hex( random_bytes( 4 ) ) . '.json' ;
+        file_put_contents( $path , '{"users":{"type":"masked","maskings":[{"path":"email","type":"email"}]}}' ) ;
+        return $path ;
+    }
+
+    public function testNativeMaskingsFileFromCliIsForwarded() :void
+    {
+        $file = $this->nativeMaskingsFile() ;
+        $host = $this->host() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::MASKINGS => $file ] ) , new BufferedOutput() ) ;
+
+        $this->assertSame( $file , $host->capturedDumpOptions[ ArangoDumpOption::MASKINGS ] ) ;
+    }
+
+    public function testMissingNativeMaskingsFileThrows() :void
+    {
+        $host = $this->host() ;
+
+        $this->expectException( \oihana\files\exceptions\FileException::class ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::MASKINGS => $this->dir . DIRECTORY_SEPARATOR . 'nope.json' ] ) , new BufferedOutput() ) ;
+    }
+
+    public function testProfileMaskingCompilesToAGeneratedFile() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ,
+            ArangoCommandParam::MASKING             => [ 'users.email' => 'email' ] ,
+        ] ] ] ) ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ;
+
+        $file = $host->capturedDumpOptions[ ArangoDumpOption::MASKINGS ] ;
+        $this->assertFileExists( $file ) ;
+        $this->assertStringEndsWith( 'maskings.json' , $file ) ;
+
+        $decoded = json_decode( (string) file_get_contents( $file ) , true ) ;
+        $this->assertSame( 'email' , $decoded[ 'users' ][ 'maskings' ][ 0 ][ 'type' ] ) ;
+    }
+
+    public function testDumpMaskingConfigDefaultCompiles() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::DUMP => [ ArangoCommandParam::MASKING => [ '*' => 'structure' ] ] ] ) ;
+
+        $host->dump( $this->input() , new BufferedOutput() ) ;
+
+        $file    = $host->capturedDumpOptions[ ArangoDumpOption::MASKINGS ] ;
+        $decoded = json_decode( (string) file_get_contents( $file ) , true ) ;
+        $this->assertSame( 'structure' , $decoded[ '*' ][ 'type' ] ) ;
+    }
+
+    public function testProfileMaskingOverridesTheDumpDefault() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoOptions ( [ ArangoCommandParam::DUMP     => [ ArangoCommandParam::MASKING => [ '*' => 'structure' ] ] ] ) ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ,
+            ArangoCommandParam::MASKING             => [ 'users.email' => 'email' ] ,
+        ] ] ] ) ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ;
+
+        $decoded = json_decode( (string) file_get_contents( $host->capturedDumpOptions[ ArangoDumpOption::MASKINGS ] ) , true ) ;
+        $this->assertArrayNotHasKey( '*' , $decoded ) ;
+        $this->assertSame( 'email' , $decoded[ 'users' ][ 'maskings' ][ 0 ][ 'type' ] ) ;
+    }
+
+    public function testCliNativeFileOverridesCompiledProfileMasking() :void
+    {
+        $file = $this->nativeMaskingsFile() ;
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ,
+            ArangoCommandParam::MASKING             => [ 'users.email' => 'email' ] ,
+        ] ] ] ) ;
+
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::PROFILE  => 'p' ,
+            '--' . ArangoCommandOption::MASKINGS => $file ,
+        ]) , new BufferedOutput() ) ;
+
+        $this->assertSame( $file , $host->capturedDumpOptions[ ArangoDumpOption::MASKINGS ] ) ;
+    }
+
+    public function testMaskingKeyNeverLeaksIntoTheDumpOptions() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::DUMP => [ ArangoCommandParam::MASKING => [ '*' => 'structure' ] ] ] ) ;
+
+        $host->dump( $this->input() , new BufferedOutput() ) ;
+
+        $this->assertArrayNotHasKey( ArangoCommandParam::MASKING , $host->capturedDumpOptions ) ;
+    }
+
+    public function testDryRunReportsMaskingWithoutGeneratingAFile() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ,
+            ArangoCommandParam::MASKING             => [ 'users.email' => 'email' ] ,
+        ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertFalse( $host->dumpCalled ) ;
+        $this->assertStringContainsString( 'Masking' , $output->fetch() ) ;
+    }
+
+    public function testDryRunReportsTheNativeMaskingsFile() :void
+    {
+        $file   = $this->nativeMaskingsFile() ;
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::MASKINGS => $file , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertFalse( $host->dumpCalled ) ;
+        $this->assertStringContainsString( 'native file' , $output->fetch() ) ;
+    }
+
+    public function testUnknownMaskerInProfileThrows() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ,
+            ArangoCommandParam::MASKING             => [ 'users.email' => 'obfuscate' ] ,
+        ] ] ] ) ;
+
+        $this->expectException( InvalidArgumentException::class ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ;
     }
 }

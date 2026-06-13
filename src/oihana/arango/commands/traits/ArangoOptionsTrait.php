@@ -77,6 +77,10 @@ trait ArangoOptionsTrait
     {
         $options = array_merge( $this->dumpConfig , $explicit ) ;
 
+        // `masking` is the convenient table compiled by the action, not an
+        // `arangodump` option (the binary takes the resulting `maskings` file).
+        unset( $options[ ArangoCommandParam::MASKING ] ) ;
+
         if( $input->getOption( ArangoCommandOption::INCLUDE_SYSTEM ) )
         {
             $options[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] = true ;

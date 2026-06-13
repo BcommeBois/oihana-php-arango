@@ -28,6 +28,7 @@ class ArangoCommandOption
     public const string LABEL             = 'label' ;
     public const string LAST              = 'last' ;
     public const string LIST              = 'list' ;
+    public const string MASKINGS          = 'maskings' ;
     public const string NO_VIEWS          = 'no-views' ;
     public const string OVERWRITE         = 'overwrite' ;
     public const string PROFILE           = 'profile' ;

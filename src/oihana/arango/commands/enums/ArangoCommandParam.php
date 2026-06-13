@@ -28,6 +28,14 @@ class ArangoCommandParam
     public const string DUMP = 'dump' ;
 
     /**
+     * The 'masking' key — the convenient masking table of a profile
+     * (`[arango.profiles.<name>.masking]`) or of the dump defaults
+     * (`[arango.dump.masking]`), compiled to a native `arangodump` maskings
+     * file. Dump-only.
+     */
+    public const string MASKING = 'masking' ;
+
+    /**
      * The 'migrationsCollection' parameter — the tracking collection name
      * of the `migrate` action (default `migrations`).
      */

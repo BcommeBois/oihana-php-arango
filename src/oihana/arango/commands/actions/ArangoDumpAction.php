@@ -7,10 +7,12 @@ use oihana\commands\enums\ExitCode;
 use RuntimeException;
 
 use oihana\arango\clients\exceptions\ArangoException;
+use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\traits\ArangoClientTrait;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
 use oihana\arango\commands\traits\ArangoDumpTrait;
+use oihana\arango\commands\traits\ArangoMaskingTrait;
 use oihana\arango\commands\traits\ArangoOptionsTrait;
 use oihana\arango\commands\traits\ArangoProfileTrait;
 use oihana\arango\commands\traits\DirectoryTrait;
@@ -35,6 +37,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Uid\Uuid;
 
 use function oihana\files\archive\tar\tarDirectory;
+use function oihana\files\assertFile;
 use function oihana\files\deleteDirectory;
 use function oihana\files\makeDirectory;
 use function oihana\files\makeTemporaryDirectory;
@@ -48,6 +51,11 @@ use function oihana\files\makeTimestampedDirectory;
 // $ composer arango:list
 // $ php bin/console.php command:arangodb dump --list
 
+// Anonymize at dump time (dump-only). A native arangodump maskings file:
+// $ php bin/console.php command:arangodb dump --maskings /etc/oihana/maskings.json
+// Or the convenient form via a profile / [arango.dump.masking] (compiled to a temp file):
+// $ php bin/console.php command:arangodb dump --profile test-local
+
 /**
  * The command to manage an ArangoDB database.
  */
@@ -57,6 +65,7 @@ trait ArangoDumpAction
         ArangoCollectionsTrait ,
         ArangoDumpTrait ,
         ArangoListDumpsAction ,
+        ArangoMaskingTrait ,
         ArangoOptionsTrait ,
         ArangoProfileTrait ,
         DirectoryTrait ,
@@ -232,13 +241,49 @@ trait ArangoDumpAction
             }
         }
 
+        // --- Masking (dump-only): a convenient table (profile overrides the
+        //     [arango.dump.masking] default) compiled to a temp file, or a
+        //     native file (--maskings, highest). The [arango.dump] maskings
+        //     native default, if any, flows through resolveDumpOptions. ---
+
+        $maskingTable = $this->dumpConfig[ ArangoCommandParam::MASKING ] ?? null ;
+        if( is_array( $profile ) && isset( $profile[ ArangoCommandParam::MASKING ] ) )
+        {
+            $maskingTable = $profile[ ArangoCommandParam::MASKING ] ;
+        }
+
+        $maskingFileCli = $input->getOption( ArangoCommandOption::MASKINGS ) ;
+
         // --dry-run : report the resolved plan, run nothing.
         if( $input->getOption( ArangoCommandOption::DRY_RUN ) )
         {
             $io->text( sprintf( 'Source  : %s @ %s' , $database , $endpoint ) ) ;
             $io->text( 'Collections : ' . ( $targetCollections === [] ? 'all' : implode( ', ' , $targetCollections ) ) ) ;
+
+            if( is_string( $maskingFileCli ) && $maskingFileCli !== '' )
+            {
+                $io->text( 'Masking : native file ' . $maskingFileCli ) ;
+            }
+            elseif( is_array( $maskingTable ) && $maskingTable !== [] )
+            {
+                $io->text( sprintf( 'Masking : %d entry(ies) compiled from the convenient table' , count( $maskingTable ) ) ) ;
+            }
+
             $io->success( 'Dry run — nothing was dumped.' ) ;
             return ExitCode::SUCCESS ;
+        }
+
+        // Resolve the effective maskings file (native CLI wins over the compiled table).
+        $maskingsFile = null ;
+        if( is_string( $maskingFileCli ) && $maskingFileCli !== '' )
+        {
+            assertFile( $maskingFileCli ) ;
+            $maskingsFile = $maskingFileCli ;
+        }
+        elseif( is_array( $maskingTable ) && $maskingTable !== [] )
+        {
+            $maskingsFile = $this->materializeMaskings( $maskingTable , [ $this->id , $this->getName() , $action , 'maskings' , Uuid::v4() ] ) ;
+            $io->text( sprintf( 'Masking : %d entry(ies) → %s' , count( $maskingTable ) , basename( $maskingsFile ) ) ) ;
         }
 
         $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
@@ -278,6 +323,12 @@ trait ArangoDumpAction
         if( $complete )
         {
             $explicit[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] = true ;
+        }
+
+        // Anonymize at dump time (native file, or the compiled convenient table).
+        if( $maskingsFile !== null )
+        {
+            $explicit[ ArangoDumpOption::MASKINGS ] = $maskingsFile ;
         }
 
         // Layer the [arango.dump] config defaults under the resolved
