@@ -10,6 +10,10 @@ use function oihana\arango\maskings\maskCreditCard;
 use function oihana\arango\maskings\maskDatetime;
 use function oihana\arango\maskings\maskDecimal;
 use function oihana\arango\maskings\maskDocument;
+use function oihana\arango\maskings\maskDocumentList;
+use function oihana\arango\maskings\maskDocumentNode;
+use function oihana\arango\maskings\maskingSystemAttributes;
+use function oihana\arango\maskings\resolveMaskingRule;
 use function oihana\arango\maskings\maskEmail;
 use function oihana\arango\maskings\maskInteger;
 use function oihana\arango\maskings\maskPhone;
@@ -325,5 +329,51 @@ class MaskingsTest extends TestCase
         $this->expectException( InvalidArgumentException::class ) ;
         $this->expectExceptionMessage( 'has no type' ) ;
         maskDocument( [ 'email' => 'x' ] , [ [ 'path' => 'email' ] ] ) ;
+    }
+
+    // ------------------------------------------------------------------ extracted helpers (standalone)
+
+    public function testMaskingSystemAttributes() :void
+    {
+        $this->assertSame( [ '_key' , '_id' , '_rev' , '_from' , '_to' ] , maskingSystemAttributes() ) ;
+    }
+
+    public function testResolveMaskingRuleStandalone() :void
+    {
+        $rules = [ [ 'path' => 'person.name' , 'type' => 'xifyFront' ] ] ;
+
+        $this->assertSame( $rules[ 0 ] , resolveMaskingRule( $rules , 'name' , 'person.name' ) ) ;
+        $this->assertNull( resolveMaskingRule( $rules , 'name' , 'other.name' ) ) ;
+
+        $this->assertNotNull( resolveMaskingRule( [ [ 'path' => '*' , 'type' => 'random' ] ] , 'whatever' , 'a.b' ) ) ;
+        $this->assertNotNull( resolveMaskingRule( [ [ 'path' => '.name' , 'type' => 'random' ] ] , 'name' , null ) ) ;
+        $this->assertNotNull( resolveMaskingRule( [ [ 'path' => '`a.b`' , 'type' => 'random' ] ] , 'x' , 'a.b' ) ) ;
+    }
+
+    public function testMaskDocumentNodeStandalone() :void
+    {
+        $out = maskDocumentNode
+        (
+            [ '_key' => 'a' , 'email' => 'real@example.com' ] ,
+            [ [ 'path' => 'email' , 'type' => 'email' ] ] ,
+            '' ,
+            0 ,
+        ) ;
+
+        $this->assertSame( 'a' , $out[ '_key' ] ) ;
+        $this->assertStringEndsWith( '.invalid' , $out[ 'email' ] ) ;
+    }
+
+    public function testMaskDocumentListStandalone() :void
+    {
+        $out = maskDocumentList
+        (
+            [ [ 'name' => 'hugo' ] , 'egon' ] ,
+            [ [ 'path' => '.name' , 'type' => 'xifyFront' , 'unmaskedLength' => 2 ] ] ,
+            1 ,
+        ) ;
+
+        $this->assertSame( 'xxgo' , $out[ 0 ][ 'name' ] ) ;
+        $this->assertSame( 'egon' , $out[ 1 ] ) ;
     }
 }
