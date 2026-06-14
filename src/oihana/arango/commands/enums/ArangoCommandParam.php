@@ -96,6 +96,13 @@ class ArangoCommandParam
     public const string RESTORE = 'restore' ;
 
     /**
+     * The 'retention' key of the `[arango.dump]` config section — the archive
+     * rotation policy ({@see RetentionOption}: `keep` / `max_age` / `max_total`
+     * / `auto` / `buckets`) of the `dump` action.
+     */
+    public const string RETENTION = 'retention' ;
+
+    /**
      * The 'timezone' parameter.
      */
     public const string TIMEZONE = 'timezone' ;

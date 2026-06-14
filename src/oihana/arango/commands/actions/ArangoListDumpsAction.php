@@ -6,6 +6,7 @@ use oihana\commands\enums\ExitCode;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use oihana\arango\commands\enums\ArchivePattern;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\traits\DirectoryTrait;
 use oihana\commands\traits\IOTrait;
@@ -30,7 +31,7 @@ trait ArangoListDumpsAction
     /**
      * The pattern to find the archive files.
      */
-    public const string ARCHIVE_REGEXP = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-.+\.tar(\.gz(\.enc)?)?$/' ;
+    public const string ARCHIVE_REGEXP = ArchivePattern::REGEXP ;
 
     /**
      * List the dump files of the database.

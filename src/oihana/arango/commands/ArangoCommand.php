@@ -119,7 +119,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::NO_VIEWS          , null  , InputOption::VALUE_NONE      , 'Skip the ArangoSearch View definitions in the dump (dump action).' ) ;
         $this->addOption   ( ArangoCommandOption::OVERWRITE         , null  , InputOption::VALUE_NONE      , 'Overwrite the output directory if it already exists (dump action).' ) ;
         $this->addOption   ( ArangoCommandOption::PROFILE           , null  , InputOption::VALUE_REQUIRED  , 'Named profile ([arango.profiles.<name>]) or a path to a .toml profile file (dump/restore selection).' ) ;
-        $this->addOption   ( ArangoCommandOption::PRUNE             , null  , InputOption::VALUE_NONE      , 'Interactively remove the orphans — on the server, declared by no model (doctor action).' ) ;
+        $this->addOption   ( ArangoCommandOption::PRUNE             , null  , InputOption::VALUE_NONE      , 'doctor: interactively remove the orphans declared by no model. dump: prune old archives per the retention policy (rotation-only run; combine with --dry-run).' ) ;
         $this->addOption   ( ArangoCommandOption::STATUS            , null  , InputOption::VALUE_NONE      , 'Show the applied / pending migrations table (migrate action).' ) ;
         $this->addOption   ( ArangoCommandOption::SYNC              , null  , InputOption::VALUE_OPTIONAL  , 'Create or resynchronize the declared Views, all or comma-separated names (views action).' , false ) ;
         $this->addOption   ( ArangoCommandOption::SYSTEM            , null  , InputOption::VALUE_NONE      , 'List only system collections (collections action).' ) ;

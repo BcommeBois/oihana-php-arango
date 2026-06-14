@@ -175,7 +175,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--dry-run` | — | dump, restore, migrate | Report the resolved plan (and the pending migrations) without running anything. |
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
 | `--force` | — | doctor, restore | doctor: with `--apply`, allow the drop + recreate of drifted indexes. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)). |
-| `--prune` | — | doctor | Interactive selection of the orphans (collections, Views) to remove. |
+| `--prune` | — | doctor, dump | doctor: interactive selection of the orphans to remove. dump: prune old archives per the retention policy (prune-only run; combine with `--dry-run`) — see [Archive rotation](#archive-rotation). |
 | `--create` | — | migrate | Generate an empty migration shell with this description. |
 | `--status` | — | migrate | Table of applied / pending migrations for this database. |
 | `--yes` | `-y` | migrate, restore | Skip the confirmation prompt (apply migrations / restore). |
@@ -573,6 +573,58 @@ engine) without writing.
 
 > The PHP engine aims for **semantic equivalence** (PII removed as valid, typed
 > values), not byte-identical output with the Enterprise binary.
+
+---
+
+## Archive rotation
+
+Nothing prunes the dump directory: it grows forever. Rotation deletes old archives
+according to a configurable policy. It is a **destructive action** and fully
+**opt-in**: with no retention policy configured (and no `--prune`), **nothing is
+ever deleted**.
+
+A **bucket** is the archive's *suffix signature* (`{database}[-partial][-{label}]`,
+i.e. the file name minus the leading ISO date and the extension). Archives of the
+same nature rotate together: the full dumps of `mydb`, the
+`mydb-partial-pre-migration` ones, a profile's labelled dumps… are distinct buckets.
+
+### Retention policy
+
+```toml
+[arango.dump.retention]
+keep      = 7            # keep the 7 most recent per bucket
+max_age   = "P30D"       # ISO 8601 duration: drop beyond this age (P30D / P6M / P1Y)
+max_total = "5G"         # global disk cap (size), applied last
+auto      = true         # prune automatically after each successful dump (default: off)
+
+[arango.dump.retention.buckets]   # per-bucket overrides (key = suffix signature)
+"mydb-partial-pre-migration" = 3
+```
+
+- **`keep`**: how many recent archives to keep **per bucket** (overridden by `[…buckets]`).
+- **`max_age`**: an **ISO 8601 duration** (`P30D` = 30 days, `P6M` = 6 months, `P1Y` = 1 year…).
+  When both `keep` **and** `max_age` are set, the rule is **conservative**: an archive is
+  deleted only if it is **both** beyond `keep` **and** older than `max_age`.
+- **`max_total`**: a total size cap (across buckets), `"5G"` / `"500M"` or a byte count.
+  Applied **last**: if the total exceeds it, the oldest archives are dropped globally
+  until it fits again.
+
+**Safety rails**: at least **one archive per bucket** is always kept, the **freshly
+created archive** is never pruned, and `--dry-run` lists without deleting.
+
+### Triggering rotation
+
+```bash
+# Prune only (no new dump):
+php bin/console.php command:arangodb dump --prune
+php bin/console.php command:arangodb dump --prune --dry-run   # list what would be deleted
+
+# Automatically after each successful dump (with [arango.dump.retention] auto = true):
+php bin/console.php command:arangodb dump
+```
+
+> Without a criterion (`keep` / `max_age` / `max_total`), `--prune` warns and deletes
+> nothing; `auto = true` alone (no criterion) prunes nothing either.
 
 ---
 

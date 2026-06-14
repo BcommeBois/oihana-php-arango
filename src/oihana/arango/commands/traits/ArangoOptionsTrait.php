@@ -81,6 +81,9 @@ trait ArangoOptionsTrait
         // `arangodump` option (the binary takes the resulting `maskings` file).
         unset( $options[ ArangoCommandParam::MASKING ] ) ;
 
+        // `retention` is the rotation policy, not an `arangodump` option.
+        unset( $options[ ArangoCommandParam::RETENTION ] ) ;
+
         if( $input->getOption( ArangoCommandOption::INCLUDE_SYSTEM ) )
         {
             $options[ ArangoDumpOption::INCLUDE_SYSTEM_COLLECTIONS ] = true ;

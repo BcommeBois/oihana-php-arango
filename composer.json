@@ -473,6 +473,7 @@
         "oihana/php-reflect": "dev-main",
         "oihana/php-schema": "dev-main",
         "oihana/php-signals": "dev-main",
+        "oihana/php-standards": "dev-main",
         "oihana/php-system": "dev-main"
     },
     "require-dev": {

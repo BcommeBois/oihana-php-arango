@@ -10,10 +10,12 @@ use oihana\arango\clients\Database;
 use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoDumpOption;
+use oihana\arango\commands\options\RetentionOption;
 use oihana\arango\commands\actions\ArangoRestoreAction;
 use oihana\arango\commands\traits\ArangoDumpTrait;
 use oihana\arango\commands\traits\ArangoMaskingTrait;
 use oihana\arango\commands\traits\ArangoProfileTrait;
+use oihana\arango\commands\traits\ArangoRotationTrait;
 
 use oihana\commands\enums\ExitCode;
 use oihana\commands\traits\HelperTrait;
@@ -27,6 +29,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 use function oihana\files\deleteDirectory;
 use function oihana\files\makeTemporaryDirectory;
@@ -41,6 +44,7 @@ class DumpRestoreIntegrationHost
     use ArangoDumpTrait ;
     use ArangoMaskingTrait ;
     use ArangoProfileTrait ;
+    use ArangoRotationTrait ;
 }
 
 /**
@@ -334,6 +338,30 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
         $this->assertStringContainsString( 'pii1' , $data , 'The masked document is still present (only its values change).' ) ;
         $this->assertStringNotContainsString( 'real.person@example.com' , $data , 'The email must be anonymized.' ) ;
         $this->assertStringNotContainsString( '+33 6 12 34 56' , $data , 'The nested phone must be anonymized.' ) ;
+    }
+
+    // ------------------------------------------------------------------ D6 rotation (real files)
+
+    public function testRotationPrunesRealArchivesOnDisk() :void
+    {
+        // A real arangodump-produced .tar.gz, copied under two ISO-dated names.
+        $real = $this->buildArchive() ;
+        $dir  = $this->tmp . DIRECTORY_SEPARATOR . 'rotate_' . bin2hex( random_bytes( 4 ) ) ;
+        mkdir( $dir , 0o777 , true ) ;
+
+        $old = $dir . DIRECTORY_SEPARATOR . '2020-01-01T00:00:00-' . static::$database . '.tar.gz' ;
+        $new = $dir . DIRECTORY_SEPARATOR . '2026-01-01T00:00:00-' . static::$database . '.tar.gz' ;
+        copy( $real , $old ) ;
+        copy( $real , $new ) ;
+
+        $host = new DumpRestoreIntegrationHost() ;
+        $io   = new SymfonyStyle( new ArrayInput( [] ) , new BufferedOutput() ) ;
+
+        $count = $host->pruneDumps( $dir , $host->resolveRetentionPolicy( [ RetentionOption::KEEP => 1 ] ) , null , false , $io ) ;
+
+        $this->assertSame( 1 , $count ) ;
+        $this->assertFileDoesNotExist( $old , 'The older archive must be pruned.' ) ;
+        $this->assertFileExists( $new , 'The most recent archive must be kept.' ) ;
     }
 
     // ------------------------------------------------------------------ D4 restore guard-rails

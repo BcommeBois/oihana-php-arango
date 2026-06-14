@@ -5,6 +5,7 @@ namespace oihana\arango\commands\actions;
 use InvalidArgumentException;
 use RuntimeException;
 
+use oihana\arango\commands\enums\ArchivePattern;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoRestoreOption;
 use oihana\arango\commands\traits\ArangoCollectionsTrait;
@@ -104,7 +105,7 @@ trait ArangoRestoreAction
     /**
      * The regexp to find the archive file.
      */
-    public const string ARCHIVE_REGEXP = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-.+\.tar(\.gz(\.enc)?)?$/' ;
+    public const string ARCHIVE_REGEXP = ArchivePattern::REGEXP ;
 
     /**
      * The exit message.

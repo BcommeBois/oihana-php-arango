@@ -15,8 +15,10 @@ use oihana\arango\commands\traits\ArangoDumpTrait;
 use oihana\arango\commands\traits\ArangoMaskingTrait;
 use oihana\arango\commands\traits\ArangoOptionsTrait;
 use oihana\arango\commands\traits\ArangoProfileTrait;
+use oihana\arango\commands\traits\ArangoRotationTrait;
 use oihana\arango\commands\traits\DirectoryTrait;
 use oihana\arango\commands\options\ArangoCommandOption;
+use oihana\arango\commands\options\RetentionOption;
 use oihana\arango\db\enums\ArangoConfig;
 
 use oihana\commands\enums\CommandArg;
@@ -39,6 +41,7 @@ use Symfony\Component\Uid\Uuid;
 use function oihana\files\archive\tar\tarDirectory;
 use function oihana\files\assertFile;
 use function oihana\files\deleteDirectory;
+use function oihana\files\getDirectory;
 use function oihana\files\makeDirectory;
 use function oihana\files\makeTemporaryDirectory;
 use function oihana\files\makeTimestampedDirectory;
@@ -69,6 +72,7 @@ trait ArangoDumpAction
         ArangoMaskingTrait ,
         ArangoOptionsTrait ,
         ArangoProfileTrait ,
+        ArangoRotationTrait ,
         DirectoryTrait ,
         EncryptTrait ;
 
@@ -102,6 +106,26 @@ trait ArangoDumpAction
         }
 
         $io = $this->getIO( $input , $output ) ;
+
+        // --prune : rotation only (no new dump).
+        if( $input->getOption( ArangoCommandOption::PRUNE ) )
+        {
+            $io->section( 'Prune the arangodb dumps' ) ;
+
+            $retention = is_array( $this->dumpConfig[ ArangoCommandParam::RETENTION ] ?? null ) ? $this->dumpConfig[ ArangoCommandParam::RETENTION ] : [] ;
+
+            if( !$this->retentionEnabled( $retention ) )
+            {
+                $io->warning( 'No retention policy configured ([arango.dump.retention]) — nothing to prune.' ) ;
+                return ExitCode::SUCCESS ;
+            }
+
+            $directory = getDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
+            $this->pruneDumps( $directory , $this->resolveRetentionPolicy( $retention ) , null , (bool) $input->getOption( ArangoCommandOption::DRY_RUN ) , $io ) ;
+
+            $io->newLine() ;
+            return ExitCode::SUCCESS ;
+        }
 
         // 00 - Initialize the process
 
@@ -385,6 +409,14 @@ trait ArangoDumpAction
             // @codeCoverageIgnoreStart
             throw new RuntimeException( "Failed to move the archive file in the final directory." ) ;
             // @codeCoverageIgnoreEnd
+        }
+
+        // 05b - Rotation: prune automatically after a successful dump (opt-in),
+        // never touching the archive just created.
+        $retention = is_array( $this->dumpConfig[ ArangoCommandParam::RETENTION ] ?? null ) ? $this->dumpConfig[ ArangoCommandParam::RETENTION ] : [] ;
+        if( ( $retention[ RetentionOption::AUTO ] ?? false ) && $this->retentionEnabled( $retention ) )
+        {
+            $this->pruneDumps( $outputDirectory , $this->resolveRetentionPolicy( $retention ) , $toFile , false , $io ) ;
         }
 
         // 06 - Finish the process

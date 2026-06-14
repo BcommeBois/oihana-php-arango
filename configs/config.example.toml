@@ -83,6 +83,22 @@ type       = "Basic"
 # "users.card"           = { type = "xifyFront", unmaskedLength = 4 }
 # "users.address.city"   = "random"
 
+# Archive rotation — OPT-IN. Without a policy here (and without --prune) nothing is
+# ever deleted. The "bucket" is the archive suffix signature
+# ({database}[-partial][-{label}]); archives of the same nature rotate together.
+# Safety: at least one archive is always kept per bucket, the just-created archive is
+# never pruned, and --dry-run lists without deleting.
+# See wiki/{fr,en}/commands/arangodb.md → "Archive rotation".
+# [arango.dump.retention]
+# keep      = 7            # keep the N most recent per bucket
+# max_age   = "P30D"       # ISO 8601 duration: drop beyond this age (P30D / P6M / P1Y)
+#                          # with both keep + max_age, delete only if beyond N AND older
+# max_total = "5G"         # global disk cap (size) or a byte count, applied last
+# auto      = true         # prune automatically after each successful dump (default: off)
+#
+# [arango.dump.retention.buckets]   # per-bucket overrides (key = suffix signature)
+# "mydb-partial-pre-migration" = 3
+
 # [arango.restore]
 # threads = 4
 # # Safety guard-rail: the restore REFUSES to overwrite these collections unless

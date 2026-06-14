@@ -176,7 +176,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--dry-run` | — | dump, restore, migrate | Affiche le plan résolu (et les migrations en attente) sans rien exécuter. |
 | `--apply` | — | doctor | Répare : crée le manquant (collections, index, Views), resynchronise les Views. |
 | `--force` | — | doctor, restore | doctor : avec `--apply`, autorise le drop + recreate des index driftés. restore : écrase les collections **protégées** (voir [Garde-fous du restore](#garde-fous-du-restore)). |
-| `--prune` | — | doctor | Sélection interactive des orphelins (collections, Views) à supprimer. |
+| `--prune` | — | doctor, dump | doctor : sélection interactive des orphelins à supprimer. dump : élague les vieilles archives selon la politique de rétention (run élagage-seul ; combiner avec `--dry-run`) — voir [Rotation des archives](#rotation-des-archives). |
 | `--create` | — | migrate | Génère la coquille vide d'une migration avec cette description. |
 | `--status` | — | migrate | Tableau des migrations appliquées / en attente pour cette base. |
 | `--yes` | `-y` | migrate, restore | Saute la demande de confirmation (applique les migrations / restaure). |
@@ -580,6 +580,58 @@ moteur PHP) sans rien écrire.
 
 > Le moteur PHP vise l'**équivalence sémantique** (retirer la PII en valeurs valides
 > et typées), pas une sortie identique au binaire Enterprise.
+
+---
+
+## Rotation des archives
+
+Rien ne purge le dossier de dumps : il grossit indéfiniment. La rotation supprime
+les vieilles archives selon une politique configurable. C'est une **action
+destructrice** et **opt-in total** : sans politique de rétention configurée (et
+sans `--prune`), **rien n'est jamais supprimé**.
+
+**Bucket** = la *signature du suffixe* de l'archive (`{database}[-partial][-{label}]`,
+soit le nom de fichier sans la date ISO ni l'extension). Les archives de même nature
+rotent ensemble : les fulls de `mydb`, les `mydb-partial-pre-migration`, les dumps
+labellisés d'un profil… sont des buckets distincts.
+
+### Politique de rétention
+
+```toml
+[arango.dump.retention]
+keep      = 7            # garder les 7 plus récentes par bucket
+max_age   = "P30D"       # durée ISO 8601 : supprimer au-delà de cet âge (P30D / P6M / P1Y)
+max_total = "5G"         # plafond disque global (taille), appliqué en dernier
+auto      = true         # élaguer automatiquement après chaque dump réussi (défaut : off)
+
+[arango.dump.retention.buckets]   # surcharges par bucket (clé = signature suffixe)
+"mydb-partial-pre-migration" = 3
+```
+
+- **`keep`** : nombre d'archives récentes gardées **par bucket** (surchargé par `[…buckets]`).
+- **`max_age`** : une **durée ISO 8601** (`P30D` = 30 jours, `P6M` = 6 mois, `P1Y` = 1 an…).
+  Quand `keep` **et** `max_age` sont posés, la règle est **conservatrice** : une archive
+  n'est supprimée que si elle est **à la fois** au-delà de `keep` **et** plus vieille que `max_age`.
+- **`max_total`** : plafond de taille total (tous buckets), `"5G"` / `"500M"` ou un nombre
+  d'octets. Appliqué **en dernier** : si le total dépasse, on supprime les plus vieilles
+  globalement jusqu'à repasser sous le plafond.
+
+**Garde-fous** : **plancher ≥ 1 par bucket** (jamais la dernière archive d'un bucket),
+**jamais l'archive qu'on vient de créer**, et `--dry-run` qui liste sans rien supprimer.
+
+### Déclencher la rotation
+
+```bash
+# Élagage seul (ne crée pas de dump) :
+php bin/console.php command:arangodb dump --prune
+php bin/console.php command:arangodb dump --prune --dry-run   # liste ce qui serait supprimé
+
+# Automatique après chaque dump réussi (avec [arango.dump.retention] auto = true) :
+php bin/console.php command:arangodb dump
+```
+
+> Sans critère (`keep` / `max_age` / `max_total`), `--prune` prévient et ne supprime rien ;
+> `auto = true` seul (sans critère) n'élague rien non plus.
 
 ---
 

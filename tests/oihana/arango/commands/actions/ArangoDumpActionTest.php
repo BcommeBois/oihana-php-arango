@@ -13,6 +13,7 @@ use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\options\ArangoDumpOptions;
+use oihana\arango\commands\options\RetentionOption;
 use oihana\arango\commands\traits\ArangoConfigTrait;
 
 use oihana\commands\enums\CommandArg;
@@ -159,6 +160,7 @@ class ArangoDumpActionTest extends TestCase
             new InputOption( ArangoCommandOption::PROFILE           , null , InputOption::VALUE_OPTIONAL ) ,
             new InputOption( ArangoCommandOption::COMPLETE          , null , InputOption::VALUE_NONE ) ,
             new InputOption( ArangoCommandOption::DRY_RUN           , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::PRUNE             , null , InputOption::VALUE_NONE ) ,
             new InputOption( CommandOption::ENCRYPT                 , null , InputOption::VALUE_OPTIONAL ) ,
         ]) ;
     }
@@ -793,5 +795,96 @@ class ArangoDumpActionTest extends TestCase
 
         $this->expectException( InvalidArgumentException::class ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ;
+    }
+
+    // ---------------------------------------------------------------- D6 rotation
+
+    /** Touches a dump archive file in the dump directory. */
+    private function touchArchive( string $name ) :string
+    {
+        $path = $this->dir . DIRECTORY_SEPARATOR . $name ;
+        file_put_contents( $path , 'x' ) ;
+        return $path ;
+    }
+
+    private function hostWithRetention( array $retention ) :ArangoDumpActionHost
+    {
+        $host = $this->host() ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::DUMP => [ ArangoCommandParam::RETENTION => $retention ] ] ) ;
+        return $host ;
+    }
+
+    public function testPruneOnlyDeletesPerRetentionWithoutDumping() :void
+    {
+        $this->touchArchive( '2020-01-01T00:00:00-mydb.tar.gz' ) ;
+        $this->touchArchive( '2021-01-01T00:00:00-mydb.tar.gz' ) ;
+        $this->touchArchive( '2022-01-01T00:00:00-mydb.tar.gz' ) ;
+
+        $host = $this->hostWithRetention( [ RetentionOption::KEEP => 1 ] ) ;
+        $code = $host->dump( $this->input( [ '--' . ArangoCommandOption::PRUNE => true ] ) , new BufferedOutput() ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertFalse( $host->dumpCalled ) ;
+        $this->assertFileDoesNotExist( $this->dir . DIRECTORY_SEPARATOR . '2020-01-01T00:00:00-mydb.tar.gz' ) ;
+        $this->assertFileDoesNotExist( $this->dir . DIRECTORY_SEPARATOR . '2021-01-01T00:00:00-mydb.tar.gz' ) ;
+        $this->assertFileExists( $this->dir . DIRECTORY_SEPARATOR . '2022-01-01T00:00:00-mydb.tar.gz' ) ;
+    }
+
+    public function testPruneWithoutPolicyWarnsAndKeepsEverything() :void
+    {
+        $archive = $this->touchArchive( '2020-01-01T00:00:00-mydb.tar.gz' ) ;
+
+        $host   = $this->host() ;   // no retention configured
+        $output = new BufferedOutput() ;
+        $code   = $host->dump( $this->input( [ '--' . ArangoCommandOption::PRUNE => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertFalse( $host->dumpCalled ) ;
+        $this->assertFileExists( $archive ) ;
+        $this->assertStringContainsString( 'No retention policy' , $output->fetch() ) ;
+    }
+
+    public function testPruneDryRunListsWithoutDeleting() :void
+    {
+        $old = $this->touchArchive( '2020-01-01T00:00:00-mydb.tar.gz' ) ;
+        $this->touchArchive( '2021-01-01T00:00:00-mydb.tar.gz' ) ;
+
+        $host   = $this->hostWithRetention( [ RetentionOption::KEEP => 1 ] ) ;
+        $output = new BufferedOutput() ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PRUNE => true , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertFileExists( $old ) ;
+        $this->assertStringContainsString( 'would delete' , $output->fetch() ) ;
+    }
+
+    public function testAutoPrunePrunesAfterDumpKeepingTheNewArchive() :void
+    {
+        $old = $this->touchArchive( '2020-01-01T00:00:00-mydb.tar.gz' ) ; // same bucket "mydb"
+
+        $host = $this->hostWithRetention( [ RetentionOption::KEEP => 1 , RetentionOption::AUTO => true ] ) ;
+        $code = $host->dump( $this->input() , new BufferedOutput() ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertTrue( $host->dumpCalled ) ;
+        $this->assertFileDoesNotExist( $old ) ;                                  // old archive pruned
+        $this->assertCount( 1 , glob( $this->dir . DIRECTORY_SEPARATOR . '*-mydb.tar.gz' ) ) ; // only the new one survives
+    }
+
+    public function testAutoPruneOffByDefaultKeepsEverything() :void
+    {
+        $old = $this->touchArchive( '2020-01-01T00:00:00-mydb.tar.gz' ) ;
+
+        $host = $this->hostWithRetention( [ RetentionOption::KEEP => 1 ] ) ; // no auto
+        $host->dump( $this->input() , new BufferedOutput() ) ;
+
+        $this->assertFileExists( $old ) ; // not pruned without autoPrune
+    }
+
+    public function testRetentionKeyNeverLeaksIntoTheDumpOptions() :void
+    {
+        $host = $this->hostWithRetention( [ RetentionOption::KEEP => 3 ] ) ;
+        $host->dump( $this->input() , new BufferedOutput() ) ;
+
+        $this->assertArrayNotHasKey( ArangoCommandParam::RETENTION , $host->capturedDumpOptions ) ;
     }
 }
