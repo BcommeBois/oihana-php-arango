@@ -32,7 +32,7 @@ $places = new Documents( $container ,
 | Clé | Type | Rôle |
 |---|---|---|
 | `Search::NAME` | `string` | **Requis** — le nom de la View. Sans lui le bloc est inerte et `?search=` reste le balayage `LIKE`. |
-| `Search::ANALYZER` | `string` | Analyzer utilisé pour indexer **et** interroger les champs (défaut `identity` — déclarez un Analyzer texte pour la recherche linguistique). |
+| `Search::ANALYZER` | `string` | Analyzer utilisé pour indexer **et** interroger les champs (défaut `identity` — déclarez un Analyzer texte pour la recherche linguistique). Surchargeable par champ — voir ci-dessous. |
 | `Search::FIELDS` | `array` | Map `champ => boost` (ou `champ => [ Search::BOOST => n, Search::FUZZY => d ]` pour des options par champ). Chemins pointés supportés. Fallback sur `AQL::SEARCHABLE` (boost 1). |
 | `Search::PHRASE` | `bool` | Ajoute un bonus d'expression exacte : un match `PHRASE()` pèse `boost × 2`. |
 | `Search::FUZZY` | `int` | Tolérance aux fautes globale : `LEVENSHTEIN_MATCH` avec cette distance d'édition maximale (valeur valide `0`–`4`, `0` = off). Surchargeable par champ — voir ci-dessous. |
@@ -52,6 +52,23 @@ Search::FUZZY => 1 , // défaut au niveau de la View
 ```
 
 Règle de résolution : un champ qui déclare `Search::FUZZY` l'emporte (un **`0` explicite désactive** la tolérance pour ce champ) ; un champ sans clé `FUZZY` hérite du `Search::FUZZY` de la View ; sans valeur globale, la tolérance est désactivée. Comportement **100 % rétro-compatible** : une déclaration sans fuzzy par champ produit exactement l'AQL d'avant.
+
+### Analyzer par champ
+
+De la même façon, `Search::ANALYZER` peut être déclaré **par champ**. Une même View peut alors indexer (et interroger) un champ français avec `text_fr` et un champ anglais avec `text_en` :
+
+```php
+Search::FIELDS =>
+[
+    'name'    => 3 ,                                  // Analyzer de la View
+    'summary' => [ Search::ANALYZER => 'text_en' ] ,  // surcharge par champ
+] ,
+Search::ANALYZER => 'text_fr' , // défaut au niveau de la View
+```
+
+Règle de résolution : un champ qui déclare `Search::ANALYZER` l'emporte ; sinon il hérite du `Search::ANALYZER` de la View (lui-même `identity` par défaut). L'Analyzer étant **figé à l'indexation**, une surcharge par champ se répercute des deux côtés : le link de la View indexe le champ avec son Analyzer, et la requête regroupe les expressions par Analyzer — un `ANALYZER(…, "<analyzer>")` par groupe, le tout en `OR`. Avec un seul Analyzer la sortie est strictement celle d'avant.
+
+> **Drift** — changer l'Analyzer d'un champ modifie le link de la View. Comme tout changement de déclaration, il ne met pas à jour une View déjà créée : resynchronisez avec `$model->viewSync()` ou `arangodb views --sync`. Un analyzer (modèle ou par champ) inconnu du serveur est signalé par `$model->viewDiff()` (statut `INVALID`).
 
 **Le provisioning est automatique** : comme la collection et ses `AQL::INDEXES`, la View est créée paresseusement à l'initialisation du modèle quand elle n'existe pas (champs cherchés liés avec l'Analyzer déclaré). Une View existante n'est **jamais modifiée automatiquement** — après un changement de déclaration, inspectez et resynchronisez explicitement : `$model->viewDiff()` détecte l'écart, `$model->viewSync()` le répare via `updateProperties()` (la View reste interrogeable pendant la ré-indexation), et l'[action `views` de la commande `arangodb`](../commands/arangodb.md#views--gestion-des-views-arangosearch) fait la même chose en CLI (`--diff` / `--sync`), intégrable aux scripts de déploiement.
 

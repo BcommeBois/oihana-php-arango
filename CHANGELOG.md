@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-field Analyzer in ArangoSearch Views (Lot VF2).** `Search::ANALYZER` can now be declared **per field** inside a `Search::FIELDS` array entry, mirroring `Search::BOOST` / `Search::FUZZY`. A single View can index (and query) a `text_fr` field and a `text_en` field side by side (`'summary' => [ Search::ANALYZER => 'text_en' ]`).
+  - **Resolution:** a field declaring `Search::ANALYZER` wins; otherwise it inherits the View-level Analyzer (`identity` by default).
+  - **Both sides:** since the Analyzer is fixed at indexing time, `buildViewLink()` indexes each field with its Analyzer, and `prepareViewSearch()` groups expressions by Analyzer — one `ANALYZER(…)` wrap per group, `OR`-ed. With a single Analyzer the output is byte-for-byte the former AQL.
+  - **Diagnostics:** `viewDiff()` now validates **every distinct Analyzer** (View-level + per-field) against the server — an unknown one yields `DiffStatus::INVALID` with a clear message instead of an opaque server error. Per-field analyzer drift is detected/repaired by the existing `viewDiff()`/`viewSync()` link comparison.
+  - **Tests:** unit (`ViewSearchTest` — per-Analyzer grouping, `buildViewLink` per field, descriptor shape, unknown per-field analyzer) + live (`ViewSearchIntegrationTest::testPerFieldAnalyzerRoutesEachFieldThroughItsAnalyzer`).
+  - **Docs:** FR/EN `db/search-views.md` (new "per-field Analyzer" section) + `getting-started/arangosearch.md`.
+
 - **Per-field fuzzy tolerance in ArangoSearch Views (Lot VF1).** `Search::FUZZY` can now be declared **per field** inside a `Search::FIELDS` array entry, mirroring `Search::BOOST`. A single View can tolerate typos on text fields while staying exact on codes/identifiers (`'code' => [ Search::BOOST => 1, Search::FUZZY => 0 ]`), where a near-miss would otherwise return the wrong record.
   - **Resolution:** a field declaring `Search::FUZZY` wins (an explicit `0` opts that field out); a field with no `FUZZY` key inherits the View-level `Search::FUZZY`; with no global value, tolerance is off.
   - **Backward-compatible:** declarations without per-field fuzzy emit exactly the former AQL.

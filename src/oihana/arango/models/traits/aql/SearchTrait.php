@@ -229,7 +229,11 @@ trait SearchTrait
      *   a field may override the View-level tolerance — an explicit `0`
      *   opts that field out while the rest stays fuzzy.
      *
-     * The whole expression is wrapped in `ANALYZER(…, "<analyzer>")`.
+     * Field expressions are grouped by their resolved Analyzer (a field may
+     * override the View-level {@see Search::ANALYZER}) and each group is wrapped
+     * in its own `ANALYZER(…, "<analyzer>")`, the groups being `OR`-ed together.
+     * With a single Analyzer the output is a single `ANALYZER(…)` wrap, byte for
+     * byte the classic form.
      *
      * @param array|string|null $search The `$init` array (reads `Arango::SEARCH`) or the search term itself.
      * @param ?array            $binds  Bind variables, populated by reference.
@@ -257,14 +261,13 @@ trait SearchTrait
             $search = $search[ Arango::SEARCH ] ?? null ;
         }
 
-        $name        = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
-        $quoted      = json_encode( $name ) ;
-        $fields      = $this->getViewFieldSpecs() ;
-        $phrase      = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
-        $globalFuzzy = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
+        $modelAnalyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
+        $fields        = $this->getViewFieldSpecs() ;
+        $phrase        = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
+        $globalFuzzy   = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
 
-        $expressions = [] ;
-        $index       = 0 ;
+        $groups = [] ; // analyzer name => list of expressions, in first-seen order
+        $index  = 0 ;
 
         foreach( explode( Char::COMMA , $search ) as $word )
         {
@@ -272,31 +275,37 @@ trait SearchTrait
 
             foreach( $fields as $field => $spec )
             {
+                $name   = $spec[ Search::ANALYZER ] ?? $modelAnalyzer ;
                 $weight = $spec[ Search::BOOST ] ;
                 $fuzzy  = array_key_exists( Search::FUZZY , $spec ) ? $spec[ Search::FUZZY ] : $globalFuzzy ;
 
-                $path  = key( $field , $docRef ) ;
-                $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , $quoted ) ;
+                $groups[ $name ] ??= [] ;
 
-                $expressions[] = $weight == 1 ? $match : boost( $match , $weight ) ;
+                $path  = key( $field , $docRef ) ;
+                $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , json_encode( $name ) ) ;
+
+                $groups[ $name ][] = $weight == 1 ? $match : boost( $match , $weight ) ;
 
                 if( $phrase )
                 {
-                    $expressions[] = boost( func( SearchFunction::PHRASE , [ $path , $term ] ) , $weight * 2 ) ;
+                    $groups[ $name ][] = boost( func( SearchFunction::PHRASE , [ $path , $term ] ) , $weight * 2 ) ;
                 }
 
                 if( $fuzzy > 0 )
                 {
-                    $expressions[] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
+                    $groups[ $name ][] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
                 }
             }
         }
 
-        return analyzer
-        (
-            compile( $expressions , Char::SPACE . Logic::OR . Char::SPACE ) ,
-            $name
-        ) ;
+        $wrapped = [] ;
+
+        foreach( $groups as $name => $expressions )
+        {
+            $wrapped[] = analyzer( compile( $expressions , Char::SPACE . Logic::OR . Char::SPACE ) , $name ) ;
+        }
+
+        return compile( $wrapped , Char::SPACE . Logic::OR . Char::SPACE ) ;
     }
 
     /**
@@ -344,10 +353,20 @@ trait SearchTrait
             return $report ;
         }
 
-        $analyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
-        if( !$this->analyzerExists( $analyzer ) )
+        $analyzers = [ $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ] ;
+        foreach( $this->getViewFieldSpecs() as $spec )
         {
-            $errors[] = sprintf( "analyzer '%s' not found on the server" , $analyzer ) ;
+            if( isset( $spec[ Search::ANALYZER ] ) )
+            {
+                $analyzers[] = $spec[ Search::ANALYZER ] ;
+            }
+        }
+        foreach( array_unique( $analyzers ) as $analyzer )
+        {
+            if( !$this->analyzerExists( $analyzer ) )
+            {
+                $errors[] = sprintf( "analyzer '%s' not found on the server" , $analyzer ) ;
+            }
         }
         if( !$this->collectionExists( $this->collection ) )
         {
@@ -386,19 +405,20 @@ trait SearchTrait
     /**
      * Builds the View link of the model's collection from the `AQL::VIEW`
      * declaration: every searched field (dotted paths become nested fields)
-     * is indexed with the declared {@see Search::ANALYZER}.
+     * is indexed with its resolved Analyzer — the per-field
+     * {@see Search::ANALYZER} when declared, otherwise the View-level one.
      *
      * @return ArangoSearchLink
      */
     protected function buildViewLink() :ArangoSearchLink
     {
-        $analyzers = [ $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ] ;
+        $analyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
 
         $fields = [] ;
 
-        foreach( array_keys( $this->getViewSearchFields() ) as $path )
+        foreach( $this->getViewFieldSpecs() as $path => $spec )
         {
-            $node = [ ViewField::ANALYZERS => $analyzers ] ;
+            $node = [ ViewField::ANALYZERS => [ $spec[ Search::ANALYZER ] ?? $analyzer ] ] ;
 
             $segments = explode( Char::DOT , (string) $path ) ;
             while( count( $segments ) > 1 )
@@ -455,6 +475,11 @@ trait SearchTrait
                     if( array_key_exists( Search::FUZZY , $options ) )
                     {
                         $spec[ Search::FUZZY ] = (int) $options[ Search::FUZZY ] ;
+                    }
+
+                    if( array_key_exists( Search::ANALYZER , $options ) )
+                    {
+                        $spec[ Search::ANALYZER ] = (string) $options[ Search::ANALYZER ] ;
                     }
 
                     return $spec ;

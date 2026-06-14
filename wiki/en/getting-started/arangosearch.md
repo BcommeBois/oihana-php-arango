@@ -77,7 +77,7 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 | Field weighting | `BOOST` | `Search::FIELDS => ['name' => 3]` |
 | Autocomplete | `STARTS_WITH` (array of prefixes) | [`startsWith()`](../aql/aql-functions-strings.md) helper |
 | Custom scored query | the full grammar | [`aqlScoredSearch()`](../aql/aql-operations.md) builder |
-| Localized fields | per-sub-field paths | `'description.fr' => 1` (per-field Analyzers planned) |
+| Localized fields | per-sub-field paths + per-field Analyzer | `'description.en' => [Search::ANALYZER => 'text_en']` |
 | Federated multi-collection search | one View, several collections | planned (dedicated read-only model) |
 
 ## How a View lives, server-side
@@ -107,7 +107,7 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 
 ## Planned evolutions
 
-- **Per-field Analyzers** (`'description.en' => [Search::ANALYZER => 'text_en']`) and **`?lang=`-driven field selection** for i18n attributes.
+- **`?lang=`-driven field selection** for i18n attributes (per-field Analyzers are now [available](../db/search-views.md#per-field-analyzer)).
 - **Federated multi-collection search** — one View over several collections, exposed by a dedicated read-only model/controller/route triple.
 - **Permission-scoped search** — restricting searchable fields per role, like `?skin` whitelists.
 

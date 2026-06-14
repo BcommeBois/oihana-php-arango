@@ -32,7 +32,7 @@ $places = new Documents( $container ,
 | Key | Type | Role |
 |---|---|---|
 | `Search::NAME` | `string` | **Required** — the View name. Without it the block is inert and `?search=` stays the `LIKE` sweep. |
-| `Search::ANALYZER` | `string` | Analyzer used to index **and** query the fields (default `identity` — declare a text Analyzer for linguistic search). |
+| `Search::ANALYZER` | `string` | Analyzer used to index **and** query the fields (default `identity` — declare a text Analyzer for linguistic search). Overridable per field — see below. |
 | `Search::FIELDS` | `array` | `field => boost` map (or `field => [ Search::BOOST => n, Search::FUZZY => d ]` to carry per-field options). Dotted paths supported. Falls back to `AQL::SEARCHABLE` (boost 1). |
 | `Search::PHRASE` | `bool` | Adds an exact-phrase bonus: a `PHRASE()` match weighs `boost × 2`. |
 | `Search::FUZZY` | `int` | View-level typo tolerance: `LEVENSHTEIN_MATCH` with this maximum edit distance (valid value `0`–`4`, `0` = off). Overridable per field — see below. |
@@ -52,6 +52,23 @@ Search::FUZZY => 1 , // View-level default
 ```
 
 Resolution rule: a field declaring `Search::FUZZY` wins (an **explicit `0` opts that field out** of tolerance); a field with no `FUZZY` key inherits the View-level `Search::FUZZY`; with no global value, tolerance is disabled. The behavior is **fully backward-compatible**: a declaration without per-field fuzzy produces exactly the former AQL.
+
+### Per-field Analyzer
+
+Likewise, `Search::ANALYZER` may be declared **per field**. A single View can then index (and query) a French field with `text_fr` and an English field with `text_en`:
+
+```php
+Search::FIELDS =>
+[
+    'name'    => 3 ,                                  // View Analyzer
+    'summary' => [ Search::ANALYZER => 'text_en' ] ,  // per-field override
+] ,
+Search::ANALYZER => 'text_fr' , // View-level default
+```
+
+Resolution rule: a field declaring `Search::ANALYZER` wins; otherwise it inherits the View-level `Search::ANALYZER` (itself `identity` by default). Since the Analyzer is **fixed at indexing time**, a per-field override is reflected on both sides: the View link indexes the field with its Analyzer, and the query groups expressions by Analyzer — one `ANALYZER(…, "<analyzer>")` per group, `OR`-ed together. With a single Analyzer the output is exactly the former one.
+
+> **Drift** — changing a field's Analyzer alters the View link. Like any declaration change, it does not update an already-created View: resynchronize with `$model->viewSync()` or `arangodb views --sync`. An analyzer (View-level or per-field) unknown to the server is reported by `$model->viewDiff()` (status `INVALID`).
 
 **Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts.
 

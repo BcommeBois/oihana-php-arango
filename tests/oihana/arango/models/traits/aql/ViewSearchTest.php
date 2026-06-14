@@ -330,6 +330,30 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testPrepareViewSearchGroupsExpressionsPerFieldAnalyzer() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name'  => [ Search::BOOST => 1 ] ,                  // model analyzer (text_fr)
+                    'title' => [ Search::ANALYZER => 'text_en' ] ,      // per-field override
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(doc.title IN TOKENS(@search_0,"text_en"),"text_en")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
     public function testPrepareViewSearchCustomDocRef() :void
     {
         $model = $this->model(
@@ -613,6 +637,67 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testGetViewFieldSpecsKeepsAnalyzerWhenDeclared() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS =>
+                [
+                    'name'  => 3 ,                                                              // shorthand → boost only
+                    'title' => [ Search::ANALYZER => 'text_en' ] ,                              // boost defaults to 1
+                    'body'  => [ Search::BOOST => 2 , Search::FUZZY => 1 , Search::ANALYZER => 'text_fr' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'getViewFieldSpecs' ) ;
+
+        $this->assertSame
+        (
+            [
+                'name'  => [ Search::BOOST => 3.0 ] ,
+                'title' => [ Search::BOOST => 1.0 , Search::ANALYZER => 'text_en' ] ,
+                'body'  => [ Search::BOOST => 2.0 , Search::FUZZY => 1 , Search::ANALYZER => 'text_fr' ] ,
+            ] ,
+            $method->invoke( $model )
+        ) ;
+    }
+
+    public function testBuildViewLinkUsesPerFieldAnalyzers() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name'           => 1 ,                              // inherits the View analyzer
+                    'description.en' => [ Search::ANALYZER => 'text_en' ] , // dotted path + override
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+        $link   = $method->invoke( $model ) ;
+
+        $this->assertSame
+        (
+            [
+                'fields' =>
+                [
+                    'name'        => [ 'analyzers' => [ 'text_fr' ] ] ,
+                    'description' => [ 'fields' => [ 'en' => [ 'analyzers' => [ 'text_en' ] ] ] ] ,
+                ] ,
+            ] ,
+            $link->toArray()
+        ) ;
+    }
+
     // ---------------------------------------------------------------- getViewName / getViewLinks
 
     public function testGetViewNameReturnsTheDeclaredName() :void
@@ -723,6 +808,28 @@ class ViewSearchTest extends TestCase
 
         $this->assertSame( DiffStatus::INVALID , $report->status ) ;
         $this->assertContains( "analyzer 'text_fr' not found on the server" , $report->changes ) ;
+    }
+
+    public function testViewDiffIsInvalidWhenAPerFieldAnalyzerIsUnknown() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'analyzerExists'   )->willReturnCallback( fn( string $a ) => $a === 'text_fr' ) ;
+        $facade->method( 'collectionExists' )->willReturn( true ) ;
+        $facade->method( 'viewDiff'         )->willReturn( new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ) ;
+
+        $model = $this->facadeModel( $facade ,
+        [
+            Search::FIELDS =>
+            [
+                'name'  => 1 ,                                  // text_fr (known)
+                'title' => [ Search::ANALYZER => 'text_en' ] ,  // text_en (unknown)
+            ] ,
+        ]) ;
+
+        $report = $model->viewDiff() ;
+
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
+        $this->assertContains( "analyzer 'text_en' not found on the server" , $report->changes ) ;
     }
 
     public function testViewDiffIsInvalidWhenTheCollectionIsUnknownAndKeepsTheDriftLines() :void

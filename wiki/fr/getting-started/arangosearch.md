@@ -77,7 +77,7 @@ Une requête : insensibilité accents/casse, matching par mots, le nom pesant 3�
 | Pondération par champ | `BOOST` | `Search::FIELDS => ['name' => 3]` |
 | Autocomplete | `STARTS_WITH` (tableau de préfixes) | helper [`startsWith()`](../aql/aql-functions-strings.md) |
 | Requête scorée sur mesure | toute la grammaire | builder [`aqlScoredSearch()`](../aql/aql-operations.md) |
-| Champs localisés | chemins par sous-champ | `'description.fr' => 1` (Analyzers par champ prévus) |
+| Champs localisés | chemins par sous-champ + Analyzer par champ | `'description.en' => [Search::ANALYZER => 'text_en']` |
 | Recherche fédérée multi-collections | une View, plusieurs collections | prévu (modèle dédié read-only) |
 
 ## Comment vit une View, côté serveur
@@ -107,7 +107,7 @@ Une requête : insensibilité accents/casse, matching par mots, le nom pesant 3�
 
 ## Évolutions prévues
 
-- **Analyzers par champ** (`'description.en' => [Search::ANALYZER => 'text_en']`) et **sélection de champs pilotée par `?lang=`** pour les attributs i18n.
+- **Sélection de champs pilotée par `?lang=`** pour les attributs i18n (les Analyzers par champ, eux, sont [disponibles](../db/search-views.md#analyzer-par-champ)).
 - **Recherche fédérée multi-collections** — une View sur plusieurs collections, exposée par un triplet modèle/contrôleur/route dédié, read-only.
 - **Recherche restreinte par permissions** — limiter les champs cherchables par rôle, comme les whitelists `?skin`.
 

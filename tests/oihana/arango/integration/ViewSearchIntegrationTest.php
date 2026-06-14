@@ -60,9 +60,9 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $places = $db->collection( self::COLLECTION ) ;
         $places->create() ;
 
-        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' ] ) ;
-        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             ] ) ;
-        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              ] ) ;
+        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' , 'summary' => 'sawmill and timber'         ] ) ;
+        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             , 'summary' => 'fine woodworking workshops' ] ) ;
+        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              , 'summary' => 'metal forging studio'       ] ) ;
     }
 
     /**
@@ -232,6 +232,43 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
         $name = $model->list( [ Arango::SEARCH => 'boi' ] ) ;
         $this->assertNotEmpty( $name , 'A 1-edit typo on the name must still match : fuzzy stays on for `name`.' ) ;
+    }
+
+    /**
+     * Per-field Analyzer (Lot VF2): a single View indexes `name` with `text_fr`
+     * and `summary` with `text_en`. The French name still matches « bois », and
+     * the English summary matches « workshop » through English stemming (its
+     * indexed form is `workshops`) — proving each field is queried through its
+     * own Analyzer.
+     *
+     * @throws Throwable
+     */
+    public function testPerFieldAnalyzerRoutesEachFieldThroughItsAnalyzer() :void
+    {
+        $view =
+        [
+            Search::NAME     => 'placesMultiAzView' ,
+            Search::ANALYZER => 'text_fr' ,
+            Search::FIELDS   =>
+            [
+                'name'    => 1 ,                                  // View Analyzer : text_fr
+                'summary' => [ Search::ANALYZER => 'text_en' ] ,  // per-field override : text_en
+            ] ,
+        ] ;
+
+        $model = $this->model( $view ) ;
+
+        $this->assertTrue( $model->viewExists( 'placesMultiAzView' ) , 'The multi-Analyzer View must be provisioned.' ) ;
+
+        $this->waitForIndexing( 3 , 'placesMultiAzView' ) ;
+
+        $labels = fn( array $rows ) => array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
+
+        $fr = $model->list( [ Arango::SEARCH => 'bois' ] ) ;
+        $this->assertSame( [ 'B' ] , $labels( $fr ) , 'The French name field stays matched through text_fr.' ) ;
+
+        $en = $model->list( [ Arango::SEARCH => 'workshop' ] ) ;
+        $this->assertSame( [ 'B' ] , $labels( $en ) , 'The English summary matches through text_en stemming (workshops → workshop).' ) ;
     }
 
     /**

@@ -38,6 +38,12 @@ class Search
      * The Analyzer applied to the searched fields (indexing and querying side).
      * Defaults to `identity` — declare a text Analyzer (`text_fr`, `text_en`, …)
      * for linguistic matching.
+     *
+     * Declared at the View level it applies to every searched field; declared
+     * inside a {@see FIELDS} entry it overrides that level for the field — so a
+     * single View can index a `text_fr` body and a `text_en` body, each queried
+     * through its own Analyzer. Since the Analyzer is fixed at indexing time,
+     * a per-field override is reflected both in the View link and in the query.
      */
     public const string ANALYZER = 'analyzer' ;
 
