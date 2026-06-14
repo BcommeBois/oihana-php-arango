@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Tests:** unit (`ViewSearchTest` — per-field override, opt-out under a positive global, inheritance, descriptor shape) + live (`ViewSearchIntegrationTest::testPerFieldFuzzyKeepsCodeExactWhileNameStaysTolerant`).
   - **Docs:** FR/EN `db/search-views.md` (new "per-field typo tolerance" section) + `getting-started/arangosearch.md`.
 
+### Changed
+
+- **Masking engine extracted to `oihana/php-masking`.** The portable PHP masking engine that lived under `src/oihana/arango/maskings/` is now provided by the dedicated, storage-agnostic [`oihana/php-masking`](https://github.com/BcommeBois/oihana-php-masking) library (added to `require`); the in-tree copy (the 10 maskers, `maskValue`/`maskDocument`/`maskDocumentNode`/`maskDocumentList`, `resolveMaskingRule`, `randomAlphaNumeric` and the `Masker`/`MaskingMode` enums) is removed. **No behaviour change.**
+  - `ArangoMaskingTrait` now consumes `oihana\masking\…` and owns the ArangoDB identity list itself (`SYSTEM_ATTRIBUTES` = `_key`, `_id`, `_rev`, `_from`, `_to`, sourced from `org\schema\constants\Schema` — no magic strings), handing it to `maskDocument()` as the protected attributes so those fields stay untouched on every edition.
+
 ## [1.2.0] - 2026-06-14
 
 ### Added

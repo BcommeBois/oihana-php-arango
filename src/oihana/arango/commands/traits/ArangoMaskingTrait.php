@@ -5,10 +5,12 @@ namespace oihana\arango\commands\traits;
 use InvalidArgumentException;
 use Random\RandomException;
 
-use oihana\arango\maskings\enums\Masker;
-use oihana\arango\maskings\enums\MaskingMode;
+use org\schema\constants\Schema;
 
-use function oihana\arango\maskings\maskDocument;
+use oihana\masking\enums\Masker;
+use oihana\masking\enums\MaskingMode;
+
+use function oihana\masking\maskDocument;
 
 /**
  * Compiles the **convenient** masking table and applies it to a dump with the
@@ -37,13 +39,32 @@ use function oihana\arango\maskings\maskDocument;
  * `{ "type": <mode>, "maskings": [ { "path": <path>, "type": <masker>, … } ] }`.
  *
  * It is then applied to the `*.data.json` files of a dump by the portable engine
- * ({@see oihana\arango\maskings\maskDocument()}) — which works on **any**
- * ArangoDB edition (the native `--maskings` file is Enterprise-only). The PHP
- * engine masks `masked` collections only; selecting/excluding collections is the
- * job of `--collection` / the profile selection.
+ * ({@see oihana\masking\maskDocument()}, from the `oihana/php-masking` library) —
+ * which works on **any** ArangoDB edition (the native `--maskings` file is
+ * Enterprise-only). The PHP engine masks `masked` collections only; selecting /
+ * excluding collections is the job of `--collection` / the profile selection.
+ *
+ * The ArangoDB system attributes (`_key`, `_id`, `_rev`, `_from`, `_to`) are kept
+ * untouched: this trait owns that identity list ({@see ArangoMaskingTrait::SYSTEM_ATTRIBUTES})
+ * and hands it to the (storage-agnostic) engine as the protected attributes.
  */
 trait ArangoMaskingTrait
 {
+    /**
+     * The top-level ArangoDB system attributes that are never masked — they carry
+     * identity / edge references and must survive masking untouched (the same rule
+     * `arangodump` applies). Passed to {@see oihana\masking\maskDocument()} as the
+     * protected attributes.
+     */
+    private const array SYSTEM_ATTRIBUTES =
+    [
+        Schema::_KEY ,
+        Schema::_ID ,
+        Schema::_REV ,
+        Schema::_FROM ,
+        Schema::_TO ,
+    ] ;
+
     /**
      * Compiles the convenient masking table into the masking structure
      * (collection name => `{ type, maskings[] }`).
@@ -155,7 +176,7 @@ trait ArangoMaskingTrait
             {
                 $document = json_decode( $line , true ) ;
                 $lines[]  = is_array( $document )
-                          ? json_encode( maskDocument( $document , $maskings ) , JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE )
+                          ? json_encode( maskDocument( $document , $maskings , self::SYSTEM_ATTRIBUTES ) , JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE )
                           : $line ;
             }
 
