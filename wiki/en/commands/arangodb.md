@@ -12,6 +12,8 @@ It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oiha
 
 ## Table of contents
 
+- [Quick start](#quick-start) — composer scripts, the shortest path
+- [ArangoDB vocabulary](#arangodb-vocabulary) — collection, edge, View, analyzer…
 - [Available actions](#available-actions)
 - [Configuration](#configuration) — `[arango.dump]` / `[arango.restore]`, option precedence
 - [DI wiring](#di-wiring)
@@ -29,6 +31,55 @@ It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oiha
 - [Playground database](#playground-database--scriptsseed-playgroundphp)
 
 > 👉 For **end-to-end recipes**, see [Dump / restore strategies](dump-restore-strategies.md).
+
+---
+
+## Quick start
+
+> **First time here?** The shortest path: the library ships **composer scripts**
+> that call the command for you. To back up the configured database:
+>
+> ```bash
+> composer arango:dump
+> # → <dumps>/2026-06-01T14:30:00-my_db.tar.gz
+> ```
+
+Each composer script is an **alias** for `php bin/console.php command:arangodb <action>`:
+
+| Composer script | Equivalent to | Does what |
+|---|---|---|
+| `composer arango` | `command:arangodb` | Entry point (shows the help / the requested action). |
+| `composer arango:dump` | `command:arangodb dump` | Backs up the database (timestamped archive). |
+| `composer arango:restore` | `command:arangodb restore` | Restores from an archive. |
+| `composer arango:list` | `command:arangodb dump --list` | Lists the existing archives. |
+| `composer arango:views` | `command:arangodb views` | Manages the ArangoSearch Views. |
+| `composer arango:doctor` | `command:arangodb doctor` | Structure health check. |
+
+To pass **options** to a composer script, put them **after `--`**:
+
+```bash
+composer arango:dump    -- --profile staging-extract --dry-run
+composer arango:restore -- --last --yes
+```
+
+> The two forms are strictly equivalent. This page mostly uses the long form
+> `php bin/console.php command:arangodb …` (explicit); swap it for
+> `composer arango:<action> -- …` whenever it is more convenient.
+
+---
+
+## ArangoDB vocabulary
+
+A few terms used on this page, for a reader new to ArangoDB:
+
+| Term | Short definition |
+|---|---|
+| **Collection** | A set of JSON documents — the equivalent of a "table". |
+| **Document / edge collection** | A *document* collection stores objects; an *edge* collection stores **links** (`_from` → `_to`) between documents, for graphs. |
+| **System collection** (`_…`) | ArangoDB's internal collections prefixed with `_`: `_users` (accounts), `_analyzers` (search analyzers), `_graphs` (named graphs)… **Left out of a dump by default** (see [`--complete`](#complete-backup----complete)). |
+| **ArangoSearch View** | A full-text search index over one or more collections (the [`views`](#views--arangosearch-view-management) action). |
+| **Analyzer** | A text tokenization/normalization rule used by Views (stored in `_analyzers`). |
+| **Archive / bucket** | The `.tar.gz` file produced by a dump, and the rotation group it belongs to; see the glossary on the [strategies page](dump-restore-strategies.md#key-concepts). |
 
 ---
 
@@ -223,7 +274,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 ### Whole database
 
 ```bash
-php bin/console.php command:arangodb dump
+php bin/console.php command:arangodb dump          # or: composer arango:dump
 # → <dumps>/2026-06-01T14:30:00-my_db.tar.gz
 
 php bin/console.php command:arangodb dump --encrypt --passphrase 's3cret'
@@ -331,8 +382,11 @@ php bin/console.php command:arangodb restore --last --include-system
 ### Archive selection
 
 ```bash
+# List the available archives first:
+php bin/console.php command:arangodb dump --list             # or: composer arango:list
+
 php bin/console.php command:arangodb restore                 # interactive menu
-php bin/console.php command:arangodb restore --last          # most recent
+php bin/console.php command:arangodb restore --last          # most recent — or: composer arango:restore -- --last
 php bin/console.php command:arangodb restore --date 2026-06-01T14:30:00
 php bin/console.php command:arangodb restore --file /var/data/arango/dumps/2026-06-01T14:30:00-my_db.tar.gz
 php bin/console.php command:arangodb restore --last --encrypt --passphrase 's3cret'
