@@ -120,6 +120,9 @@ class ArangoDumpActionTest extends TestCase
 {
     private string $dir = '' ;
 
+    /** Extra temp directories (e.g. per-profile output dirs) cleaned on tearDown. */
+    private array $extraDirs = [] ;
+
     protected function setUp() :void
     {
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'arango_dump_test_' . bin2hex( random_bytes( 6 ) ) ;
@@ -128,11 +131,24 @@ class ArangoDumpActionTest extends TestCase
 
     protected function tearDown() :void
     {
-        foreach ( glob( $this->dir . DIRECTORY_SEPARATOR . '*' ) ?: [] as $file )
+        foreach ( [ ...$this->extraDirs , $this->dir ] as $directory )
         {
-            @unlink( $file ) ;
+            foreach ( glob( $directory . DIRECTORY_SEPARATOR . '*' ) ?: [] as $file )
+            {
+                @unlink( $file ) ;
+            }
+            @rmdir( $directory ) ;
         }
-        @rmdir( $this->dir ) ;
+        $this->extraDirs = [] ;
+    }
+
+    /** A fresh, tracked temp directory path (created on disk). */
+    private function makeExtraDir() :string
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'arango_dump_out_' . bin2hex( random_bytes( 6 ) ) ;
+        mkdir( $path , 0o777 , true ) ;
+        $this->extraDirs[] = $path ;
+        return $path ;
     }
 
     /** Full option / argument surface read by dump(). */
@@ -886,5 +902,90 @@ class ArangoDumpActionTest extends TestCase
         $host->dump( $this->input() , new BufferedOutput() ) ;
 
         $this->assertArrayNotHasKey( ArangoCommandParam::RETENTION , $host->capturedDumpOptions ) ;
+    }
+
+    // ---------------------------------------------------------------- D8 per-profile output directory
+
+    /** A profile declaring its own output directory plus a positive selection. */
+    private function hostWithProfileDirectory( string $directory ) :ArangoDumpActionHost
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::DIRECTORY           => $directory ,
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ,
+        ] ] ] ) ;
+        return $host ;
+    }
+
+    public function testProfileDirectoryRoutesTheArchiveThere() :void
+    {
+        $out  = $this->makeExtraDir() ;
+        $host = $this->hostWithProfileDirectory( $out ) ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ;
+
+        // The archive landed in the profile directory, not in the global one.
+        $this->assertCount( 1 , glob( $out . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ) ;
+        $this->assertCount( 0 , glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ) ;
+    }
+
+    public function testCliDirectoryOverridesTheProfileDirectory() :void
+    {
+        $profileOut = $this->makeExtraDir() ;
+        $cliOut     = $this->makeExtraDir() ;
+        $host       = $this->hostWithProfileDirectory( $profileOut ) ;
+
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::PROFILE   => 'p' ,
+            '--' . ArangoCommandOption::DIRECTORY => $cliOut ,
+        ]) , new BufferedOutput() ) ;
+
+        // The CLI flag wins over the profile directory.
+        $this->assertCount( 1 , glob( $cliOut . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ) ;
+        $this->assertCount( 0 , glob( $profileOut . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ) ;
+    }
+
+    public function testProfileWithoutDirectoryFallsBackToTheGlobalDirectory() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [ ArangoCommandParam::PROFILE_COLLECTIONS => [ 'users' ] ] ] ] ) ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ;
+
+        $this->assertCount( 1 , glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ) ;
+    }
+
+    public function testDryRunReportsTheProfileOutputDirectory() :void
+    {
+        $out    = $this->makeExtraDir() ;
+        $host   = $this->hostWithProfileDirectory( $out ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertFalse( $host->dumpCalled ) ;
+        $this->assertStringContainsString( 'Output  : ' . $out , $output->fetch() ) ;
+    }
+
+    public function testPruneUsesTheProfileDirectory() :void
+    {
+        $out = $this->makeExtraDir() ;
+        file_put_contents( $out . DIRECTORY_SEPARATOR . '2020-01-01T00:00:00-mydb.tar.gz' , 'x' ) ;
+        file_put_contents( $out . DIRECTORY_SEPARATOR . '2021-01-01T00:00:00-mydb.tar.gz' , 'x' ) ;
+
+        $host = $this->hostWithProfileDirectory( $out ) ;
+        $host->initializeArangoOptions( [ ArangoCommandParam::DUMP => [ ArangoCommandParam::RETENTION => [ RetentionOption::KEEP => 1 ] ] ] ) ;
+
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::PRUNE   => true ,
+            '--' . ArangoCommandOption::PROFILE => 'p' ,
+        ]) , new BufferedOutput() ) ;
+
+        // Pruning targeted the profile directory, not the global one.
+        $this->assertFileDoesNotExist( $out . DIRECTORY_SEPARATOR . '2020-01-01T00:00:00-mydb.tar.gz' ) ;
+        $this->assertFileExists( $out . DIRECTORY_SEPARATOR . '2021-01-01T00:00:00-mydb.tar.gz' ) ;
     }
 }

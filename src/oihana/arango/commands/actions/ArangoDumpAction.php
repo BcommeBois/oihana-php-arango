@@ -120,7 +120,11 @@ trait ArangoDumpAction
                 return ExitCode::SUCCESS ;
             }
 
-            $directory = getDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
+            // A profile can carry its own output directory, so prune the same
+            // place a profile dump would have written to.
+            $pruneProfile = $this->resolveProfile( $input->getOption( ArangoCommandOption::PROFILE ) ) ;
+            $profileDir   = $pruneProfile !== null ? $this->profileDirectory( $pruneProfile ) : null ;
+            $directory    = getDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $profileDir ?? $this->directory ) ;
             $this->pruneDumps( $directory , $this->resolveRetentionPolicy( $retention ) , null , (bool) $input->getOption( ArangoCommandOption::DRY_RUN ) , $io ) ;
 
             $io->newLine() ;
@@ -158,6 +162,11 @@ trait ArangoDumpAction
         // Connection — the CLI wins over the profile **source** connection
         // (dump only), which wins over the [arango] configuration.
         $connection = $profile !== null ? $this->profileConnection( $profile ) : [] ;
+
+        // A profile can also carry its own output directory (dump only). The
+        // --directory CLI flag still wins; the global [app].dumps is the floor.
+        $profileDirectory = $profile !== null ? $this->profileDirectory( $profile ) : null ;
+
         $database   = $input->getOption( ArangoConfig::DATABASE ) ?? $connection[ ArangoConfig::DATABASE ] ?? $this->getDatabase() ;
         $endpoint   = $input->getOption( ArangoConfig::ENDPOINT ) ?? $connection[ ArangoConfig::ENDPOINT ] ?? $this->getEndpoint() ;
         $password   = $input->getOption( ArangoConfig::PASSWORD ) ?? $connection[ ArangoConfig::PASSWORD ] ?? $this->getPassword() ;
@@ -294,6 +303,7 @@ trait ArangoDumpAction
         if( $input->getOption( ArangoCommandOption::DRY_RUN ) )
         {
             $io->text( sprintf( 'Source  : %s @ %s' , $database , $endpoint ) ) ;
+            $io->text( 'Output  : ' . ( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $profileDirectory ?? $this->directory ) ) ;
             $io->text( 'Collections : ' . ( $targetCollections === [] ? 'all' : implode( ', ' , $targetCollections ) ) ) ;
 
             if( $nativePresent )
@@ -314,7 +324,7 @@ trait ArangoDumpAction
             assertFile( $nativeMaskingsCli ) ;
         }
 
-        $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
+        $outputDirectory = makeDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $profileDirectory ?? $this->directory ) ;
         $tmpDirectory    = makeTemporaryDirectory( [ $this->id , $this->getName() , $action , Uuid::v4() ] ) ;
 
         // 01. Creates the timestamped directory YYYY-MM-DDThh:mm:ss-{database}[-partial][-{label}]

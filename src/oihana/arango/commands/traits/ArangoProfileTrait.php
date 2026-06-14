@@ -22,7 +22,9 @@ use function oihana\files\toml\resolveTomlConfig;
  *  - `exclude` — names removed from the resolved set (set subtraction) ;
  *  - `endpoint` / `database` / `user` / `password` — an optional **source**
  *    connection, used by the `dump` action only (the `restore` always writes to
- *    the local target — it borrows the selection, never the connection).
+ *    the local target — it borrows the selection, never the connection) ;
+ *  - `directory` — an optional output directory for the `dump` action (where
+ *    its archive is written, unless `--directory` overrides it on the CLI).
  *
  * A profile lives either in the `[arango.profiles.<name>]` section of the
  * project `config.toml` (referenced by name) or in a standalone `.toml` file
@@ -73,6 +75,22 @@ trait ArangoProfileTrait
             }
         }
         return $connection ;
+    }
+
+    /**
+     * The optional output **directory** carried by a profile (dump only).
+     *
+     * When set, a dump using this profile writes its archive here unless the
+     * `--directory` CLI flag overrides it. The `restore` action ignores this
+     * key — it always writes to the local target.
+     *
+     * @param array $profile
+     * @return string|null The directory, or null when absent or not a string.
+     */
+    public function profileDirectory( array $profile ) :?string
+    {
+        $directory = $profile[ ArangoCommandParam::DIRECTORY ] ?? null ;
+        return ( is_string( $directory ) && $directory !== '' ) ? $directory : null ;
     }
 
     /**

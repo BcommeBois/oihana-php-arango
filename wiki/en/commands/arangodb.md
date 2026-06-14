@@ -476,6 +476,7 @@ Because the dump only **contains** the selected collections, the local restore
 |---|---|
 | `collections` / `edges` | The positive selection (merged into one list). |
 | `exclude` | Names removed from the resolved set (set subtraction). |
+| `directory` | An optional output directory — where `dump` writes its archive (see below). `dump` only. |
 | `endpoint` / `database` / `user` / `password` | An optional **source** connection — used by `dump` only (see safety below). |
 
 Selection resolves to `(collections + edges) − exclude`. An **exclude-only**
@@ -503,6 +504,37 @@ password    = "•••"
 
 > A profile file may carry credentials → keep it **out of version control** with
 > restricted permissions, like `config.toml`.
+
+### Per-profile output directory
+
+A profile can set **its own dump directory** through the `directory` key: any
+`dump` using that profile writes its archive there, with no need to repeat
+`--directory`.
+
+```toml
+[arango.profiles.staging-extract]
+directory   = "/backups/staging"
+collections = ["thesaurus", "products"]
+exclude     = ["secrets"]
+```
+
+```bash
+# Writes the archive to /backups/staging:
+php bin/console.php command:arangodb dump --profile staging-extract
+```
+
+**Output-directory precedence** (highest wins):
+
+| Source | Priority |
+|---|---|
+| `--directory` (CLI) | highest |
+| profile `directory` | middle |
+| `[app].dumps` (global) | lowest |
+
+This is a **dump-only** option: `restore` always writes to the local target (see
+[Restore guard-rails](#restore-guard-rails)) and ignores the profile `directory`.
+The directory finally selected also acts as the target of the post-dump rotation
+and of `dump --prune --profile <name>`.
 
 ### Safety
 

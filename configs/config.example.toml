@@ -121,6 +121,9 @@ type       = "Basic"
 # collections = ["thesaurus", "products", "clients"]
 # edges       = ["product_thesaurus"]
 # exclude     = ["_users", "sessions"]
+# # optional output directory for `dump` (precedence: --directory CLI > this >
+# # the global [app].dumps). Dump-only — the restore always writes locally:
+# directory   = "/backups/staging"
 # # optional SOURCE connection (used by `dump` only):
 # endpoint    = "tcp://staging.internal:8529"
 # database    = "app_staging"

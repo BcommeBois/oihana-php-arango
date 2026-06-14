@@ -37,18 +37,36 @@ A bit of vocabulary used throughout below:
 
 ## Where are the archives written?
 
+Three possible sources, from lowest to highest priority:
+
 - **By default**: the `[app].dumps` directory from `config.toml` (see
   [Configuration](arangodb.md#configuration)).
-- **Per run**: the `--directory /path` option overrides that directory for a single
+- **Per profile**: a profile can now carry its own `directory` key
+  (`[arango.profiles.X] directory = "/backups/X"`) — any dump using that profile
+  writes its archive there, with no need to repeat `--directory`. **Dump only**:
+  the restore always writes locally (see
+  [Restore guard-rails](arangodb.md#restore-guard-rails)).
+- **Per run**: the `--directory /path` option overrides everything for a single
   command.
-- ⚠ **A profile does not carry its own directory.** To store a given profile's dump
-  elsewhere, add `--directory` to the run:
 
-  ```bash
-  php bin/console.php command:arangodb dump --profile staging-extract --directory /backups/staging
-  ```
+**Output-directory precedence** (highest wins):
 
-  (That same directory then also acts as the rotation target for the run.)
+| Source | Example | Priority |
+|---|---|---|
+| `--directory` (CLI) | `--directory /tmp/x` | highest |
+| profile `directory` | `[arango.profiles.X] directory = "/backups/X"` | middle |
+| `[app].dumps` (global) | `[app] dumps = "…/dumps"` | lowest |
+
+```bash
+# Routes the profile's dump to /backups/staging automatically:
+php bin/console.php command:arangodb dump --profile staging-extract
+
+# …unless --directory forces another folder for that run:
+php bin/console.php command:arangodb dump --profile staging-extract --directory /tmp/oneshot
+```
+
+(The directory finally selected also acts as the rotation target for the run, and
+for `dump --prune --profile X`.)
 
 ## Which block for which need?
 

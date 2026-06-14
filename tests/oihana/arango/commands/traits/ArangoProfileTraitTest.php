@@ -158,6 +158,23 @@ class ArangoProfileTraitTest extends TestCase
         ) ;
     }
 
+    public function testProfileDirectoryReturnsTheStringValue() :void
+    {
+        $host    = $this->host() ;
+        $profile = [ ArangoCommandParam::DIRECTORY => '/backups/staging' ] ;
+
+        $this->assertSame( '/backups/staging' , $host->profileDirectory( $profile ) ) ;
+    }
+
+    public function testProfileDirectoryDefaultsToNull() :void
+    {
+        $host = $this->host() ;
+
+        $this->assertNull( $host->profileDirectory( [] ) ) ;            // absent
+        $this->assertNull( $host->profileDirectory( [ ArangoCommandParam::DIRECTORY => '' ] ) ) ; // empty
+        $this->assertNull( $host->profileDirectory( [ ArangoCommandParam::DIRECTORY => 123 ] ) ) ; // not a string
+    }
+
     public function testProfileSelectionPositiveMinusExclude() :void
     {
         $host    = $this->host() ;

@@ -480,6 +480,7 @@ protection.
 |---|---|
 | `collections` / `edges` | La sélection positive (fusionnées en une seule liste). |
 | `exclude` | Noms retirés de l'ensemble résolu (soustraction). |
+| `directory` | Un dossier de sortie optionnel — où `dump` écrit son archive (voir ci-dessous). `dump` uniquement. |
 | `endpoint` / `database` / `user` / `password` | Une connexion **source** optionnelle — utilisée par `dump` uniquement (voir sécurité). |
 
 La sélection se résout en `(collections + edges) − exclude`. Un profil avec
@@ -508,6 +509,37 @@ password    = "•••"
 
 > Un fichier de profil peut porter des identifiants → garde-le **hors du dépôt**,
 > avec des permissions restreintes, comme `config.toml`.
+
+### Dossier de sortie par profil
+
+Un profil peut fixer **son propre dossier de dump** via la clé `directory` : tout
+`dump` utilisant ce profil y range son archive, sans avoir à retaper
+`--directory`.
+
+```toml
+[arango.profiles.staging-extract]
+directory   = "/backups/staging"
+collections = ["thesaurus", "produits"]
+exclude     = ["secrets"]
+```
+
+```bash
+# Écrit l'archive dans /backups/staging :
+php bin/console.php command:arangodb dump --profile staging-extract
+```
+
+**Précédence du dossier de sortie** (le plus prioritaire gagne) :
+
+| Source | Priorité |
+|---|---|
+| `--directory` (CLI) | la plus forte |
+| `directory` du profil | moyenne |
+| `[app].dumps` (global) | la plus faible |
+
+C'est une option **dump uniquement** : le `restore` écrit toujours dans la cible
+locale (cf [Garde-fous du restore](#garde-fous-du-restore)) et ignore le
+`directory` du profil. Le dossier finalement retenu sert aussi de cible à la
+rotation post-dump et à `dump --prune --profile <nom>`.
 
 ### Sécurité
 

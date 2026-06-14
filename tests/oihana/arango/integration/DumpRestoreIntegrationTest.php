@@ -11,7 +11,9 @@ use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\options\ArangoDumpOption;
 use oihana\arango\commands\options\RetentionOption;
+use oihana\arango\commands\actions\ArangoDumpAction;
 use oihana\arango\commands\actions\ArangoRestoreAction;
+use oihana\arango\commands\traits\ArangoConfigTrait;
 use oihana\arango\commands\traits\ArangoDumpTrait;
 use oihana\arango\commands\traits\ArangoMaskingTrait;
 use oihana\arango\commands\traits\ArangoProfileTrait;
@@ -19,6 +21,7 @@ use oihana\arango\commands\traits\ArangoRotationTrait;
 
 use oihana\commands\enums\ExitCode;
 use oihana\commands\traits\HelperTrait;
+use oihana\commands\traits\IOTrait;
 
 use oihana\date\traits\DateTrait;
 
@@ -72,6 +75,37 @@ class RestoreIntegrationHost
     public function getName() :string
     {
         return 'restore' ;
+    }
+}
+
+/**
+ * Host driving the real {@see ArangoDumpAction::dump()} end-to-end — the actual
+ * `arangodump` binary, profile resolution and the tar/move flow — against a live
+ * server. Used to prove the per-profile output directory (D8) routes the real
+ * archive to the right place.
+ */
+class DumpActionIntegrationHost
+{
+    use ArangoDumpAction ;
+    use ArangoConfigTrait ;
+    use DateTrait ;
+    use IOTrait ;
+
+    public string $id = 'live' ;
+
+    public function __construct( array $arango , string $database , string $directory )
+    {
+        $this->directory = $directory ;
+        $this->encrypt   = false ;
+        $this->database  = $database ;
+        $this->endpoint  = $arango[ 'endpoint' ] ?? 'tcp://127.0.0.1:8529' ;
+        $this->password  = $arango[ 'password' ] ?? '' ;
+        $this->username  = $arango[ 'user' ]     ?? 'root' ;
+    }
+
+    public function getName() :string
+    {
+        return 'dump' ;
     }
 }
 
@@ -489,5 +523,63 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertTrue( self::$db->collection( 'gadgets' )->exists() ) ;
+    }
+
+    // ------------------------------------------------------------------ D8 per-profile output directory
+
+    /** A non-interactive ArrayInput exposing the option surface dump() reads. */
+    private function dumpInput( array $options ) :ArrayInput
+    {
+        $definition = new InputDefinition
+        ([
+            new InputArgument( 'action' , InputArgument::OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::LIST              , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::DATABASE          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::ENDPOINT          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::PASSWORD          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::USER              , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::COLLECTION        , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
+            new InputOption( ArangoCommandOption::IGNORE_COLLECTION , null , InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY ) ,
+            new InputOption( ArangoCommandOption::LABEL             , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DIRECTORY         , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::DATE              , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::INCLUDE_SYSTEM    , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::MASKINGS          , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::NO_VIEWS          , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::ALL_DATABASES     , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::OVERWRITE         , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::THREADS           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::PROFILE           , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::COMPLETE          , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::DRY_RUN           , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::PRUNE             , null , InputOption::VALUE_NONE ) ,
+            new InputOption( 'encrypt'    , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( 'passphrase' , null , InputOption::VALUE_OPTIONAL ) ,
+        ]) ;
+
+        $input = new ArrayInput( $options , $definition ) ;
+        $input->setInteractive( false ) ;
+        return $input ;
+    }
+
+    public function testProfileDirectoryRoutesTheRealArchive() :void
+    {
+        // A profile carrying its own output directory plus a positive selection.
+        $profileOut = $this->tmp . DIRECTORY_SEPARATOR . 'profile_out_' . bin2hex( random_bytes( 4 ) ) ;
+
+        $host = new DumpActionIntegrationHost( self::$arango , static::$database , $this->tmp ) ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::DIRECTORY           => $profileOut ,
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'widgets' , 'gadgets' ] ,
+        ] ] ] ) ;
+
+        $code = $host->dump( $this->dumpInput( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+
+        // The real arangodump archive landed in the profile directory, not the global one.
+        $this->assertCount( 1 , glob( $profileOut . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] , 'The archive must be written to the profile directory.' ) ;
+        $this->assertCount( 0 , glob( $this->tmp . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] , 'No archive must land in the global directory.' ) ;
     }
 }
