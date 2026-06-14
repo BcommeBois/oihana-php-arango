@@ -106,6 +106,7 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 ### CLI and testing
 
 - [Symfony Console commands](commands.md) — `DocumentsCommand` and its actions (`insert`, `upsert`, `harvest`, `list`, `count`, `get`, `update`, `replace`, `delete`, `truncate`).
+- [Maintenance command `command:arangodb`](commands/arangodb.md) — `dump` / `restore` / `collections` / `views` / `doctor` / `migrate`, and the [Dump / restore strategies](commands/dump-restore-strategies.md) page (ready-to-use recipes).
 - [Live smoke tests](testing.md) — `./bin/console.php arango:test:clients` (low-level library) and `./bin/console.php arango:test:facade` (`ArangoDB` façade), run against an ephemeral database so production is never touched.
 
 ### Specialized modules

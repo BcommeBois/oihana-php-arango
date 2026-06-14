@@ -6,6 +6,8 @@ Elle hérite du squelette [`oihana/php-commands`](../getting-started/dependencie
 
 > **Prérequis** : les binaires `arangodump` et `arangorestore` (fournis avec ArangoDB) doivent être dans le `$PATH` du processus PHP. macOS / Homebrew : `brew install arangodb`. La sous-commande `collections` et la validation des collections passent, elles, par l'**API HTTP** d'ArangoDB (client interne), pas par les binaires.
 
+> 💡 **Pressé ?** La page [Stratégies de dump/restore](dump-restore-strategies.md) relie toutes ces briques en recettes prêtes à l'emploi (backup complet, extraction de test anonymisée, refresh local automatisé).
+
 ---
 
 ## Actions disponibles
