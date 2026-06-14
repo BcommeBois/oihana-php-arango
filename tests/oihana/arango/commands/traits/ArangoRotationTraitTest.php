@@ -5,8 +5,11 @@ namespace tests\oihana\arango\commands\traits;
 use DateTimeImmutable;
 use InvalidArgumentException;
 
+use oihana\arango\commands\rotation\Archive;
+use oihana\arango\commands\rotation\RotationPolicy;
 use oihana\arango\commands\traits\ArangoRotationTrait;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use PHPUnit\Framework\TestCase;
 
@@ -41,6 +44,8 @@ class ArangoRotationTraitHost
  * Unit coverage for {@see ArangoRotationTrait}.
  */
 #[CoversTrait(ArangoRotationTrait::class)]
+#[CoversClass(Archive::class)]
+#[CoversClass(RotationPolicy::class)]
 class ArangoRotationTraitTest extends TestCase
 {
     private array $tmpDirs = [] ;
@@ -63,9 +68,21 @@ class ArangoRotationTraitTest extends TestCase
     }
 
     /** A synthetic archive entry dated $daysAgo days ago. */
-    private function archive( string $path , string $bucket , int $daysAgo , int $size = 100 ) :array
+    private function archive( string $path , string $bucket , int $daysAgo , int $size = 100 ) :Archive
     {
-        return [ 'path' => $path , 'bucket' => $bucket , 'date' => new DateTimeImmutable( "-$daysAgo days" ) , 'size' => $size ] ;
+        return new Archive
+        ([
+            Archive::PATH   => $path ,
+            Archive::BUCKET => $bucket ,
+            Archive::DATE   => new DateTimeImmutable( "-$daysAgo days" ) ,
+            Archive::SIZE   => $size ,
+        ]) ;
+    }
+
+    /** A RotationPolicy from a plain init array. */
+    private function policy( array $init = [] ) :RotationPolicy
+    {
+        return new RotationPolicy( $init ) ;
     }
 
     // ------------------------------------------------------------------ planRotation
@@ -73,7 +90,7 @@ class ArangoRotationTraitTest extends TestCase
     public function testNoPolicyDeletesNothing() :void
     {
         $archives = [ $this->archive( 'a0' , 'db' , 0 ) , $this->archive( 'a1' , 'db' , 1 ) ] ;
-        $this->assertSame( [] , $this->host()->planRotation( $archives , [] ) ) ;
+        $this->assertSame( [] , $this->host()->planRotation( $archives , $this->policy() ) ) ;
     }
 
     public function testKeepDeletesTheOldestBeyondN() :void
@@ -85,7 +102,7 @@ class ArangoRotationTraitTest extends TestCase
             $this->archive( 'a2' , 'db' , 2 ) ,
             $this->archive( 'a3' , 'db' , 3 ) ,
         ] ;
-        $out = $this->host()->planRotation( $archives , [ 'keep' => 2 ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'keep' => 2 ] ) ) ;
         sort( $out ) ;
         $this->assertSame( [ 'a2' , 'a3' ] , $out ) ;
     }
@@ -98,7 +115,7 @@ class ArangoRotationTraitTest extends TestCase
             $this->archive( 'b1' , 'db' , 10 ) ,
             $this->archive( 'b2' , 'db' , 20 ) ,
         ] ;
-        $out = $this->host()->planRotation( $archives , [ 'cutoff' => new DateTimeImmutable( '-5 days' ) ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'cutoff' => new DateTimeImmutable( '-5 days' ) ] ) ) ;
         sort( $out ) ;
         $this->assertSame( [ 'b1' , 'b2' ] , $out ) ;
     }
@@ -112,14 +129,14 @@ class ArangoRotationTraitTest extends TestCase
             $this->archive( 'c2' , 'db' , 2 ) ,   // beyond keep=2 but young → kept
             $this->archive( 'c3' , 'db' , 20 ) ,  // beyond keep AND old → deleted
         ] ;
-        $out = $this->host()->planRotation( $archives , [ 'keep' => 2 , 'cutoff' => new DateTimeImmutable( '-5 days' ) ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'keep' => 2 , 'cutoff' => new DateTimeImmutable( '-5 days' ) ] ) ) ;
         $this->assertSame( [ 'c3' ] , $out ) ;
     }
 
     public function testFloorKeepsTheNewestEvenWithKeepZero() :void
     {
         $archives = [ $this->archive( 'e0' , 'db' , 0 ) , $this->archive( 'e1' , 'db' , 1 ) ] ;
-        $this->assertSame( [ 'e1' ] , $this->host()->planRotation( $archives , [ 'keep' => 0 ] ) ) ;
+        $this->assertSame( [ 'e1' ] , $this->host()->planRotation( $archives , $this->policy( [ 'keep' => 0 ] ) ) ) ;
     }
 
     public function testBucketsAreIndependentAndOverridable() :void
@@ -130,11 +147,11 @@ class ArangoRotationTraitTest extends TestCase
             $this->archive( 'y0' , 'B' , 0 ) , $this->archive( 'y1' , 'B' , 1 ) ,
         ] ;
 
-        $out = $this->host()->planRotation( $archives , [ 'keep' => 1 ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'keep' => 1 ] ) ) ;
         sort( $out ) ;
         $this->assertSame( [ 'x1' , 'x2' , 'y1' ] , $out ) ;
 
-        $out = $this->host()->planRotation( $archives , [ 'keep' => 1 , 'buckets' => [ 'A' => 2 ] ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'keep' => 1 , 'buckets' => [ 'A' => 2 ] ] ) ) ;
         sort( $out ) ;
         $this->assertSame( [ 'x2' , 'y1' ] , $out ) ;
     }
@@ -147,7 +164,7 @@ class ArangoRotationTraitTest extends TestCase
             $this->archive( 'f2' , 'db' , 2 ) , $this->archive( 'f3' , 'db' , 3 ) , $this->archive( 'f4' , 'db' , 4 ) ,
         ] ;
         // 5×100 = 500 bytes, cap 250 → drop oldest (f2,f3,f4) leaving 200.
-        $out = $this->host()->planRotation( $archives , [ 'maxTotalBytes' => 250 ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'maxTotalBytes' => 250 ] ) ) ;
         sort( $out ) ;
         $this->assertSame( [ 'f2' , 'f3' , 'f4' ] , $out ) ;
     }
@@ -155,7 +172,7 @@ class ArangoRotationTraitTest extends TestCase
     public function testMaxTotalUnderCapDeletesNothing() :void
     {
         $archives = [ $this->archive( 'g0' , 'db' , 0 , 50 ) , $this->archive( 'g1' , 'db' , 1 , 50 ) ] ;
-        $this->assertSame( [] , $this->host()->planRotation( $archives , [ 'maxTotalBytes' => 1000 ] ) ) ;
+        $this->assertSame( [] , $this->host()->planRotation( $archives , $this->policy( [ 'maxTotalBytes' => 1000 ] ) ) ) ;
     }
 
     public function testMaxTotalRespectsFloorAndCurrent() :void
@@ -168,7 +185,7 @@ class ArangoRotationTraitTest extends TestCase
         ] ;
         // Cap 100, current = a0 (cannot be deleted). Oldest first: b1, a1, b0, a0.
         // b1 deletable, a1 deletable, b0 is last of B → kept, a0 is current → kept.
-        $out = $this->host()->planRotation( $archives , [ 'maxTotalBytes' => 100 , 'current' => 'a0' ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'maxTotalBytes' => 100 ] ) , 'a0' ) ;
         sort( $out ) ;
         $this->assertSame( [ 'a1' , 'b1' ] , $out ) ; // floor + current stop further pruning
     }
@@ -176,7 +193,7 @@ class ArangoRotationTraitTest extends TestCase
     public function testCurrentArchiveIsNeverDeleted() :void
     {
         $archives = [ $this->archive( 'g0' , 'db' , 0 ) , $this->archive( 'g1' , 'db' , 1 ) , $this->archive( 'g2' , 'db' , 2 ) ] ;
-        $out = $this->host()->planRotation( $archives , [ 'keep' => 1 , 'current' => 'g1' ] ) ;
+        $out = $this->host()->planRotation( $archives , $this->policy( [ 'keep' => 1 ] ) , 'g1' ) ;
         $this->assertSame( [ 'g2' ] , $out ) ; // g1 (current) and g0 (newest) survive
     }
 
@@ -192,24 +209,24 @@ class ArangoRotationTraitTest extends TestCase
             'buckets'   => [ 'db' => 2 ] ,
         ]) ;
 
-        $this->assertSame( 5 , $policy[ 'keep' ] ) ;
-        $this->assertSame( [ 'db' => 2 ] , $policy[ 'buckets' ] ) ;
-        $this->assertInstanceOf( DateTimeImmutable::class , $policy[ 'cutoff' ] ) ;
-        $this->assertSame( 1024 ** 3 , $policy[ 'maxTotalBytes' ] ) ;
+        $this->assertSame( 5 , $policy->keep ) ;
+        $this->assertSame( [ 'db' => 2 ] , $policy->buckets ) ;
+        $this->assertInstanceOf( DateTimeImmutable::class , $policy->cutoff ) ;
+        $this->assertSame( 1024 ** 3 , $policy->maxTotalBytes ) ;
     }
 
     public function testResolvePolicyDefaultsAndEmpty() :void
     {
         $policy = $this->host()->resolveRetentionPolicy( [] ) ;
-        $this->assertNull( $policy[ 'keep' ] ) ;
-        $this->assertSame( [] , $policy[ 'buckets' ] ) ;
-        $this->assertNull( $policy[ 'cutoff' ] ) ;
-        $this->assertNull( $policy[ 'maxTotalBytes' ] ) ;
+        $this->assertNull( $policy->keep ) ;
+        $this->assertSame( [] , $policy->buckets ) ;
+        $this->assertNull( $policy->cutoff ) ;
+        $this->assertNull( $policy->maxTotalBytes ) ;
 
         // empty strings are ignored
         $policy = $this->host()->resolveRetentionPolicy( [ 'max_age' => '' , 'max_total' => '' ] ) ;
-        $this->assertNull( $policy[ 'cutoff' ] ) ;
-        $this->assertNull( $policy[ 'maxTotalBytes' ] ) ;
+        $this->assertNull( $policy->cutoff ) ;
+        $this->assertNull( $policy->maxTotalBytes ) ;
     }
 
     public function testResolvePolicyInvalidMaxAgeThrows() :void
@@ -222,7 +239,7 @@ class ArangoRotationTraitTest extends TestCase
     public function testMaxAgeCutoffIsCalendarAccurate() :void
     {
         // P1M one month ago is clearly within the last 40 days and before "now".
-        $cutoff = $this->host()->resolveRetentionPolicy( [ 'max_age' => 'P1M' ] )[ 'cutoff' ] ;
+        $cutoff = $this->host()->resolveRetentionPolicy( [ 'max_age' => 'P1M' ] )->cutoff ;
         $this->assertLessThan( new DateTimeImmutable( 'now' ) , $cutoff ) ;
         $this->assertGreaterThan( new DateTimeImmutable( '-40 days' ) , $cutoff ) ;
     }

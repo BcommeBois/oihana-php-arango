@@ -5,7 +5,6 @@ namespace oihana\arango\commands\traits;
 use DateInvalidOperationException;
 use DateTime;
 use DateTimeImmutable;
-use DateTimeInterface;
 use Exception;
 use InvalidArgumentException;
 
@@ -14,6 +13,8 @@ use org\iso\Iso8601Duration;
 
 use oihana\arango\commands\enums\ArchivePattern;
 use oihana\arango\commands\options\RetentionOption;
+use oihana\arango\commands\rotation\Archive;
+use oihana\arango\commands\rotation\RotationPolicy;
 
 use oihana\files\enums\FindFilesOption;
 
@@ -47,69 +48,63 @@ trait ArangoRotationTrait
      *
      * Pure (no I/O, no clock): the caller supplies the resolved policy.
      *
-     * @param array<int,array{path:string,bucket:string,date:DateTimeInterface,size:int}> $archives
-     * @param array{keep?:int|null,buckets?:array<string,int>,cutoff?:DateTimeInterface|null,maxTotalBytes?:int|null,current?:string|null} $policy
+     * @param array<int,Archive> $archives
+     * @param RotationPolicy     $policy
+     * @param string|null        $current The freshly created archive, never deleted.
      * @return array<int,string> The paths to delete.
      */
-    public function planRotation( array $archives , array $policy ) :array
+    public function planRotation( array $archives , RotationPolicy $policy , ?string $current = null ) :array
     {
-        $keep          = $policy[ 'keep' ] ?? null ;
-        $keep          = $keep === null ? null : max( 0 , (int) $keep ) ;
-        $buckets       = is_array( $policy[ 'buckets' ] ?? null ) ? $policy[ 'buckets' ] : [] ;
-        $cutoff        = $policy[ 'cutoff' ] ?? null ;
-        $maxTotalBytes = $policy[ 'maxTotalBytes' ] ?? null ;
-        $current       = $policy[ 'current' ] ?? null ;
-
         // Group by bucket, newest first.
         $byBucket = [] ;
         foreach( $archives as $archive )
         {
-            $byBucket[ $archive[ 'bucket' ] ][] = $archive ;
+            $byBucket[ $archive->bucket ][] = $archive ;
         }
         foreach( $byBucket as &$list )
         {
-            usort( $list , static fn( $a , $b ) => $b[ 'date' ] <=> $a[ 'date' ] ) ;
+            usort( $list , static fn( Archive $a , Archive $b ) => $b->date <=> $a->date ) ;
         }
         unset( $list ) ;
 
-        $delete = [] ; // path => archive
+        $delete = [] ; // path => Archive
 
         foreach( $byBucket as $bucket => $list )
         {
-            $bucketKeep = isset( $buckets[ $bucket ] ) ? max( 0 , (int) $buckets[ $bucket ] ) : $keep ;
+            $bucketKeep = isset( $policy->buckets[ $bucket ] ) ? max( 0 , (int) $policy->buckets[ $bucket ] ) : $policy->keep ;
 
             foreach( $list as $rank => $archive )
             {
-                if( $rank === 0 || ( $current !== null && $archive[ 'path' ] === $current ) )
+                if( $rank === 0 || ( $current !== null && $archive->path === $current ) )
                 {
                     continue ; // never the newest of a bucket (floor ≥ 1), never the current archive
                 }
 
                 $tooMany = $bucketKeep !== null && $rank >= $bucketKeep ;
-                $tooOld  = $cutoff !== null && $archive[ 'date' ] < $cutoff ;
+                $tooOld  = $policy->cutoff !== null && $archive->date < $policy->cutoff ;
 
                 $flag = match( true )
                 {
-                    $bucketKeep !== null && $cutoff !== null => $tooMany && $tooOld , // conservative
-                    $bucketKeep !== null                     => $tooMany ,
-                    $cutoff !== null                         => $tooOld ,
-                    default                                  => false ,
+                    $bucketKeep !== null && $policy->cutoff !== null => $tooMany && $tooOld , // conservative
+                    $bucketKeep !== null                            => $tooMany ,
+                    $policy->cutoff !== null                        => $tooOld ,
+                    default                                         => false ,
                 } ;
 
                 if( $flag )
                 {
-                    $delete[ $archive[ 'path' ] ] = $archive ;
+                    $delete[ $archive->path ] = $archive ;
                 }
             }
         }
 
         // Global disk guard, applied last.
-        if( $maxTotalBytes !== null )
+        if( $policy->maxTotalBytes !== null )
         {
-            $this->applyMaxTotal( $archives , $delete , (int) $maxTotalBytes , $current ) ;
+            $this->applyMaxTotal( $archives , $delete , $policy->maxTotalBytes , $current ) ;
         }
 
-        return array_values( array_map( static fn( $archive ) => $archive[ 'path' ] , $delete ) ) ;
+        return array_values( array_map( static fn( Archive $archive ) => $archive->path , $delete ) ) ;
     }
 
     /**
@@ -117,7 +112,7 @@ trait ArangoRotationTrait
      * archives the policy designates for deletion.
      *
      * @param string $directory The dump directory.
-     * @param array $policy The resolved policy ({@see resolveRetentionPolicy()}).
+     * @param RotationPolicy $policy The resolved policy ({@see resolveRetentionPolicy()}).
      * @param string|null $current The freshly created archive, never pruned.
      * @param bool $dryRun List only, delete nothing.
      * @param SymfonyStyle $io
@@ -126,7 +121,7 @@ trait ArangoRotationTrait
      *
      * @throws DirectoryException
      */
-    public function pruneDumps( string $directory , array $policy , ?string $current , bool $dryRun , SymfonyStyle $io ) :int
+    public function pruneDumps( string $directory , RotationPolicy $policy , ?string $current , bool $dryRun , SymfonyStyle $io ) :int
     {
         $files = findFiles
         (
@@ -141,17 +136,16 @@ trait ArangoRotationTrait
         foreach( $files as $name )
         {
             $path       = $directory . DIRECTORY_SEPARATOR . $name ;
-            $archives[] =
-            [
-                'path'   => $path ,
-                'bucket' => $this->archiveBucket( $name ) ,
-                'date'   => $this->archiveDate( $name ) ,
-                'size'   => filesize( $path ) ?: 0 ,
-            ] ;
+            $archives[] = new Archive
+            ([
+                Archive::PATH   => $path ,
+                Archive::BUCKET => $this->archiveBucket( $name ) ,
+                Archive::DATE   => $this->archiveDate( $name ) ,
+                Archive::SIZE   => filesize( $path ) ?: 0 ,
+            ]) ;
         }
 
-        $policy[ 'current' ] = $current ;
-        $toDelete = $this->planRotation( $archives , $policy ) ;
+        $toDelete = $this->planRotation( $archives , $policy , $current ) ;
 
         if( $toDelete === [] )
         {
@@ -183,11 +177,11 @@ trait ArangoRotationTrait
      * `max_total` size into bytes).
      *
      * @param array $retention The `[arango.dump.retention]` config section.
-     * @return array{keep:int|null,buckets:array<string,int>,cutoff:DateTimeImmutable|null,maxTotalBytes:int|null}
+     * @return RotationPolicy
      *
      * @throws DateInvalidOperationException
      */
-    public function resolveRetentionPolicy( array $retention ) :array
+    public function resolveRetentionPolicy( array $retention ) :RotationPolicy
     {
         $keep    = isset( $retention[ RetentionOption::KEEP ] ) ? max( 0 , (int) $retention[ RetentionOption::KEEP ] ) : null ;
         $buckets = is_array( $retention[ RetentionOption::BUCKETS ] ?? null ) ? $retention[ RetentionOption::BUCKETS ] : [] ;
@@ -206,13 +200,13 @@ trait ArangoRotationTrait
         $maxTotal      = $retention[ RetentionOption::MAX_TOTAL ] ?? null ;
         $maxTotalBytes = ( $maxTotal === null || $maxTotal === '' ) ? null : $this->parseRetentionSize( $maxTotal ) ;
 
-        return
-        [
-            'keep'          => $keep ,
-            'buckets'       => $buckets ,
-            'cutoff'        => $cutoff ,
-            'maxTotalBytes' => $maxTotalBytes ,
-        ] ;
+        return new RotationPolicy
+        ([
+            RotationPolicy::KEEP            => $keep ,
+            RotationPolicy::BUCKETS         => $buckets ,
+            RotationPolicy::CUTOFF          => $cutoff ,
+            RotationPolicy::MAX_TOTAL_BYTES => $maxTotalBytes ,
+        ]) ;
     }
 
     /**
@@ -271,17 +265,17 @@ trait ArangoRotationTrait
      * across all buckets until the total fits, never violating the per-bucket
      * floor nor pruning the current archive.
      *
-     * @param array  $archives
-     * @param array  $delete  The path => archive deletion set, mutated in place.
-     * @param int    $maxTotalBytes
-     * @param string|null $current
+     * @param array<int,Archive>      $archives
+     * @param array<string,Archive>   $delete  The path => Archive deletion set, mutated in place.
+     * @param int                     $maxTotalBytes
+     * @param string|null             $current
      * @return void
      */
     private function applyMaxTotal( array $archives , array &$delete , int $maxTotalBytes , ?string $current ) :void
     {
-        $survivors = array_values( array_filter( $archives , static fn( $a ) => !isset( $delete[ $a[ 'path' ] ] ) ) ) ;
+        $survivors = array_values( array_filter( $archives , static fn( Archive $a ) => !isset( $delete[ $a->path ] ) ) ) ;
 
-        $total = array_sum( array_map( static fn( $a ) => $a[ 'size' ] , $survivors ) ) ;
+        $total = array_sum( array_map( static fn( Archive $a ) => $a->size , $survivors ) ) ;
         if( $total <= $maxTotalBytes )
         {
             return ;
@@ -290,10 +284,10 @@ trait ArangoRotationTrait
         $perBucket = [] ;
         foreach( $survivors as $a )
         {
-            $perBucket[ $a[ 'bucket' ] ] = ( $perBucket[ $a[ 'bucket' ] ] ?? 0 ) + 1 ;
+            $perBucket[ $a->bucket ] = ( $perBucket[ $a->bucket ] ?? 0 ) + 1 ;
         }
 
-        usort( $survivors , static fn( $a , $b ) => $a[ 'date' ] <=> $b[ 'date' ] ) ; // oldest first
+        usort( $survivors , static fn( Archive $a , Archive $b ) => $a->date <=> $b->date ) ; // oldest first
 
         foreach( $survivors as $a )
         {
@@ -301,13 +295,13 @@ trait ArangoRotationTrait
             {
                 break ;
             }
-            if( ( $current !== null && $a[ 'path' ] === $current ) || ( $perBucket[ $a[ 'bucket' ] ] ?? 0 ) <= 1 )
+            if( ( $current !== null && $a->path === $current ) || ( $perBucket[ $a->bucket ] ?? 0 ) <= 1 )
             {
                 continue ; // never the current archive, never the last of a bucket
             }
-            $delete[ $a[ 'path' ] ] = $a ;
-            $total -= $a[ 'size' ] ;
-            $perBucket[ $a[ 'bucket' ] ]-- ;
+            $delete[ $a->path ] = $a ;
+            $total -= $a->size ;
+            $perBucket[ $a->bucket ]-- ;
         }
     }
 
