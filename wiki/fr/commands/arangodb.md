@@ -10,6 +10,28 @@ Elle hérite du squelette [`oihana/php-commands`](../getting-started/dependencie
 
 ---
 
+## Sommaire
+
+- [Actions disponibles](#actions-disponibles)
+- [Configuration](#configuration) — `[arango.dump]` / `[arango.restore]`, précédence des options
+- [Câblage DI](#câblage-di)
+- [Options CLI](#options-cli) — toutes les options en un tableau
+- [`dump` — sauvegarde](#dump--sauvegarde) — base complète, sous-ensemble, label, exclusion, `--complete`
+- [`restore` — restauration](#restore--restauration) — sélection d'archive, ciblage, garde-fous
+- [Profils](#profils) — sélections nommées & externes (staging → local)
+- [Masking — anonymisation au dump](#masking--anonymisation-au-dump) — anonymiser les PII, **tableau des maskers**
+- [Rotation des archives](#rotation-des-archives) — élagage par rétention (`keep` / `max_age` / `max_total`)
+- [`collections` — inventaire](#collections--inventaire)
+- [`views` — gestion des Views ArangoSearch](#views--gestion-des-views-arangosearch)
+- [`doctor` — bilan de santé de la structure](#doctor--bilan-de-santé-de-la-structure)
+- [`migrate` — migrations versionnées des données](#migrate--migrations-versionnées-des-données)
+- [Scénario : migration sécurisée](#scénario--migration-sécurisée)
+- [Base de jeu](#base-de-jeu--scriptsseed-playgroundphp)
+
+> 👉 Pour des **recettes bout-en-bout**, voir [Stratégies de dump/restore](dump-restore-strategies.md).
+
+---
+
 ## Actions disponibles
 
 | Action | Trait | Description |
@@ -159,7 +181,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 |---|---|---|---|
 | `--collection` | `-c` | dump, restore | Restreint à ces collections. **Répétable** *ou* séparé par des virgules (ou les deux). |
 | `--ignore-collection` | — | dump | Exclut ces collections du dump (répétable / virgules). Résolu côté client (voir plus bas). |
-| `--complete` | — | dump | Backup complet : toutes les collections utilisateur **plus** `_analyzers` et `_graphs` — voir [Backup complet](#backup-complet). |
+| `--complete` | — | dump | Backup complet : toutes les collections utilisateur **plus** `_analyzers` et `_graphs` — voir [Backup complet](#backup-complet----complete). |
 | `--label` | `-L` | dump, restore | Libellé optionnel ajouté au nom de l'archive (ex. `pre-migration`). |
 | `--all` | — | collections | Liste **toutes** les collections (système + métier). |
 | `--system` | — | collections | Liste **uniquement** les collections système (`_…`). |
@@ -549,14 +571,36 @@ Une table à clés plates pointées, dans un profil ou dans `[arango.dump.maskin
   déclaré ici lève une erreur claire.
 - Clé **avec point** = `<collection>.<chemin>` (1er segment = collection, le reste =
   chemin, imbriqué possible) → règle d'attribut ; la collection passe en `masked`.
-- Valeur = nom de masker, ou inline-table `{ type = …, param = … }` pour les paramètres.
-- Maskers : `email`, `phone` (`default`), `creditCard`, `zip` (`default`), `random`,
-  `randomString`, `xifyFront` (`unmaskedLength`/`hash`/`seed`), `datetime`
-  (`begin`/`end`/`format`), `integer` (`lower`/`upper`), `decimal` (`lower`/`upper`/`scale`).
+- Valeur = nom de masker (voir le tableau **Les maskers en détail** plus bas), ou
+  inline-table `{ type = …, param = … }` pour passer des paramètres.
 - Chemins : `email` (feuille au sommet), `a.b` (chemin exact), `.email` (à toute
   profondeur), `*` (toutes les feuilles), tableaux masqués par élément. Les attributs
   système `_key`/`_id`/`_rev`/`_from`/`_to` ne sont **jamais** masqués.
 - Un masker/mode inconnu → erreur claire listant le vocabulaire valide.
+
+#### Les maskers en détail
+
+Chaque règle d'attribut applique un **masker** : il remplace la valeur réelle par une
+valeur factice mais **plausible** (même forme / même type), de sorte que les données
+restent réalistes pour des tests tout en étant anonymisées. Les paramètres se passent
+via l'inline-table (ex. `{ type = "xifyFront", unmaskedLength = 4 }`).
+
+| Masker | Ce qu'il fait | Paramètres (défaut) | Exemple |
+|---|---|---|---|
+| `email` | Remplace par un email aléatoire **non routable** (TLD `.invalid`). | — | `jean@ex.com` → `aZ12.bY34@cX56.invalid` |
+| `phone` | Garde la forme : chaque **chiffre** → chiffre aléatoire, chaque **lettre** → lettre aléatoire (casse gardée), le reste inchangé. Valeur non-string → `default`. | `default` (`"+1234567890"`) | `+33 6 12 34` → `+71 4 88 09` |
+| `creditCard` | Numéro de carte aléatoire **valide selon Luhn** (16 chiffres, renvoyé en entier). | — | `4111-1111-…` → `4143300214110028` |
+| `zip` | Code postal aléatoire de même forme (chiffre→chiffre, lettre→lettre, casse gardée). Non-string → `default`. | `default` (`"12345"`) | `SA34-EA` → `OW91-JI` |
+| `randomString` | Chaîne aléatoire de longueur proche de l'originale. **Strings uniquement** — nombres/booléens/null **inchangés**. | — | `"Jean Dupont"` → `"x7Bqz9aK1m"` |
+| `random` | Valeur aléatoire **du même type** : string→chaîne, entier→`[-1000,1000]`, flottant→idem, booléen→aléatoire, `null`→`null`. | — | `42` → `-738` · `true` → `false` |
+| `xifyFront` | Masque l'**avant de chaque mot** par `x`, en gardant les derniers caractères. Non-string → `"xxxx"`, `null`→`null`. | `unmaskedLength` (`2`), `hash` (`false`), `seed` (`0`) | `"secret"` → `"xxxxet"` |
+| `datetime` | Date/heure **aléatoire** entre `begin` et `end`, formatée selon `format` (jetons AQL `DATE_FORMAT` : `%yyyy`/`%mm`/`%dd`/`%hh`/`%ii`/`%ss`). `format` vide → chaîne vide. | `begin` (`1970-01-01…`), `end` (maintenant), `format` (`""`) | `"2001-09-11"` → `"2019-06-17"` (format `%yyyy-%mm-%dd`) |
+| `integer` | Entier aléatoire dans `[lower, upper]`. Remplace **quel que soit le type** d'origine. | `lower` (`-100`), `upper` (`100`) | `9999` → `42` |
+| `decimal` | Flottant aléatoire dans `[lower, upper]`, arrondi à `scale` décimales. Remplace quel que soit le type. | `lower` (`-1`), `upper` (`1`), `scale` (`2`) | `3.14159` → `-0.42` |
+
+> ℹ️ Le moteur PHP vise l'**équivalence sémantique** (retirer la PII en valeurs valides
+> et typées), pas une sortie identique au binaire Enterprise — les valeurs factices sont
+> aléatoires à chaque exécution.
 
 ```bash
 php bin/console.php command:arangodb dump --profile test-local
@@ -579,9 +623,6 @@ maskings = "/etc/oihana/maskings.json"
 
 `--dry-run` indique la voie de masking retenue (fichier natif, ou N entrées via le
 moteur PHP) sans rien écrire.
-
-> Le moteur PHP vise l'**équivalence sémantique** (retirer la PII en valeurs valides
-> et typées), pas une sortie identique au binaire Enterprise.
 
 ---
 

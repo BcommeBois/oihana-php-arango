@@ -10,6 +10,28 @@ It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oiha
 
 ---
 
+## Table of contents
+
+- [Available actions](#available-actions)
+- [Configuration](#configuration) — `[arango.dump]` / `[arango.restore]`, option precedence
+- [DI wiring](#di-wiring)
+- [CLI options](#cli-options) — every option in one table
+- [`dump` — backup](#dump--backup) — full database, subset, label, exclusion, `--complete`
+- [`restore` — restore](#restore--restore) — archive selection, targeting, guard-rails
+- [Profiles](#profiles) — named & external selections (staging → local)
+- [Masking — anonymizing the dump](#masking--anonymizing-the-dump) — anonymize PII, **maskers table**
+- [Archive rotation](#archive-rotation) — retention pruning (`keep` / `max_age` / `max_total`)
+- [`collections` — inventory](#collections--inventory)
+- [`views` — ArangoSearch View management](#views--arangosearch-view-management)
+- [`doctor` — structure health check](#doctor--structure-health-check)
+- [`migrate` — versioned data migrations](#migrate--versioned-data-migrations)
+- [Scenario: safe migration](#scenario-safe-migration)
+- [Playground database](#playground-database--scriptsseed-playgroundphp)
+
+> 👉 For **end-to-end recipes**, see [Dump / restore strategies](dump-restore-strategies.md).
+
+---
+
 ## Available actions
 
 | Action | Trait | Description |
@@ -158,7 +180,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 |---|---|---|---|
 | `--collection` | `-c` | dump, restore | Restrict to these collections. **Repeatable** *or* comma-separated (or both). |
 | `--ignore-collection` | — | dump | Exclude these collections from the dump (repeatable / comma). Resolved client-side (see below). |
-| `--complete` | — | dump | Complete backup: every user collection **plus** `_analyzers` and `_graphs` — see [Complete backup](#complete-backup). |
+| `--complete` | — | dump | Complete backup: every user collection **plus** `_analyzers` and `_graphs` — see [Complete backup](#complete-backup----complete). |
 | `--label` | `-L` | dump, restore | Optional label appended to the archive name (e.g. `pre-migration`). |
 | `--all` | — | collections | List **all** collections (system + user). |
 | `--system` | — | collections | List **only** system collections (`_…`). |
@@ -542,14 +564,36 @@ A flat, dotted-key table, in a profile or in `[arango.dump.masking]`:
   declared here raises a clear error.
 - A key **with a dot** = `<collection>.<path>` (first segment is the collection, the
   rest the path, nested allowed) → attribute rule; the collection becomes `masked`.
-- Value = a masker name, or an inline table `{ type = …, param = … }` for parameters.
-- Maskers: `email`, `phone` (`default`), `creditCard`, `zip` (`default`), `random`,
-  `randomString`, `xifyFront` (`unmaskedLength`/`hash`/`seed`), `datetime`
-  (`begin`/`end`/`format`), `integer` (`lower`/`upper`), `decimal` (`lower`/`upper`/`scale`).
+- Value = a masker name (see the **Maskers in detail** table below), or an inline
+  table `{ type = …, param = … }` to pass parameters.
 - Paths: `email` (top-level leaf), `a.b` (exact path), `.email` (any depth), `*` (all
   leaves), arrays masked per element. The system attributes
   `_key`/`_id`/`_rev`/`_from`/`_to` are **never** masked.
 - An unknown masker/mode → a clear error listing the valid vocabulary.
+
+#### Maskers in detail
+
+Each attribute rule applies a **masker**: it replaces the real value with a fake but
+**plausible** one (same shape / same type), so the data stays realistic for testing
+while being anonymized. Parameters are passed through the inline table (e.g.
+`{ type = "xifyFront", unmaskedLength = 4 }`).
+
+| Masker | What it does | Parameters (default) | Example |
+|---|---|---|---|
+| `email` | Replaces with a random **non-routable** email (`.invalid` TLD). | — | `john@ex.com` → `aZ12.bY34@cX56.invalid` |
+| `phone` | Keeps the shape: each **digit** → random digit, each **letter** → random letter (case kept), everything else unchanged. Non-string → `default`. | `default` (`"+1234567890"`) | `+33 6 12 34` → `+71 4 88 09` |
+| `creditCard` | A random card number **valid per Luhn** (16 digits, returned as an integer). | — | `4111-1111-…` → `4143300214110028` |
+| `zip` | A random postal code of the same shape (digit→digit, letter→letter, case kept). Non-string → `default`. | `default` (`"12345"`) | `SA34-EA` → `OW91-JI` |
+| `randomString` | A random string of similar length. **Strings only** — numbers/booleans/null left **unchanged**. | — | `"John Doe"` → `"x7Bqz9aK1m"` |
+| `random` | A random value **of the same type**: string→string, integer→`[-1000,1000]`, float→ditto, boolean→random, `null`→`null`. | — | `42` → `-738` · `true` → `false` |
+| `xifyFront` | Masks the **front of each word** with `x`, keeping the trailing characters. Non-string → `"xxxx"`, `null`→`null`. | `unmaskedLength` (`2`), `hash` (`false`), `seed` (`0`) | `"secret"` → `"xxxxet"` |
+| `datetime` | A **random** date/time between `begin` and `end`, rendered with `format` (AQL `DATE_FORMAT` tokens: `%yyyy`/`%mm`/`%dd`/`%hh`/`%ii`/`%ss`). Empty `format` → empty string. | `begin` (`1970-01-01…`), `end` (now), `format` (`""`) | `"2001-09-11"` → `"2019-06-17"` (format `%yyyy-%mm-%dd`) |
+| `integer` | A random integer in `[lower, upper]`. Replaces the value **whatever its type**. | `lower` (`-100`), `upper` (`100`) | `9999` → `42` |
+| `decimal` | A random float in `[lower, upper]`, rounded to `scale` digits. Replaces whatever the type. | `lower` (`-1`), `upper` (`1`), `scale` (`2`) | `3.14159` → `-0.42` |
+
+> ℹ️ The PHP engine aims for **semantic equivalence** (PII removed as valid, typed
+> values), not byte-identical output with the Enterprise binary — the fake values are
+> random on every run.
 
 ```bash
 php bin/console.php command:arangodb dump --profile test-local
@@ -572,9 +616,6 @@ maskings = "/etc/oihana/maskings.json"
 
 `--dry-run` reports the chosen masking path (native file, or N entries via the PHP
 engine) without writing.
-
-> The PHP engine aims for **semantic equivalence** (PII removed as valid, typed
-> values), not byte-identical output with the Enterprise binary.
 
 ---
 
