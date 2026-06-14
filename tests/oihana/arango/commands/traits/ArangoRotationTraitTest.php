@@ -9,7 +9,6 @@ use oihana\arango\commands\rotation\Archive;
 use oihana\arango\commands\rotation\RotationPolicy;
 use oihana\arango\commands\traits\ArangoRotationTrait;
 
-use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use PHPUnit\Framework\TestCase;
 
@@ -44,8 +43,6 @@ class ArangoRotationTraitHost
  * Unit coverage for {@see ArangoRotationTrait}.
  */
 #[CoversTrait(ArangoRotationTrait::class)]
-#[CoversClass(Archive::class)]
-#[CoversClass(RotationPolicy::class)]
 class ArangoRotationTraitTest extends TestCase
 {
     private array $tmpDirs = [] ;
