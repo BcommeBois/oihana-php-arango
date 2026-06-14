@@ -224,6 +224,78 @@ class ArangoDumpActionTest extends TestCase
         $this->assertFalse( $host->dumpCalled ) ;
     }
 
+    /** Writes a dump archive file named `$name` into `$directory`. */
+    private function archiveIn( string $directory , string $name ) :string
+    {
+        file_put_contents( $directory . DIRECTORY_SEPARATOR . $name , 'x' ) ;
+        return $name ;
+    }
+
+    public function testListUsesTheProfileDirectory() :void
+    {
+        $profileOut    = $this->makeExtraDir() ;
+        $profileArchive = $this->archiveIn( $profileOut , '2026-01-01T00:00:00-mydb-profile.tar.gz' ) ;
+        $globalArchive  = $this->archiveIn( $this->dir  , '2026-01-01T00:00:00-mydb-global.tar.gz' ) ;  // decoy
+
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [ ArangoCommandParam::DIRECTORY => $profileOut ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::LIST => true , '--' . ArangoCommandOption::PROFILE => 'p' ] ) , $output ) ;
+
+        // The listing read the profile directory, not the global one.
+        $text = $output->fetch() ;
+        $this->assertStringContainsString( $profileArchive , $text ) ;
+        $this->assertStringNotContainsString( $globalArchive , $text ) ;
+    }
+
+    public function testListDirectoryFlagOverridesTheProfileDirectory() :void
+    {
+        $profileOut    = $this->makeExtraDir() ;
+        $cliOut        = $this->makeExtraDir() ;
+        $profileArchive = $this->archiveIn( $profileOut , '2026-01-01T00:00:00-mydb-profile.tar.gz' ) ;
+        $cliArchive     = $this->archiveIn( $cliOut     , '2026-01-01T00:00:00-mydb-cli.tar.gz' ) ;
+
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [ ArangoCommandParam::DIRECTORY => $profileOut ] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input
+        ([
+            '--' . ArangoCommandOption::LIST      => true ,
+            '--' . ArangoCommandOption::PROFILE   => 'p' ,
+            '--' . ArangoCommandOption::DIRECTORY => $cliOut ,
+        ]) , $output ) ;
+
+        // The CLI --directory wins over the profile directory.
+        $text = $output->fetch() ;
+        $this->assertStringContainsString( $cliArchive , $text ) ;
+        $this->assertStringNotContainsString( $profileArchive , $text ) ;
+    }
+
+    public function testListWithoutProfileUsesTheGlobalDirectory() :void
+    {
+        $name = $this->archiveIn( $this->dir , '2026-01-01T00:00:00-mydb.tar.gz' ) ;
+
+        $host   = $this->host() ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::LIST => true ] ) , $output ) ;
+
+        $this->assertStringContainsString( $name , $output->fetch() ) ;
+    }
+
+    public function testListWithUnknownProfileThrows() :void
+    {
+        $host = $this->host() ;
+        $host->initializeArangoProfiles( [ ArangoCommandParam::PROFILES => [ 'p' => [] ] ] ) ;
+        $output = new BufferedOutput() ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( "Unknown dump/restore profile 'ghost'" ) ;
+        $host->dump( $this->input( [ '--' . ArangoCommandOption::LIST => true , '--' . ArangoCommandOption::PROFILE => 'ghost' ] ) , $output ) ;
+    }
+
     // ---------------------------------------------------------------- happy path
 
     public function testHappyPathDumpsCreatesArchiveAndForwardsConnection() :void

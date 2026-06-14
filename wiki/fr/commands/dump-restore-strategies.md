@@ -66,8 +66,8 @@ php bin/console.php command:arangodb dump --profile staging-extract
 php bin/console.php command:arangodb dump --profile staging-extract --directory /tmp/oneshot
 ```
 
-(Le dossier finalement retenu sert aussi de cible à la rotation de ce run, et à
-`dump --prune --profile X`.)
+(Le dossier finalement retenu sert aussi de cible à la rotation de ce run, à
+`dump --prune --profile X` et au listing `dump --list --profile X`.)
 
 ## Quelle brique pour quel besoin ?
 

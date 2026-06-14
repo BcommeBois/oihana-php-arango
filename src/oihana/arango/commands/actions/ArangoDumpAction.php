@@ -2,8 +2,11 @@
 
 namespace oihana\arango\commands\actions;
 
+use DateInvalidOperationException;
 use InvalidArgumentException;
 use oihana\commands\enums\ExitCode;
+use Random\RandomException;
+use ReflectionException;
 use RuntimeException;
 
 use oihana\arango\clients\exceptions\ArangoException;
@@ -90,19 +93,29 @@ trait ArangoDumpAction
 
     /**
      * Dump the ArangoDB database.
+     *
      * @param InputInterface $input
      * @param OutputInterface $output
+     *
      * @return int
+     *
+     * @throws DateInvalidOperationException
      * @throws DirectoryException
      * @throws FileException
-     * @throws UnsupportedCompressionException
      * @throws MissingPassphraseException
+     * @throws RandomException
+     * @throws ReflectionException
+     * @throws UnsupportedCompressionException
      */
     public function dump( InputInterface $input, OutputInterface $output ) :int
     {
         if( $input->getOption( ArangoCommandOption::LIST ) )
         {
-            return $this->listDumps( $input , $output ) ;
+            // A profile can carry its own output directory, so list the same
+            // place a profile dump would have written to.
+            $listProfile = $this->resolveProfile( $input->getOption( ArangoCommandOption::PROFILE ) ) ;
+            $listDir     = $listProfile !== null ? $this->profileDirectory( $listProfile ) : null ;
+            return $this->listDumps( $input , $output , $listDir ) ;
         }
 
         $io = $this->getIO( $input , $output ) ;

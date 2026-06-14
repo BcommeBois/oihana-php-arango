@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `startsWith()` (string functions) now supports the ArangoSearch `STARTS_WITH(path, prefixes, minMatchCount)` form: pass an **array** of prefixes (emitted as a JSON array, so plain strings are quoted) and an optional minimum number of matching prefixes. The legacy string form is unchanged (the prefix stays a raw AQL expression that callers quote themselves), so existing call sites are unaffected.
 
+### Fixed
+
+- `dump --list` now honors the per-profile output directory (Lot D10) — Lot D8 taught the `dump` action and `dump --prune` to write to / prune a profile's own `directory`, but the archive **listing** still always read the global `[app].dumps`, so `dump --list --profile X` (and `composer arango:list -- --profile X`) showed nothing after a `dump --profile X` had written to that profile's directory. The listing now follows the same precedence as the dump and the prune — `--directory` (CLI) > the profile `directory` > the global directory: `ArangoListDumpsAction::listDumps()` takes an optional directory override (the trait stays profile-agnostic), and `ArangoDumpAction::dump()` resolves the profile in the `--list` branch before delegating (an unknown profile name now throws, consistent with `dump` / `--prune`). Covered by unit tests (`ArangoDumpActionTest` — listing reads the profile directory, `--directory` overrides it, no-profile uses the global directory, unknown profile throws — 100% on the touched code) and a live integration case (`DumpRestoreIntegrationTest::testListWithProfileListsTheProfileDirectory`: a real dump into a profile directory, then `dump --list --profile` finds the archive). Documented in `wiki/{fr,en}/commands/arangodb.md` and `dump-restore-strategies.md`.
+
 ## [1.1.0] - 2026-06-10
 
 ### Added

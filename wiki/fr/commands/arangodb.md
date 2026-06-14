@@ -594,7 +594,9 @@ php bin/console.php command:arangodb dump --profile staging-extract
 C'est une option **dump uniquement** : le `restore` écrit toujours dans la cible
 locale (cf [Garde-fous du restore](#garde-fous-du-restore)) et ignore le
 `directory` du profil. Le dossier finalement retenu sert aussi de cible à la
-rotation post-dump et à `dump --prune --profile <nom>`.
+rotation post-dump, à `dump --prune --profile <nom>` et au listing
+`dump --list --profile <nom>` (qui affiche donc les archives **de ce profil**,
+même précédence `--directory` CLI > profil > global).
 
 ### Sécurité
 

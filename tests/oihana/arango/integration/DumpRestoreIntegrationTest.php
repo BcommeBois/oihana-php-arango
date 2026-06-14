@@ -582,4 +582,41 @@ class DumpRestoreIntegrationTest extends IntegrationTestCase
         $this->assertCount( 1 , glob( $profileOut . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] , 'The archive must be written to the profile directory.' ) ;
         $this->assertCount( 0 , glob( $this->tmp . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] , 'No archive must land in the global directory.' ) ;
     }
+
+    // ------------------------------------------------------------------ D10 list honors the profile directory
+
+    public function testListWithProfileListsTheProfileDirectory() :void
+    {
+        // Dump into a dedicated profile directory, then list it back via --list --profile.
+        $profileOut = $this->tmp . DIRECTORY_SEPARATOR . 'profile_list_' . bin2hex( random_bytes( 4 ) ) ;
+
+        $profiles = [ ArangoCommandParam::PROFILES => [ 'p' =>
+        [
+            ArangoCommandParam::DIRECTORY           => $profileOut ,
+            ArangoCommandParam::PROFILE_COLLECTIONS => [ 'widgets' , 'gadgets' ] ,
+        ] ] ] ;
+
+        $dumpHost = new DumpActionIntegrationHost( self::$arango , static::$database , $this->tmp ) ;
+        $dumpHost->initializeArangoProfiles( $profiles ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $dumpHost->dump( $this->dumpInput( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , new BufferedOutput() ) ) ;
+
+        $archive = basename( ( glob( $profileOut . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [ '' ] )[ 0 ] ) ;
+        $this->assertNotSame( '' , $archive , 'The dump must have produced an archive in the profile directory.' ) ;
+
+        // `dump --list --profile p` must read the profile directory and show that
+        // archive. A fresh host (the listing is a separate process in real use).
+        $listHost = new DumpActionIntegrationHost( self::$arango , static::$database , $this->tmp ) ;
+        $listHost->initializeArangoProfiles( $profiles ) ;
+
+        $output = new BufferedOutput() ;
+        $code   = $listHost->dump( $this->dumpInput
+        ([
+            '--' . ArangoCommandOption::LIST    => true ,
+            '--' . ArangoCommandOption::PROFILE => 'p' ,
+        ]) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( $archive , $output->fetch() , 'The listing must show the profile-directory archive.' ) ;
+    }
 }

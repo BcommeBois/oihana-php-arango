@@ -65,8 +65,8 @@ php bin/console.php command:arangodb dump --profile staging-extract
 php bin/console.php command:arangodb dump --profile staging-extract --directory /tmp/oneshot
 ```
 
-(The directory finally selected also acts as the rotation target for the run, and
-for `dump --prune --profile X`.)
+(The directory finally selected also acts as the rotation target for the run, for
+`dump --prune --profile X` and for the `dump --list --profile X` listing.)
 
 ## Which block for which need?
 

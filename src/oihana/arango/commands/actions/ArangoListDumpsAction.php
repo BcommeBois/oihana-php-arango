@@ -35,18 +35,27 @@ trait ArangoListDumpsAction
 
     /**
      * List the dump files of the database.
+     *
+     * The listed directory follows the same precedence as the dump and the
+     * prune: the `--directory` CLI flag wins, then the optional `$directory`
+     * (e.g. a profile output directory resolved by the caller), then the global
+     * `$this->directory`.
+     *
      * @param InputInterface $input
      * @param OutputInterface $output
+     * @param string|null $directory An optional directory override (the profile
+     *                               output directory), below the `--directory`
+     *                               CLI flag and above the global directory.
      * @return int
      * @throws DirectoryException
      */
-    protected function listDumps( InputInterface $input, OutputInterface $output ) :int
+    protected function listDumps( InputInterface $input, OutputInterface $output, ?string $directory = null ) :int
     {
         $io = $this->getIO( $input , $output ) ;
 
         $io->section( 'List the arangodb dumps' ) ;
 
-        $inputDirectory = getDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $this->directory ) ;
+        $inputDirectory = getDirectory( $input->getOption( ArangoCommandOption::DIRECTORY ) ?? $directory ?? $this->directory ) ;
 
         $files = findFiles
         (
