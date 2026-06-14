@@ -249,6 +249,12 @@ trait ArangoDoctorAction
      * Computes and prints the orphans — collections (non-system) and views
      * on the server that no configured model declares. Report only.
      *
+     * The migrations tracking collection ({@see ArangoMigrationsTrait::$migrationsCollection})
+     * is never an orphan: no model declares it, yet both `migrate` and
+     * `doctor --apply` write their journal there. It is excluded by its
+     * configured name (so a renamed tracking collection is honoured), which
+     * also keeps it out of the `--prune` selection.
+     *
      * @param InputInterface     $input
      * @param SymfonyStyle       $io
      * @param array<int, string> $declaredCollections The collections declared by the configured models.
@@ -271,6 +277,10 @@ trait ArangoDoctorAction
             foreach( $db->collections() as $collection )
             {
                 $name = $collection->getName() ;
+                if( $name === $this->migrationsCollection && $name !== Char::EMPTY )
+                {
+                    continue ;
+                }
                 if( !in_array( $name , $declaredCollections , true ) )
                 {
                     $orphans[] = 'collection : ' . $name ;

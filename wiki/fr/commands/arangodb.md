@@ -886,6 +886,8 @@ $ php bin/console.php command:arangodb doctor
 | View | le rapport `views --diff` complet (champs, analyzers, cohérence de la déclaration) | `viewSync()` (`updateProperties()`) |
 | Orphelins | collections (non-système) et Views du serveur déclarées par aucun modèle | jamais automatique — `--prune` interactif uniquement |
 
+> La **collection de suivi des migrations** (`migrationsCollection`, défaut `migrations`) n'est **jamais** un orphelin : aucun modèle ne la déclare, mais `migrate` **et** `doctor --apply` y écrivent leur journal. Elle est exclue par son **nom configuré** — renommer la collection de suivi est honoré, et elle est ainsi tenue hors de la sélection `--prune`. Le renommage est un changement de configuration, pas une migration de données : l'ancienne collection reste côté serveur sous son ancien nom et redevient alors un orphelin légitime (à supprimer ou migrer à la main si on ne veut pas la voir listée).
+
 Pourquoi `--force` est séparé : un index est **immuable** — le réparer signifie le supprimer puis le recréer, avec une fenêtre où les requêtes le perdent, et un index `unique` peut échouer à se recréer si des doublons sont apparus entre-temps. On ne fait pas ça d'office dans un `--apply` de routine.
 
 ### Code de sortie « bilan de santé »

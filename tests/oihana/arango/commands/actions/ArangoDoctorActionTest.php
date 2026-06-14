@@ -534,6 +534,110 @@ class ArangoDoctorActionTest extends TestCase
     }
 
     /**
+     * The migrations tracking collection is written by `migrate` and
+     * `doctor --apply` but declared by no model — it must never be reported
+     * as an orphan.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testMigrationsTrackingCollectionIsNeverAnOrphan() :void
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willReturn( [ $this->namedCollection( 'places' ) , $this->namedCollection( 'migrations' ) , $this->namedCollection( 'ghost' ) ] ) ;
+        $db->method( 'listViews'   )->willReturn( [ [ 'name' => 'placesView' ] ] ) ;
+
+        $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
+        $host->fakeDatabase = $db ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( '· collection : ghost' , $text ) ;
+        $this->assertStringNotContainsString( 'collection : migrations' , $text ) ;
+        $this->assertStringContainsString( '1 orphan(s)' , $text ) ;
+    }
+
+    /**
+     * The exclusion follows the configured tracking collection name: a
+     * renamed tracking collection is honoured, and the default `migrations`
+     * then turns back into a regular orphan.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testRenamedMigrationsTrackingCollectionIsHonoured() :void
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willReturn( [ $this->namedCollection( 'places' ) , $this->namedCollection( 'audit_log' ) , $this->namedCollection( 'migrations' ) ] ) ;
+        $db->method( 'listViews'   )->willReturn( [ [ 'name' => 'placesView' ] ] ) ;
+
+        $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
+        $host->fakeDatabase = $db ;
+        $host->migrationsCollection = 'audit_log' ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringNotContainsString( 'collection : audit_log' , $text ) ;
+        $this->assertStringContainsString( '· collection : migrations' , $text ) ;
+        $this->assertStringContainsString( '1 orphan(s)' , $text ) ;
+    }
+
+    /**
+     * Excluded from the orphans, the tracking collection is also kept out of
+     * the interactive `--prune` selection — it can never be dropped.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws Exception
+     * @throws ExitException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testMigrationsTrackingCollectionIsNeverPruned() :void
+    {
+        $ghost = $this->createMock( Collection::class ) ;
+        $ghost->expects( $this->once() )->method( 'drop' ) ;
+
+        $migrations = $this->createMock( Collection::class ) ;
+        $migrations->expects( $this->never() )->method( 'drop' ) ;
+
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willReturn( [ $this->namedCollection( 'places' ) , $this->namedCollection( 'migrations' ) , $this->namedCollection( 'ghost' ) ] ) ;
+        $db->method( 'listViews'   )->willReturn( [ [ 'name' => 'placesView' ] ] ) ;
+        $db->method( 'collection'  )->willReturnCallback( fn( string $name ) => $name === 'migrations' ? $migrations : $ghost ) ;
+
+        $host = $this->host( [ 'models.places' => $this->model( $this->healthyFacade() ) ] ) ;
+        $host->fakeDatabase = $db ;
+
+        $input = $this->input( [ '--' . ArangoCommandOption::PRUNE => true ] , interactive : true ) ;
+        $input->setStream( $this->stream( "collection : ghost\n" ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $input , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( '✓ collection : ghost — dropped' , $output->fetch() ) ;
+    }
+
+    /**
      * @return void
      * @throws ContainerExceptionInterface
      * @throws DependencyException

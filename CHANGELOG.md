@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Masking engine extracted to `oihana/php-masking`.** The portable PHP masking engine that lived under `src/oihana/arango/maskings/` is now provided by the dedicated, storage-agnostic [`oihana/php-masking`](https://github.com/BcommeBois/oihana-php-masking) library (added to `require`); the in-tree copy (the 10 maskers, `maskValue`/`maskDocument`/`maskDocumentNode`/`maskDocumentList`, `resolveMaskingRule`, `randomAlphaNumeric` and the `Masker`/`MaskingMode` enums) is removed. **No behaviour change.**
   - `ArangoMaskingTrait` now consumes `oihana\masking\…` and owns the ArangoDB identity list itself (`SYSTEM_ATTRIBUTES` = `_key`, `_id`, `_rev`, `_from`, `_to`, sourced from `org\schema\constants\Schema` — no magic strings), handing it to `maskDocument()` as the protected attributes so those fields stay untouched on every edition.
 
+### Fixed
+
+- **`doctor` no longer reports the migrations tracking collection as an orphan.** No model declares the tracking collection (`migrationsCollection`, default `migrations`), yet both `migrate` and `doctor --apply` write their journal there — so after a single `migrate` or `doctor --apply`, every following `doctor` flagged it as an orphan (and offered it to `--prune`). `doctorOrphans()` now excludes it by its **configured name**, which also keeps it out of the `--prune` selection. Views orphan detection is unchanged.
+
 ## [1.2.0] - 2026-06-14
 
 ### Added

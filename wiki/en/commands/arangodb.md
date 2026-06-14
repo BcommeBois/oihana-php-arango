@@ -878,6 +878,8 @@ $ php bin/console.php command:arangodb doctor
 | View | the full `views --diff` report (fields, analyzers, declaration coherence) | `viewSync()` (`updateProperties()`) |
 | Orphans | collections (non-system) and Views on the server declared by no model | never automatic — interactive `--prune` only |
 
+> The **migrations tracking collection** (`migrationsCollection`, default `migrations`) is **never** an orphan: no model declares it, yet both `migrate` **and** `doctor --apply` write their journal there. It is excluded by its **configured name** — a renamed tracking collection is honoured, which also keeps it out of the `--prune` selection. Renaming is a configuration change, not a data migration: the old collection stays on the server under its former name and then turns back into a legitimate orphan (drop or migrate it by hand if you do not want it listed).
+
 Why `--force` is separate: an index is **immutable** — repairing it means dropping then recreating it, with a window where queries lose it, and a `unique` index may fail to recreate if duplicates appeared in the meantime. Not something a routine `--apply` should do on its own.
 
 ### Health-check exit code
