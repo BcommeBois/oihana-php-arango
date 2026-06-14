@@ -7,8 +7,11 @@ use Random\RandomException;
 
 use org\schema\constants\Schema;
 
+use oihana\arango\commands\enums\CompiledMasking;
+
 use oihana\masking\enums\Masker;
 use oihana\masking\enums\MaskingMode;
+use oihana\masking\enums\MaskingRule;
 
 use function oihana\masking\maskDocument;
 
@@ -39,7 +42,7 @@ use function oihana\masking\maskDocument;
  * `{ "type": <mode>, "maskings": [ { "path": <path>, "type": <masker>, … } ] }`.
  *
  * It is then applied to the `*.data.json` files of a dump by the portable engine
- * ({@see oihana\masking\maskDocument()}, from the `oihana/php-masking` library) —
+ * ({@see maskDocument()}, from the `oihana/php-masking` library) —
  * which works on **any** ArangoDB edition (the native `--maskings` file is
  * Enterprise-only). The PHP engine masks `masked` collections only; selecting /
  * excluding collections is the job of `--collection` / the profile selection.
@@ -53,7 +56,7 @@ trait ArangoMaskingTrait
     /**
      * The top-level ArangoDB system attributes that are never masked — they carry
      * identity / edge references and must survive masking untouched (the same rule
-     * `arangodump` applies). Passed to {@see oihana\masking\maskDocument()} as the
+     * `arangodump` applies). Passed to {@see maskDocument()} as the
      * protected attributes.
      */
     private const array SYSTEM_ATTRIBUTES =
@@ -97,8 +100,8 @@ trait ArangoMaskingTrait
                     ) ;
                 }
 
-                $result[ $key ] ??= [ 'type' => MaskingMode::MASKED , 'maskings' => [] ] ;
-                $result[ $key ][ 'type' ] = $value ;
+                $result[ $key ] ??= [ CompiledMasking::TYPE => MaskingMode::MASKED , CompiledMasking::MASKINGS => [] ] ;
+                $result[ $key ][ CompiledMasking::TYPE ] = $value ;
 
                 continue ;
             }
@@ -111,8 +114,8 @@ trait ArangoMaskingTrait
                 throw new InvalidArgumentException( sprintf( "Malformed masking key '%s': expected '<collection>.<path>'." , $key ) ) ;
             }
 
-            $result[ $collection ] ??= [ 'type' => MaskingMode::MASKED , 'maskings' => [] ] ;
-            $result[ $collection ][ 'maskings' ][] = $this->maskingRule( $path , $value ) ;
+            $result[ $collection ] ??= [ CompiledMasking::TYPE => MaskingMode::MASKED , CompiledMasking::MASKINGS => [] ] ;
+            $result[ $collection ][ CompiledMasking::MASKINGS ][] = $this->maskingRule( $path , $value ) ;
         }
 
         return $result ;
@@ -152,20 +155,20 @@ trait ArangoMaskingTrait
                 continue ;
             }
 
-            if( ( $entry[ 'type' ] ?? MaskingMode::MASKED ) !== MaskingMode::MASKED )
+            if( ( $entry[ CompiledMasking::TYPE ] ?? MaskingMode::MASKED ) !== MaskingMode::MASKED )
             {
                 throw new InvalidArgumentException
                 (
                     sprintf
                     (
                         "Masking mode '%s' is not supported by the PHP masking engine (only '%s'); use --collection / the profile selection to exclude collections." ,
-                        $entry[ 'type' ] ,
+                        $entry[ CompiledMasking::TYPE ] ,
                         MaskingMode::MASKED
                     )
                 ) ;
             }
 
-            $maskings = $entry[ 'maskings' ] ?? [] ;
+            $maskings = $entry[ CompiledMasking::MASKINGS ] ?? [] ;
             if( $maskings === [] )
             {
                 continue ;
@@ -230,12 +233,12 @@ trait ArangoMaskingTrait
         if( is_string( $value ) )
         {
             $type = $value ;
-            $rule = [ 'path' => $path , 'type' => $value ] ;
+            $rule = [ MaskingRule::PATH => $path , MaskingRule::TYPE => $value ] ;
         }
         elseif( is_array( $value ) )
         {
-            $type = $value[ 'type' ] ?? null ;
-            $rule = array_merge( [ 'path' => $path ] , $value ) ;
+            $type = $value[ MaskingRule::TYPE ] ?? null ;
+            $rule = array_merge( [ MaskingRule::PATH => $path ] , $value ) ;
         }
         else
         {
