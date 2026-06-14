@@ -3,19 +3,25 @@
  * Convert a PHPUnit Clover coverage report into a readable Markdown summary.
  *
  * Usage:
- *   php tools/clover-to-markdown.php [clover.xml] [out.md]
+ *   php tools/clover-to-markdown.php [clover.xml] [out.md] [strip-prefix]
  *
  * Defaults:
- *   clover.xml -> build/coverage/clover.xml
- *   out.md     -> build/coverage/COVERAGE.md
+ *   clover.xml   -> build/coverage/clover.xml
+ *   out.md       -> build/coverage/COVERAGE.md
+ *   strip-prefix -> auto-detected (longest common source path, e.g. src/oihana/<lib>)
+ *
+ * Portable across the oihana/php-* libraries: the directory grouping strips the
+ * longest path prefix shared by every covered file, so no per-project edit is
+ * needed. Pass an explicit prefix as the 3rd argument to override the guess.
  *
  * The output is intentionally NOT committed (build/ is gitignored): a coverage
  * snapshot goes stale at the very next commit. Regenerate it on demand with
  * `composer coverage:md`.
  */
 
-$cloverPath = $argv[1] ?? 'build/coverage/clover.xml';
-$outPath    = $argv[2] ?? 'build/coverage/COVERAGE.md';
+$cloverPath   = $argv[1] ?? 'build/coverage/clover.xml';
+$outPath      = $argv[2] ?? 'build/coverage/COVERAGE.md';
+$stripPrefix  = $argv[3] ?? null;
 
 if ( !is_file( $cloverPath ) )
 {
@@ -49,13 +55,54 @@ foreach ( $xml->xpath( '//file' ) as $f )
     ];
 }
 
-// --- Group by directory under src/oihana/arango ----------------------------
+// --- Common source prefix (auto-detected, overridable) ----------------------
+//
+// The longest leading path shared by every covered file's directory. Stripping
+// it keeps the per-directory table readable on any layout without a hardcoded
+// project path. Degrades gracefully to '' when files share no common root.
+
+if ( $stripPrefix === null )
+{
+    $stripPrefix = '';
+
+    $dirs0 = array_values( array_map( static fn( $f ) => dirname( $f['rel'] ) , $files ) );
+
+    if ( $dirs0 )
+    {
+        $common = explode( '/' , $dirs0[0] );
+
+        foreach ( $dirs0 as $d )
+        {
+            $segs = explode( '/' , $d );
+            $i    = 0;
+
+            while ( $i < count( $common ) && isset( $segs[ $i ] ) && $common[ $i ] === $segs[ $i ] )
+            {
+                $i++;
+            }
+
+            $common = array_slice( $common , 0 , $i );
+
+            if ( !$common ) { break; }
+        }
+
+        $stripPrefix = implode( '/' , $common );
+    }
+}
+
+// --- Group by directory under the common source prefix ----------------------
 
 $dirs = [];
 
 foreach ( $files as $f )
 {
-    $d = preg_replace( '#^src/oihana/arango/?#' , '' , dirname( $f['rel'] ) );
+    $d = dirname( $f['rel'] );
+
+    if ( $stripPrefix !== '' )
+    {
+        $d = preg_replace( '#^' . preg_quote( $stripPrefix , '#' ) . '/?#' , '' , $d );
+    }
+
     if ( $d === '' || $d === '.' ) { $d = '(root)'; }
 
     $dirs[ $d ]['st']  = ( $dirs[ $d ]['st']  ?? 0 ) + $f['st'];
@@ -72,8 +119,29 @@ $tCst = (int) $pr['coveredstatements'];
 $tMe  = (int) $pr['methods'];
 $tCme = (int) $pr['coveredmethods'];
 
-$linePct = $tSt ? $tCst / $tSt * 100 : 100.0;
-$methPct = $tMe ? $tCme / $tMe * 100 : 100.0;
+// Class totals (PHPUnit-style): Clover's project metrics carry no covered-class
+// count, so derive it from the per-class metrics. A class enters the tally only
+// once it has executable code — interfaces, enums and constant-only classes have
+// zero statements and are skipped, matching PHPUnit's `classes` figure — and
+// counts as covered when every one of its statements ran.
+
+$tCls  = 0;
+$tCCls = 0;
+
+foreach ( $xml->xpath( '//class' ) as $c )
+{
+    $cst = (int) $c->metrics['statements'];
+
+    if ( $cst === 0 ) { continue; }
+
+    $tCls++;
+
+    if ( (int) $c->metrics['coveredstatements'] === $cst ) { $tCCls++; }
+}
+
+$linePct  = $tSt  ? $tCst  / $tSt  * 100 : 100.0;
+$methPct  = $tMe  ? $tCme  / $tMe  * 100 : 100.0;
+$classPct = $tCls ? $tCCls / $tCls * 100 : 100.0;
 
 $bar = static fn( float $p ): string =>
     str_repeat( '#' , (int) round( $p / 10 ) ) . str_repeat( '.' , 10 - (int) round( $p / 10 ) );
@@ -106,8 +174,9 @@ $delta = static function ( float $cur , ?float $old , int $curN , ?int $oldN , s
     return sprintf( '%s %s (%+d %s)' , $arrow , $pts , $dn , $unit );
 };
 
-$lineDelta = $delta( $linePct , $prev['lines']['pct']   ?? null , $tCst , $prev['lines']['cst']   ?? null , 'lines' );
-$methDelta = $delta( $methPct , $prev['methods']['pct'] ?? null , $tCme , $prev['methods']['cme'] ?? null , 'methods' );
+$lineDelta  = $delta( $linePct  , $prev['lines']['pct']   ?? null , $tCst  , $prev['lines']['cst']    ?? null , 'lines' );
+$methDelta  = $delta( $methPct  , $prev['methods']['pct'] ?? null , $tCme  , $prev['methods']['cme']  ?? null , 'methods' );
+$classDelta = $delta( $classPct , $prev['classes']['pct'] ?? null , $tCCls , $prev['classes']['ccls'] ?? null , 'classes' );
 
 // --- Render -----------------------------------------------------------------
 
@@ -124,8 +193,9 @@ $o[] = '## Summary';
 $o[] = '';
 $o[] = '| Metric | Coverage | Δ since last run | |';
 $o[] = '|---|---|---|---|';
-$o[] = sprintf( '| **Lines** | %.2f%% (%d/%d) | %s | `%s` |'   , $linePct , $tCst , $tSt , $lineDelta ?: '—' , $bar( $linePct ) );
-$o[] = sprintf( '| **Methods** | %.2f%% (%d/%d) | %s | `%s` |' , $methPct , $tCme , $tMe , $methDelta ?: '—' , $bar( $methPct ) );
+$o[] = sprintf( '| **Lines** | %.2f%% (%d/%d) | %s | `%s` |'   , $linePct  , $tCst  , $tSt  , $lineDelta  ?: '—' , $bar( $linePct ) );
+$o[] = sprintf( '| **Methods** | %.2f%% (%d/%d) | %s | `%s` |' , $methPct  , $tCme  , $tMe  , $methDelta  ?: '—' , $bar( $methPct ) );
+$o[] = sprintf( '| **Classes** | %.2f%% (%d/%d) | %s | `%s` |' , $classPct , $tCCls , $tCls , $classDelta ?: '—' , $bar( $classPct ) );
 $o[] = '';
 $o[] = '## Coverage by directory (lines)';
 $o[] = '';
@@ -195,8 +265,9 @@ file_put_contents( $outPath , implode( "\n" , $o ) . "\n" );
 
 $history[] = [
     'ts'      => $now ,
-    'lines'   => [ 'cst' => $tCst , 'st' => $tSt , 'pct' => round( $linePct , 2 ) ] ,
-    'methods' => [ 'cme' => $tCme , 'me' => $tMe , 'pct' => round( $methPct , 2 ) ] ,
+    'lines'   => [ 'cst'  => $tCst  , 'st'  => $tSt  , 'pct' => round( $linePct  , 2 ) ] ,
+    'methods' => [ 'cme'  => $tCme  , 'me'  => $tMe  , 'pct' => round( $methPct  , 2 ) ] ,
+    'classes' => [ 'ccls' => $tCCls , 'cls' => $tCls , 'pct' => round( $classPct , 2 ) ] ,
 ];
 
 // Keep the log bounded — only the last 50 runs are useful.
