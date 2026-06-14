@@ -224,8 +224,10 @@ trait SearchTrait
      *   boost differs from `1`;
      * - with {@see Search::PHRASE}, an exact-phrase bonus
      *   `BOOST(PHRASE(doc.<field>, @search_N), <boost × 2>)`;
-     * - with {@see Search::FUZZY} `> 0`, a typo-tolerant
-     *   `LEVENSHTEIN_MATCH(doc.<field>, @search_N, <fuzzy>)`.
+     * - with a per-field or View-level {@see Search::FUZZY} `> 0`, a
+     *   typo-tolerant `LEVENSHTEIN_MATCH(doc.<field>, @search_N, <fuzzy>)`;
+     *   a field may override the View-level tolerance — an explicit `0`
+     *   opts that field out while the rest stays fuzzy.
      *
      * The whole expression is wrapped in `ANALYZER(…, "<analyzer>")`.
      *
@@ -255,11 +257,11 @@ trait SearchTrait
             $search = $search[ Arango::SEARCH ] ?? null ;
         }
 
-        $name     = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
-        $quoted   = json_encode( $name ) ;
-        $fields   = $this->getViewSearchFields() ;
-        $phrase   = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
-        $fuzzy    = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
+        $name        = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
+        $quoted      = json_encode( $name ) ;
+        $fields      = $this->getViewFieldSpecs() ;
+        $phrase      = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
+        $globalFuzzy = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
 
         $expressions = [] ;
         $index       = 0 ;
@@ -268,8 +270,11 @@ trait SearchTrait
         {
             $term = $this->bind( $word , $binds , AQL::SEARCH . Char::UNDERLINE . $index++ ) ;
 
-            foreach( $fields as $field => $weight )
+            foreach( $fields as $field => $spec )
             {
+                $weight = $spec[ Search::BOOST ] ;
+                $fuzzy  = array_key_exists( Search::FUZZY , $spec ) ? $spec[ Search::FUZZY ] : $globalFuzzy ;
+
                 $path  = key( $field , $docRef ) ;
                 $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , $quoted ) ;
 
@@ -410,14 +415,22 @@ trait SearchTrait
 
     /**
      * Normalizes the searched fields of the `AQL::VIEW` declaration into a
-     * `field => boost` map: {@see Search::FIELDS} entries accept a numeric
-     * boost shorthand or an array carrying {@see Search::BOOST}; when the
-     * declaration has no fields, the model's `searchable` list is used with
-     * a boost of `1`.
+     * per-field specification map `field => [ Search::BOOST => float, … ]` —
+     * the single source of truth from which {@see getViewSearchFields()}
+     * derives the boost map and {@see prepareViewSearch()} resolves the
+     * per-field options.
      *
-     * @return array<string, float|int>
+     * {@see Search::FIELDS} entries accept a numeric boost shorthand or an
+     * array carrying {@see Search::BOOST} and {@see Search::FUZZY}; when the
+     * declaration has no fields, the model's `searchable` list is used with a
+     * neutral boost. A per-field option is kept in the spec only when it is
+     * explicitly declared — an absent key means "inherit the View-level
+     * default", which {@see prepareViewSearch()} resolves so that an explicit
+     * value (`0` included) overrides the global tolerance.
+     *
+     * @return array<string, array<string, float|int>>
      */
-    protected function getViewSearchFields() :array
+    protected function getViewFieldSpecs() :array
     {
         $fields = is_array( $this->view ) ? ( $this->view[ Search::FIELDS ] ?? null ) : null ;
 
@@ -428,22 +441,46 @@ trait SearchTrait
 
         return array_map(
 
-            static function( mixed $options ) : float
+            static function( mixed $options ) : array
             {
                 if( is_numeric( $options ) )
                 {
-                    return (float) $options ;
+                    return [ Search::BOOST => (float) $options ] ;
                 }
 
                 if( is_array( $options ) )
                 {
-                    return (float) ( $options[ Search::BOOST ] ?? 1 ) ;
+                    $spec = [ Search::BOOST => (float) ( $options[ Search::BOOST ] ?? 1 ) ] ;
+
+                    if( array_key_exists( Search::FUZZY , $options ) )
+                    {
+                        $spec[ Search::FUZZY ] = (int) $options[ Search::FUZZY ] ;
+                    }
+
+                    return $spec ;
                 }
 
-                return 1.0 ;
+                return [ Search::BOOST => 1.0 ] ;
 
             },
             $fields
+        ) ;
+    }
+
+    /**
+     * Normalizes the searched fields into a `field => boost` map — a
+     * boost-only façade over {@see getViewFieldSpecs()}, used by
+     * {@see buildViewLink()} and {@see viewDiff()} which only care about the
+     * field paths and their weights.
+     *
+     * @return array<string, float>
+     */
+    protected function getViewSearchFields() :array
+    {
+        return array_map
+        (
+            static fn( array $spec ) : float => $spec[ Search::BOOST ] ,
+            $this->getViewFieldSpecs()
         ) ;
     }
 }

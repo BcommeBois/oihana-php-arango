@@ -33,9 +33,25 @@ $places = new Documents( $container ,
 |---|---|---|
 | `Search::NAME` | `string` | **Required** — the View name. Without it the block is inert and `?search=` stays the `LIKE` sweep. |
 | `Search::ANALYZER` | `string` | Analyzer used to index **and** query the fields (default `identity` — declare a text Analyzer for linguistic search). |
-| `Search::FIELDS` | `array` | `field => boost` map (or `field => [ Search::BOOST => n ]`). Dotted paths supported. Falls back to `AQL::SEARCHABLE` (boost 1). |
+| `Search::FIELDS` | `array` | `field => boost` map (or `field => [ Search::BOOST => n, Search::FUZZY => d ]` to carry per-field options). Dotted paths supported. Falls back to `AQL::SEARCHABLE` (boost 1). |
 | `Search::PHRASE` | `bool` | Adds an exact-phrase bonus: a `PHRASE()` match weighs `boost × 2`. |
-| `Search::FUZZY` | `int` | Adds typo tolerance: `LEVENSHTEIN_MATCH` with this maximum edit distance. |
+| `Search::FUZZY` | `int` | View-level typo tolerance: `LEVENSHTEIN_MATCH` with this maximum edit distance (valid value `0`–`4`, `0` = off). Overridable per field — see below. |
+
+### Per-field typo tolerance
+
+`Search::FUZZY` may be declared **per field** in an array entry of `Search::FIELDS`, mirroring `Search::BOOST` exactly. A single View can then tolerate typos on text fields while staying **exact** on codes or identifiers (where tolerance would bring back the wrong record):
+
+```php
+Search::FIELDS =>
+[
+    'name' => [ Search::BOOST => 3 , Search::FUZZY => 1 ] , // text : typo-tolerant
+    'code' => [ Search::BOOST => 1 , Search::FUZZY => 0 ] , // code : exact
+    'slogan' => 2 ,                                          // short form preserved (boost 2)
+] ,
+Search::FUZZY => 1 , // View-level default
+```
+
+Resolution rule: a field declaring `Search::FUZZY` wins (an **explicit `0` opts that field out** of tolerance); a field with no `FUZZY` key inherits the View-level `Search::FUZZY`; with no global value, tolerance is disabled. The behavior is **fully backward-compatible**: a declaration without per-field fuzzy produces exactly the former AQL.
 
 **Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts.
 

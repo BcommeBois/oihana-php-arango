@@ -18,9 +18,13 @@ use oihana\reflect\traits\ConstantsTrait;
  * [
  *     Search::NAME     => 'placesView' ,             // the View name (required)
  *     Search::ANALYZER => 'text_fr' ,                // Analyzer of the searched fields
- *     Search::FIELDS   => [ 'name' => 3 , 'description' => 1 ] , // field => boost
+ *     Search::FIELDS   =>                            // field => boost (or array of per-field options)
+ *     [
+ *         'name' => [ Search::BOOST => 3 , Search::FUZZY => 1 ] , // text : typo-tolerant
+ *         'code' => [ Search::BOOST => 1 , Search::FUZZY => 0 ] , // code : exact match
+ *     ] ,
  *     Search::PHRASE   => true ,                     // exact-phrase bonus (boost ×2)
- *     Search::FUZZY    => 1 ,                        // Levenshtein tolerance (0 = off)
+ *     Search::FUZZY    => 1 ,                        // View-level Levenshtein tolerance (0 = off, override per field)
  * ]
  * ```
  *
@@ -44,14 +48,22 @@ class Search
     public const string BOOST = 'boost' ;
 
     /**
-     * The searched fields: `field => boost` (or `field => [ Search::BOOST => n ]`).
+     * The searched fields: `field => boost` (or `field => [ Search::BOOST => n,
+     * Search::FUZZY => d ]` to carry per-field options).
      * Falls back to the model's `AQL::SEARCHABLE` list (boost `1`) when omitted.
      */
     public const string FIELDS = 'fields' ;
 
     /**
      * Levenshtein tolerance: the maximum edit distance for fuzzy term matching
-     * (`LEVENSHTEIN_MATCH`). `0` (default) disables fuzzy matching.
+     * (`LEVENSHTEIN_MATCH`), a valid distance being `0`–`4`. `0` (default)
+     * disables fuzzy matching.
+     *
+     * Declared at the View level it applies to every searched field; declared
+     * inside a {@see FIELDS} entry it overrides that level for the field — an
+     * explicit `0` opts a field out (e.g. an identifier) while the rest of the
+     * View stays typo-tolerant. A field with no `FUZZY` key inherits the
+     * View-level value.
      */
     public const string FUZZY = 'fuzzy' ;
 

@@ -60,9 +60,9 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $places = $db->collection( self::COLLECTION ) ;
         $places->create() ;
 
-        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' ] ) ;
-        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             ] ) ;
-        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              ] ) ;
+        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' ] ) ;
+        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             ] ) ;
+        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              ] ) ;
     }
 
     /**
@@ -112,13 +112,13 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
      *
      * @throws ArangoException When the count is still wrong after ~15 seconds.
      */
-    private function waitForIndexing( int $expected ) :void
+    private function waitForIndexing( int $expected , string $view = self::VIEW ) :void
     {
         for ( $attempt = 0 ; $attempt < 150 ; $attempt++ )
         {
             $rows = iterator_to_array
             (
-                self::$db->query( 'FOR d IN ' . self::VIEW . ' COLLECT WITH COUNT INTO total RETURN total' ) ,
+                self::$db->query( 'FOR d IN ' . $view . ' COLLECT WITH COUNT INTO total RETURN total' ) ,
                 false
             ) ;
 
@@ -193,6 +193,45 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
         $rows = $model->list( [ Arango::SEARCH => 'boi' ] ) ;
         $this->assertNotEmpty( $rows , 'A 1-edit typo must still match through LEVENSHTEIN_MATCH.' ) ;
+    }
+
+    /**
+     * Per-field fuzzy (Lot VF1): under a positive View-level tolerance, a field
+     * declaring `Search::FUZZY => 0` stays exact (an identifier must not match
+     * a near-miss), while a text field keeps tolerating typos.
+     *
+     * @throws Throwable
+     */
+    public function testPerFieldFuzzyKeepsCodeExactWhileNameStaysTolerant() :void
+    {
+        $view =
+        [
+            Search::NAME     => 'placesFuzzyView' ,
+            Search::ANALYZER => 'text_fr' ,
+            Search::FIELDS   =>
+            [
+                'name' => [ Search::BOOST => 1 , Search::FUZZY => 1 ] , // text : typo-tolerant
+                'code' => [ Search::BOOST => 1 , Search::FUZZY => 0 ] , // code : exact only
+            ] ,
+            Search::FUZZY => 1 , // positive View-level default, overridden on `code`
+        ] ;
+
+        $model = $this->model( $view ) ;
+
+        $this->assertTrue( $model->viewExists( 'placesFuzzyView' ) , 'The per-field View must be provisioned.' ) ;
+
+        $this->waitForIndexing( 3 , 'placesFuzzyView' ) ;
+
+        $labels = fn( array $rows ) => array_map( fn( $r ) => is_array( $r ) ? $r[ 'code' ] : $r->code , $rows ) ;
+
+        $exact = $model->list( [ Arango::SEARCH => 'REF001' ] ) ;
+        $this->assertSame( [ 'REF001' ] , $labels( $exact ) , 'An exact code must match through IN TOKENS.' ) ;
+
+        $typo = $model->list( [ Arango::SEARCH => 'REF00' ] ) ;
+        $this->assertSame( [] , $labels( $typo ) , 'A near-miss code must NOT match : fuzzy is opted out on `code`.' ) ;
+
+        $name = $model->list( [ Arango::SEARCH => 'boi' ] ) ;
+        $this->assertNotEmpty( $name , 'A 1-edit typo on the name must still match : fuzzy stays on for `name`.' ) ;
     }
 
     /**

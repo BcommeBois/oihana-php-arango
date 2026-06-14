@@ -73,7 +73,7 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 |---|---|---|
 | Search bar with relevance | `TOKENS` match + `BM25` | [`AQL::VIEW` block](../db/search-views.md), automatic |
 | Exact-phrase priority | `PHRASE` + `BOOST` | `Search::PHRASE => true` |
-| Typo tolerance | `LEVENSHTEIN_MATCH` | `Search::FUZZY => 1` |
+| Typo tolerance | `LEVENSHTEIN_MATCH` | `Search::FUZZY => 1` (global or per-field) |
 | Field weighting | `BOOST` | `Search::FIELDS => ['name' => 3]` |
 | Autocomplete | `STARTS_WITH` (array of prefixes) | [`startsWith()`](../aql/aql-functions-strings.md) helper |
 | Custom scored query | the full grammar | [`aqlScoredSearch()`](../aql/aql-operations.md) builder |

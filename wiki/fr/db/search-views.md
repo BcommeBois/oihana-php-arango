@@ -33,9 +33,25 @@ $places = new Documents( $container ,
 |---|---|---|
 | `Search::NAME` | `string` | **Requis** — le nom de la View. Sans lui le bloc est inerte et `?search=` reste le balayage `LIKE`. |
 | `Search::ANALYZER` | `string` | Analyzer utilisé pour indexer **et** interroger les champs (défaut `identity` — déclarez un Analyzer texte pour la recherche linguistique). |
-| `Search::FIELDS` | `array` | Map `champ => boost` (ou `champ => [ Search::BOOST => n ]`). Chemins pointés supportés. Fallback sur `AQL::SEARCHABLE` (boost 1). |
+| `Search::FIELDS` | `array` | Map `champ => boost` (ou `champ => [ Search::BOOST => n, Search::FUZZY => d ]` pour des options par champ). Chemins pointés supportés. Fallback sur `AQL::SEARCHABLE` (boost 1). |
 | `Search::PHRASE` | `bool` | Ajoute un bonus d'expression exacte : un match `PHRASE()` pèse `boost × 2`. |
-| `Search::FUZZY` | `int` | Ajoute la tolérance aux fautes : `LEVENSHTEIN_MATCH` avec cette distance d'édition maximale. |
+| `Search::FUZZY` | `int` | Tolérance aux fautes globale : `LEVENSHTEIN_MATCH` avec cette distance d'édition maximale (valeur valide `0`–`4`, `0` = off). Surchargeable par champ — voir ci-dessous. |
+
+### Tolérance aux fautes par champ
+
+`Search::FUZZY` peut être déclaré **par champ** dans une entrée tableau de `Search::FIELDS`, en miroir exact de `Search::BOOST`. Une même View peut alors tolérer les fautes sur les champs texte tout en restant **exacte** sur les codes ou identifiants (où une tolérance ramènerait le mauvais enregistrement) :
+
+```php
+Search::FIELDS =>
+[
+    'name' => [ Search::BOOST => 3 , Search::FUZZY => 1 ] , // texte : tolérant
+    'code' => [ Search::BOOST => 1 , Search::FUZZY => 0 ] , // code : exact
+    'slogan' => 2 ,                                          // forme courte conservée (boost 2)
+] ,
+Search::FUZZY => 1 , // défaut au niveau de la View
+```
+
+Règle de résolution : un champ qui déclare `Search::FUZZY` l'emporte (un **`0` explicite désactive** la tolérance pour ce champ) ; un champ sans clé `FUZZY` hérite du `Search::FUZZY` de la View ; sans valeur globale, la tolérance est désactivée. Comportement **100 % rétro-compatible** : une déclaration sans fuzzy par champ produit exactement l'AQL d'avant.
 
 **Le provisioning est automatique** : comme la collection et ses `AQL::INDEXES`, la View est créée paresseusement à l'initialisation du modèle quand elle n'existe pas (champs cherchés liés avec l'Analyzer déclaré). Une View existante n'est **jamais modifiée automatiquement** — après un changement de déclaration, inspectez et resynchronisez explicitement : `$model->viewDiff()` détecte l'écart, `$model->viewSync()` le répare via `updateProperties()` (la View reste interrogeable pendant la ré-indexation), et l'[action `views` de la commande `arangodb`](../commands/arangodb.md#views--gestion-des-views-arangosearch) fait la même chose en CLI (`--diff` / `--sync`), intégrable aux scripts de déploiement.
 

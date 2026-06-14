@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-field fuzzy tolerance in ArangoSearch Views (Lot VF1).** `Search::FUZZY` can now be declared **per field** inside a `Search::FIELDS` array entry, mirroring `Search::BOOST`. A single View can tolerate typos on text fields while staying exact on codes/identifiers (`'code' => [ Search::BOOST => 1, Search::FUZZY => 0 ]`), where a near-miss would otherwise return the wrong record.
+  - **Resolution:** a field declaring `Search::FUZZY` wins (an explicit `0` opts that field out); a field with no `FUZZY` key inherits the View-level `Search::FUZZY`; with no global value, tolerance is off.
+  - **Backward-compatible:** declarations without per-field fuzzy emit exactly the former AQL.
+  - **Code:** new `SearchTrait::getViewFieldSpecs()` (single per-field specification source); `getViewSearchFields()` becomes a boost-only façade over it; `prepareViewSearch()` resolves the tolerance per field.
+  - **Tests:** unit (`ViewSearchTest` — per-field override, opt-out under a positive global, inheritance, descriptor shape) + live (`ViewSearchIntegrationTest::testPerFieldFuzzyKeepsCodeExactWhileNameStaysTolerant`).
+  - **Docs:** FR/EN `db/search-views.md` (new "per-field typo tolerance" section) + `getting-started/arangosearch.md`.
+
 ## [1.2.0] - 2026-06-14
 
 ### Added

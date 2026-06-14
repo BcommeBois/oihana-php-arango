@@ -73,7 +73,7 @@ Une requête : insensibilité accents/casse, matching par mots, le nom pesant 3�
 |---|---|---|
 | Barre de recherche avec pertinence | match `TOKENS` + `BM25` | [bloc `AQL::VIEW`](../db/search-views.md), automatique |
 | Priorité à l'expression exacte | `PHRASE` + `BOOST` | `Search::PHRASE => true` |
-| Tolérance aux fautes | `LEVENSHTEIN_MATCH` | `Search::FUZZY => 1` |
+| Tolérance aux fautes | `LEVENSHTEIN_MATCH` | `Search::FUZZY => 1` (global ou par champ) |
 | Pondération par champ | `BOOST` | `Search::FIELDS => ['name' => 3]` |
 | Autocomplete | `STARTS_WITH` (tableau de préfixes) | helper [`startsWith()`](../aql/aql-functions-strings.md) |
 | Requête scorée sur mesure | toute la grammaire | builder [`aqlScoredSearch()`](../aql/aql-operations.md) |

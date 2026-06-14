@@ -272,6 +272,64 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testPrepareViewSearchFuzzyPerFieldOverridesTheGlobal() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FUZZY    => 2 ,
+                Search::FIELDS   =>
+                [
+                    'name' => [ Search::BOOST => 1 , Search::FUZZY => 1 ] , // overrides the global 2
+                    'code' => [ Search::BOOST => 1 , Search::FUZZY => 0 ] , // opts out under a positive global
+                    'tag'  => 1 ,                                           // inherits the global 2
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER('
+            . 'doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || LEVENSHTEIN_MATCH(doc.name,@search_0,1)'
+            . ' || doc.code IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.tag IN TOKENS(@search_0,"text_fr")'
+            . ' || LEVENSHTEIN_MATCH(doc.tag,@search_0,2)'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchFuzzyPerFieldWithoutGlobal() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name' => [ Search::FUZZY => 1 ] , // boost defaults to 1
+                    'code' => 1 ,                      // no fuzzy, no global → exact
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER('
+            . 'doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || LEVENSHTEIN_MATCH(doc.name,@search_0,1)'
+            . ' || doc.code IN TOKENS(@search_0,"text_fr")'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
     public function testPrepareViewSearchCustomDocRef() :void
     {
         $model = $this->model(
@@ -520,6 +578,37 @@ class ViewSearchTest extends TestCase
         $this->assertSame
         (
             [ 'name' => 3.0 , 'description' => 2.0 , 'label' => 1.0 ] ,
+            $method->invoke( $model )
+        ) ;
+    }
+
+    public function testGetViewFieldSpecsKeepsFuzzyOnlyWhenDeclared() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS =>
+                [
+                    'name' => 3 ,                                            // numeric shorthand → boost only
+                    'code' => [ Search::BOOST => 1 , Search::FUZZY => 0 ] ,  // explicit fuzzy 0 is kept
+                    'tag'  => [ Search::FUZZY => 2 ] ,                       // boost defaults to 1
+                    'note' => [ Search::BOOST => 2 ] ,                       // no fuzzy key → inherits
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'getViewFieldSpecs' ) ;
+
+        $this->assertSame
+        (
+            [
+                'name' => [ Search::BOOST => 3.0 ] ,
+                'code' => [ Search::BOOST => 1.0 , Search::FUZZY => 0 ] ,
+                'tag'  => [ Search::BOOST => 1.0 , Search::FUZZY => 2 ] ,
+                'note' => [ Search::BOOST => 2.0 ] ,
+            ] ,
             $method->invoke( $model )
         ) ;
     }
