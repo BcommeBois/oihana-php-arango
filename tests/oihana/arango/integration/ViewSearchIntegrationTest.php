@@ -60,9 +60,9 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $places = $db->collection( self::COLLECTION ) ;
         $places->create() ;
 
-        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' , 'summary' => 'sawmill and timber'         ] ) ;
-        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             , 'summary' => 'fine woodworking workshops' ] ) ;
-        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              , 'summary' => 'metal forging studio'       ] ) ;
+        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' , 'summary' => 'sawmill and timber'         , 'intro' => [ 'fr' => 'scierie de bois'       , 'en' => 'timber sawmill'        ] ] ) ;
+        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             , 'summary' => 'fine woodworking workshops' , 'intro' => [ 'fr' => 'atelier de menuiserie' , 'en' => 'woodworking workshop'  ] ] ) ;
+        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              , 'summary' => 'metal forging studio'       , 'intro' => [ 'fr' => 'ferronnerie d art'     , 'en' => 'metal forging'         ] ] ) ;
     }
 
     /**
@@ -269,6 +269,45 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
         $en = $model->list( [ Arango::SEARCH => 'workshop' ] ) ;
         $this->assertSame( [ 'B' ] , $labels( $en ) , 'The English summary matches through text_en stemming (workshops → workshop).' ) ;
+    }
+
+    /**
+     * Localized search driven by `?lang=` (Lot VF3): a View indexes the `fr`
+     * and `en` sub-fields of an i18n `intro` object, each with its own
+     * Analyzer and `Search::LANG` marker. `?lang=fr` searches only the French
+     * side, `?lang=en` only the English one.
+     *
+     * @throws Throwable
+     */
+    public function testLangRestrictsTheSearchToTheMatchingLocale() :void
+    {
+        $view =
+        [
+            Search::NAME     => 'placesI18nView' ,
+            Search::ANALYZER => 'text_fr' ,
+            Search::FIELDS   =>
+            [
+                'name'     => 1 ,                                                       // locale-agnostic
+                'intro.fr' => [ Search::ANALYZER => 'text_fr' , Search::LANG => 'fr' ] ,
+                'intro.en' => [ Search::ANALYZER => 'text_en' , Search::LANG => 'en' ] ,
+            ] ,
+        ] ;
+
+        $model = $this->model( $view ) ;
+
+        $this->assertTrue( $model->viewExists( 'placesI18nView' ) , 'The i18n View must be provisioned.' ) ;
+
+        $this->waitForIndexing( 3 , 'placesI18nView' ) ;
+
+        $labels = fn( array $rows ) => array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
+
+        // « menuiserie » lives in intro.fr only.
+        $this->assertSame( [ 'B' ] , $labels( $model->list( [ Arango::SEARCH => 'menuiserie' , Arango::LANG => 'fr' ] ) ) , 'lang=fr matches the French side.' ) ;
+        $this->assertSame( []      , $labels( $model->list( [ Arango::SEARCH => 'menuiserie' , Arango::LANG => 'en' ] ) ) , 'lang=en excludes the French side.' ) ;
+
+        // « workshop » lives in intro.en only (indexed through text_en).
+        $this->assertSame( [ 'B' ] , $labels( $model->list( [ Arango::SEARCH => 'workshop' , Arango::LANG => 'en' ] ) ) , 'lang=en matches the English side.' ) ;
+        $this->assertSame( []      , $labels( $model->list( [ Arango::SEARCH => 'workshop' , Arango::LANG => 'fr' ] ) ) , 'lang=fr excludes the English side.' ) ;
     }
 
     /**

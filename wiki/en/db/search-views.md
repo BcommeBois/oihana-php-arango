@@ -70,6 +70,27 @@ Resolution rule: a field declaring `Search::ANALYZER` wins; otherwise it inherit
 
 > **Drift** — changing a field's Analyzer alters the View link. Like any declaration change, it does not update an already-created View: resynchronize with `$model->viewSync()` or `arangodb views --sync`. An analyzer (View-level or per-field) unknown to the server is reported by `$model->viewDiff()` (status `INVALID`).
 
+### Localized search (`?lang=`)
+
+For an i18n attribute stored as an object `{ "fr": …, "en": … }`, index each localized sub-field (dotted path) with its Analyzer **and** its locale marker `Search::LANG`:
+
+```php
+Search::FIELDS =>
+[
+    'name'     => 3 ,                                                       // locale-agnostic : always searched
+    'intro.fr' => [ Search::ANALYZER => 'text_fr' , Search::LANG => 'fr' ] ,
+    'intro.en' => [ Search::ANALYZER => 'text_en' , Search::LANG => 'en' ] ,
+] ,
+```
+
+When the request carries an active language (the [`?lang=`](search.md) parameter, already used for the `TRANSLATE()` projection in `RETURN`), the search aligns to it: only fields whose `Search::LANG` matches — **plus** the locale-agnostic fields (no `LANG`) — take part in the `SEARCH`. Without `?lang=`, every field is searched.
+
+- `?lang=fr` → searches `name` + `intro.fr` (the English side is dropped);
+- `?lang=en` → searches `name` + `intro.en`;
+- **guard:** if the active language matches **no** field (e.g. `?lang=de`), the filter is ignored and every field is searched — never an empty `SEARCH`.
+
+The `Search::LANG` (search) and the projection `?lang` (`TRANSLATE` in `RETURN`) are independent but consistent: the same active language narrows the search and localizes the output. Backward-compatible: with no `Search::LANG`, `?lang=` has no effect on the search.
+
 **Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts.
 
 ## URLs and behavior

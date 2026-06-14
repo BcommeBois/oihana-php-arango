@@ -354,6 +354,84 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    /**
+     * A model whose View mixes a locale-agnostic field and two localized
+     * sub-fields, each with its own Analyzer.
+     */
+    private function i18nModel() :Documents
+    {
+        return $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name'           => 1 ,                                                     // locale-agnostic
+                    'description.fr' => [ Search::LANG => 'fr' ] ,                              // French (model analyzer)
+                    'description.en' => [ Search::ANALYZER => 'text_en' , Search::LANG => 'en' ] , // English
+                ] ,
+            ] ,
+        ]) ;
+    }
+
+    public function testPrepareViewSearchWithoutLangSearchesEveryField() :void
+    {
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.description.fr IN TOKENS(@search_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(doc.description.en IN TOKENS(@search_0,"text_en"),"text_en")' ,
+            $this->i18nModel()->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchLangKeepsTheMatchingLocaleAndAgnosticFields() :void
+    {
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.description.fr IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $this->i18nModel()->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::LANG => 'fr' ] , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchLangSelectsTheOtherLocale() :void
+    {
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(doc.description.en IN TOKENS(@search_0,"text_en"),"text_en")' ,
+            $this->i18nModel()->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::LANG => 'en' ] , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchUnknownLangFallsBackToEveryField() :void
+    {
+        // Every field is localized and none matches `de` → the filter is ignored.
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'description.fr' => [ Search::LANG => 'fr' ] ,
+                    'description.en' => [ Search::ANALYZER => 'text_en' , Search::LANG => 'en' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.description.fr IN TOKENS(@search_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(doc.description.en IN TOKENS(@search_0,"text_en"),"text_en")' ,
+            $model->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::LANG => 'de' ] , $this->binds )
+        ) ;
+    }
+
     public function testPrepareViewSearchCustomDocRef() :void
     {
         $model = $this->model(
@@ -695,6 +773,35 @@ class ViewSearchTest extends TestCase
                 ] ,
             ] ,
             $link->toArray()
+        ) ;
+    }
+
+    public function testGetViewFieldSpecsKeepsLangWhenDeclared() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS =>
+                [
+                    'name'           => 3 ,
+                    'description.fr' => [ Search::LANG => 'fr' ] ,
+                    'description.en' => [ Search::ANALYZER => 'text_en' , Search::LANG => 'en' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'getViewFieldSpecs' ) ;
+
+        $this->assertSame
+        (
+            [
+                'name'           => [ Search::BOOST => 3.0 ] ,
+                'description.fr' => [ Search::BOOST => 1.0 , Search::LANG => 'fr' ] ,
+                'description.en' => [ Search::BOOST => 1.0 , Search::ANALYZER => 'text_en' , Search::LANG => 'en' ] ,
+            ] ,
+            $method->invoke( $model )
         ) ;
     }
 

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Localized View search driven by `?lang=` (Lot VF3).** A searched field can be tagged with `Search::LANG` to mark it as a localized variant of an i18n object attribute (`'intro.fr' => [ Search::ANALYZER => 'text_fr', Search::LANG => 'fr' ]`). When the request carries an active language (`?lang=`, already used for the `TRANSLATE()` projection), only fields whose locale matches — plus locale-agnostic fields — take part in the `SEARCH`; without `?lang=` every field is searched.
+  - **Guard:** an active language matching no field is ignored (all fields are searched) — the `SEARCH` is never emptied.
+  - **No View change:** all locale sub-fields stay indexed (with their per-field Analyzer, Lot VF2); `?lang=` only narrows the query. `buildViewLink()` / `viewDiff()` / `viewSync()` are untouched.
+  - **Code:** new `Search::LANG` key in the per-field spec; `prepareViewSearch()` filters fields by the active language. `count()` / `facetCounts()` inherit it for free.
+  - **Tests:** unit (`ViewSearchTest` — locale filtering, other-locale selection, no-lang, unknown-locale guard, descriptor shape) + live (`ViewSearchIntegrationTest::testLangRestrictsTheSearchToTheMatchingLocale`).
+  - **Docs:** FR/EN `db/search-views.md` (new "localized search" section) + `getting-started/arangosearch.md`.
+
 - **Per-field Analyzer in ArangoSearch Views (Lot VF2).** `Search::ANALYZER` can now be declared **per field** inside a `Search::FIELDS` array entry, mirroring `Search::BOOST` / `Search::FUZZY`. A single View can index (and query) a `text_fr` field and a `text_en` field side by side (`'summary' => [ Search::ANALYZER => 'text_en' ]`).
   - **Resolution:** a field declaring `Search::ANALYZER` wins; otherwise it inherits the View-level Analyzer (`identity` by default).
   - **Both sides:** since the Analyzer is fixed at indexing time, `buildViewLink()` indexes each field with its Analyzer, and `prepareViewSearch()` groups expressions by Analyzer — one `ANALYZER(…)` wrap per group, `OR`-ed. With a single Analyzer the output is byte-for-byte the former AQL.

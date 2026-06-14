@@ -19,6 +19,7 @@ use oihana\traits\LazyTrait;
 
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
+
 use function oihana\arango\db\functions\search\analyzer;
 use function oihana\arango\db\functions\search\boost;
 use function oihana\arango\db\functions\strings\like;
@@ -235,6 +236,12 @@ trait SearchTrait
      * With a single Analyzer the output is a single `ANALYZER(…)` wrap, byte for
      * byte the classic form.
      *
+     * When the request carries an active language (`Arango::LANG`, the `?lang=`
+     * parameter), localized fields (those declaring {@see Search::LANG}) join
+     * the `SEARCH` only when their locale matches; locale-agnostic fields always
+     * do. An active language matching no field is ignored — the `SEARCH` is
+     * never emptied.
+     *
      * @param array|string|null $search The `$init` array (reads `Arango::SEARCH`) or the search term itself.
      * @param ?array            $binds  Bind variables, populated by reference.
      * @param string            $docRef The document variable the fields hang off.
@@ -256,6 +263,8 @@ trait SearchTrait
             return null ;
         }
 
+        $lang = is_array( $search ) ? ( $search[ Arango::LANG ] ?? null ) : null ;
+
         if( is_array( $search ) )
         {
             $search = $search[ Arango::SEARCH ] ?? null ;
@@ -265,6 +274,23 @@ trait SearchTrait
         $fields        = $this->getViewFieldSpecs() ;
         $phrase        = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
         $globalFuzzy   = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
+
+        if( $lang !== null )
+        {
+            // Localized fields join the SEARCH only when their locale matches the
+            // active language; locale-agnostic fields always do. Filtering out
+            // every field (unknown locale) is ignored so the SEARCH is never empty.
+            $localized = array_filter
+            (
+                $fields ,
+                static fn( array $spec ) => !isset( $spec[ Search::LANG ] ) || $spec[ Search::LANG ] === $lang
+            ) ;
+
+            if( $localized !== [] )
+            {
+                $fields = $localized ;
+            }
+        }
 
         $groups = [] ; // analyzer name => list of expressions, in first-seen order
         $index  = 0 ;
@@ -441,7 +467,8 @@ trait SearchTrait
      * per-field options.
      *
      * {@see Search::FIELDS} entries accept a numeric boost shorthand or an
-     * array carrying {@see Search::BOOST} and {@see Search::FUZZY}; when the
+     * array carrying {@see Search::BOOST}, {@see Search::FUZZY},
+     * {@see Search::ANALYZER} and {@see Search::LANG}; when the
      * declaration has no fields, the model's `searchable` list is used with a
      * neutral boost. A per-field option is kept in the spec only when it is
      * explicitly declared — an absent key means "inherit the View-level
@@ -480,6 +507,11 @@ trait SearchTrait
                     if( array_key_exists( Search::ANALYZER , $options ) )
                     {
                         $spec[ Search::ANALYZER ] = (string) $options[ Search::ANALYZER ] ;
+                    }
+
+                    if( array_key_exists( Search::LANG , $options ) )
+                    {
+                        $spec[ Search::LANG ] = (string) $options[ Search::LANG ] ;
                     }
 
                     return $spec ;

@@ -70,6 +70,27 @@ Règle de résolution : un champ qui déclare `Search::ANALYZER` l'emporte ; sin
 
 > **Drift** — changer l'Analyzer d'un champ modifie le link de la View. Comme tout changement de déclaration, il ne met pas à jour une View déjà créée : resynchronisez avec `$model->viewSync()` ou `arangodb views --sync`. Un analyzer (modèle ou par champ) inconnu du serveur est signalé par `$model->viewDiff()` (statut `INVALID`).
 
+### Recherche localisée (`?lang=`)
+
+Pour un attribut i18n stocké en objet `{ "fr": …, "en": … }`, indexez chaque sous-champ localisé (chemin pointé) avec son Analyzer **et** son marqueur de locale `Search::LANG` :
+
+```php
+Search::FIELDS =>
+[
+    'name'     => 3 ,                                                       // non localisé : toujours cherché
+    'intro.fr' => [ Search::ANALYZER => 'text_fr' , Search::LANG => 'fr' ] ,
+    'intro.en' => [ Search::ANALYZER => 'text_en' , Search::LANG => 'en' ] ,
+] ,
+```
+
+Quand la requête porte une langue active (le paramètre [`?lang=`](search.md), déjà utilisé pour la projection `TRANSLATE()` au `RETURN`), la recherche s'y aligne : seuls les champs dont `Search::LANG` correspond — **plus** les champs non localisés (sans `LANG`) — participent au `SEARCH`. Sans `?lang=`, tous les champs sont cherchés.
+
+- `?lang=fr` → cherche `name` + `intro.fr` (le côté anglais est écarté) ;
+- `?lang=en` → cherche `name` + `intro.en` ;
+- **garde-fou** : si la langue active ne correspond à **aucun** champ (ex. `?lang=de`), le filtre est ignoré et tous les champs sont cherchés — jamais de `SEARCH` vide.
+
+Le `Search::LANG` (recherche) et le `?lang` de projection (`TRANSLATE` au `RETURN`) sont indépendants mais cohérents : la même langue active narrowe la recherche et localise la sortie. Rétro-compatible : sans aucun `Search::LANG`, `?lang=` n'a aucun effet sur la recherche.
+
 **Le provisioning est automatique** : comme la collection et ses `AQL::INDEXES`, la View est créée paresseusement à l'initialisation du modèle quand elle n'existe pas (champs cherchés liés avec l'Analyzer déclaré). Une View existante n'est **jamais modifiée automatiquement** — après un changement de déclaration, inspectez et resynchronisez explicitement : `$model->viewDiff()` détecte l'écart, `$model->viewSync()` le répare via `updateProperties()` (la View reste interrogeable pendant la ré-indexation), et l'[action `views` de la commande `arangodb`](../commands/arangodb.md#views--gestion-des-views-arangosearch) fait la même chose en CLI (`--diff` / `--sync`), intégrable aux scripts de déploiement.
 
 ## URLs et comportement

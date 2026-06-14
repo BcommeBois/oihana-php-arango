@@ -74,6 +74,18 @@ class Search
     public const string FUZZY = 'fuzzy' ;
 
     /**
+     * The locale a searched field holds, marking it as a localized variant
+     * (e.g. `'description.fr' => [ Search::LANG => 'fr' ]`). When the request
+     * carries an active language (`?lang=`), only fields whose `Search::LANG`
+     * matches — plus the fields that declare none — take part in the `SEARCH`;
+     * without `?lang=` every field is searched. If the active language matches
+     * no field, the filter is ignored and all fields are searched (never an
+     * empty `SEARCH`). A field with no `LANG` key is locale-agnostic and is
+     * always searched.
+     */
+    public const string LANG = 'lang' ;
+
+    /**
      * The name of the ArangoSearch View (required to activate the View search).
      */
     public const string NAME = 'name' ;
