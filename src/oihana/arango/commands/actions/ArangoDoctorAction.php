@@ -14,9 +14,12 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\traits\ArangoClientTrait;
+use oihana\arango\commands\traits\ArangoIndexesTrait;
 use oihana\arango\commands\traits\ArangoMigrationsTrait;
 use oihana\arango\commands\traits\ArangoModelsTrait;
+use oihana\arango\db\enums\DiffKind;
 use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\options\indexes\IndexOptions;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\migrations\enums\MigrationKind;
@@ -75,6 +78,7 @@ use oihana\enums\Char;
 trait ArangoDoctorAction
 {
     use ArangoClientTrait ,
+        ArangoIndexesTrait ,
         ArangoMigrationsTrait ,
         ArangoModelsTrait ,
         IOTrait ;
@@ -100,9 +104,9 @@ trait ArangoDoctorAction
 
         $io->section( $apply ? 'Repair the declared structure' : 'Diagnose the declared structure' ) ;
 
-        if( $this->models === [] )
+        if( $this->models === [] && $this->collectionIndexes === [] )
         {
-            $io->warning( 'No models configured — pass their container ids via the `models` init key of the command.' ) ;
+            $io->warning( 'Nothing configured — pass model container ids via the `models` init key and/or a collection→indexes registry via `collectionIndexes`.' ) ;
             return ExitCode::SUCCESS ;
         }
 
@@ -141,19 +145,7 @@ trait ArangoDoctorAction
 
             foreach( $reports as $report )
             {
-                $this->doctorRenderReport( $io , $report , $apply ) ;
-
-                $counters[ $report->status ] = ( $counters[ $report->status ] ?? 0 ) + 1 ;
-
-                if( !$report->inSync() && !( $apply && $report->applied ) )
-                {
-                    $healthy = false ;
-                }
-
-                if( $apply && $report->applied )
-                {
-                    $applied[] = $report ;
-                }
+                $this->doctorAccount( $io , $report , $apply , $counters , $applied , $healthy ) ;
             }
 
             if( !empty( $model->collection ) )
@@ -163,6 +155,39 @@ trait ArangoDoctorAction
             if( $model->getViewName() !== null )
             {
                 $declaredViews[] = $model->getViewName() ;
+            }
+        }
+
+        // Collection-level index registry — reconcile each collection's indexes
+        // once, independently of the models (see ArangoIndexesTrait). The same
+        // counters/journal feed the summary, and the collection is added to the
+        // declared set so the registry never makes it look orphaned.
+        if( $this->collectionIndexes !== [] )
+        {
+            $facade = $this->resolveFacade( $input ) ;
+
+            foreach( $this->collectionIndexes as $collection => $declared )
+            {
+                // A single IndexOptions value is normalized to a one-element
+                // list ; a raw array is always treated as the index list.
+                $indexes = $declared instanceof IndexOptions ? [ $declared ] : $declared ;
+
+                if( empty( $indexes ) )
+                {
+                    continue ;
+                }
+
+                $io->text( sprintf( '<info>%s</info>' , $collection ) ) ;
+
+                $report = $facade === null
+                        ? new DiffReport( $collection , DiffStatus::UNREACHABLE , [ 'no database available' ] , kind : DiffKind::INDEXES )
+                        : ( $apply
+                            ? $facade->indexesSync( $collection , $indexes , $force )
+                            : $facade->indexesDiff( $collection , $indexes ) ) ;
+
+                $this->doctorAccount( $io , $report , $apply , $counters , $applied , $healthy ) ;
+
+                $declaredCollections[] = $collection ;
             }
         }
 
@@ -194,6 +219,38 @@ trait ArangoDoctorAction
     }
 
     /**
+     * Accounts one diff report into the running doctor state: renders it, bumps
+     * the status counter, flips the health flag when the report is not in sync
+     * (and was not freshly applied), and collects it when applied. Shared by the
+     * model walk and the collection-index registry walk.
+     *
+     * @param SymfonyStyle           $io
+     * @param DiffReport             $report
+     * @param bool                   $apply
+     * @param array<string, int>     $counters The status counters, by reference.
+     * @param array<int, DiffReport> $applied  The applied reports, by reference.
+     * @param bool                   $healthy  The health flag, by reference.
+     *
+     * @return void
+     */
+    private function doctorAccount( SymfonyStyle $io , DiffReport $report , bool $apply , array &$counters , array &$applied , bool &$healthy ) :void
+    {
+        $this->doctorRenderReport( $io , $report , $apply ) ;
+
+        $counters[ $report->status ] = ( $counters[ $report->status ] ?? 0 ) + 1 ;
+
+        if( !$report->inSync() && !( $apply && $report->applied ) )
+        {
+            $healthy = false ;
+        }
+
+        if( $apply && $report->applied )
+        {
+            $applied[] = $report ;
+        }
+    }
+
+    /**
      * Journals each applied object as a `CreateAction` in the tracking
      * collection — the audit trail of `doctor --apply`, told apart from the
      * versioned migrations by its `additionalType` ({@see MigrationKind::DOCTOR}).
@@ -202,10 +259,12 @@ trait ArangoDoctorAction
      * database is unreachable, and a journal failure never fails the run.
      * The migration runner ignores these rows.
      *
-     * @param InputInterface     $input
+     * @param InputInterface $input
      * @param array<int, DiffReport> $applied The reports actually created / repaired.
      *
      * @return void
+     *
+     * @throws ReflectionException
      */
     private function doctorJournal( InputInterface $input , array $applied ) :void
     {
@@ -381,7 +440,7 @@ trait ArangoDoctorAction
 
     /**
      * Prints one {@see DiffReport} as a status line (labelled with its
-     * {@see \oihana\arango\db\enums\DiffKind}) plus one indented line per
+     * {@see DiffKind}) plus one indented line per
      * change.
      *
      * @param SymfonyStyle   $io

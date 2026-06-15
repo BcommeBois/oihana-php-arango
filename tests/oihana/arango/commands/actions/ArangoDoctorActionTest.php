@@ -22,6 +22,8 @@ use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\DiffKind;
 use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\options\indexes\IndexOptions;
+use oihana\arango\db\options\indexes\PersistentIndexOptions;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -65,6 +67,9 @@ class ArangoDoctorActionHost
 
     /** The fake database returned by the buildDatabase() seam. */
     public ?Database $fakeDatabase = null ;
+
+    /** The fake façade returned by the resolveFacade() seam (collection-index registry). */
+    public ?ArangoDB $fakeFacade = null ;
 
     /** The exit label of the interactive selections (mirrors ArangoCommand). */
     public string $exit = 'Exit the command.' ;
@@ -113,6 +118,11 @@ class ArangoDoctorActionHost
         }
 
         return $this->fakeDatabase ;
+    }
+
+    protected function resolveFacade( $input ) :?ArangoDB
+    {
+        return $this->fakeFacade ;
     }
 }
 
@@ -239,7 +249,7 @@ class ArangoDoctorActionTest extends TestCase
         $code = $host->run( $this->input() , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
-        $this->assertStringContainsString( 'No models configured' , $output->fetch() ) ;
+        $this->assertStringContainsString( 'Nothing configured' , $output->fetch() ) ;
     }
 
     /**
@@ -860,5 +870,142 @@ class ArangoDoctorActionTest extends TestCase
         fwrite( $stream , $answer ) ;
         rewind( $stream ) ;
         return $stream ;
+    }
+
+    // ---- collection-index registry ------------------------------------------
+
+    /** A collection→indexes registry entry (content irrelevant — the façade double answers). */
+    private function registry() :array
+    {
+        return [ 'places' => [ [ 'type' => 'persistent' , 'name' => 'harvest' , 'fields' => [ 'id' , 'additionalType' ] , 'unique' => false ] ] ] ;
+    }
+
+    /** A façade double answering the registry index reports (diff and sync alike). */
+    private function registryFacade( DiffReport $report ) :ArangoDB
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'indexesDiff' )->willReturn( $report ) ;
+        $facade->method( 'indexesSync' )->willReturn( $report ) ;
+        return $facade ;
+    }
+
+    /**
+     * The registry is reconciled even with no model configured — the guard
+     * accepts a registry-only run.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorReconcilesTheCollectionIndexRegistryWithoutAnyModel() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->collectionIndexes = $this->registry() ;
+        $host->fakeFacade = $this->registryFacade( new DiffReport( 'places' , DiffStatus::IN_SYNC , kind : DiffKind::INDEXES ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( '✓ places [indexes] — in sync' , $text ) ;
+        $this->assertStringContainsString( '0 model(s) — 1 in sync, 0 missing, 0 drifted, 0 invalid, 0 unreachable ; 0 orphan(s).' , $text ) ;
+    }
+
+    /**
+     * A drifted registry index fails the report-mode run, exactly like a
+     * model-declared one.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorFailsOnCollectionIndexRegistryDrift() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->collectionIndexes = $this->registry() ;
+        $host->fakeFacade = $this->registryFacade( new DiffReport( 'places' , DiffStatus::DRIFTED , [ 'harvest : missing on the server' ] , kind : DiffKind::INDEXES ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( '~ places [indexes] — drifted' , $text ) ;
+        $this->assertStringContainsString( '· harvest : missing on the server' , $text ) ;
+    }
+
+    /**
+     * `--apply` reconciles the registry through indexesSync(); an applied
+     * report keeps the run healthy.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorAppliesTheCollectionIndexRegistry() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->collectionIndexes = $this->registry() ;
+        $host->fakeFacade = $this->registryFacade( new DiffReport( 'places' , DiffStatus::MISSING , [ 'harvest : missing on the server' ] , true , DiffKind::INDEXES ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::APPLY => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'places [indexes]' , $output->fetch() ) ;
+    }
+
+    /**
+     * A collection covered by the registry is added to the declared set, so it
+     * is never reported as an orphan.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testRegistryCollectionIsNeverAnOrphan() :void
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'collections' )->willReturn( [ $this->namedCollection( 'places' ) , $this->namedCollection( 'ghost' ) ] ) ;
+        $db->method( 'listViews'   )->willReturn( [] ) ;
+
+        $host = new ArangoDoctorActionHost() ;
+        $host->collectionIndexes = $this->registry() ;
+        $host->fakeFacade   = $this->registryFacade( new DiffReport( 'places' , DiffStatus::IN_SYNC , kind : DiffKind::INDEXES ) ) ;
+        $host->fakeDatabase = $db ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( '· collection : ghost' , $text ) ;
+        $this->assertStringNotContainsString( 'collection : places' , $text ) ;
+        $this->assertStringContainsString( '1 orphan(s)' , $text ) ;
+    }
+
+    /**
+     * A single IndexOptions value (not wrapped in a list) is normalized to a
+     * one-element list and reconciled all the same.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testRegistryAcceptsASingleIndexOptionsValue() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->collectionIndexes =
+        [
+            'places' => new PersistentIndexOptions([ IndexOptions::NAME => 'id' , IndexOptions::FIELDS => [ 'id' ] , IndexOptions::UNIQUE => true ]) ,
+        ] ;
+        $host->fakeFacade = $this->registryFacade( new DiffReport( 'places' , DiffStatus::IN_SYNC , kind : DiffKind::INDEXES ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( '✓ places [indexes] — in sync' , $output->fetch() ) ;
     }
 }

@@ -53,6 +53,7 @@ class ArangoCommand extends Kernel
     public function __construct( ?string $name , ?Container $container = null , array $init = [] )
     {
         parent::__construct( $name , $container , $init );
+        $this->collectionIndexes     = $init[ ArangoCommandParam::COLLECTION_INDEXES    ] ?? $this->collectionIndexes ;
         $this->dateFormat            = $init[ ArangoCommandParam::DATE_FORMAT           ] ?? $this->dateFormat ;
         $this->migrationsCollection  = $init[ ArangoCommandParam::MIGRATIONS_COLLECTION ] ?? $this->migrationsCollection ;
         $this->migrationsNamespace   = $init[ ArangoCommandParam::MIGRATIONS_NAMESPACE  ] ?? $this->migrationsNamespace ;

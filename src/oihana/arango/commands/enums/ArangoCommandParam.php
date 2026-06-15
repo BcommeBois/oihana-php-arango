@@ -12,6 +12,16 @@ class ArangoCommandParam
     use ConstantsTrait ;
 
     /**
+     * The 'collectionIndexes' parameter — the collection→indexes registry
+     * reconciled by the `doctor` action, declared independently of the models:
+     * a map `collectionName => IndexOptions[]` (a single `IndexOptions` is
+     * tolerated in place of a one-element list). Lets a collection's indexes be
+     * declared once, in one place, even when several models back it (or none
+     * declares `AQL::INDEXES`).
+     */
+    public const string COLLECTION_INDEXES = 'collectionIndexes' ;
+
+    /**
      * The 'dateFormat' parameter.
      */
     public const string DATE_FORMAT = 'dateFormat' ;
