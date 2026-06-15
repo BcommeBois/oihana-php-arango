@@ -49,41 +49,41 @@ $db->createIndex( 'users' , $index ) ;
 Rather than manually calling `createIndex()` in a migration script, declare indexes in the model's `AQL::INDEXES`. They are automatically created **on first instantiation** of the model (and so on the first API call in production), only if they don't already exist.
 
 ```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\db\options\indexes\IndexOptions ;
 use oihana\arango\db\options\indexes\PersistentIndexOptions ;
 use oihana\arango\db\options\indexes\TTLIndexOptions ;
 
 return
 [
-    Models::SESSIONS => fn( Container $c ) => new Documents( $c ,
+    Models::SESSIONS => fn( Container $container ) => new Documents( $container ,
     [
-        AQL::COLLECTION => 'sessions'           ,
-        AQL::DATABASE   => Databases::ARANGO    ,
+        AQL::COLLECTION => 'sessions'        ,
+        AQL::DATABASE   => Databases::ARANGO ,
         AQL::INDEXES    =>
         [
             // Unique tokenHash lookup
-            ( function ()
-            {
-                $idx           = new PersistentIndexOptions() ;
-                $idx->fields   = [ 'tokenHash' ] ;
-                $idx->unique   = true            ;
-                $idx->sparse   = true            ;
-                $idx->name     = 'idx_sessions_tokenHash' ;
-                return $idx ;
-            } )() ,
+            new PersistentIndexOptions
+            ([
+                IndexOptions::NAME   => 'idx_sessions_tokenHash' ,
+                IndexOptions::FIELDS => [ 'tokenHash' ] ,
+                IndexOptions::UNIQUE => true ,
+                IndexOptions::SPARSE => true ,
+            ]) ,
 
             // Automatic expiration
-            ( function ()
-            {
-                $ttl              = new TTLIndexOptions() ;
-                $ttl->fields      = [ 'expiresAt' ] ;
-                $ttl->expireAfter = 0               ;
-                $ttl->name        = 'idx_sessions_ttl' ;
-                return $ttl ;
-            } )() ,
+            new TTLIndexOptions
+            ([
+                IndexOptions::NAME         => 'idx_sessions_ttl' ,
+                IndexOptions::FIELDS       => [ 'expiresAt' ] ,
+                IndexOptions::EXPIRE_AFTER => 0 ,
+            ]) ,
         ] ,
     ]) ,
 ] ;
 ```
+
+> The `*IndexOptions` constructor accepts an **associative array** (keys = `IndexOptions::*` constants), applied by reflection — no need to instantiate then set each property one by one.
 
 `AQL::INDEXES` expects a **list** (`IndexOptions[]` or raw definitions). As a convenience a **single** `IndexOptions` is accepted in place of a one-element list (a raw array always stays the list) — normalization is centralized in `ArangoTrait::initializeIndexes()`, so every consumer (lazy provisioning, `doctor`) always sees an `IndexOptions[]`.
 
@@ -94,6 +94,8 @@ Advantages:
 - **Versioned with the code** — the index definition lives in the same DI *definition* as the collection.
 
 Limit: creating a heavy `persistent` index can **block writes** for several minutes on a large collection. For this case, pass `inBackground: true` in the options.
+
+> ⚠️ **Lazy provisioning only creates indexes when the collection is created.** An index added to `AQL::INDEXES` of an **already existing** collection is **never** created lazily (no error — queries silently fall back to full scans). The [`arangodb doctor`](commands/arangodb.md#doctor--structure-health-check) command reconciles the gap: `doctor` reports it, `doctor --apply` creates it (`--force` to rebuild a drifted index). To declare indexes **per collection**, independently of the models (several models on one collection), see the [collection-level index registry](commands/arangodb.md#indexes-declared-per-collection-autonomous-registry).
 
 ## Class catalog by type
 
