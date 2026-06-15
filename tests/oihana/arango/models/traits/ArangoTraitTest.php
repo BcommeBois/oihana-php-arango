@@ -11,6 +11,8 @@ use PHPUnit\Framework\Attributes\CoversTrait;
 use PHPUnit\Framework\TestCase;
 
 use oihana\arango\db\ArangoDB;
+use oihana\arango\db\options\indexes\IndexOptions;
+use oihana\arango\db\options\indexes\PersistentIndexOptions;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\ArangoTrait;
 
@@ -230,6 +232,27 @@ class ArangoTraitTest extends TestCase
 
         $this->assertSame( $host , $result ) ;
         $this->assertSame( 'things' , $host->collection ) ;
+    }
+
+    public function testInitializeIndexesNormalizesASingleIndexOptionsToAList() :void
+    {
+        $index = new PersistentIndexOptions([ IndexOptions::NAME => 'id' , IndexOptions::FIELDS => [ 'id' ] , IndexOptions::UNIQUE => true ]) ;
+
+        $host   = new ArangoTraitHost( null ) ;
+        $result = $host->initializeIndexes([ Arango::INDEXES => $index ]) ;
+
+        $this->assertSame( $host , $result ) ;
+        $this->assertSame( [ $index ] , $host->indexes ) ;
+    }
+
+    public function testInitializeIndexesKeepsAListAsIs() :void
+    {
+        $list = [ [ 'type' => 'persistent' , 'fields' => [ 'x' ] ] ] ;
+
+        $host = new ArangoTraitHost( null ) ;
+        $host->initializeIndexes([ Arango::INDEXES => $list ]) ;
+
+        $this->assertSame( $list , $host->indexes ) ;
     }
 
     public function testInitializeCollectionSkipsCreationWhenNotLazy() :void

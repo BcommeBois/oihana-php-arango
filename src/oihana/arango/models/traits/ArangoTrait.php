@@ -434,8 +434,9 @@ trait ArangoTrait
     :static
     {
         $this->collection = $init[ Arango::COLLECTION ] ?? null ;
-        $this->indexes    = $init[ Arango::INDEXES    ] ?? $this->indexes ;
         $this->type       = $init[ Arango::TYPE       ] ?? $type ;
+
+        $this->initializeIndexes( $init ) ;
 
         $lazy    = $this->initializeLazy( $init )->isLazy() ;
         $options = $init[ Arango::OPTIONS ] ?? [] ;
@@ -461,6 +462,24 @@ trait ArangoTrait
             }
         }
 
+        return $this ;
+    }
+
+    /**
+     * Sets the declared indexes of the collection from the init definition,
+     * normalizing a single {@see IndexOptions} value to a one-element list (a
+     * raw array always stays the index list) — so every consumer sees a plain
+     * `IndexOptions[]`: the {@see initializeCollection()} lazy provisioning and
+     * the {@see \oihana\arango\models\traits\DoctorTrait} diagnose/repair diffs.
+     *
+     * @param array $init The init definition (reads the `Arango::INDEXES` key).
+     *
+     * @return static
+     */
+    public function initializeIndexes( array $init = [] ) :static
+    {
+        $indexes = $init[ Arango::INDEXES ] ?? $this->indexes ;
+        $this->indexes = $indexes instanceof IndexOptions ? [ $indexes ] : $indexes ;
         return $this ;
     }
 
