@@ -47,6 +47,7 @@ Beyond the boost, each `Search::FIELDS` entry accepts options declared **per fie
 | [`Search::ANALYZER`](#per-field-analyzer) | one Analyzer per field (French, English, …) | `?search=workshops` matches via `text_en` (stem `workshop`) |
 | [`Search::LANG`](#localized-search-lang) | localized search driven by `?lang=` | `?search=menuiserie&lang=fr` targets the French side |
 | [`Search::PHRASE`](#per-field-exact-phrase-bonus) | exact-phrase bonus where it matters | `?search=cuir vintage` lifts the adjacent phrase |
+| [`Search::REQUIRES`](#search-permissions) | restrict a field to authorized requests | a `secret` field is searched only with the permission |
 
 These options compose (a single field can declare boost + analyzer + language + fuzzy + phrase). Each section below details one, with an end-to-end concrete example.
 
@@ -191,6 +192,37 @@ OR BOOST(PHRASE(doc.name, @search_0), 6)                // exact-phrase bonus (r
 ```
 
 As a result « Fauteuil cuir vintage » ranks **ahead of** « Sac en cuir, style vintage » in the `BM25` order. The `code` field (`Search::PHRASE => false`) never gets that branch: an identifier like `REF-2024` must not be "brought closer" to an approximate input.
+
+### Search permissions
+
+`Search::REQUIRES` declares the **permission subject(s)** a field requires to be searched — a string or a list (OR semantics) — mirroring [`Field::REQUIRES`](../edges-joins-projection.md) on the projection side. A field with no `REQUIRES` is always searchable; a gated field joins the `SEARCH` only if the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller and consulted by `isAuthorized()`) grants **at least one** subject:
+
+```php
+Search::FIELDS =>
+[
+    'name'   => 3 ,                                                  // public
+    'salary' => [ Search::REQUIRES => 'hr.salary:search' ] ,         // 1 subject required
+    'ssn'    => [ Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] , // OR : admin OR audit
+] ,
+```
+
+**Concrete example.** The word « confidentiel » lives only in a `secret` field gated by `Search::REQUIRES => 'places:secret'`:
+
+```
+GET /places?search=confidentiel
+```
+
+| Request | `secret` searched? | Result |
+|---|---|---|
+| authorizer grants `places:secret` | ✅ yes | the record surfaces |
+| authorizer denies | ❌ no (field removed) | no result |
+
+Key points:
+
+- **No leak by default** — if permissions remove **every** searched field, the emitted `SEARCH` is `false`: zero results. It **never** falls back to searching everything or to the `LIKE` sweep (which would bypass the gate).
+- **Fail-open without an authorizer** — if no `Arango::AUTHORIZER` is injected, the authorization layer is considered disabled and gated fields stay searchable (same behavior as the projection). In production the controller always injects the authorizer.
+- **`count()` and `facetCounts()`** apply the same filtering (they reuse the same `SEARCH` expression).
+- Backward-compatible: with no `REQUIRES` on any field, the AQL is unchanged.
 
 **Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts.
 

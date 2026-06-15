@@ -487,6 +487,108 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    /**
+     * A model whose View mixes a public field and a permission-gated one.
+     */
+    private function gatedModel() :Documents
+    {
+        return $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name'   => 1 ,                                       // public
+                    'salary' => [ Search::REQUIRES => 'hr:salary' ] ,     // gated
+                ] ,
+            ] ,
+        ]) ;
+    }
+
+    public function testPrepareViewSearchGatedFieldKeptWhenAuthorized() :void
+    {
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.salary IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $this->gatedModel()->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => true ] ,
+                $this->binds
+            )
+        ) ;
+    }
+
+    public function testPrepareViewSearchGatedFieldDroppedWhenDenied() :void
+    {
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $this->gatedModel()->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => false ] ,
+                $this->binds
+            )
+        ) ;
+    }
+
+    public function testPrepareViewSearchGateIsOrOverSubjects() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'ssn' => [ Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.ssn IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn( string $s ) => $s === 'hr:audit' ],
+                $this->binds
+            )
+        ) ;
+    }
+
+    public function testPrepareViewSearchMatchesNothingWhenEveryFieldIsDenied() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'salary' => [ Search::REQUIRES => 'hr:salary' ] ] , // every field gated
+            ] ,
+        ]) ;
+
+        // Denied everything → SEARCH false (no result), never a fallback to all.
+        $this->assertSame
+        (
+            'false' ,
+            $model->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => false ],
+                $this->binds
+            )
+        ) ;
+        $this->assertSame( [] , $this->binds , 'No term is bound when the search matches nothing.' ) ;
+    }
+
+    public function testPrepareViewSearchGateFailsOpenWithoutAuthorizer() :void
+    {
+        // No Arango::AUTHORIZER injected → the gated field stays searchable.
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.salary IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $this->gatedModel()->prepareViewSearch( [ Arango::SEARCH => 'bois' ] , $this->binds )
+        ) ;
+    }
+
     public function testPrepareViewSearchCustomDocRef() :void
     {
         $model = $this->model(
@@ -828,6 +930,35 @@ class ViewSearchTest extends TestCase
                 ] ,
             ] ,
             $link->toArray()
+        ) ;
+    }
+
+    public function testGetViewFieldSpecsKeepsRequiresWhenDeclared() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS =>
+                [
+                    'name'   => 3 ,
+                    'salary' => [ Search::REQUIRES => 'hr:salary' ] ,
+                    'ssn'    => [ Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'getViewFieldSpecs' ) ;
+
+        $this->assertSame
+        (
+            [
+                'name'   => [ Search::BOOST => 3.0 ] ,
+                'salary' => [ Search::BOOST => 1.0 , Search::REQUIRES => 'hr:salary' ] ,
+                'ssn'    => [ Search::BOOST => 1.0 , Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] ,
+            ] ,
+            $method->invoke( $model )
         ) ;
     }
 

@@ -64,9 +64,9 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $places = $db->collection( self::COLLECTION ) ;
         $places->create() ;
 
-        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' , 'summary' => 'sawmill and timber'        , 'intro' => [ 'fr' => 'scierie de bois'       , 'en' => 'timber sawmill'        ] , 'tagline' => 'red oak'      ] ) ;
-        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'              , 'summary' => 'fine woodworking workshops' , 'intro' => [ 'fr' => 'atelier de menuiserie' , 'en' => 'woodworking workshop'  ] , 'tagline' => 'oak red'     ] ) ;
-        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'               , 'summary' => 'metal forging studio'       , 'intro' => [ 'fr' => 'ferronnerie d art'     , 'en' => 'metal forging'         ] , 'tagline' => 'green metal' ] ) ;
+        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' , 'summary' => 'sawmill and timber'        , 'intro' => [ 'fr' => 'scierie de bois'       , 'en' => 'timber sawmill'        ] , 'tagline' => 'red oak'      , 'secret' => 'dossier alpha'        ] ) ;
+        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'              , 'summary' => 'fine woodworking workshops' , 'intro' => [ 'fr' => 'atelier de menuiserie' , 'en' => 'woodworking workshop'  ] , 'tagline' => 'oak red'     , 'secret' => 'projet confidentiel'  ] ) ;
+        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'               , 'summary' => 'metal forging studio'       , 'intro' => [ 'fr' => 'ferronnerie d art'     , 'en' => 'metal forging'         ] , 'tagline' => 'green metal' , 'secret' => 'note publique'        ] ) ;
     }
 
     /**
@@ -396,6 +396,42 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $labels = array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
 
         $this->assertSame( [ 'A' , 'B' ] , $labels , 'The adjacent phrase (A) ranks before the scattered match (B); C is out.' ) ;
+    }
+
+    /**
+     * Per-field search permissions (Lot VF4b): the `secret` field declares
+     * `Search::REQUIRES`. The word « confidentiel » lives only there, so the
+     * record surfaces only when the request authorizer grants the subject;
+     * a denying authorizer drops the field and the search returns nothing.
+     *
+     * @throws Throwable
+     */
+    public function testPerFieldRequiresGatesTheSearchableField() :void
+    {
+        $view =
+        [
+            Search::NAME     => 'placesGatedView' ,
+            Search::ANALYZER => 'text_fr' ,
+            Search::FIELDS   =>
+            [
+                'name'   => 1 ,
+                'secret' => [ Search::REQUIRES => 'places:secret' ] ,
+            ] ,
+        ] ;
+
+        $model = $this->model( $view ) ;
+
+        $this->assertTrue( $model->viewExists( 'placesGatedView' ) , 'The gated View must be provisioned.' ) ;
+
+        $this->waitForIndexing( 3 , 'placesGatedView' ) ;
+
+        $labels = fn( array $rows ) => array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
+
+        $granted = $model->list( [ Arango::SEARCH => 'confidentiel' , Arango::AUTHORIZER => fn() => true  ] ) ;
+        $this->assertSame( [ 'B' ] , $labels( $granted ) , 'With the permission, the gated field is searched.' ) ;
+
+        $denied = $model->list( [ Arango::SEARCH => 'confidentiel' , Arango::AUTHORIZER => fn() => false ] ) ;
+        $this->assertSame( [] , $labels( $denied ) , 'Without the permission, the gated field is not searched.' ) ;
     }
 
     /**

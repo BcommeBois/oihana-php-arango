@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-field search permissions in ArangoSearch Views (Lot VF4b).** A searched field can declare `Search::REQUIRES` (a permission subject or a list, OR semantics) — mirroring `Field::REQUIRES` for projections. A gated field joins the `SEARCH` only when the request authorizer (`Arango::AUTHORIZER`, already injected by the controller and consulted by `isAuthorized()`) grants at least one subject; an ungated field is always searchable.
+  - **No leak by default:** if permissions remove every searched field, the emitted `SEARCH` is `false` (zero results) — it never falls back to searching everything or to the `LIKE` sweep, which would bypass the gate.
+  - **Fail-open** without an authorizer (authorization layer disabled), consistent with projection/edge/join gating. `count()` / `facetCounts()` inherit the gating.
+  - **Reuses existing plumbing:** no controller code — the same authorizer already injected for projection gates the search. Query-time only; the View still indexes every field (`buildViewLink()` / `viewDiff()` untouched).
+  - **Tests:** unit (`ViewSearchTest` — authorized/denied, OR over subjects, deny-all → `SEARCH false`, fail-open, descriptor shape) + live (`ViewSearchIntegrationTest::testPerFieldRequiresGatesTheSearchableField`).
+  - **Docs:** FR/EN `db/search-views.md` (new "search permissions" section + overview row) + `getting-started/arangosearch.md`. Backward-compatible — with no `REQUIRES` the AQL is unchanged.
+
 - **Per-field exact-phrase bonus in ArangoSearch Views (Lot VF4a).** `Search::PHRASE` can now be declared **per field** inside a `Search::FIELDS` array entry, mirroring `Search::BOOST` / `Search::FUZZY`. The `PHRASE()` bonus can be enabled where it matters (a title) and left off elsewhere (`'code' => [ Search::PHRASE => false ]`).
   - **Resolution:** a field declaring `Search::PHRASE` wins (an explicit `false` opts that field out); a field with no `PHRASE` key inherits the View-level flag; with no global value the bonus is off.
   - **Code:** new `Search::PHRASE` key in the per-field spec; `prepareViewSearch()` resolves the bonus per field (composing with the per-field boost and Analyzer grouping).

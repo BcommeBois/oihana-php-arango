@@ -109,7 +109,8 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 
 - **Finer i18n search** beyond the already-available `?lang=` ([per-field Analyzer](../db/search-views.md#per-field-analyzer) and [localized search `?lang=`](../db/search-views.md#localized-search-lang)): for instance one field indexed with several Analyzers.
 - **Federated multi-collection search** — one View over several collections, exposed by a dedicated read-only model/controller/route triple.
-- **Permission-scoped search** — restricting searchable fields per role, like `?skin` whitelists.
+
+Permission-scoped search is now [available](../db/search-views.md#search-permissions).
 
 > The View management command, long listed here, has shipped: see the [`views` action of `command:arangodb`](../commands/arangodb.md#views--arangosearch-view-management) (list, `--diff`, `--sync`, `--drop`).
 

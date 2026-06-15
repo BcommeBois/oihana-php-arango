@@ -109,7 +109,8 @@ Une requête : insensibilité accents/casse, matching par mots, le nom pesant 3�
 
 - **Recherche fine i18n** au-delà du `?lang=` déjà disponible ([Analyzer par champ](../db/search-views.md#analyzer-par-champ) et [recherche localisée `?lang=`](../db/search-views.md#recherche-localisée-lang)) : par exemple un même champ indexé avec plusieurs Analyzers.
 - **Recherche fédérée multi-collections** — une View sur plusieurs collections, exposée par un triplet modèle/contrôleur/route dédié, read-only.
-- **Recherche restreinte par permissions** — limiter les champs cherchables par rôle, comme les whitelists `?skin`.
+
+Le gating de la recherche par permissions est désormais [disponible](../db/search-views.md#permissions-de-recherche).
 
 > La commande de gestion des Views, longtemps listée ici, est livrée : voir l'[action `views` de `command:arangodb`](../commands/arangodb.md#views--gestion-des-views-arangosearch) (lister, `--diff`, `--sync`, `--drop`).
 

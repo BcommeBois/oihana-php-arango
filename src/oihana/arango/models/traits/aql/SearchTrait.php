@@ -20,6 +20,8 @@ use oihana\traits\LazyTrait;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
+use function oihana\arango\models\helpers\isAuthorized;
+
 use function oihana\arango\db\functions\search\analyzer;
 use function oihana\arango\db\functions\search\boost;
 use function oihana\arango\db\functions\strings\like;
@@ -237,11 +239,18 @@ trait SearchTrait
      * With a single Analyzer the output is a single `ANALYZER(…)` wrap, byte for
      * byte the classic form.
      *
+     * Fields declaring {@see Search::REQUIRES} are gated by the request
+     * authorizer (`Arango::AUTHORIZER`, see {@see isAuthorized()}): a field
+     * joins the `SEARCH` only when at least one required subject is granted
+     * (fail-open without an authorizer). If permissions remove every field, the
+     * expression is `false` — the search matches nothing and never falls back
+     * to searching everything.
+     *
      * When the request carries an active language (`Arango::LANG`, the `?lang=`
      * parameter), localized fields (those declaring {@see Search::LANG}) join
      * the `SEARCH` only when their locale matches; locale-agnostic fields always
      * do. An active language matching no field is ignored — the `SEARCH` is
-     * never emptied.
+     * never emptied (within the permitted set).
      *
      * @param array|string|null $search The `$init` array (reads `Arango::SEARCH`) or the search term itself.
      * @param ?array            $binds  Bind variables, populated by reference.
@@ -264,7 +273,8 @@ trait SearchTrait
             return null ;
         }
 
-        $lang = is_array( $search ) ? ( $search[ Arango::LANG ] ?? null ) : null ;
+        $init = is_array( $search ) ? $search : [] ;
+        $lang = $init[ Arango::LANG ] ?? null ;
 
         if( is_array( $search ) )
         {
@@ -275,6 +285,17 @@ trait SearchTrait
         $fields        = $this->getViewFieldSpecs() ;
         $globalPhrase  = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
         $globalFuzzy   = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
+
+        // Permission gating : a field declaring Search::REQUIRES joins the SEARCH
+        // only when the request authorizer grants it (fail-open without one).
+        // Denying every field yields a SEARCH that matches nothing — it must
+        // NEVER fall back to searching everything (that would bypass the gate).
+        $fields = array_filter( $fields , static fn( array $spec ) => isAuthorized( $spec , $init ) ) ;
+
+        if( $fields === [] )
+        {
+            return 'false' ; // SEARCH false → zero rows (denied everything)
+        }
 
         if( $lang !== null )
         {
@@ -470,7 +491,8 @@ trait SearchTrait
      *
      * {@see Search::FIELDS} entries accept a numeric boost shorthand or an
      * array carrying {@see Search::BOOST}, {@see Search::FUZZY},
-     * {@see Search::ANALYZER}, {@see Search::LANG} and {@see Search::PHRASE};
+     * {@see Search::ANALYZER}, {@see Search::LANG}, {@see Search::PHRASE} and
+     * {@see Search::REQUIRES};
      * when the declaration has no fields, the model's `searchable` list is used with a
      * neutral boost. A per-field option is kept in the spec only when it is
      * explicitly declared — an absent key means "inherit the View-level
@@ -519,6 +541,11 @@ trait SearchTrait
                     if( array_key_exists( Search::PHRASE , $options ) )
                     {
                         $spec[ Search::PHRASE ] = (bool) $options[ Search::PHRASE ] ;
+                    }
+
+                    if( array_key_exists( Search::REQUIRES , $options ) )
+                    {
+                        $spec[ Search::REQUIRES ] = $options[ Search::REQUIRES ] ;
                     }
 
                     return $spec ;

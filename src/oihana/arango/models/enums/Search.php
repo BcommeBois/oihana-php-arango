@@ -104,6 +104,19 @@ class Search
     public const string PHRASE = 'phrase' ;
 
     /**
+     * The permission subject(s) a searched field requires — a string or a list
+     * (OR semantics), mirroring {@see \oihana\arango\enums\Field::REQUIRES} for
+     * projections. When declared inside a {@see FIELDS} entry, the field joins
+     * the `SEARCH` only if the request authorizer (`Arango::AUTHORIZER`) grants
+     * at least one subject; a field with no `REQUIRES` is always searchable.
+     * With no authorizer injected the gate falls open (authorization layer
+     * disabled), consistent with {@see \oihana\arango\models\helpers\isAuthorized()}.
+     * If permissions remove every searched field, the `SEARCH` matches nothing
+     * (it never falls back to searching everything).
+     */
+    public const string REQUIRES = 'requires' ;
+
+    /**
      * The synthetic relevance sort key exposed to `?sort=` when a View search
      * is active (`?sort=-score`, `?sort=score,name`, …) — the counterpart of
      * the `distance` key driven by `?near=`. Resolves to `BM25(doc)`.

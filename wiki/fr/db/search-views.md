@@ -47,6 +47,7 @@ Au-delà du boost, chaque entrée de `Search::FIELDS` accepte des options décla
 | [`Search::ANALYZER`](#analyzer-par-champ) | un Analyzer par champ (français, anglais, …) | `?search=workshops` matche via `text_en` (racine `workshop`) |
 | [`Search::LANG`](#recherche-localisée-lang) | recherche localisée pilotée par `?lang=` | `?search=menuiserie&lang=fr` cible le côté français |
 | [`Search::PHRASE`](#bonus-dexpression-exacte-par-champ) | bonus d'expression exacte là où c'est utile | `?search=cuir vintage` remonte l'expression adjacente |
+| [`Search::REQUIRES`](#permissions-de-recherche) | limiter un champ aux requêtes autorisées | un champ `secret` n'est cherché qu'avec la permission |
 
 Ces options se composent (un même champ peut déclarer boost + analyzer + langue + fuzzy + phrase). Chaque section ci-dessous en détaille une, avec un exemple concret de bout en bout.
 
@@ -191,6 +192,37 @@ OR BOOST(PHRASE(doc.name, @search_0), 6)                // bonus expression exac
 ```
 
 Résultat : « Fauteuil cuir vintage » passe **devant** « Sac en cuir, style vintage » au classement `BM25`. Le champ `code` (`Search::PHRASE => false`) ne reçoit jamais cette branche : un identifiant comme `REF-2024` ne doit pas être « rapproché » d'une saisie approximative.
+
+### Permissions de recherche
+
+`Search::REQUIRES` déclare le(s) **sujet(s) de permission** qu'un champ exige pour être cherché — une chaîne ou une liste (sémantique OR) — en miroir exact de [`Field::REQUIRES`](../edges-joins-projection.md) côté projection. Un champ sans `REQUIRES` est toujours cherchable ; un champ gardé ne rejoint le `SEARCH` que si l'**autorizer** de la requête (le closure `Arango::AUTHORIZER`, injecté par le contrôleur et consulté par `isAuthorized()`) accorde **au moins un** sujet :
+
+```php
+Search::FIELDS =>
+[
+    'name'   => 3 ,                                                  // public
+    'salary' => [ Search::REQUIRES => 'hr.salary:search' ] ,         // 1 sujet requis
+    'ssn'    => [ Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] , // OR : admin OU audit
+] ,
+```
+
+**Exemple concret.** Le mot « confidentiel » ne vit que dans un champ `secret` gardé par `Search::REQUIRES => 'places:secret'` :
+
+```
+GET /places?search=confidentiel
+```
+
+| Requête | `secret` cherché ? | Résultat |
+|---|---|---|
+| autorizer accorde `places:secret` | ✅ oui | la fiche remonte |
+| autorizer refuse | ❌ non (champ retiré) | aucun résultat |
+
+Points clés :
+
+- **Aucune fuite par défaut** — si les permissions retirent **tous** les champs cherchés, le `SEARCH` émis est `false` : zéro résultat. Il ne retombe **jamais** sur « cherche tout » ni sur le balayage `LIKE` (ce qui contournerait le contrôle).
+- **Fail-open sans autorizer** — si aucun `Arango::AUTHORIZER` n'est injecté, la couche d'autorisation est considérée désactivée et les champs gardés restent cherchables (comportement identique à la projection). En production, le contrôleur injecte toujours l'autorizer.
+- **`count()` et `facetCounts()`** appliquent le même filtrage (ils réutilisent la même expression `SEARCH`).
+- Rétro-compatible : sans `REQUIRES` sur aucun champ, l'AQL est inchangé.
 
 **Le provisioning est automatique** : comme la collection et ses `AQL::INDEXES`, la View est créée paresseusement à l'initialisation du modèle quand elle n'existe pas (champs cherchés liés avec l'Analyzer déclaré). Une View existante n'est **jamais modifiée automatiquement** — après un changement de déclaration, inspectez et resynchronisez explicitement : `$model->viewDiff()` détecte l'écart, `$model->viewSync()` le répare via `updateProperties()` (la View reste interrogeable pendant la ré-indexation), et l'[action `views` de la commande `arangodb`](../commands/arangodb.md#views--gestion-des-views-arangosearch) fait la même chose en CLI (`--diff` / `--sync`), intégrable aux scripts de déploiement.
 
