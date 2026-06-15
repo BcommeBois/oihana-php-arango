@@ -16,15 +16,15 @@ use oihana\reflect\traits\ConstantsTrait;
  * ```php
  * AQL::VIEW =>
  * [
- *     Search::NAME     => 'placesView' ,             // the View name (required)
- *     Search::ANALYZER => 'text_fr' ,                // Analyzer of the searched fields
- *     Search::FIELDS   =>                            // field => boost (or array of per-field options)
+ *     Search::NAME     => 'placesView' ,  // the View name (required)
+ *     Search::ANALYZER => 'text_fr' ,     // Analyzer of the searched fields
+ *     Search::FIELDS   =>                 // field => boost (or array of per-field options)
  *     [
  *         'name' => [ Search::BOOST => 3 , Search::FUZZY => 1 ] , // text : typo-tolerant
  *         'code' => [ Search::BOOST => 1 , Search::FUZZY => 0 ] , // code : exact match
  *     ] ,
- *     Search::PHRASE   => true ,                     // exact-phrase bonus (boost ×2)
- *     Search::FUZZY    => 1 ,                        // View-level Levenshtein tolerance (0 = off, override per field)
+ *     Search::PHRASE => true ,            // exact-phrase bonus (boost ×2)
+ *     Search::FUZZY  => 1 ,               // View-level Levenshtein tolerance (0 = off, override per field)
  * ]
  * ```
  *
@@ -74,6 +74,24 @@ class Search
     public const string FUZZY = 'fuzzy' ;
 
     /**
+     * The searched field name carried by an array entry of the `AQL::SEARCHABLE`
+     * list, so the list stays homogeneous (no mixed numeric/string keys) while
+     * an entry carries per-field options:
+     *
+     * ```php
+     * AQL::SEARCHABLE =>
+     * [
+     *     'name' ,                                                       // public field (plain string)
+     *     [ Search::KEY => 'salary' , Search::REQUIRES => 'hr:salary' ], // gated field
+     * ]
+     * ```
+     *
+     * Only meaningful inside `AQL::SEARCHABLE` array entries; `Search::FIELDS`
+     * keeps its map form (`field => options`) where the field is the key.
+     */
+    public const string KEY = 'key' ;
+
+    /**
      * The locale a searched field holds, marking it as a localized variant
      * (e.g. `'description.fr' => [ Search::LANG => 'fr' ]`). When the request
      * carries an active language (`?lang=`), only fields whose `Search::LANG`
@@ -112,6 +130,9 @@ class Search
      *   denied subject yields a `SEARCH` that matches nothing, whatever the
      *   per-field declarations;
      * - inside a {@see FIELDS} entry → gates that **single** field.
+     *
+     * The same key gates the classic `LIKE` sweep too: a `AQL::SEARCHABLE` entry
+     * may carry it (via {@see KEY}) to make a field searchable only when granted.
      *
      * The two levels combine with **AND** (the request must satisfy the
      * View-level requirement *and* the field's own) — unlike the other

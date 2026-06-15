@@ -50,6 +50,22 @@ $users = new Documents
 - Sans liste `searchable` (ou vide), `?search` ne produit rien (`null`) — la recherche est inopérante tant qu'aucun champ n'est déclaré.
 - Les champs sont des **chemins relatifs au document** (`name`, `address.city`…), interpolés tels quels — ils proviennent de la **déclaration du modèle**, pas de l'URL (aucune injection possible côté `?search`).
 
+## Permissions — champs gardés
+
+Un champ cherchable peut être **gardé par permission** : la liste reste homogène, et une entrée tableau porte son nom sous `Search::KEY` plus le(s) sujet(s) requis sous `Search::REQUIRES` (une chaîne ou une liste, OR) :
+
+```php
+use oihana\arango\models\enums\Search ;
+
+AQL::SEARCHABLE =>
+[
+    'name' ,                                                          // public
+    [ Search::KEY => 'salary' , Search::REQUIRES => 'hr.salary:search' ] , // gardé
+] ,
+```
+
+Le champ gardé n'est balayé que si l'**autorizer** de la requête (closure `Arango::AUTHORIZER`, injecté par le contrôleur, consulté par `isAuthorized()`) accorde un sujet — exactement comme le [gating de projection](edges-joins-projection.md) (`Field::REQUIRES`) et la [recherche View](search-views.md#permissions-de-recherche). Sans autorizer, la couche est désactivée (fail-open). **Si tous les champs cherchables sont refusés**, la recherche ne ramène **rien** (`FILTER false`) — elle n'est jamais silencieusement ignorée (ce qui renverrait tout).
+
 ## Cas limites
 
 | Entrée | Résultat |
@@ -58,6 +74,7 @@ $users = new Documents
 | `?search` absent | aucun fragment (`null`) |
 | modèle sans `searchable` | aucun fragment (`null`) |
 | `?search=marc` | `(LIKE(doc.<f1>,@search_0,true) || LIKE(doc.<f2>,@search_0,true) || …)` |
+| `?search=marc`, tous les champs gardés refusés | `false` (0 résultat) — voir [Permissions](#permissions--champs-gardés) |
 
 Comme les autres leviers, un `?search` inopérant ne casse jamais la requête : il n'ajoute simplement aucune condition.
 

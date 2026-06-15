@@ -13,6 +13,7 @@ use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Search;
+use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\traits\LazyTrait;
@@ -40,7 +41,18 @@ trait SearchTrait
         LazyTrait ;
 
     /**
-     * The searchable fields.
+     * The searchable fields swept by the classic `?search=` `LIKE` (see
+     * {@see prepareSearch()}). A list of field names; an entry may instead be an
+     * array carrying its name under {@see Search::KEY} plus options such as
+     * {@see Search::REQUIRES} to gate the field by permission:
+     *
+     * ```php
+     * AQL::SEARCHABLE =>
+     * [
+     *     'name' ,                                                       // public
+     *     [ Search::KEY => 'salary' , Search::REQUIRES => 'hr:salary' ], // gated
+     * ]
+     * ```
      */
     public ?array $searchable = [] ;
 
@@ -177,6 +189,8 @@ trait SearchTrait
     )
     :?string
     {
+        $init = is_array( $search ) ? $search : [] ;
+
         if( is_array( $search ) )
         {
             $search = $search[ Arango::SEARCH ] ?? null ;
@@ -184,31 +198,44 @@ trait SearchTrait
 
         if( is_string( $search ) && $search != Char::EMPTY )
         {
-            $searchable = $searchable ?? $this->searchable ;
-            $words      = explode ( Char::COMMA , $search ) ;
-            if( count( $words ) > 0 && is_array( $searchable ) && count( $searchable ) > 0 )
+            $specs = $this->getSearchableSpecs( $searchable ) ;
+
+            if( count( $specs ) === 0 )
             {
-                $likes   = [] ;
-                $index   = 0 ;
-                foreach( $words as $word )
-                {
-                    $word = $this->bind
-                    (
-                        Char::MODULUS . $word . Char::MODULUS ,
-                        $binds ,
-                        AQL::SEARCH . Char::UNDERLINE . $index++
-                    ) ;
-                    foreach( $searchable as $field )
-                    {
-                        $likes[] = like( key( $field , $docRef ) , $word , caseInsensitive: true ) ;
-                    }
-                }
-                return betweenParentheses
-                (
-                    expression : compile( $likes , Char::SPACE . Logic::OR . Char::SPACE ) ,
-                    trim       : false
-                ) ;
+                return null ; // no searchable field declared → search inactive
             }
+
+            // Permission gating : a searchable field declaring Search::REQUIRES
+            // is kept only when the request authorizer grants it (fail-open
+            // without one). Denying every field yields `false` (zero rows) — it
+            // must NEVER drop the search silently (that would return everything).
+            $specs = array_filter( $specs , static fn( array $spec ) => isAuthorized( $spec , $init ) ) ;
+
+            if( count( $specs ) === 0 )
+            {
+                return Boolean::FALSE ; // every searchable field denied → match nothing
+            }
+
+            $likes = [] ;
+            $index = 0 ;
+            foreach( explode( Char::COMMA , $search ) as $word )
+            {
+                $word = $this->bind
+                (
+                    Char::MODULUS . $word . Char::MODULUS ,
+                    $binds ,
+                    AQL::SEARCH . Char::UNDERLINE . $index++
+                ) ;
+                foreach( array_keys( $specs ) as $field )
+                {
+                    $likes[] = like( key( $field , $docRef ) , $word , caseInsensitive: true ) ;
+                }
+            }
+            return betweenParentheses
+            (
+                expression : compile( $likes , Char::SPACE . Logic::OR . Char::SPACE ) ,
+                trim       : false
+            ) ;
         }
         return null ;
     }
@@ -288,7 +315,7 @@ trait SearchTrait
         if( isset( $this->view[ Search::REQUIRES ] )
             && !isAuthorized( [ Search::REQUIRES => $this->view[ Search::REQUIRES ] ] , $init ) )
         {
-            return 'false' ; // SEARCH false → zero rows (whole search denied)
+            return Boolean::FALSE ; // SEARCH false → zero rows (whole search denied)
         }
 
         $modelAnalyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
@@ -305,7 +332,7 @@ trait SearchTrait
 
         if( $fields === [] )
         {
-            return 'false' ; // SEARCH false → zero rows (denied everything)
+            return Boolean::FALSE ; // SEARCH false → zero rows (denied everything)
         }
 
         if( $lang !== null )
@@ -494,6 +521,57 @@ trait SearchTrait
     }
 
     /**
+     * Normalizes the model's `AQL::SEARCHABLE` list into a per-field
+     * specification map `field => [ (Search::REQUIRES => …)? ]`, the single
+     * source consumed by {@see prepareSearch()} (the `LIKE` sweep) and by the
+     * `searchable` fallback of {@see getViewFieldSpecs()}.
+     *
+     * Each entry of the list is either:
+     * - a plain field name (string) → a public field, no options;
+     * - an array carrying the field name under {@see Search::KEY} plus its
+     *   options (e.g. {@see Search::REQUIRES}) → keeps the list homogeneous
+     *   (no mixed numeric/string keys). The map form `field => [ … ]` is also
+     *   tolerated (the field falls back to the entry key).
+     *
+     * @param ?array $searchable An explicit list overriding the model's `searchable` property.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function getSearchableSpecs( ?array $searchable = null ) :array
+    {
+        $searchable = $searchable ?? $this->searchable ;
+
+        if( !is_array( $searchable ) )
+        {
+            return [] ;
+        }
+
+        $specs = [] ;
+
+        foreach( $searchable as $key => $value )
+        {
+            if( is_string( $value ) )
+            {
+                $specs[ $value ] = [] ;
+            }
+            elseif( is_array( $value ) )
+            {
+                $field = (string) ( $value[ Search::KEY ] ?? $key ) ;
+                $spec  = [] ;
+
+                if( array_key_exists( Search::REQUIRES , $value ) )
+                {
+                    $spec[ Search::REQUIRES ] = $value[ Search::REQUIRES ] ;
+                }
+
+                $specs[ $field ] = $spec ;
+            }
+        }
+
+        return $specs ;
+    }
+
+    /**
      * Normalizes the searched fields of the `AQL::VIEW` declaration into a
      * per-field specification map `field => [ Search::BOOST => float, … ]` —
      * the single source of truth from which {@see getViewSearchFields()}
@@ -518,7 +596,7 @@ trait SearchTrait
 
         if( !is_array( $fields ) || count( $fields ) === 0 )
         {
-            $fields = is_array( $this->searchable ) ? array_fill_keys( $this->searchable , 1 ) : [] ;
+            $fields = $this->getSearchableSpecs() ; // field => [ (Search::REQUIRES => …)? ]
         }
 
         return array_map(

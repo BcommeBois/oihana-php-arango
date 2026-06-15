@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-field permissions on the classic `LIKE` search (Lot VF5).** `AQL::SEARCHABLE` entries can now be gated by permission, mirroring the View search (Lot VF4b). The list stays homogeneous: a plain string is a public field, an array carries its name under `Search::KEY` plus its subject(s) under `Search::REQUIRES` (`[ Search::KEY => 'salary', Search::REQUIRES => 'hr:salary' ]`); the map form `'field' => [ … ]` is tolerated too.
+  - A gated field is swept only when the request authorizer (`Arango::AUTHORIZER`) grants a subject; fail-open without one. If **every** searchable field is denied, `prepareSearch()` returns `false` (zero rows) — the search is never silently dropped (which would return everything).
+  - Shared `getSearchableSpecs()` normalizer now also feeds the `searchable` fallback of `getViewFieldSpecs()`, so a gated searchable field stays gated even when it backs a View with no explicit `Search::FIELDS`.
+  - **Tests:** unit (`SearchTraitTest` — gated kept/dropped, map form tolerated, deny-all → `false`, fail-open, `getSearchableSpecs` shapes) + live (`ViewSearchIntegrationTest::testLikeSweepRespectsSearchablePermissions`).
+  - **Docs:** FR/EN `db/search.md` (new "gated fields" section). New `Search::KEY` constant. Backward-compatible — a flat string list behaves exactly as before.
+
 - **View-level search permission in ArangoSearch Views (Lot VF4c).** `Search::REQUIRES` can now also be declared on the `AQL::VIEW` block to gate the **whole** search (every field), on top of the per-field gate (Lot VF4b). The two levels combine with **AND** — a field is searched when the View-level requirement *and* its own are both satisfied (within a list, subjects combine with OR).
   - A denied View-level subject makes the whole `SEARCH` match nothing (`false`), whatever the per-field declarations.
   - `Search::REQUIRES` is the only **additive** facet: unlike boost/fuzzy/analyzer/lang/phrase (a field overrides the View), permissions accumulate (most restrictive wins).

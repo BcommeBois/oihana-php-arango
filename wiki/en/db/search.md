@@ -50,6 +50,22 @@ $users = new Documents
 - With no `searchable` list (or an empty one), `?search` produces nothing (`null`) — the search is inert until at least one field is declared.
 - Fields are **document-relative paths** (`name`, `address.city`…), interpolated as-is — they come from the **model declaration**, not the URL (no injection is possible through `?search`).
 
+## Permissions — gated fields
+
+A searchable field can be **permission-gated**: the list stays homogeneous, and an array entry carries its name under `Search::KEY` plus the required subject(s) under `Search::REQUIRES` (a string or a list, OR):
+
+```php
+use oihana\arango\models\enums\Search ;
+
+AQL::SEARCHABLE =>
+[
+    'name' ,                                                          // public
+    [ Search::KEY => 'salary' , Search::REQUIRES => 'hr.salary:search' ] , // gated
+] ,
+```
+
+The gated field is swept only when the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller, consulted by `isAuthorized()`) grants a subject — exactly like the [projection gating](edges-joins-projection.md) (`Field::REQUIRES`) and the [View search](search-views.md#search-permissions). With no authorizer the layer is disabled (fail-open). **If every searchable field is denied**, the search returns **nothing** (`FILTER false`) — it is never silently dropped (which would return everything).
+
 ## Edge cases
 
 | Input | Result |
@@ -58,6 +74,7 @@ $users = new Documents
 | `?search` absent | no fragment (`null`) |
 | model without `searchable` | no fragment (`null`) |
 | `?search=marc` | `(LIKE(doc.<f1>,@search_0,true) || LIKE(doc.<f2>,@search_0,true) || …)` |
+| `?search=marc`, every gated field denied | `false` (0 results) — see [Permissions](#permissions--gated-fields) |
 
 Like the other levers, an inert `?search` never breaks the query: it simply adds no condition.
 

@@ -2,8 +2,11 @@
 
 namespace tests\oihana\arango\models\traits\aql;
 
+use ReflectionMethod;
+
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\Search;
 use oihana\arango\models\traits\aql\SearchTrait;
 
 use PHPUnit\Framework\TestCase;
@@ -143,5 +146,90 @@ class SearchTraitTest extends TestCase
     {
         $binds = [] ;
         $this->assertNull( $this->stub( null )->prepareSearch( 'Marc' , $binds ) ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareSearch : permission gating (VF5)
+
+    public function testGatedSearchableFieldKeptWhenAuthorized() :void
+    {
+        $stub  = $this->stub( [ 'name' , [ Search::KEY => 'firstName' , Search::REQUIRES => 'u:fn' ] ] ) ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true) || LIKE(doc.firstName,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => true ] , $binds ) ,
+        ) ;
+    }
+
+    public function testGatedSearchableFieldDroppedWhenDenied() :void
+    {
+        $stub  = $this->stub( [ 'name' , [ Search::KEY => 'firstName' , Search::REQUIRES => 'u:fn' ] ] ) ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => false ] , $binds ) ,
+        ) ;
+    }
+
+    public function testMapFormGatedEntryIsTolerated() :void
+    {
+        // The 'field' => [ … ] map form is accepted too (field falls back to the key).
+        $stub  = $this->stub( [ 'name' , 'firstName' => [ Search::REQUIRES => 'u:fn' ] ] ) ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => false ] , $binds ) ,
+        ) ;
+    }
+
+    public function testEverySearchableFieldDeniedMatchesNothing() :void
+    {
+        $stub  = $this->stub( [ [ Search::KEY => 'secret' , Search::REQUIRES => 's:x' ] ] ) ;
+        $binds = [] ;
+
+        $this->assertSame( 'false' , $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => false ] , $binds ) ) ;
+        $this->assertSame( [] , $binds , 'No term is bound when the search matches nothing.' ) ;
+    }
+
+    public function testGateFailsOpenWithoutAuthorizer() :void
+    {
+        // No Arango::AUTHORIZER → the gated field stays searchable (layer disabled).
+        $stub  = $this->stub( [ 'name' , [ Search::KEY => 'firstName' , Search::REQUIRES => 'u:fn' ] ] ) ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true) || LIKE(doc.firstName,@search_0,true))' ,
+            $stub->prepareSearch( 'Marc' , $binds ) ,
+        ) ;
+    }
+
+    // ---------------------------------------------------------------- getSearchableSpecs
+
+    public function testGetSearchableSpecsNormalizesEveryEntryShape() :void
+    {
+        $stub = $this->stub(
+        [
+            'name' ,                                                    // plain string
+            [ Search::KEY => 'salary' , Search::REQUIRES => 'hr:s' ] ,  // list entry (Search::KEY)
+            'email' => [ Search::REQUIRES => 'e:r' ] ,                  // map form (tolerated)
+        ]) ;
+
+        $method = new ReflectionMethod( $stub , 'getSearchableSpecs' ) ;
+
+        $this->assertSame
+        (
+            [
+                'name'   => [] ,
+                'salary' => [ Search::REQUIRES => 'hr:s' ] ,
+                'email'  => [ Search::REQUIRES => 'e:r' ] ,
+            ] ,
+            $method->invoke( $stub ) ,
+        ) ;
     }
 }

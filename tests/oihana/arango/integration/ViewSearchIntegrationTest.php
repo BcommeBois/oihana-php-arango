@@ -82,7 +82,7 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
      * @throws ReflectionException
      * @throws Throwable
      */
-    private function model( ?array $view = null ) :Documents
+    private function model( ?array $view = null , ?array $searchable = null ) :Documents
     {
         $configDir = dirname( __DIR__ , 4 ) . DIRECTORY_SEPARATOR . 'configs' ;
         $config    = initConfig( basePath: $configDir ) ;
@@ -98,7 +98,7 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
             Arango::DATABASE => $arangodb ,
             AQL::COLLECTION  => self::COLLECTION ,
             AQL::FACETS      => [ 'kind' => [ Facet::TYPE => Facet::FIELD ] ] ,
-            AQL::SEARCHABLE  => [ 'name' , 'description' ] ,
+            AQL::SEARCHABLE  => $searchable ?? [ 'name' , 'description' ] ,
             AQL::SORTABLE    => [ 'name' => 'name' ] ,
             AQL::VIEW        => $view ??
             [
@@ -464,6 +464,38 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
         $denied = $model->list( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => false ] ) ;
         $this->assertSame( [] , $labels( $denied ) , 'Without it, the whole search returns nothing.' ) ;
+    }
+
+    /**
+     * Per-field search permissions on the classic LIKE sweep (Lot VF5): a model
+     * with **no** View gates its `AQL::SEARCHABLE` field by `Search::REQUIRES`.
+     * The word « confidentiel » lives only in the gated `secret` field, so it is
+     * found only when the authorizer grants the subject.
+     *
+     * @throws Throwable
+     */
+    public function testLikeSweepRespectsSearchablePermissions() :void
+    {
+        $searchable =
+        [
+            'name' ,
+            [ Search::KEY => 'secret' , Search::REQUIRES => 'places:secret' ] ,
+        ] ;
+
+        $model = $this->model( view: [] , searchable: $searchable ) ; // empty View → classic LIKE sweep
+
+        $labels = fn( array $rows ) => array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
+
+        $granted = $model->list( [ Arango::SEARCH => 'confidentiel' , Arango::AUTHORIZER => fn() => true  ] ) ;
+        $this->assertSame( [ 'B' ] , $labels( $granted ) , 'With the permission, the gated field is swept.' ) ;
+
+        $denied = $model->list( [ Arango::SEARCH => 'confidentiel' , Arango::AUTHORIZER => fn() => false ] ) ;
+        $this->assertSame( [] , $labels( $denied ) , 'Without it, the gated field is not swept.' ) ;
+
+        // Every searchable field gated and denied → FILTER false runs cleanly and yields nothing.
+        $allGated = $this->model( view: [] , searchable: [ [ Search::KEY => 'secret' , Search::REQUIRES => 'places:secret' ] ] ) ;
+        $rows     = $allGated->list( [ Arango::SEARCH => 'atelier' , Arango::AUTHORIZER => fn() => false ] ) ;
+        $this->assertSame( [] , $labels( $rows ) , 'Denying every searchable field yields zero rows (FILTER false), no AQL error.' ) ;
     }
 
     /**
