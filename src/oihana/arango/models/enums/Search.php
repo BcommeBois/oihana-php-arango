@@ -93,6 +93,13 @@ class Search
     /**
      * Whether to add an exact-phrase bonus: when `true`, a `PHRASE()` match on
      * a field weighs twice the field boost, ranking exact phrases first.
+     *
+     * Declared at the View level it applies to every searched field; declared
+     * inside a {@see FIELDS} entry it overrides that level for the field — an
+     * explicit `false` opts a field out while the rest of the View keeps the
+     * bonus. A field with no `PHRASE` key inherits the View-level value.
+     * `PHRASE()` requires the field Analyzer to expose the `position` and
+     * `frequency` features.
      */
     public const string PHRASE = 'phrase' ;
 

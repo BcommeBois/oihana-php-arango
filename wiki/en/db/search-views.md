@@ -37,6 +37,19 @@ $places = new Documents( $container ,
 | `Search::PHRASE` | `bool` | Adds an exact-phrase bonus: a `PHRASE()` match weighs `boost × 2`. |
 | `Search::FUZZY` | `int` | View-level typo tolerance: `LEVENSHTEIN_MATCH` with this maximum edit distance (valid value `0`–`4`, `0` = off). Overridable per field — see below. |
 
+### Per-field options — overview
+
+Beyond the boost, each `Search::FIELDS` entry accepts options declared **per field** (array form `field => [ … ]`). They all follow the same convention: **absent key = inherit the View level, explicit value = override** (an explicit `0` / `false` therefore disables the option for that field).
+
+| Per-field option | Role | Example |
+|---|---|---|
+| [`Search::FUZZY`](#per-field-typo-tolerance) | tolerate typos (text) / stay exact (codes) | `?search=scirie` finds « Scierie… » but not a near-miss code |
+| [`Search::ANALYZER`](#per-field-analyzer) | one Analyzer per field (French, English, …) | `?search=workshops` matches via `text_en` (stem `workshop`) |
+| [`Search::LANG`](#localized-search-lang) | localized search driven by `?lang=` | `?search=menuiserie&lang=fr` targets the French side |
+| [`Search::PHRASE`](#per-field-exact-phrase-bonus) | exact-phrase bonus where it matters | `?search=cuir vintage` lifts the adjacent phrase |
+
+These options compose (a single field can declare boost + analyzer + language + fuzzy + phrase). Each section below details one, with an end-to-end concrete example.
+
 ### Per-field typo tolerance
 
 `Search::FUZZY` may be declared **per field** in an array entry of `Search::FIELDS`, mirroring `Search::BOOST` exactly. A single View can then tolerate typos on text fields while staying **exact** on codes or identifiers (where tolerance would bring back the wrong record):
@@ -53,6 +66,26 @@ Search::FUZZY => 1 , // View-level default
 
 Resolution rule: a field declaring `Search::FUZZY` wins (an **explicit `0` opts that field out** of tolerance); a field with no `FUZZY` key inherits the View-level `Search::FUZZY`; with no global value, tolerance is disabled. The behavior is **fully backward-compatible**: a declaration without per-field fuzzy produces exactly the former AQL.
 
+**Concrete example.** With the fields above and a typo in the request:
+
+```
+GET /places?search=scirie
+```
+
+| Field | Tolerance | « scirie » (typo for « scierie ») |
+|---|---|---|
+| `name` (`FUZZY => 1`) | 1 edit tolerated | ✅ finds « Scierie de la Loire » |
+| `code` (`FUZZY => 0`) | exact | ❌ no fuzzy match |
+
+The AQL generated for `name` adds the tolerant branch next to the token match:
+
+```aql
+   BOOST(doc.name IN TOKENS(@search_0, "text_fr"), 3)
+OR LEVENSHTEIN_MATCH(doc.name, @search_0, 1)        // tolerates 1 edit
+```
+
+The `code` field emits **only** `doc.code IN TOKENS(...)` (no `LEVENSHTEIN_MATCH`): a search for `REF-00` never returns the code `REF-001`.
+
 ### Per-field Analyzer
 
 Likewise, `Search::ANALYZER` may be declared **per field**. A single View can then index (and query) a French field with `text_fr` and an English field with `text_en`:
@@ -67,6 +100,19 @@ Search::ANALYZER => 'text_fr' , // View-level default
 ```
 
 Resolution rule: a field declaring `Search::ANALYZER` wins; otherwise it inherits the View-level `Search::ANALYZER` (itself `identity` by default). Since the Analyzer is **fixed at indexing time**, a per-field override is reflected on both sides: the View link indexes the field with its Analyzer, and the query groups expressions by Analyzer — one `ANALYZER(…, "<analyzer>")` per group, `OR`-ed together. With a single Analyzer the output is exactly the former one.
+
+**Concrete example.** `name` is indexed in French, `summary` in English:
+
+```
+GET /places?search=workshops
+```
+
+The English plural « workshops » is reduced to its stem « workshop » by the `text_en` Analyzer and finds the record whose `summary` is « woodworking workshop » — which `text_fr` could not do. The generated AQL produces **one `ANALYZER()` per Analyzer**, `OR`-ed:
+
+```aql
+   ANALYZER(BOOST(doc.name IN TOKENS(@search_0, "text_fr"), 3), "text_fr")
+|| ANALYZER(doc.summary IN TOKENS(@search_0, "text_en"), "text_en")
+```
 
 > **Drift** — changing a field's Analyzer alters the View link. Like any declaration change, it does not update an already-created View: resynchronize with `$model->viewSync()` or `arangodb views --sync`. An analyzer (View-level or per-field) unknown to the server is reported by `$model->viewDiff()` (status `INVALID`).
 
@@ -90,6 +136,61 @@ When the request carries an active language (the [`?lang=`](search.md) parameter
 - **guard:** if the active language matches **no** field (e.g. `?lang=de`), the filter is ignored and every field is searched — never an empty `SEARCH`.
 
 The `Search::LANG` (search) and the projection `?lang` (`TRANSLATE` in `RETURN`) are independent but consistent: the same active language narrows the search and localizes the output. Backward-compatible: with no `Search::LANG`, `?lang=` has no effect on the search.
+
+**Concrete example.** On the i18n `intro` attribute above, the French word « menuiserie » lives only in `intro.fr`:
+
+```
+GET /places?search=menuiserie&lang=fr
+```
+
+`?lang=fr` searches only `name` (locale-agnostic) and `intro.fr` — the French record is found:
+
+```aql
+ANALYZER(BOOST(doc.name IN TOKENS(@search_0,"text_fr"),3) || doc.intro.fr IN TOKENS(@search_0,"text_fr"), "text_fr")
+```
+
+The **same** request with `?lang=en` searches `name` + `intro.en` (the French side is dropped) — « menuiserie » then returns nothing:
+
+```aql
+ANALYZER(BOOST(doc.name IN TOKENS(@search_0,"text_fr"),3),"text_fr") || ANALYZER(doc.intro.en IN TOKENS(@search_0,"text_en"),"text_en")
+```
+
+### Per-field exact-phrase bonus
+
+`Search::PHRASE` may also be declared **per field**. The `PHRASE()` bonus (which ranks an exact phrase ahead of a scattered match) is then enabled where it makes sense — the title — and left off elsewhere — a code, an identifier:
+
+```php
+Search::FIELDS =>
+[
+    'name'        => [ Search::BOOST => 3 , Search::PHRASE => true  ] , // exact-phrase bonus
+    'description' => [ Search::PHRASE => false ] ,                       // no phrase bonus
+] ,
+Search::PHRASE => true , // View-level default
+```
+
+Resolution rule: a field declaring `Search::PHRASE` wins (an **explicit `false` opts that field out**); a field with no `PHRASE` key inherits the View-level `Search::PHRASE`; with no global value, the bonus is disabled. The bonus weighs `boost × 2` (it composes with the per-field boost) and `PHRASE()` requires the field Analyzer to expose the `position` and `frequency` features. Backward-compatible: with no per-field phrase, the output is exactly the former one.
+
+**Concrete example.** With the `name` field above (`Search::PHRASE => true`) and the request:
+
+```
+GET /places?search=cuir vintage
+```
+
+two records contain **both** words and therefore both match (token match):
+
+| `name` | Words present | Adjacent and in order? | `PHRASE()` bonus |
+|---|---|---|---|
+| « Fauteuil **cuir vintage** » | cuir, vintage | ✅ yes | ✅ `boost × 2` → **ranks first** |
+| « Sac en cuir, style vintage » | cuir, vintage | ❌ scattered | ❌ no bonus |
+
+The AQL generated for that field adds, next to the token match, the exact-phrase branch:
+
+```aql
+   BOOST(doc.name IN TOKENS(@search_0, "text_fr"), 3)   // token match (both records)
+OR BOOST(PHRASE(doc.name, @search_0), 6)                // exact-phrase bonus (record 1 only)
+```
+
+As a result « Fauteuil cuir vintage » ranks **ahead of** « Sac en cuir, style vintage » in the `BM25` order. The `code` field (`Search::PHRASE => false`) never gets that branch: an identifier like `REF-2024` must not be "brought closer" to an approximate input.
 
 **Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts.
 

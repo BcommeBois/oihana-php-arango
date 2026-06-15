@@ -1,6 +1,6 @@
 # Recherche View (ArangoSearch) — `?search=` classé par pertinence
 
-Déclarez une **View ArangoSearch** sur un modèle `Documents` (le bloc `AQL::VIEW`) et le paramètre [`?search=`](search.md) bascule, automatiquement et **sans aucun changement d'URL**, du simple balayage `LIKE` vers une recherche **accélérée par index et classée par pertinence** : matching linguistique (tokenisation, stemming, accents), boosts par champ, bonus d'expression exacte, tolérance aux fautes, et un score `BM25` qui classe les meilleurs résultats d'abord.
+Déclarez une **View ArangoSearch** sur un modèle `Documents` (le bloc `AQL::VIEW`) et le paramètre [`?search=`](search.md) bascule, automatiquement et **sans aucun changement d'URL**, du simple balayage `LIKE` vers une recherche **accélérée par index et classée par pertinence** : matching linguistique (tokenisation, racinisation, accents), boosts par champ, bonus d'expression exacte, tolérance aux fautes, et un score `BM25` qui classe les meilleurs résultats d'abord.
 
 > ArangoSearch est nouveau pour vous (Analyzers, Views, scoring) ? Commencez par lire notre page dédiée [Comprendre ArangoSearch](../getting-started/arangosearch.md).
 
@@ -37,6 +37,19 @@ $places = new Documents( $container ,
 | `Search::PHRASE` | `bool` | Ajoute un bonus d'expression exacte : un match `PHRASE()` pèse `boost × 2`. |
 | `Search::FUZZY` | `int` | Tolérance aux fautes globale : `LEVENSHTEIN_MATCH` avec cette distance d'édition maximale (valeur valide `0`–`4`, `0` = off). Surchargeable par champ — voir ci-dessous. |
 
+### Options par champ — vue d'ensemble
+
+Au-delà du boost, chaque entrée de `Search::FIELDS` accepte des options déclarées **par champ** (forme tableau `champ => [ … ]`). Toutes suivent la même convention : **clé absente = hérite du niveau View, valeur explicite = surcharge** (un `0` / `false` explicite désactive donc l'option pour ce champ).
+
+| Option par champ | Rôle | Exemple |
+|---|---|---|
+| [`Search::FUZZY`](#tolérance-aux-fautes-par-champ) | tolérer les fautes (texte) / rester exact (codes) | `?search=scirie` trouve « Scierie… » mais pas un code voisin |
+| [`Search::ANALYZER`](#analyzer-par-champ) | un Analyzer par champ (français, anglais, …) | `?search=workshops` matche via `text_en` (racine `workshop`) |
+| [`Search::LANG`](#recherche-localisée-lang) | recherche localisée pilotée par `?lang=` | `?search=menuiserie&lang=fr` cible le côté français |
+| [`Search::PHRASE`](#bonus-dexpression-exacte-par-champ) | bonus d'expression exacte là où c'est utile | `?search=cuir vintage` remonte l'expression adjacente |
+
+Ces options se composent (un même champ peut déclarer boost + analyzer + langue + fuzzy + phrase). Chaque section ci-dessous en détaille une, avec un exemple concret de bout en bout.
+
 ### Tolérance aux fautes par champ
 
 `Search::FUZZY` peut être déclaré **par champ** dans une entrée tableau de `Search::FIELDS`, en miroir exact de `Search::BOOST`. Une même View peut alors tolérer les fautes sur les champs texte tout en restant **exacte** sur les codes ou identifiants (où une tolérance ramènerait le mauvais enregistrement) :
@@ -53,6 +66,26 @@ Search::FUZZY => 1 , // défaut au niveau de la View
 
 Règle de résolution : un champ qui déclare `Search::FUZZY` l'emporte (un **`0` explicite désactive** la tolérance pour ce champ) ; un champ sans clé `FUZZY` hérite du `Search::FUZZY` de la View ; sans valeur globale, la tolérance est désactivée. Comportement **100 % rétro-compatible** : une déclaration sans fuzzy par champ produit exactement l'AQL d'avant.
 
+**Exemple concret.** Avec les champs ci-dessus et une faute de frappe sur la requête :
+
+```
+GET /places?search=scirie
+```
+
+| Champ | Tolérance | « scirie » (faute pour « scierie ») |
+|---|---|---|
+| `name` (`FUZZY => 1`) | 1 faute tolérée | ✅ trouve « Scierie de la Loire » |
+| `code` (`FUZZY => 0`) | exact | ❌ aucun rapprochement |
+
+L'AQL généré pour `name` ajoute la branche tolérante à côté du match par jetons :
+
+```aql
+   BOOST(doc.name IN TOKENS(@search_0, "text_fr"), 3)
+OR LEVENSHTEIN_MATCH(doc.name, @search_0, 1)        // tolère 1 faute d'édition
+```
+
+Le champ `code` n'émet **que** `doc.code IN TOKENS(...)` (pas de `LEVENSHTEIN_MATCH`) : une recherche `REF-00` ne ramène jamais le code `REF-001`.
+
 ### Analyzer par champ
 
 De la même façon, `Search::ANALYZER` peut être déclaré **par champ**. Une même View peut alors indexer (et interroger) un champ français avec `text_fr` et un champ anglais avec `text_en` :
@@ -67,6 +100,19 @@ Search::ANALYZER => 'text_fr' , // défaut au niveau de la View
 ```
 
 Règle de résolution : un champ qui déclare `Search::ANALYZER` l'emporte ; sinon il hérite du `Search::ANALYZER` de la View (lui-même `identity` par défaut). L'Analyzer étant **figé à l'indexation**, une surcharge par champ se répercute des deux côtés : le link de la View indexe le champ avec son Analyzer, et la requête regroupe les expressions par Analyzer — un `ANALYZER(…, "<analyzer>")` par groupe, le tout en `OR`. Avec un seul Analyzer la sortie est strictement celle d'avant.
+
+**Exemple concret.** `name` est indexé en français, `summary` en anglais :
+
+```
+GET /places?search=workshops
+```
+
+Le pluriel anglais « workshops » est ramené à sa racine « workshop » par l'Analyzer `text_en` et retrouve la fiche dont le `summary` est « woodworking workshop » — ce que `text_fr` ne saurait pas faire. L'AQL généré produit **un `ANALYZER()` par Analyzer**, OR-és :
+
+```aql
+   ANALYZER(BOOST(doc.name IN TOKENS(@search_0, "text_fr"), 3), "text_fr")
+|| ANALYZER(doc.summary IN TOKENS(@search_0, "text_en"), "text_en")
+```
 
 > **Drift** — changer l'Analyzer d'un champ modifie le link de la View. Comme tout changement de déclaration, il ne met pas à jour une View déjà créée : resynchronisez avec `$model->viewSync()` ou `arangodb views --sync`. Un analyzer (modèle ou par champ) inconnu du serveur est signalé par `$model->viewDiff()` (statut `INVALID`).
 
@@ -90,6 +136,61 @@ Quand la requête porte une langue active (le paramètre [`?lang=`](search.md), 
 - **garde-fou** : si la langue active ne correspond à **aucun** champ (ex. `?lang=de`), le filtre est ignoré et tous les champs sont cherchés — jamais de `SEARCH` vide.
 
 Le `Search::LANG` (recherche) et le `?lang` de projection (`TRANSLATE` au `RETURN`) sont indépendants mais cohérents : la même langue active narrowe la recherche et localise la sortie. Rétro-compatible : sans aucun `Search::LANG`, `?lang=` n'a aucun effet sur la recherche.
+
+**Exemple concret.** Sur l'attribut i18n `intro` ci-dessus, le mot français « menuiserie » ne vit que dans `intro.fr` :
+
+```
+GET /places?search=menuiserie&lang=fr
+```
+
+`?lang=fr` ne cherche que `name` (non localisé) et `intro.fr` — la fiche française est trouvée :
+
+```aql
+ANALYZER(BOOST(doc.name IN TOKENS(@search_0,"text_fr"),3) || doc.intro.fr IN TOKENS(@search_0,"text_fr"), "text_fr")
+```
+
+La **même** requête en `?lang=en` cherche `name` + `intro.en` (le côté français est écarté) — « menuiserie » ne ramène alors plus rien :
+
+```aql
+ANALYZER(BOOST(doc.name IN TOKENS(@search_0,"text_fr"),3),"text_fr") || ANALYZER(doc.intro.en IN TOKENS(@search_0,"text_en"),"text_en")
+```
+
+### Bonus d'expression exacte par champ
+
+`Search::PHRASE` peut aussi être déclaré **par champ**. Le bonus `PHRASE()` (qui classe une expression exacte devant un match dispersé) s'active alors là où il a du sens — le titre — et reste désactivé ailleurs — un code, un identifiant :
+
+```php
+Search::FIELDS =>
+[
+    'name'        => [ Search::BOOST => 3 , Search::PHRASE => true  ] , // bonus expression exacte
+    'description' => [ Search::PHRASE => false ] ,                       // pas de bonus phrase
+] ,
+Search::PHRASE => true , // défaut au niveau de la View
+```
+
+Règle de résolution : un champ qui déclare `Search::PHRASE` l'emporte (un **`false` explicite désactive** le bonus pour ce champ) ; un champ sans clé `PHRASE` hérite du `Search::PHRASE` de la View ; sans valeur globale, le bonus est désactivé. Le bonus pèse `boost × 2` (il compose avec le boost par champ) et `PHRASE()` exige que l'Analyzer du champ expose les features `position` et `frequency`. Rétro-compatible : sans `PHRASE` par champ, la sortie est strictement celle d'avant.
+
+**Exemple concret.** Avec le champ `name` ci-dessus (`Search::PHRASE => true`) et la requête :
+
+```
+GET /places?search=cuir vintage
+```
+
+deux fiches contiennent les **deux** mots et matchent donc toutes les deux (match par jetons) :
+
+| `name` | Mots présents | Adjacents et dans l'ordre ? | Bonus `PHRASE()` |
+|---|---|---|---|
+| « Fauteuil **cuir vintage** » | cuir, vintage | ✅ oui | ✅ `boost × 2` → **remonte en tête** |
+| « Sac en cuir, style vintage » | cuir, vintage | ❌ dispersés | ❌ aucun bonus |
+
+L'AQL généré pour ce champ ajoute, à côté du match par jetons, la branche d'expression exacte :
+
+```aql
+   BOOST(doc.name IN TOKENS(@search_0, "text_fr"), 3)   // match par jetons (les 2 fiches)
+OR BOOST(PHRASE(doc.name, @search_0), 6)                // bonus expression exacte (fiche 1 seulement)
+```
+
+Résultat : « Fauteuil cuir vintage » passe **devant** « Sac en cuir, style vintage » au classement `BM25`. Le champ `code` (`Search::PHRASE => false`) ne reçoit jamais cette branche : un identifiant comme `REF-2024` ne doit pas être « rapproché » d'une saisie approximative.
 
 **Le provisioning est automatique** : comme la collection et ses `AQL::INDEXES`, la View est créée paresseusement à l'initialisation du modèle quand elle n'existe pas (champs cherchés liés avec l'Analyzer déclaré). Une View existante n'est **jamais modifiée automatiquement** — après un changement de déclaration, inspectez et resynchronisez explicitement : `$model->viewDiff()` détecte l'écart, `$model->viewSync()` le répare via `updateProperties()` (la View reste interrogeable pendant la ré-indexation), et l'[action `views` de la commande `arangodb`](../commands/arangodb.md#views--gestion-des-views-arangosearch) fait la même chose en CLI (`--diff` / `--sync`), intégrable aux scripts de déploiement.
 

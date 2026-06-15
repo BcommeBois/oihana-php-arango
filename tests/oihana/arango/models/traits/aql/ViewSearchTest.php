@@ -354,6 +354,61 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testPrepareViewSearchPhrasePerFieldEnablesWithoutGlobal() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name'        => [ Search::BOOST => 3 , Search::PHRASE => true ] , // phrase bonus on
+                    'description' => 1 ,                                              // no phrase (no global)
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER('
+            . 'BOOST(doc.name IN TOKENS(@search_0,"text_fr"),3)'
+            . ' || BOOST(PHRASE(doc.name,@search_0),6)'
+            . ' || doc.description IN TOKENS(@search_0,"text_fr")'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchPhrasePerFieldOptsOutOfTheGlobal() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::PHRASE   => true , // View-level phrase bonus
+                Search::FIELDS   =>
+                [
+                    'name' => 1 ,                              // inherits the global → phrase on
+                    'code' => [ Search::PHRASE => false ] ,    // opts out
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER('
+            . 'doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || BOOST(PHRASE(doc.name,@search_0),2)'
+            . ' || doc.code IN TOKENS(@search_0,"text_fr")'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
     /**
      * A model whose View mixes a locale-agnostic field and two localized
      * sub-fields, each with its own Analyzer.
@@ -773,6 +828,35 @@ class ViewSearchTest extends TestCase
                 ] ,
             ] ,
             $link->toArray()
+        ) ;
+    }
+
+    public function testGetViewFieldSpecsKeepsPhraseWhenDeclared() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS =>
+                [
+                    'name'  => 3 ,
+                    'title' => [ Search::PHRASE => true ] ,
+                    'code'  => [ Search::BOOST => 2 , Search::PHRASE => false ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'getViewFieldSpecs' ) ;
+
+        $this->assertSame
+        (
+            [
+                'name'  => [ Search::BOOST => 3.0 ] ,
+                'title' => [ Search::BOOST => 1.0 , Search::PHRASE => true ] ,
+                'code'  => [ Search::BOOST => 2.0 , Search::PHRASE => false ] ,
+            ] ,
+            $method->invoke( $model )
         ) ;
     }
 

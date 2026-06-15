@@ -5,6 +5,10 @@ namespace tests\oihana\arango\integration;
 use DI\Container;
 use DI\DependencyException;
 use DI\NotFoundException;
+use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
+use oihana\reflect\exceptions\ConstantException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use Psr\Log\LoggerInterface;
@@ -60,9 +64,9 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $places = $db->collection( self::COLLECTION ) ;
         $places->create() ;
 
-        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' , 'summary' => 'sawmill and timber'         , 'intro' => [ 'fr' => 'scierie de bois'       , 'en' => 'timber sawmill'        ] ] ) ;
-        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'             , 'summary' => 'fine woodworking workshops' , 'intro' => [ 'fr' => 'atelier de menuiserie' , 'en' => 'woodworking workshop'  ] ] ) ;
-        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'              , 'summary' => 'metal forging studio'       , 'intro' => [ 'fr' => 'ferronnerie d art'     , 'en' => 'metal forging'         ] ] ) ;
+        $places->insert( [ 'label' => 'A' , 'kind' => 'scierie' , 'code' => 'REF001' , 'name' => 'Scierie de la Loire' , 'description' => 'le bois de chêne et de sapin' , 'summary' => 'sawmill and timber'        , 'intro' => [ 'fr' => 'scierie de bois'       , 'en' => 'timber sawmill'        ] , 'tagline' => 'red oak'      ] ) ;
+        $places->insert( [ 'label' => 'B' , 'kind' => 'atelier' , 'code' => 'REF002' , 'name' => 'Atelier du bois'     , 'description' => 'menuiserie fine'              , 'summary' => 'fine woodworking workshops' , 'intro' => [ 'fr' => 'atelier de menuiserie' , 'en' => 'woodworking workshop'  ] , 'tagline' => 'oak red'     ] ) ;
+        $places->insert( [ 'label' => 'C' , 'kind' => 'atelier' , 'code' => 'REF003' , 'name' => 'Ferronnerie d\'art'  , 'description' => 'le métal forgé'               , 'summary' => 'metal forging studio'       , 'intro' => [ 'fr' => 'ferronnerie d art'     , 'en' => 'metal forging'         ] , 'tagline' => 'green metal' ] ) ;
     }
 
     /**
@@ -84,7 +88,7 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
         $config    = initConfig( basePath: $configDir ) ;
         $arango    = is_array( $config[ 'arango' ] ?? null ) ? $config[ 'arango' ] : [] ;
 
-        $arangodb  = new ArangoDB( [ ...$arango , ArangoConfig::DATABASE => static::$database ] , new NullLogger() ) ;
+        $arangodb  = new ArangoDB( [ ...$arango , ArangoConfig::DATABASE => ViewSearchIntegrationTest::$database ] , new NullLogger() ) ;
 
         $container = new Container() ;
         $container->set( LoggerInterface::class , new NullLogger() ) ;
@@ -137,6 +141,21 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
      * The model construction lazily provisions the declared View, and the
      * relevance-ranked search works end to end: « bois » matches the boosted
      * name of B before the description of A, and leaves C out.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     * @throws ConstantException
      */
     public function testProvisioningAndRelevanceRankedSearch() :void
     {
@@ -154,6 +173,16 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
     /**
      * `count()` agrees with `list()` for the same search.
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
      */
     public function testCountAgreesWithList() :void
     {
@@ -166,6 +195,19 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
     /**
      * `?sort=name` overrides the relevance default; the score key composes.
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testExplicitSortOverridesRelevance() :void
     {
@@ -185,6 +227,19 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
 
     /**
      * The fuzzy tolerance matches a typo (`boys` → `bois`, Damerau distance 1).
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testFuzzySearchToleratesTypo() :void
     {
@@ -311,10 +366,56 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * Per-field phrase bonus (Lot VF4a): the `tagline` field opts into the
+     * exact-phrase bonus while the View-level flag stays off. Searching
+     * « red oak » still matches both `red oak` (A) and `oak red` (B) through
+     * the token match, but only A — where the phrase is adjacent — receives
+     * the `PHRASE()` boost, so it ranks first.
+     *
+     * @throws Throwable
+     */
+    public function testPerFieldPhraseBoostsTheAdjacentMatch() :void
+    {
+        $view =
+        [
+            Search::NAME     => 'placesPhraseView' ,
+            Search::ANALYZER => 'text_fr' ,
+            Search::FIELDS   =>
+            [
+                'tagline' => [ Search::ANALYZER => 'text_en' , Search::PHRASE => true ] , // per-field phrase, global off
+            ] ,
+        ] ;
+
+        $model = $this->model( $view ) ;
+
+        $this->assertTrue( $model->viewExists( 'placesPhraseView' ) , 'The phrase View must be provisioned.' ) ;
+
+        $this->waitForIndexing( 3 , 'placesPhraseView' ) ;
+
+        $rows   = $model->list( [ Arango::SEARCH => 'red oak' ] ) ;
+        $labels = array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
+
+        $this->assertSame( [ 'A' , 'B' ] , $labels , 'The adjacent phrase (A) ranks before the scattered match (B); C is out.' ) ;
+    }
+
+    /**
      * Facet counts follow the same `SEARCH` as the list (Lot S4b): with
      * `?search=bois` the `kind` buckets only count the two matching documents
      * (and the View `SEARCH` is accepted inside the `LET` sub-queries on a
      * real server); without a search the buckets cover the whole collection.
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testFacetCountsFollowTheViewSearch() :void
     {
@@ -358,6 +459,19 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
     /**
      * Without the `AQL::VIEW` declaration the classic LIKE sweep still works,
      * untouched, on the same collection (backward compatibility).
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testLikeFallbackWithoutViewDeclaration() :void
     {

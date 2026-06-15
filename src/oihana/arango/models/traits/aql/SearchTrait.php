@@ -223,8 +223,9 @@ trait SearchTrait
      * - the base match `doc.<field> IN TOKENS(@search_N, "<analyzer>")`
      *   (both sides analyzed), weighted by `BOOST(…, <boost>)` when the field
      *   boost differs from `1`;
-     * - with {@see Search::PHRASE}, an exact-phrase bonus
-     *   `BOOST(PHRASE(doc.<field>, @search_N), <boost × 2>)`;
+     * - with a per-field or View-level {@see Search::PHRASE}, an exact-phrase
+     *   bonus `BOOST(PHRASE(doc.<field>, @search_N), <boost × 2>)`; a field may
+     *   override the View-level flag (an explicit `false` opts that field out);
      * - with a per-field or View-level {@see Search::FUZZY} `> 0`, a
      *   typo-tolerant `LEVENSHTEIN_MATCH(doc.<field>, @search_N, <fuzzy>)`;
      *   a field may override the View-level tolerance — an explicit `0`
@@ -272,7 +273,7 @@ trait SearchTrait
 
         $modelAnalyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
         $fields        = $this->getViewFieldSpecs() ;
-        $phrase        = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
+        $globalPhrase  = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
         $globalFuzzy   = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
 
         if( $lang !== null )
@@ -303,7 +304,8 @@ trait SearchTrait
             {
                 $name   = $spec[ Search::ANALYZER ] ?? $modelAnalyzer ;
                 $weight = $spec[ Search::BOOST ] ;
-                $fuzzy  = array_key_exists( Search::FUZZY , $spec ) ? $spec[ Search::FUZZY ] : $globalFuzzy ;
+                $fuzzy  = array_key_exists( Search::FUZZY  , $spec ) ? $spec[ Search::FUZZY  ] : $globalFuzzy ;
+                $phrase = array_key_exists( Search::PHRASE , $spec ) ? $spec[ Search::PHRASE ] : $globalPhrase ;
 
                 $groups[ $name ] ??= [] ;
 
@@ -468,8 +470,8 @@ trait SearchTrait
      *
      * {@see Search::FIELDS} entries accept a numeric boost shorthand or an
      * array carrying {@see Search::BOOST}, {@see Search::FUZZY},
-     * {@see Search::ANALYZER} and {@see Search::LANG}; when the
-     * declaration has no fields, the model's `searchable` list is used with a
+     * {@see Search::ANALYZER}, {@see Search::LANG} and {@see Search::PHRASE};
+     * when the declaration has no fields, the model's `searchable` list is used with a
      * neutral boost. A per-field option is kept in the spec only when it is
      * explicitly declared — an absent key means "inherit the View-level
      * default", which {@see prepareViewSearch()} resolves so that an explicit
@@ -512,6 +514,11 @@ trait SearchTrait
                     if( array_key_exists( Search::LANG , $options ) )
                     {
                         $spec[ Search::LANG ] = (string) $options[ Search::LANG ] ;
+                    }
+
+                    if( array_key_exists( Search::PHRASE , $options ) )
+                    {
+                        $spec[ Search::PHRASE ] = (bool) $options[ Search::PHRASE ] ;
                     }
 
                     return $spec ;
