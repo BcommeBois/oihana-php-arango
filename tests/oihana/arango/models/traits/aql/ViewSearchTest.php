@@ -589,6 +589,94 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    /**
+     * A model whose View carries a View-level REQUIRES (whole-search gate) on
+     * top of a per-field gate.
+     */
+    private function viewGatedModel( array $view = [] ) :Documents
+    {
+        return $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::REQUIRES => 'app:search' ,
+                Search::FIELDS   =>
+                [
+                    'name'   => 1 ,
+                    'salary' => [ Search::REQUIRES => 'hr:salary' ] ,
+                ] ,
+                ...$view ,
+            ] ,
+        ]) ;
+    }
+
+    public function testPrepareViewSearchViewLevelRequiresGrantedSearchesEveryAllowedField() :void
+    {
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.salary IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $this->viewGatedModel()->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => true ] ,
+                $this->binds
+            )
+        ) ;
+    }
+
+    public function testPrepareViewSearchViewLevelRequiresDeniedMatchesNothing() :void
+    {
+        // Everything granted EXCEPT the View-level subject → whole search denied,
+        // even though the salary field's own subject would pass.
+        $this->assertSame
+        (
+            'false' ,
+            $this->viewGatedModel()->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn( string $s ) => $s !== 'app:search' ] ,
+                $this->binds
+            )
+        ) ;
+        $this->assertSame( [] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchViewAndFieldLevelsCombineWithAnd() :void
+    {
+        // View-level granted but the field's own subject denied → only the
+        // public field is searched (AND between the two levels).
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $this->viewGatedModel()->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn( string $s ) => $s === 'app:search' ] ,
+                $this->binds
+            )
+        ) ;
+    }
+
+    public function testPrepareViewSearchViewLevelRequiresIsOrOverSubjects() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::REQUIRES => [ 'app:a' , 'app:b' ] ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch(
+                [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn( string $s ) => $s === 'app:b' ] ,
+                $this->binds
+            )
+        ) ;
+    }
+
     public function testPrepareViewSearchCustomDocRef() :void
     {
         $model = $this->model(

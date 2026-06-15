@@ -104,15 +104,26 @@ class Search
     public const string PHRASE = 'phrase' ;
 
     /**
-     * The permission subject(s) a searched field requires — a string or a list
+     * The permission subject(s) required to search — a string or a list
      * (OR semantics), mirroring {@see \oihana\arango\enums\Field::REQUIRES} for
-     * projections. When declared inside a {@see FIELDS} entry, the field joins
-     * the `SEARCH` only if the request authorizer (`Arango::AUTHORIZER`) grants
-     * at least one subject; a field with no `REQUIRES` is always searchable.
-     * With no authorizer injected the gate falls open (authorization layer
-     * disabled), consistent with {@see \oihana\arango\models\helpers\isAuthorized()}.
-     * If permissions remove every searched field, the `SEARCH` matches nothing
-     * (it never falls back to searching everything).
+     * projections. Declared at **two levels**:
+     *
+     * - on the `AQL::VIEW` block → gates the **whole** search (every field): a
+     *   denied subject yields a `SEARCH` that matches nothing, whatever the
+     *   per-field declarations;
+     * - inside a {@see FIELDS} entry → gates that **single** field.
+     *
+     * The two levels combine with **AND** (the request must satisfy the
+     * View-level requirement *and* the field's own) — unlike the other
+     * per-field facets, where a field value overrides the View level. Within a
+     * single list the subjects combine with OR. A level with no `REQUIRES` adds
+     * no constraint; a field is always searchable when neither level gates it.
+     *
+     * The decision is delegated to the request authorizer (`Arango::AUTHORIZER`,
+     * see {@see \oihana\arango\models\helpers\isAuthorized()}). With no authorizer
+     * injected the gate falls open (authorization layer disabled). If permissions
+     * remove every searched field, the `SEARCH` matches nothing — it never falls
+     * back to searching everything.
      */
     public const string REQUIRES = 'requires' ;
 

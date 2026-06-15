@@ -195,16 +195,26 @@ As a result « Fauteuil cuir vintage » ranks **ahead of** « Sac en cuir, style
 
 ### Search permissions
 
-`Search::REQUIRES` declares the **permission subject(s)** a field requires to be searched — a string or a list (OR semantics) — mirroring [`Field::REQUIRES`](../edges-joins-projection.md) on the projection side. A field with no `REQUIRES` is always searchable; a gated field joins the `SEARCH` only if the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller and consulted by `isAuthorized()`) grants **at least one** subject:
+`Search::REQUIRES` declares the **permission subject(s)** required to search — a string or a list (OR semantics) — mirroring [`Field::REQUIRES`](../edges-joins-projection.md) on the projection side. The decision is delegated to the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller and consulted by `isAuthorized()`). It is declared at **two levels**:
+
+- on the **`AQL::VIEW` block** → gates the **whole** search (every field);
+- inside a **`Search::FIELDS` entry** → gates **that single** field.
 
 ```php
-Search::FIELDS =>
+AQL::VIEW =>
 [
-    'name'   => 3 ,                                                  // public
-    'salary' => [ Search::REQUIRES => 'hr.salary:search' ] ,         // 1 subject required
-    'ssn'    => [ Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] , // OR : admin OR audit
+    Search::NAME     => 'placesView' ,
+    Search::REQUIRES => 'app:search' ,                              // global gate : no search without this subject
+    Search::FIELDS   =>
+    [
+        'name'   => 3 ,                                             // public (subject to the global gate only)
+        'salary' => [ Search::REQUIRES => 'hr.salary:search' ] ,    // + 1 subject required
+        'ssn'    => [ Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] , // + OR : admin OR audit
+    ] ,
 ] ,
 ```
+
+The two levels combine with **AND**: a field is searched when **(the View gate is absent or granted) AND (the field gate is absent or granted)**. Within a single list, subjects combine with **OR**. ⚠️ This is the **only** **additive** facet: unlike boost / fuzzy / analyzer / language / phrase (where a field *overrides* the View), `REQUIRES` **accumulate** (the most restrictive wins) — for safety.
 
 **Concrete example.** The word « confidentiel » lives only in a `secret` field gated by `Search::REQUIRES => 'places:secret'`:
 
@@ -219,12 +229,22 @@ GET /places?search=confidentiel
 
 Key points:
 
+- **Global gate** — if the View's `Search::REQUIRES` is denied, the **whole** search returns `false` (zero results), whatever the declared fields.
 - **No leak by default** — if permissions remove **every** searched field, the emitted `SEARCH` is `false`: zero results. It **never** falls back to searching everything or to the `LIKE` sweep (which would bypass the gate).
 - **Fail-open without an authorizer** — if no `Arango::AUTHORIZER` is injected, the authorization layer is considered disabled and gated fields stay searchable (same behavior as the projection). In production the controller always injects the authorizer.
 - **`count()` and `facetCounts()`** apply the same filtering (they reuse the same `SEARCH` expression).
 - Backward-compatible: with no `REQUIRES` on any field, the AQL is unchanged.
 
-**Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts.
+**Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts:
+
+```bash
+# after an AQL::VIEW declaration change: review the gap, then resynchronize
+composer arango:views -- --diff              # read-only: lists Views to create / drifted
+composer arango:views -- --sync              # creates the missing ones + resyncs every drifted one
+composer arango:views -- --sync=placesView   # targeted (several names, comma-separated)
+```
+
+> Equivalent long form: `php bin/console.php command:arangodb views --sync`. `--sync` favors `updateProperties()` (soft update) over a drop + recreate.
 
 ## URLs and behavior
 

@@ -239,10 +239,11 @@ trait SearchTrait
      * With a single Analyzer the output is a single `ANALYZER(…)` wrap, byte for
      * byte the classic form.
      *
-     * Fields declaring {@see Search::REQUIRES} are gated by the request
-     * authorizer (`Arango::AUTHORIZER`, see {@see isAuthorized()}): a field
-     * joins the `SEARCH` only when at least one required subject is granted
-     * (fail-open without an authorizer). If permissions remove every field, the
+     * {@see Search::REQUIRES} gates the search by the request authorizer
+     * (`Arango::AUTHORIZER`, see {@see isAuthorized()}) at two levels: on the
+     * `AQL::VIEW` block it gates the whole search, inside a field entry it gates
+     * that field; the two combine with `AND` (fail-open without an authorizer).
+     * If the View-level gate is denied, or permissions remove every field, the
      * expression is `false` — the search matches nothing and never falls back
      * to searching everything.
      *
@@ -281,15 +282,25 @@ trait SearchTrait
             $search = $search[ Arango::SEARCH ] ?? null ;
         }
 
+        // View-level permission gate : a Search::REQUIRES on the AQL::VIEW block
+        // gates the whole search. Denied → the SEARCH matches nothing, whatever
+        // the per-field declarations. AND with the per-field gate below.
+        if( isset( $this->view[ Search::REQUIRES ] )
+            && !isAuthorized( [ Search::REQUIRES => $this->view[ Search::REQUIRES ] ] , $init ) )
+        {
+            return 'false' ; // SEARCH false → zero rows (whole search denied)
+        }
+
         $modelAnalyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
         $fields        = $this->getViewFieldSpecs() ;
         $globalPhrase  = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
         $globalFuzzy   = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
 
-        // Permission gating : a field declaring Search::REQUIRES joins the SEARCH
-        // only when the request authorizer grants it (fail-open without one).
-        // Denying every field yields a SEARCH that matches nothing — it must
-        // NEVER fall back to searching everything (that would bypass the gate).
+        // Per-field permission gating : a field declaring Search::REQUIRES joins
+        // the SEARCH only when the request authorizer grants it (fail-open without
+        // one). This ANDs with the View-level gate above. Denying every field
+        // yields a SEARCH that matches nothing — it must NEVER fall back to
+        // searching everything (that would bypass the gate).
         $fields = array_filter( $fields , static fn( array $spec ) => isAuthorized( $spec , $init ) ) ;
 
         if( $fields === [] )

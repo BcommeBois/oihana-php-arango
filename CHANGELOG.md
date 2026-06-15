@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **View-level search permission in ArangoSearch Views (Lot VF4c).** `Search::REQUIRES` can now also be declared on the `AQL::VIEW` block to gate the **whole** search (every field), on top of the per-field gate (Lot VF4b). The two levels combine with **AND** — a field is searched when the View-level requirement *and* its own are both satisfied (within a list, subjects combine with OR).
+  - A denied View-level subject makes the whole `SEARCH` match nothing (`false`), whatever the per-field declarations.
+  - `Search::REQUIRES` is the only **additive** facet: unlike boost/fuzzy/analyzer/lang/phrase (a field overrides the View), permissions accumulate (most restrictive wins).
+  - **Tests:** unit (`ViewSearchTest` — View-level granted/denied, AND with the field level, OR over View-level subjects) + live (`ViewSearchIntegrationTest::testViewLevelRequiresGatesTheWholeSearch`).
+  - **Docs:** FR/EN `db/search-views.md` (search-permissions section extended with the two levels + AND note).
+
 - **Per-field search permissions in ArangoSearch Views (Lot VF4b).** A searched field can declare `Search::REQUIRES` (a permission subject or a list, OR semantics) — mirroring `Field::REQUIRES` for projections. A gated field joins the `SEARCH` only when the request authorizer (`Arango::AUTHORIZER`, already injected by the controller and consulted by `isAuthorized()`) grants at least one subject; an ungated field is always searchable.
   - **No leak by default:** if permissions remove every searched field, the emitted `SEARCH` is `false` (zero results) — it never falls back to searching everything or to the `LIKE` sweep, which would bypass the gate.
   - **Fail-open** without an authorizer (authorization layer disabled), consistent with projection/edge/join gating. `count()` / `facetCounts()` inherit the gating.

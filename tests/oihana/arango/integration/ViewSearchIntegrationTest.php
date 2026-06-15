@@ -435,6 +435,38 @@ final class ViewSearchIntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * View-level search permission (Lot VF4c): a `Search::REQUIRES` on the
+     * `AQL::VIEW` block gates the whole search. Without the granted subject the
+     * search returns nothing even on a public field; with it, it works normally.
+     *
+     * @throws Throwable
+     */
+    public function testViewLevelRequiresGatesTheWholeSearch() :void
+    {
+        $view =
+        [
+            Search::NAME     => 'placesViewGate' ,
+            Search::ANALYZER => 'text_fr' ,
+            Search::REQUIRES => 'app:search' ,
+            Search::FIELDS   => [ 'name' => 1 ] ,
+        ] ;
+
+        $model = $this->model( $view ) ;
+
+        $this->assertTrue( $model->viewExists( 'placesViewGate' ) , 'The gated View must be provisioned.' ) ;
+
+        $this->waitForIndexing( 3 , 'placesViewGate' ) ;
+
+        $labels = fn( array $rows ) => array_map( fn( $r ) => is_array( $r ) ? $r[ 'label' ] : $r->label , $rows ) ;
+
+        $granted = $model->list( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => true  ] ) ;
+        $this->assertSame( [ 'B' ] , $labels( $granted ) , 'With the View-level subject, the search works.' ) ;
+
+        $denied = $model->list( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => false ] ) ;
+        $this->assertSame( [] , $labels( $denied ) , 'Without it, the whole search returns nothing.' ) ;
+    }
+
+    /**
      * Facet counts follow the same `SEARCH` as the list (Lot S4b): with
      * `?search=bois` the `kind` buckets only count the two matching documents
      * (and the View `SEARCH` is accepted inside the `LET` sub-queries on a
