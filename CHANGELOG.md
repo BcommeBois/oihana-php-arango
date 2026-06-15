@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Enums for ArangoSearch string vocabularies (no more magic strings).** Four constants classes catalogue the fixed server-side vocabularies that were previously written as bare strings in analyzer/View payloads and queries:
+  - `clients\analyzer\enums\BuiltinAnalyzer` — built-in analyzer **names** (`identity`, `text_de` … `text_zh`), to use for `Search::ANALYZER`, `ArangoSearchLink` analyzers, `phrase()` / `tokens()` (distinct from `AnalyzerType`, which is the analyzer *type* discriminator).
+  - `clients\analyzer\enums\CaseFolding` — the `case` property of the `norm` / `text` analyzers (`lower` / `upper` / `none`).
+  - `clients\view\enums\Compression` — `primarySortCompression` / `storedValues` compression (`lz4` / `none`).
+  - `clients\view\enums\ConsolidationPolicyType` — the `consolidationPolicy` `type` (`tier` / `bytes_accum`).
+  - Each exposes the usual `ConstantsTrait` helpers (`enums()`, `includes()`, …), handy to validate a value against the known set. Additive only — no existing call site is rewired; the literals keep working.
+  - **Tests:** `BuiltinAnalyzerTest`, `CaseFoldingTest`, `CompressionTest`, `ConsolidationPolicyTypeTest`.
+
 - **`AQL::INDEXES` accepts a single `IndexOptions`.** A model's index declaration can be a lone `IndexOptions` instead of a one-element list (a raw array still is the list) — symmetric with the `doctor` collection-index registry. Normalization is centralized in the new `ArangoTrait::initializeIndexes()` seam, so the model property stays a plain `IndexOptions[]` for every consumer (lazy provisioning, `diagnose()` / `repair()`).
   - **Tests:** `ArangoTraitTest` — single `IndexOptions` normalized to a list, an existing list kept as is.
   - **Docs:** FR/EN `indexes.md`. Backward-compatible.
