@@ -900,6 +900,23 @@ Le câblage est **le même que `views`** ([notice](#câbler---diff----sync-dans-
 
 Les mêmes opérations sont disponibles directement sur les modèles — `$model->diagnose()` (lecture seule, liste de `DiffReport` : collection, index, View) et `$model->repair( force: bool )` — et sur la façade : `$db->collectionDiff()`, `$db->indexesDiff()` / `indexesSync()`, `$db->viewDiff()` / `viewSync()`.
 
+### Index déclarés par collection (registre autonome)
+
+Quand plusieurs modèles pointent la **même** collection, déclarer un index sur chacun via `AQL::INDEXES` est fragile : `doctor` traite chaque modèle séparément, et tout index serveur non déclaré par un modèle compte comme une dérive — des déclarations divergentes sur une collection partagée ne peuvent donc **jamais** toutes être « in sync ». Par ailleurs, `diagnose()` ne contrôle les index d'un modèle **que** s'il en déclare : un seul porteur par collection suffit.
+
+La clé d'init `ArangoCommandParam::COLLECTION_INDEXES` déclare les index **par collection**, indépendamment des modèles — une map `nomCollection => IndexOptions[]` que `doctor` réconcilie **une fois par collection** (`indexesDiff` en rapport, `indexesSync` sous `--apply`). Chaque valeur est **la même liste `IndexOptions[]` que `AQL::INDEXES`** (objets `IndexOptions` *ou* définitions brutes), donc un helper d'index existant se réutilise tel quel. Par commodité, un `IndexOptions` **seul** est aussi accepté à la place d'une liste à un élément (un tableau brut reste, lui, toujours la liste) :
+
+```php
+// définition de la commande, à côté de MODELS
+ArangoCommandParam::COLLECTION_INDEXES =>
+[
+    'places' => [ new PersistentIndexOptions([ IndexOptions::NAME => 'id' , IndexOptions::FIELDS => [ 'id' ] , IndexOptions::UNIQUE => true ]) ] , // liste
+    'people' => new PersistentIndexOptions([ IndexOptions::NAME => 'id' , IndexOptions::FIELDS => [ 'id' ] , IndexOptions::UNIQUE => true ]) ,      // un seul index : l'enveloppe liste est optionnelle
+] ,
+```
+
+Les modèles qui pointent une collection couverte par le registre **ne déclarent plus** `AQL::INDEXES` (ils ne sont alors vérifiés que sur l'existence de la collection). Les collections du registre rejoignent l'ensemble déclaré — jamais signalées orphelines — et `doctor` accepte un run **registre seul** (sans `MODELS`). Rétro-compatible : un modèle qui déclare encore ses index continue de fonctionner inchangé.
+
 ---
 
 ## `migrate` — migrations versionnées des données

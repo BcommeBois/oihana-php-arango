@@ -892,6 +892,23 @@ The wiring is **the same as `views`** ([notice](#wiring---diff----sync-in-a-host
 
 The same operations are available straight on the models — `$model->diagnose()` (read-only, a list of `DiffReport`: collection, indexes, View) and `$model->repair( force: bool )` — and on the façade: `$db->collectionDiff()`, `$db->indexesDiff()` / `indexesSync()`, `$db->viewDiff()` / `viewSync()`.
 
+### Indexes declared per collection (autonomous registry)
+
+When several models target the **same** collection, declaring an index on each one through `AQL::INDEXES` is brittle: `doctor` inspects each model separately, and any server index a model does not declare counts as a drift — so divergent declarations over a shared collection can **never** all be "in sync". Besides, `diagnose()` only checks a model's indexes **when it declares some**: a single owner per collection is enough.
+
+The `ArangoCommandParam::COLLECTION_INDEXES` init key declares indexes **per collection**, independently of the models — a `collectionName => IndexOptions[]` map that `doctor` reconciles **once per collection** (`indexesDiff` in report mode, `indexesSync` under `--apply`). Each value is **the same `IndexOptions[]` list as `AQL::INDEXES`** (`IndexOptions` objects *or* raw definitions), so an existing index helper drops in unchanged. As a convenience a **single** `IndexOptions` is also accepted in place of a one-element list (a raw array always stays the list):
+
+```php
+// command definition, next to MODELS
+ArangoCommandParam::COLLECTION_INDEXES =>
+[
+    'places' => [ new PersistentIndexOptions([ IndexOptions::NAME => 'id' , IndexOptions::FIELDS => [ 'id' ] , IndexOptions::UNIQUE => true ]) ] , // list
+    'people' => new PersistentIndexOptions([ IndexOptions::NAME => 'id' , IndexOptions::FIELDS => [ 'id' ] , IndexOptions::UNIQUE => true ]) ,      // a single index: the list wrapper is optional
+] ,
+```
+
+Models targeting a collection covered by the registry **no longer declare** `AQL::INDEXES` (they are then only checked for collection existence). Registry collections join the declared set — never reported as orphans — and `doctor` accepts a **registry-only** run (no `models`). Backward-compatible: a model still declaring its indexes keeps working unchanged.
+
 ---
 
 ## `migrate` — versioned data migrations

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Collection-level index registry for `doctor`.** A new `collectionIndexes` init key (`ArangoCommandParam::COLLECTION_INDEXES`) lets the `doctor` action reconcile a collection's indexes declared **independently of the models** — a map `collectionName => IndexOptions[]` (a single `IndexOptions` is tolerated in place of a one-element list), reconciled once per collection (`indexesDiff` in report mode, `indexesSync` under `--apply`). It complements model-level `AQL::INDEXES`: since `diagnose()` only checks a model's indexes when it declares some, a collection backed by several models (or by an index-less one) can keep its indexes in one authoritative place instead of splitting or duplicating them across models.
+  - Registry collections join the declared set, so they are never flagged as orphans; `doctor` now accepts a registry-only run (no `models`).
+  - New `ArangoIndexesTrait` (the `$collectionIndexes` property), consumed by `ArangoDoctorAction`.
+  - **Tests:** `ArangoDoctorActionTest` — registry reconciled without any model, drift fails the report, `--apply` reconciles through `indexesSync`, a registry collection is never an orphan.
+  - **Docs:** FR/EN `commands/arangodb.md` (`doctor` section + DI wiring notice). Backward-compatible — models that declare `AQL::INDEXES` keep working unchanged.
+
 - **Per-field permissions on the classic `LIKE` search (Lot VF5).** `AQL::SEARCHABLE` entries can now be gated by permission, mirroring the View search (Lot VF4b). The list stays homogeneous: a plain string is a public field, an array carries its name under `Search::KEY` plus its subject(s) under `Search::REQUIRES` (`[ Search::KEY => 'salary', Search::REQUIRES => 'hr:salary' ]`); the map form `'field' => [ … ]` is tolerated too.
   - A gated field is swept only when the request authorizer (`Arango::AUTHORIZER`) grants a subject; fail-open without one. If **every** searchable field is denied, `prepareSearch()` returns `false` (zero rows) — the search is never silently dropped (which would return everything).
   - Shared `getSearchableSpecs()` normalizer now also feeds the `searchable` fallback of `getViewFieldSpecs()`, so a gated searchable field stays gated even when it backs a View with no explicit `Search::FIELDS`.
