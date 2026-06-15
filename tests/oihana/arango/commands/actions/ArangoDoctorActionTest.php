@@ -1008,4 +1008,50 @@ class ArangoDoctorActionTest extends TestCase
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertStringContainsString( '✓ places [indexes] — in sync' , $output->fetch() ) ;
     }
+
+    /**
+     * A registry entry with an empty index list is skipped silently — no
+     * report is rendered and the collection is not even reconciled.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testRegistrySkipsAnEmptyIndexList() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->collectionIndexes = [ 'places' => [] ] ;
+        $host->fakeFacade = $this->registryFacade( new DiffReport( 'places' , DiffStatus::IN_SYNC , kind : DiffKind::INDEXES ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringNotContainsString( 'places [indexes]' , $text ) ;
+        $this->assertStringContainsString( '0 model(s) — 0 in sync, 0 missing, 0 drifted, 0 invalid, 0 unreachable ; 0 orphan(s).' , $text ) ;
+    }
+
+    /**
+     * When no database is available, each registry collection yields an
+     * UNREACHABLE report and the run fails.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testRegistryReportsUnreachableWithoutAFacade() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->collectionIndexes = $this->registry() ;
+        $host->fakeFacade = null ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( '! places [indexes] — unreachable' , $text ) ;
+        $this->assertStringContainsString( '· no database available' , $text ) ;
+    }
 }
