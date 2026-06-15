@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AQL::INDEXES` accepts a single `IndexOptions`.** A model's index declaration can be a lone `IndexOptions` instead of a one-element list (a raw array still is the list) — symmetric with the `doctor` collection-index registry. Normalization is centralized in the new `ArangoTrait::initializeIndexes()` seam, so the model property stays a plain `IndexOptions[]` for every consumer (lazy provisioning, `diagnose()` / `repair()`).
+  - **Tests:** `ArangoTraitTest` — single `IndexOptions` normalized to a list, an existing list kept as is.
+  - **Docs:** FR/EN `indexes.md`. Backward-compatible.
+
 - **Collection-level index registry for `doctor`.** A new `collectionIndexes` init key (`ArangoCommandParam::COLLECTION_INDEXES`) lets the `doctor` action reconcile a collection's indexes declared **independently of the models** — a map `collectionName => IndexOptions[]` (a single `IndexOptions` is tolerated in place of a one-element list), reconciled once per collection (`indexesDiff` in report mode, `indexesSync` under `--apply`). It complements model-level `AQL::INDEXES`: since `diagnose()` only checks a model's indexes when it declares some, a collection backed by several models (or by an index-less one) can keep its indexes in one authoritative place instead of splitting or duplicating them across models.
   - Registry collections join the declared set, so they are never flagged as orphans; `doctor` now accepts a registry-only run (no `models`).
   - New `ArangoIndexesTrait` (the `$collectionIndexes` property), consumed by `ArangoDoctorAction`.

@@ -85,6 +85,8 @@ return
 ] ;
 ```
 
+`AQL::INDEXES` expects a **list** (`IndexOptions[]` or raw definitions). As a convenience a **single** `IndexOptions` is accepted in place of a one-element list (a raw array always stays the list) — normalization is centralized in `ArangoTrait::initializeIndexes()`, so every consumer (lazy provisioning, `doctor`) always sees an `IndexOptions[]`.
+
 Advantages:
 
 - **No separate migration script** — indexes follow the model.

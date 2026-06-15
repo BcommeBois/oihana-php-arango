@@ -85,6 +85,8 @@ return
 ] ;
 ```
 
+`AQL::INDEXES` attend une **liste** (`IndexOptions[]` ou définitions brutes). Par commodité, un `IndexOptions` **seul** est accepté à la place d'une liste à un élément (un tableau brut reste, lui, toujours la liste) — la normalisation est centralisée dans `ArangoTrait::initializeIndexes()`, donc tous les consommateurs (provisioning lazy, `doctor`) voient toujours un `IndexOptions[]`.
+
 Avantages :
 
 - **Pas de script de migration séparé** — les index suivent le modèle.
