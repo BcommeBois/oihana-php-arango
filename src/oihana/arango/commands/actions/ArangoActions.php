@@ -7,7 +7,8 @@ namespace oihana\arango\commands\actions;
  */
 trait ArangoActions
 {
-    use ArangoDoctorAction ,
+    use ArangoAnalyzersAction ,
+        ArangoDoctorAction ,
         ArangoDumpAction ,
         ArangoListCollectionsAction ,
         ArangoListDumpsAction ,

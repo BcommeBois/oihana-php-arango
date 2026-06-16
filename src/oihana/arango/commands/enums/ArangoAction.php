@@ -12,6 +12,12 @@ class ArangoAction
     use ConstantsTrait ;
 
     /**
+     * Manage the custom ArangoSearch analyzers of the arangodb database
+     * (list, diff, sync).
+     */
+    public const string ANALYZERS = 'analyzers' ;
+
+    /**
      * Backup the arangodb database.
      */
     public const string BACKUP = 'backup' ;

@@ -25,6 +25,7 @@ It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oiha
 - [Archive rotation](#archive-rotation) — retention pruning (`keep` / `max_age` / `max_total`)
 - [`collections` — inventory](#collections--inventory)
 - [`views` — ArangoSearch View management](#views--arangosearch-view-management)
+- [`analyzers` — custom analyzer management](#analyzers--custom-analyzer-management)
 - [`doctor` — structure health check](#doctor--structure-health-check)
 - [`migrate` — versioned data migrations](#migrate--versioned-data-migrations)
 - [Scenario: safe migration](#scenario-safe-migration)
@@ -53,6 +54,7 @@ Each composer script is an **alias** for `php bin/console.php command:arangodb <
 | `composer arango:restore` | `command:arangodb restore` | Restores from an archive. |
 | `composer arango:list` | `command:arangodb dump --list` | Lists the existing archives. |
 | `composer arango:views` | `command:arangodb views` | Manages the ArangoSearch Views. |
+| `composer arango:analyzers` | `command:arangodb analyzers` | Manages the custom analyzers. |
 | `composer arango:doctor` | `command:arangodb doctor` | Structure health check. |
 
 To pass **options** to a composer script, put them **after `--`**:
@@ -249,15 +251,15 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--profile` | — | dump, restore | Named profile (`[arango.profiles.<name>]`) or a path to a `.toml` profile file — see [Profiles](#profiles). |
 | `--dry-run` | — | dump, restore, migrate | Report the resolved plan (and the pending migrations) without running anything. |
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
-| `--force` | — | doctor, restore | doctor: with `--apply`, allow the drop + recreate of drifted indexes. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)). |
+| `--force` | — | doctor, restore, analyzers | doctor: with `--apply`, allow the drop + recreate of drifted indexes. analyzers: with `--sync`, repair a drifted analyzer in place (drop + recreate + rebuild of its dependent Views). restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)). |
 | `--prune` | — | doctor, dump | doctor: interactive selection of the orphans to remove. dump: prune old archives per the retention policy (prune-only run; combine with `--dry-run`) — see [Archive rotation](#archive-rotation). |
 | `--create` | — | migrate | Generate an empty migration shell with this description. |
 | `--status` | — | migrate | Table of applied / pending migrations for this database. |
 | `--yes` | `-y` | migrate, restore | Skip the confirmation prompt (apply migrations / restore). |
 | `--down` | — | migrate | Roll back the last N applied migrations, default 1 (LIFO). |
 | `--forget` | — | migrate | Rescue: drop a tracking row **without** running its `down()`. |
-| `--diff` | — | views | Compare the `AQL::VIEW` declarations of the configured models with the server state (read-only). |
-| `--sync[=a,b]` | — | views | Create the missing Views and resynchronize the drifted ones — all, or the given names (comma-separated). |
+| `--diff` | — | views, analyzers | Compare the declarations (models' `AQL::VIEW` / the `analyzers` registry) with the server state (read-only). |
+| `--sync[=a,b]` | — | views, analyzers | views: create the missing Views and resynchronize the drifted ones. analyzers: create the missing analyzers, signal the drifted ones (repair with `--force`). |
 | `--drop[=a,b]` | — | views | Drop the named Views (comma-separated), or interactive selection without a value. |
 | `--last` | `-la` | restore | Pick the most recent archive. |
 | `--date` | `-d` | restore | Pick the archive matching an ISO 8601 date. |
@@ -832,6 +834,38 @@ Worth knowing:
 - **Orphan views** (on the server, declared by no configured model) are listed as a report footnote — report only, removal always goes through an explicit `--drop`.
 - The exit code fails as soon as a model is `unreachable` — usable as-is in a deployment script (`bun pull`, CI, …).
 - The same primitives are available straight from PHP: `$model->viewDiff()` / `$model->viewSync()` (returning a `DiffReport`), and on the façade `$db->viewDiff( $name , $links )` / `$db->viewSync( $name , $links )`.
+
+---
+
+## `analyzers` — custom analyzer management
+
+Manages the **custom** analyzers declared in the `analyzers` registry (the
+`ArangoCommandParam::ANALYZERS` key — see [host wiring](#host-project-wiring)).
+For what an analyzer is and how to declare one, see the dedicated
+[Analyzers](../db/analyzers.md) page.
+
+```bash
+php bin/console.php command:arangodb analyzers                  # list the custom analyzers (built-ins counted apart)
+php bin/console.php command:arangodb analyzers --diff           # compare the declared registry with the server
+php bin/console.php command:arangodb analyzers --sync           # create the missing ones, signal the drifted ones
+php bin/console.php command:arangodb analyzers --sync --force   # also repair the drifted ones in place (cascades to Views)
+# composer shortcut: composer arango:analyzers -- --diff
+```
+
+- **List (default)** : shows the custom analyzers (those prefixed `dbname::`);
+  built-ins (`identity`, `text_*`) are summarized as a count.
+- **`--diff`** : per declared `AnalyzerDefinition`, a status (`in sync` /
+  `missing` / `drifted` / `invalid` / `unreachable`) plus the **orphan** custom
+  analyzers (on the server, declared by none) as a footnote.
+- **`--sync`** : creates the **missing** analyzers; a **drifted** analyzer is
+  only **signalled** — it is immutable, so repairing it (drop + recreate +
+  rebuild of the dependent Views) is a deliberate operation.
+- **`--sync --force`** : performs that repair **in place**. ⚠️ Not transactional,
+  and the dependent Views' search is degraded while their index rebuilds — the
+  no-downtime path stays a new-name migration.
+
+> The same primitives are on the façade: `$db->analyzerDiff( $def )` /
+> `$db->analyzerSync( $def , force: … )` and `$db->analyzerDependentViews( $name )`.
 
 ---
 
