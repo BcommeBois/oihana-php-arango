@@ -23,7 +23,7 @@ An Analyzer turns text into **normalized tokens**, at indexing time *and* at que
 "The Quick Foxes!"   --text_en-->   [ quick, fox ]
 ```
 
-Lowercase, accents stripped, stop words removed, and *stemming* (*foxes* → `fox`). That is what makes search linguistic: `fox` finds *Foxes*. ArangoDB ships text Analyzers for ~10 languages (`text_en`, `text_fr`, …); custom ones (`ngram`, `minhash`, …) can be created with the [Analyzer clients](../clients/arangosearch.md).
+Lowercase, accents stripped, stop words removed, and *stemming* (*foxes* → `fox`). That is what makes search linguistic: `fox` finds *Foxes*. ArangoDB ships text Analyzers for ~10 languages (`text_en`, `text_fr`, …); you can also build your own. It is all covered in the dedicated **[Analyzers](../db/analyzers.md)** page (types, features, creating a custom analyzer).
 
 > An Analyzer is **frozen at indexing time**. Overriding it at query time alone is useless (you would search English-stemmed tokens in a French-stemmed index) — what you change is the *field* you search, and the right Analyzer follows the field.
 

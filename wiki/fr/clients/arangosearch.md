@@ -9,49 +9,26 @@ Les concepts sont nouveaux pour vous ? Commencez par lire notre page dédiée [C
 
 ## Analyzers
 
-### Créer un analyzer
+> **Page dédiée :** les types d'analyzers, ce que chacun produit, les features
+> et comment fabriquer un analyzer custom sont expliqués en détail dans
+> **[Analyzers](../db/analyzers.md)**. Cette section ne couvre que l'API de
+> cycle de vie côté client.
+
+Créer un analyzer (raccourci de `$db->analyzer( $name )->create( ... )`) :
 
 ```php
 use oihana\arango\clients\analyzer\TextAnalyzer ;
 use oihana\arango\clients\analyzer\enums\AnalyzerFeature ;
 
 $db->createAnalyzer(
-    'text_fr' ,
-    new TextAnalyzer(
-        locale   : 'fr.utf-8' ,
-        case     : 'lower' ,
-        accent   : false ,        // replier les accents
-        stemming : true ,
-    ) ,
+    'text_fr_custom' ,
+    new TextAnalyzer( locale: 'fr.utf-8' , case: 'lower' , accent: false , stemming: true ) ,
     [ AnalyzerFeature::FREQUENCY , AnalyzerFeature::POSITION , AnalyzerFeature::NORM ] ,
 ) ;
 ```
 
-`createAnalyzer()` est le raccourci pour `$db->analyzer( $name )->create( ... )`.
-
-### Classes d'analyzers
-
-Les quatre sont des value objects readonly qui implémentent `AnalyzerOptions::toArray()` :
-
-| Classe | Ce qu'elle fait | Paramètres du constructeur |
-|---|---|---|
-| `IdentityAnalyzer` | Pass-through — aucune transformation. Utilisé par défaut si aucun analyzer n'est posé sur un link. | (aucun) |
-| `NormAnalyzer` | Case folding locale-aware + suppression d'accent optionnelle. Pas de tokenisation. | `locale`, `?case`, `?accent` |
-| `StemAnalyzer` | Stemming locale-aware. L'entrée doit déjà être tokenisée. | `locale` |
-| `TextAnalyzer` | Tokeniseur full-text + stemming, stopwords, accents, edge n-grams optionnels. **La bête de somme.** | `locale`, `?case`, `?accent`, `?stemming`, `?stopwords`, `?stopwordsPath`, `?edgeNgram` |
-
-### Features d'analyzer
-
-Choisies par analyzer à la création, elles déterminent quelles données supplémentaires sont conservées dans l'index :
-
-| Feature | Requise par |
-|---|---|
-| `FREQUENCY` | scoring `BM25()` et `TFIDF()` |
-| `NORM` | normalisation par longueur de `BM25()` |
-| `POSITION` | matching `PHRASE()` |
-| `OFFSET` | mise en évidence des résultats (implique `POSITION`) |
-
-Coûte plus d'espace et de CPU à l'écriture — n'activez que ce dont vos requêtes ont besoin.
+Les quatre classes d'options (`IdentityAnalyzer`, `NormAnalyzer`, `StemAnalyzer`,
+`TextAnalyzer`) et leurs features sont décrites dans [Analyzers](../db/analyzers.md).
 
 ### Méthodes de cycle de vie
 

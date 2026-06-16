@@ -9,49 +9,26 @@ New to the concepts? Start with the [Understanding ArangoSearch](../getting-star
 
 ## Analyzers
 
-### Create an analyzer
+> **Dedicated page:** the analyzer types, what each one produces, the features
+> and how to build a custom analyzer are explained in detail in
+> **[Analyzers](../db/analyzers.md)**. This section only covers the client-side
+> lifecycle API.
+
+Create an analyzer (shortcut for `$db->analyzer( $name )->create( ... )`):
 
 ```php
 use oihana\arango\clients\analyzer\TextAnalyzer ;
 use oihana\arango\clients\analyzer\enums\AnalyzerFeature ;
 
 $db->createAnalyzer(
-    'text_fr' ,
-    new TextAnalyzer(
-        locale   : 'fr.utf-8' ,
-        case     : 'lower' ,
-        accent   : false ,        // fold accents
-        stemming : true ,
-    ) ,
+    'text_fr_custom' ,
+    new TextAnalyzer( locale: 'fr.utf-8' , case: 'lower' , accent: false , stemming: true ) ,
     [ AnalyzerFeature::FREQUENCY , AnalyzerFeature::POSITION , AnalyzerFeature::NORM ] ,
 ) ;
 ```
 
-`createAnalyzer()` is the shortcut for `$db->analyzer( $name )->create( ... )`.
-
-### Analyzer classes
-
-All four are readonly value objects implementing `AnalyzerOptions::toArray()`:
-
-| Class | What it does | Constructor parameters |
-|---|---|---|
-| `IdentityAnalyzer` | Pass-through — no transformation. Used as the default if no analyzer is configured on a link. | (none) |
-| `NormAnalyzer` | Locale-aware case folding + optional accent removal. No tokenization. | `locale`, `?case`, `?accent` |
-| `StemAnalyzer` | Locale-aware stemming. Input must already be tokenized. | `locale` |
-| `TextAnalyzer` | Full-text tokenizer + optional stemming, stopwords, accent folding, edge n-grams. **The workhorse.** | `locale`, `?case`, `?accent`, `?stemming`, `?stopwords`, `?stopwordsPath`, `?edgeNgram` |
-
-### Analyzer features
-
-Picked per analyzer at creation time, decide what extra index data is kept:
-
-| Feature | Required by |
-|---|---|
-| `FREQUENCY` | `BM25()` and `TFIDF()` scoring |
-| `NORM` | `BM25()` length normalization |
-| `POSITION` | `PHRASE()` matching |
-| `OFFSET` | Result highlighting (implies `POSITION`) |
-
-Cost more space and write CPU — only enable what your queries need.
+The four option classes (`IdentityAnalyzer`, `NormAnalyzer`, `StemAnalyzer`,
+`TextAnalyzer`) and their features are described in [Analyzers](../db/analyzers.md).
 
 ### Lifecycle methods
 

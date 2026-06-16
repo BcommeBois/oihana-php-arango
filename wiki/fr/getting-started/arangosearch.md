@@ -23,7 +23,7 @@ Un Analyzer transforme le texte en **jetons normalisés**, à l'indexation *et* 
 "Les Scieries de l'Évre !"   --text_fr-->   [ scieri, evre ]
 ```
 
-Minuscules, accents enlevés, mots vides supprimés, et *racinisation* (« stemming » : réduction d'un mot à sa racine, *scieries* → `scieri`). C'est ce qui rend la recherche linguistique : `evre` trouve *l'Évre*. ArangoDB fournit des Analyzers texte pour ~10 langues (`text_fr`, `text_en`, …) ; les Analyzers custom (`ngram`, `minhash`, …) se créent avec les [clients Analyzer](../clients/arangosearch.md).
+Minuscules, accents enlevés, mots vides supprimés, et *racinisation* (« stemming » : réduction d'un mot à sa racine, *scieries* → `scieri`). C'est ce qui rend la recherche linguistique : `evre` trouve *l'Évre*. ArangoDB fournit des Analyzers texte pour ~10 langues (`text_fr`, `text_en`, …) ; on peut aussi fabriquer ses propres Analyzers. Tout est expliqué dans la page dédiée **[Analyzers](../db/analyzers.md)** (types, features, création d'un analyzer custom).
 
 > Un Analyzer est **figé à l'indexation**. Le surcharger à la requête seule ne sert à rien (vous chercheriez des jetons racinisés à l'anglaise dans un index racinisé à la française) — ce qu'on change, c'est le *champ* cherché, et le bon Analyzer suit le champ.
 
