@@ -196,6 +196,12 @@ Two ways to create it:
   in a migration (`arango:migrate`), so it is provisioned reproducibly before the
   Views that depend on it. See [Migration tooling](../commands/arangodb.md).
 
+> **Declarative registry.** You can group your custom analyzers in a list of
+> `AnalyzerDefinition` under the `ArangoCommandParam::ANALYZERS` key — at the
+> database level, like `collectionIndexes` for indexes (a single
+> `AnalyzerDefinition` is tolerated in place of a list). It is the single source
+> the `arango:analyzers` command will read to diagnose and provision them.
+
 > **Programmatic diff / sync.** The `ArangoDB` façade exposes
 > `analyzerDiff( AnalyzerDefinition )` (compares the declaration to the server →
 > `MISSING` / `IN_SYNC` / `DRIFTED` / `INVALID`) and `analyzerSync()` (creates the

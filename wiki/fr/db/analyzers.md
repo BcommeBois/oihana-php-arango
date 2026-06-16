@@ -200,6 +200,12 @@ Deux façons de le créer :
   reproductible avant les Views qui en dépendent. Voir
   [Outillage de migration](../commands/arangodb.md).
 
+> **Registre déclaratif.** Tu peux regrouper tes analyzers custom dans une liste
+> d'`AnalyzerDefinition` sous la clé `ArangoCommandParam::ANALYZERS` — au niveau
+> de la base, comme `collectionIndexes` pour les index (un seul `AnalyzerDefinition`
+> est toléré à la place d'une liste). C'est la source unique que la commande
+> `arango:analyzers` lira pour les diagnostiquer et les provisionner.
+
 > **Diff / sync programmatique.** La façade `ArangoDB` expose
 > `analyzerDiff( AnalyzerDefinition )` (compare le déclaré au serveur →
 > `MISSING` / `IN_SYNC` / `DRIFTED` / `INVALID`) et `analyzerSync()` (crée les

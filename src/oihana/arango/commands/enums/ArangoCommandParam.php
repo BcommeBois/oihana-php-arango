@@ -12,6 +12,16 @@ class ArangoCommandParam
     use ConstantsTrait ;
 
     /**
+     * The 'analyzers' parameter — the database-level registry of declared
+     * **custom** analyzers reconciled by the `arango:analyzers` action (and
+     * signalled by the `doctor`): a list of
+     * {@see \oihana\arango\db\options\analyzers\AnalyzerDefinition} (a single
+     * one is tolerated in place of a one-element list). Analyzers are shared
+     * and database-scoped, so they are declared once here rather than per model.
+     */
+    public const string ANALYZERS = 'analyzers' ;
+
+    /**
      * The 'collectionIndexes' parameter — the collection→indexes registry
      * reconciled by the `doctor` action, declared independently of the models:
      * a map `collectionName => IndexOptions[]` (a single `IndexOptions` is
