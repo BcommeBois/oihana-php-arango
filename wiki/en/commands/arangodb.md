@@ -941,6 +941,18 @@ These are **two separate worlds that never cross**:
 
 `migrate --create "…"` generates an **empty shell** — the class, the timestamp, empty `up()`/`down()` — and prints its path. The tool guesses nothing: you write the intent in `up()`.
 
+> **Pre-filled (auto-generated) migrations.** Beyond the empty shell,
+> `MigrationGenerator::create()` accepts an already-filled `up()` / `down()`
+> body: `create( $description, null, $up, $down )` injects that PHP code into the
+> generated migration. A `uses` parameter (a list of fully-qualified class names)
+> adds the `use …;` imports at the top so the injected body can reference its
+> classes by their short name (`Migration` is always imported; imports are
+> deduplicated and sorted). This is the mechanism `arango:analyzers --fix` will use
+> to **write a ready-to-review repair migration for you** (drop + recreate a
+> drifted analyzer + rebuild its dependent Views) instead of leaving you to
+> hand-write it. You review the generated migration, then apply it with
+> `arango:migrate` — nothing runs at generation time.
+
 ```php
 // api/src/fr/bouney/migrations/Version20260612090000_DescriptionMultilingue.php
 namespace fr\bouney\migrations ;

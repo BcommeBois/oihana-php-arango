@@ -48,6 +48,59 @@ class MigrationGeneratorTest extends TestCase
         $this->assertStringContainsString( 'public function down() : void' , $body ) ;
     }
 
+    public function testCreatesAPreFilledMigration() :void
+    {
+        $up   = "\$this->db->createCollection( 'places' ) ;\n\$this->db->createCollection( 'kinds' ) ;" ;
+        $down = "\$this->db->dropCollection( 'kinds' ) ;" ;
+
+        $file = new MigrationGenerator( $this->dir )->create( 'seed places' , '20260616120000' , $up , $down ) ;
+        $body = file_get_contents( $file ) ;
+
+        // The injected code is present, no `// TODO` shell remains.
+        $this->assertStringContainsString( "\$this->db->createCollection( 'places' ) ;" , $body ) ;
+        $this->assertStringContainsString( "\$this->db->dropCollection( 'kinds' ) ;" , $body ) ;
+        $this->assertStringNotContainsString( '// TODO' , $body ) ;
+
+        // Each body line is indented to the 8-space method-body column.
+        $this->assertStringContainsString( "    {\n        \$this->db->createCollection( 'places' ) ;\n        \$this->db->createCollection( 'kinds' ) ;\n    }" , $body ) ;
+
+        // The generated file is valid PHP and yields a usable Migration subclass.
+        require $file ;
+        $this->assertTrue( is_subclass_of( 'Version20260616120000_SeedPlaces' , \oihana\arango\migrations\Migration::class ) ) ;
+    }
+
+    public function testImportsExtraUseStatementsDeduplicatedAndSorted() :void
+    {
+        $file = new MigrationGenerator( $this->dir )->create
+        (
+            'with imports' ,
+            '20260616120002' ,
+            up   : '$d = new AnalyzerDefinition( "az" , new IdentityAnalyzer() ) ;' ,
+            uses :
+            [
+                'oihana\\arango\\db\\options\\analyzers\\AnalyzerDefinition' ,
+                'oihana\\arango\\clients\\analyzer\\IdentityAnalyzer' ,
+                'oihana\\arango\\migrations\\Migration' , // duplicate of the always-present import
+            ] ,
+        ) ;
+
+        $body = file_get_contents( $file ) ;
+
+        $this->assertStringContainsString( 'use oihana\\arango\\clients\\analyzer\\IdentityAnalyzer ;'    , $body ) ;
+        $this->assertStringContainsString( 'use oihana\\arango\\db\\options\\analyzers\\AnalyzerDefinition ;' , $body ) ;
+        // Migration is always imported and appears exactly once despite the duplicate.
+        $this->assertSame( 1 , substr_count( $body , 'use oihana\\arango\\migrations\\Migration ;' ) ) ;
+        // Imports are sorted alphabetically (clients < db < migrations).
+        $this->assertMatchesRegularExpression( '/IdentityAnalyzer ;\n.*AnalyzerDefinition ;\n.*Migration ;/s' , $body ) ;
+    }
+
+    public function testKeepsTheTodoShellWhenNoBodyGiven() :void
+    {
+        $file = new MigrationGenerator( $this->dir )->create( 'manual' , '20260616120001' ) ;
+
+        $this->assertStringContainsString( '// TODO' , file_get_contents( $file ) ) ;
+    }
+
     public function testOmitsTheNamespaceLineWhenEmpty() :void
     {
         $file = new MigrationGenerator( $this->dir )->create( 'plain shell' , '20260612090000' ) ;
