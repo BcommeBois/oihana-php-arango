@@ -21,6 +21,7 @@ class ArangoCommandOption
     public const string DROP              = 'drop' ;
     public const string DRY_RUN           = 'dry-run' ;
     public const string FILE              = 'file' ;
+    public const string FIX               = 'fix' ;
     public const string FORCE             = 'force' ;
     public const string FORGET            = 'forget' ;
     public const string IGNORE_COLLECTION = 'ignore-collection' ;

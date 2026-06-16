@@ -26,6 +26,7 @@ words to their root, and so on. Because the **same** recipe applies at indexing
 - [The four types you can build](#the-four-types-you-can-build)
 - [Features — what they unlock](#features--what-they-unlock)
 - [Creating an analyzer the right way](#creating-an-analyzer-the-right-way)
+- [Lifecycle — the `arango:analyzers` command](#lifecycle--the-arangoanalyzers-command)
 - [Wiring an analyzer to a model / View](#wiring-an-analyzer-to-a-model--view)
 - [Current limitations](#current-limitations)
 - [See also](#see-also)
@@ -208,7 +209,7 @@ Two ways to create it:
 > **missing** ones, and only **reports** drifted ones — an analyzer being
 > immutable, fixing it stays a deliberate operation). `analyzerDependentViews()`
 > lists the Views that reference an analyzer (what a drop + recreate would
-> affect). These are the building blocks of the upcoming `arango:analyzers` command.
+> affect). These are the building blocks of the `arango:analyzers` command.
 >
 > To repair a drift in place, `analyzerSync( $def, force: true )` runs the
 > cascade: drop + recreate the analyzer **then** rebuild the inverted index of
@@ -221,6 +222,33 @@ Two ways to create it:
 > collection. `arangodump` only saves it with `--include-system-collections` —
 > the built-ins (`text_fr`, …) are always there, but your **custom** analyzers
 > must be recreated (migration) or explicitly included in the dump.
+
+## Lifecycle — the `arango:analyzers` command
+
+Once your analyzers are in the [declarative registry](#creating-an-analyzer-the-right-way),
+the [`arango:analyzers`](../commands/arangodb.md#analyzers--custom-analyzer-management)
+command diagnoses and provisions them like Views and indexes — `--diff` (report),
+`--sync` (create the missing ones, signal the drifted ones), `--sync --force`
+(repair a drift in place, cascading to the dependent Views). Two more modes
+matter for the immutability constraint:
+
+- **Repair via a migration (`--fix`)** — because an analyzer is immutable,
+  repairing a drift means a same-name drop + recreate (**path B**) plus a
+  rebuild of every dependent View. `--fix` writes that as a ready-to-review
+  **repair migration** (one per drifted analyzer) and touches no database;
+  review it, then run `migrate`. This is the deferred, versioned form of
+  `--sync --force`. There is also a no-downtime **path A** — create the analyzer
+  under a **new name**, point the model's `Search::ANALYZER` at it, `viewSync()`,
+  then drop the old one — which stays a documented manual change (it edits the
+  model) rather than a generated one.
+- **Prune the orphans (`--prune`)** — drops the **orphan** custom analyzers (on
+  the server, declared by none), after confirmation. An orphan still used by a
+  View is only dropped with `--force` (it leaves the View dangling).
+  > ⚠️ **Shared database.** An orphan analyzer may belong to **another
+  > application** sharing the same database — analyzers are database-scoped, not
+  > model-scoped. `--prune` is opt-in for exactly this reason: review the list
+  > before confirming. Built-in (`identity`, `text_*`) and declared analyzers
+  > are never pruned.
 
 ## Wiring an analyzer to a model / View
 

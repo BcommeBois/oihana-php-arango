@@ -109,6 +109,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::DRY_RUN           , null  , InputOption::VALUE_NONE      , 'List the pending migrations without running them (migrate action).' ) ;
         $this->addOption   ( ArangoCommandOption::ENCRYPT           , 'e'   , InputOption::VALUE_NONE      , 'Enabled the encryption to dump/restore the database.' ) ;
         $this->addOption   ( ArangoCommandOption::FILE              , 'f'   , InputOption::VALUE_OPTIONAL  , 'The file to dump/restore.' ) ;
+        $this->addOption   ( ArangoCommandOption::FIX               , null  , InputOption::VALUE_NONE      , 'Generate a ready-to-review repair migration for each drifted analyzer (path B, same name) instead of touching the database (analyzers action).' ) ;
         $this->addOption   ( ArangoCommandOption::FORCE             , null  , InputOption::VALUE_NONE      , 'Allow the drop + recreate of drifted indexes with --apply (doctor action), or overwrite protected collections on restore.' ) ;
         $this->addOption   ( ArangoCommandOption::FORGET            , null  , InputOption::VALUE_REQUIRED  , 'Rescue: drop a migration tracking row WITHOUT running its down() (migrate action).' ) ;
         $this->addOption   ( ArangoCommandOption::IGNORE_COLLECTION , null  , InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY , 'Exclude these collections from the dump (repeatable or comma-separated, dump only).' ) ;
@@ -120,7 +121,7 @@ class ArangoCommand extends Kernel
         $this->addOption   ( ArangoCommandOption::NO_VIEWS          , null  , InputOption::VALUE_NONE      , 'Skip the ArangoSearch View definitions in the dump (dump action).' ) ;
         $this->addOption   ( ArangoCommandOption::OVERWRITE         , null  , InputOption::VALUE_NONE      , 'Overwrite the output directory if it already exists (dump action).' ) ;
         $this->addOption   ( ArangoCommandOption::PROFILE           , null  , InputOption::VALUE_REQUIRED  , 'Named profile ([arango.profiles.<name>]) or a path to a .toml profile file (dump/restore selection).' ) ;
-        $this->addOption   ( ArangoCommandOption::PRUNE             , null  , InputOption::VALUE_NONE      , 'doctor: interactively remove the orphans declared by no model. dump: prune old archives per the retention policy (rotation-only run; combine with --dry-run).' ) ;
+        $this->addOption   ( ArangoCommandOption::PRUNE             , null  , InputOption::VALUE_NONE      , 'doctor: interactively remove the orphans declared by no model. analyzers: drop the orphan custom analyzers declared by none (used ones need --force; confirmation, --yes to skip). dump: prune old archives per the retention policy (rotation-only run; combine with --dry-run).' ) ;
         $this->addOption   ( ArangoCommandOption::STATUS            , null  , InputOption::VALUE_NONE      , 'Show the applied / pending migrations table (migrate action).' ) ;
         $this->addOption   ( ArangoCommandOption::SYNC              , null  , InputOption::VALUE_OPTIONAL  , 'Create or resynchronize the declared Views, all or comma-separated names (views action).' , false ) ;
         $this->addOption   ( ArangoCommandOption::SYSTEM            , null  , InputOption::VALUE_NONE      , 'List only system collections (collections action).' ) ;

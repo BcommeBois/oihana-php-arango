@@ -251,15 +251,16 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--profile` | — | dump, restore | Named profile (`[arango.profiles.<name>]`) or a path to a `.toml` profile file — see [Profiles](#profiles). |
 | `--dry-run` | — | dump, restore, migrate | Report the resolved plan (and the pending migrations) without running anything. |
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
-| `--force` | — | doctor, restore, analyzers | doctor: with `--apply`, allow the drop + recreate of drifted indexes. analyzers: with `--sync`, repair a drifted analyzer in place (drop + recreate + rebuild of its dependent Views). restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)). |
-| `--prune` | — | doctor, dump | doctor: interactive selection of the orphans to remove. dump: prune old archives per the retention policy (prune-only run; combine with `--dry-run`) — see [Archive rotation](#archive-rotation). |
+| `--force` | — | doctor, restore, analyzers | doctor: with `--apply`, allow the drop + recreate of drifted indexes. analyzers: with `--sync`, repair a drifted analyzer in place (drop + recreate + rebuild of its dependent Views); with `--prune`, also drop the orphans still used by a View. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)). |
+| `--fix` | — | analyzers | Generate one ready-to-review repair migration per drifted analyzer (path B, same name) instead of touching the database — needs `migrationsPath`. |
+| `--prune` | — | doctor, analyzers, dump | doctor: interactive selection of the orphans to remove. analyzers: drop the orphan custom analyzers declared by none (used ones need `--force`; confirmation, `--yes` to skip). dump: prune old archives per the retention policy (prune-only run; combine with `--dry-run`) — see [Archive rotation](#archive-rotation). |
 | `--create` | — | migrate | Generate an empty migration shell with this description. |
 | `--status` | — | migrate | Table of applied / pending migrations for this database. |
-| `--yes` | `-y` | migrate, restore | Skip the confirmation prompt (apply migrations / restore). |
+| `--yes` | `-y` | migrate, restore, analyzers | Skip the confirmation prompt (apply migrations / restore / prune analyzers). |
 | `--down` | — | migrate | Roll back the last N applied migrations, default 1 (LIFO). |
 | `--forget` | — | migrate | Rescue: drop a tracking row **without** running its `down()`. |
 | `--diff` | — | views, analyzers | Compare the declarations (models' `AQL::VIEW` / the `analyzers` registry) with the server state (read-only). |
-| `--sync[=a,b]` | — | views, analyzers | views: create the missing Views and resynchronize the drifted ones. analyzers: create the missing analyzers, signal the drifted ones (repair with `--force`). |
+| `--sync[=a,b]` | — | views, analyzers | views: create the missing Views and resynchronize the drifted ones. analyzers: create the missing analyzers, signal the drifted ones (repair with `--force` or `--fix`). |
 | `--drop[=a,b]` | — | views | Drop the named Views (comma-separated), or interactive selection without a value. |
 | `--last` | `-la` | restore | Pick the most recent archive. |
 | `--date` | `-d` | restore | Pick the archive matching an ISO 8601 date. |
@@ -849,6 +850,9 @@ php bin/console.php command:arangodb analyzers                  # list the custo
 php bin/console.php command:arangodb analyzers --diff           # compare the declared registry with the server
 php bin/console.php command:arangodb analyzers --sync           # create the missing ones, signal the drifted ones
 php bin/console.php command:arangodb analyzers --sync --force   # also repair the drifted ones in place (cascades to Views)
+php bin/console.php command:arangodb analyzers --fix            # generate a repair migration per drifted analyzer (touches no database)
+php bin/console.php command:arangodb analyzers --prune          # drop the orphan custom analyzers declared by none (confirmation)
+php bin/console.php command:arangodb analyzers --prune --force  # also drop the orphans still used by a View (leaves it dangling)
 # composer shortcut: composer arango:analyzers -- --diff
 ```
 
@@ -863,6 +867,21 @@ php bin/console.php command:arangodb analyzers --sync --force   # also repair th
 - **`--sync --force`** : performs that repair **in place**. ⚠️ Not transactional,
   and the dependent Views' search is degraded while their index rebuilds — the
   no-downtime path stays a new-name migration.
+- **`--fix`** : for each **drifted** analyzer, generates one ready-to-review
+  **repair migration** (the same-name drop + recreate, path B) — the deferred,
+  versioned form of `--sync --force`. It writes files and **never** touches the
+  database: review them, then run `migrate`. Needs `migrationsPath` configured
+  (the same key as `migrate`). The migration's `up()` reconstructs the declared
+  analyzer with a `RawAnalyzer` and calls `analyzerSync( $def , force: true )`;
+  its `down()` is left as a comment (a repair is not auto-reversible).
+- **`--prune`** : drops the **orphan** custom analyzers (on the server, declared
+  by none), after **confirmation** (`--yes` skips the prompt; a non-interactive
+  run without `--yes` refuses). An orphan still **used** by a View is only
+  dropped with `--force` (it leaves the View dangling) — otherwise it is just
+  signalled. Built-in and declared analyzers are **never** pruned.
+  > ⚠️ On a **shared** database an orphan analyzer may belong to another
+  > application — `--prune` is opt-in for that reason. See the
+  > [Analyzers](../db/analyzers.md) page.
 
 > The same primitives are on the façade: `$db->analyzerDiff( $def )` /
 > `$db->analyzerSync( $def , force: … )` and `$db->analyzerDependentViews( $name )`.

@@ -28,6 +28,7 @@ rencontrent toujours sur le même terrain.
 - [Les quatre types qu'on peut fabriquer](#les-quatre-types-quon-peut-fabriquer)
 - [Les features — ce qu'elles débloquent](#les-features--ce-quelles-débloquent)
 - [Créer un analyzer proprement](#créer-un-analyzer-proprement)
+- [Cycle de vie — la commande `arango:analyzers`](#cycle-de-vie--la-commande-arangoanalyzers)
 - [Brancher l'analyzer sur un modèle / une View](#brancher-lanalyzer-sur-un-modèle--une-view)
 - [Limites actuelles](#limites-actuelles)
 - [Voir aussi](#voir-aussi)
@@ -212,7 +213,7 @@ Deux façons de le créer :
 > **manquants**, et **signale** seulement les driftés — un analyzer étant
 > immuable, sa correction reste une opération consciente). `analyzerDependentViews()`
 > liste les Views qui référencent un analyzer (ce qu'un drop + recreate
-> impacterait). Ce sont les briques de la future commande `arango:analyzers`.
+> impacterait). Ce sont les briques de la commande `arango:analyzers`.
 >
 > Pour réparer un drift sur place, `analyzerSync( $def, force: true )` exécute la
 > cascade : drop + recreate de l'analyzer **puis** reconstruction de l'index
@@ -225,6 +226,34 @@ Deux façons de le créer :
 > `_analyzers`. `arangodump` ne la sauve qu'avec `--include-system-collections`
 > — les intégrés (`text_fr`, …) sont toujours là, mais tes analyzers **custom**
 > doivent être recréés (migration) ou inclus explicitement dans le dump.
+
+## Cycle de vie — la commande `arango:analyzers`
+
+Une fois tes analyzers dans le [registre déclaratif](#créer-un-analyzer-proprement),
+la commande [`arango:analyzers`](../commands/arangodb.md#analyzers--gestion-des-analyzers-custom)
+les diagnostique et les provisionne comme les Views et les index — `--diff`
+(rapport), `--sync` (crée les manquants, signale les driftés), `--sync --force`
+(répare un drift sur place, en cascade sur les Views dépendantes). Deux modes de
+plus comptent pour la contrainte d'immuabilité :
+
+- **Réparer via une migration (`--fix`)** — un analyzer étant immuable, réparer
+  un drift = drop + recreate même nom (**chemin B**) plus reconstruction de
+  chaque View dépendante. `--fix` écrit ça sous forme de **migration de
+  réparation** prête à relire (une par analyzer drifté) et ne touche aucune
+  base ; on relit, puis on lance `migrate`. C'est la forme différée et
+  versionnée de `--sync --force`. Il existe aussi un **chemin A** sans casse —
+  créer l'analyzer sous un **nouveau nom**, pointer le `Search::ANALYZER` du
+  modèle dessus, `viewSync()`, puis dropper l'ancien — qui reste une
+  modification manuelle documentée (il édite le modèle), pas générée.
+- **Élaguer les orphelins (`--prune`)** — supprime les analyzers custom
+  **orphelins** (sur le serveur, déclarés par personne), après confirmation. Un
+  orphelin encore utilisé par une View n'est supprimé qu'avec `--force` (il
+  laisse la View pendante).
+  > ⚠️ **Base partagée.** Un analyzer orphelin peut appartenir à une **autre
+  > application** partageant la même base — les analyzers sont au niveau base,
+  > pas au niveau modèle. `--prune` est opt-in pour exactement cette raison :
+  > relis la liste avant de confirmer. Les built-in (`identity`, `text_*`) et les
+  > analyzers déclarés ne sont jamais élagués.
 
 ## Brancher l'analyzer sur un modèle / une View
 
