@@ -495,17 +495,33 @@ trait SearchTrait
      * is indexed with its resolved Analyzer — the per-field
      * {@see Search::ANALYZER} when declared, otherwise the View-level one.
      *
+     * A field whose resolved Analyzer equals the link-level default is emitted
+     * as an empty node (no `analyzers` key) rather than spelling the default
+     * out: the server normalizes a field whose analyzers equal the link default
+     * to `{}` (the redundant mention is dropped), so spelling it out would make
+     * the declared form differ forever from the stored one and {@see viewDiff()}
+     * would report a permanent false drift. The link carries no link-level
+     * analyzers, so its default is the server default (`identity`) — computed
+     * here rather than hard-coded so the elimination stays correct if a
+     * link-level analyzer is introduced later.
+     *
      * @return ArangoSearchLink
      */
     protected function buildViewLink() :ArangoSearchLink
     {
         $analyzer = $this->view[ Search::ANALYZER ] ?? AnalyzerType::IDENTITY ;
 
+        // The link is built with no link-level analyzers, so the server applies
+        // its own default. A field matching this default is stored as `{}`.
+        $linkDefault = [ AnalyzerType::IDENTITY ] ;
+
         $fields = [] ;
 
         foreach( $this->getViewFieldSpecs() as $path => $spec )
         {
-            $node = [ ViewField::ANALYZERS => [ $spec[ Search::ANALYZER ] ?? $analyzer ] ] ;
+            $analyzers = [ $spec[ Search::ANALYZER ] ?? $analyzer ] ;
+
+            $node = $analyzers === $linkDefault ? [] : [ ViewField::ANALYZERS => $analyzers ] ;
 
             $segments = explode( Char::DOT , (string) $path ) ;
             while( count( $segments ) > 1 )

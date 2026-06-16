@@ -14,6 +14,7 @@ use Throwable;
 
 use Devium\Toml\TomlError;
 
+use oihana\arango\clients\analyzer\enums\BuiltinAnalyzer;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\db\ArangoDB;
@@ -176,6 +177,44 @@ final class ViewSyncIntegrationTest extends IntegrationTestCase
 
         $this->waitForSearchCount( $narrow , 'sapin' , 0 ) ;
         $this->assertSame( DiffStatus::IN_SYNC , $narrow->viewDiff()->status ) ;
+    }
+
+    /**
+     * A field declared with the identity analyzer (the link default) must
+     * round-trip idempotently: the server stores such a field as `{}`, so the
+     * declaration has to omit its `analyzers` too — otherwise the declared
+     * `["identity"]` never matches the stored `{}` and the View drifts forever.
+     *
+     * Mixing an identity field with a `text_fr` one, syncing, and diffing must
+     * report ZERO changes, and a second sync/diff must not resurrect the drift.
+     */
+    public function testIdentityFieldDoesNotDrift() :void
+    {
+        $model = $this->model
+        (
+            [
+                'name' => 1 ,                                              // inherits text_fr
+                'code' => [ Search::ANALYZER => BuiltinAnalyzer::IDENTITY ] , // exact token match
+            ] ,
+            view : 'identityView' ,
+        ) ;
+
+        // 1 — provision (lazy) : the View exists and is immediately in sync,
+        // with no false drift on the identity field.
+
+        $this->assertTrue( $model->viewExists( 'identityView' ) ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $model->viewDiff()->status , 'An identity field must not drift right after provisioning.' ) ;
+
+        // 2 — an explicit sync stays a no-op (nothing to repair).
+
+        $this->assertSame( DiffStatus::IN_SYNC , $model->viewSync()->status ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $model->viewDiff()->status , 'The drift must not reappear after a sync.' ) ;
+
+        // 3 — the empty `{}` node still indexes the field : the identity field
+        // is token-exact searchable (proves `{}` was not silently dropped).
+
+        self::$db->collection( self::COLLECTION )->insert( [ 'label' => 'D' , 'code' => 'ZX-99' ] ) ;
+        $this->waitForSearchCount( $model , 'ZX-99' , 1 ) ;
     }
 
     /**

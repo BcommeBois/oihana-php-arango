@@ -1021,6 +1021,66 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testBuildViewLinkOmitsAnalyzersWhenMatchingTheLinkDefault() :void
+    {
+        // `code` resolves to the identity analyzer — the link default — so it
+        // must be emitted as an empty node (no `analyzers` key) : the server
+        // stores such a field as `{}`, and spelling `["identity"]` out would
+        // make viewDiff() report a permanent false drift. `name` keeps its
+        // explicit analyzers since `text_fr` differs from the default.
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS =>
+                [
+                    'name' => [ Search::ANALYZER => 'text_fr' ] ,
+                    'code' => [ Search::ANALYZER => 'identity' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+        $link   = $method->invoke( $model ) ;
+
+        $this->assertSame
+        (
+            [
+                'fields' =>
+                [
+                    'name' => [ 'analyzers' => [ 'text_fr' ] ] ,
+                    'code' => [] ,
+                ] ,
+            ] ,
+            $link->toArray()
+        ) ;
+    }
+
+    public function testBuildViewLinkOmitsAnalyzersForFieldsInheritingTheDefaultAnalyzer() :void
+    {
+        // No View-level analyzer → every field inherits the identity default,
+        // so the whole link is emitted with empty nodes (the server would
+        // normalize `["identity"]` to `{}` either way).
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS => [ 'name' => 3 , 'code' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+        $link   = $method->invoke( $model ) ;
+
+        $this->assertSame
+        (
+            [ 'fields' => [ 'name' => [] , 'code' => [] ] ] ,
+            $link->toArray()
+        ) ;
+    }
+
     public function testGetViewFieldSpecsKeepsRequiresWhenDeclared() :void
     {
         $model = $this->model(

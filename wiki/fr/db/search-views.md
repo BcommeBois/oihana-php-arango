@@ -102,6 +102,16 @@ Search::ANALYZER => 'text_fr' , // défaut au niveau de la View
 
 Règle de résolution : un champ qui déclare `Search::ANALYZER` l'emporte ; sinon il hérite du `Search::ANALYZER` de la View (lui-même `identity` par défaut). L'Analyzer étant **figé à l'indexation**, une surcharge par champ se répercute des deux côtés : le link de la View indexe le champ avec son Analyzer, et la requête regroupe les expressions par Analyzer — un `ANALYZER(…, "<analyzer>")` par groupe, le tout en `OR`. Avec un seul Analyzer la sortie est strictement celle d'avant.
 
+> **Champ « code » en token exact.** Déclarer `Search::ANALYZER => 'identity'` sur un champ — pour le matcher en token exact plutôt que linguistiquement — est pleinement supporté et **ne provoque aucun drift**. `identity` étant l'Analyzer par défaut du link, le serveur stocke un tel champ sans le répéter ; la déclaration omet donc elle aussi cette mention redondante, si bien que `$model->viewDiff()` reste `IN_SYNC`.
+>
+> ```php
+> Search::FIELDS =>
+> [
+>     'name' => 3 ,                                  // text_fr (défaut de la View)
+>     'code' => [ Search::ANALYZER => 'identity' ] , // token exact, sans drift
+> ] ,
+> ```
+
 **Exemple concret.** `name` est indexé en français, `summary` en anglais :
 
 ```

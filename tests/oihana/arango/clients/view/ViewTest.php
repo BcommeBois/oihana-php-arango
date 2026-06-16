@@ -179,6 +179,41 @@ class ViewTest extends TestCase
         ) ;
     }
 
+    public function testCreateSerialisesEmptyFieldNodesAsObjects() :void
+    {
+        $history = [] ;
+        $db      = $this->makeDatabase
+        (
+            [ new Response( 201 , [] , '{}' ) ] ,
+            $history ,
+        ) ;
+
+        // An empty field node (a field indexed with the link defaults) must
+        // reach the server as `{}`, not `[]` : `json_encode([])` emits `[]`,
+        // which the server rejects as an invalid link definition.
+        new View( $db , 'view_c' )->create
+        (
+            links :
+            [
+                'coll' => new ArangoSearchLink
+                (
+                    fields :
+                    [
+                        'code' => [] ,
+                        'name' => [ 'analyzers' => [ 'text_en' ] ] ,
+                    ] ,
+                ) ,
+            ] ,
+        ) ;
+
+        /** @var RequestInterface $request */
+        $request = $history[ 0 ][ 'request' ] ;
+        $raw     = (string) $request->getBody() ;
+
+        $this->assertStringContainsString( '"code":{}'                  , $raw ) ;
+        $this->assertStringContainsString( '"name":{"analyzers":["text_en"]}' , $raw ) ;
+    }
+
     public function testCreateMergesOptionsAndForcesNameAndType() :void
     {
         $history = [] ;

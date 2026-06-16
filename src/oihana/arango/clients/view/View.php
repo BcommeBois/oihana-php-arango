@@ -323,10 +323,41 @@ readonly class View
 
         foreach ( $links as $collection => $link )
         {
-            $normalised[ $collection ] = $link instanceof ArangoSearchLink ? $link->toArray() : $link ;
+            $link = $link instanceof ArangoSearchLink ? $link->toArray() : $link ;
+            $normalised[ $collection ] = $this->normaliseLinkNode( $link ) ;
         }
 
         return $normalised ;
+    }
+
+    /**
+     * Recursively shapes a link node for the wire: descends the `fields` map
+     * and turns every empty node into an empty JSON **object**.
+     *
+     * A link node is always a JSON object server-side, but `json_encode([])`
+     * emits `[]`, which the server rejects as an invalid link definition. A
+     * field whose Analyzer equals the link default is declared as an empty
+     * node (see {@see \oihana\arango\models\traits\aql\SearchTrait::buildViewLink()}) —
+     * it must reach the server as `{}` to be indexed with the link defaults.
+     *
+     * @param array<string, mixed> $node
+     *
+     * @return array<string, mixed>|object The node, with empty entries cast to objects.
+     */
+    private function normaliseLinkNode( array $node ) : array|object
+    {
+        if ( isset( $node[ ViewField::FIELDS ] ) && is_array( $node[ ViewField::FIELDS ] ) )
+        {
+            $fields = [] ;
+            foreach ( $node[ ViewField::FIELDS ] as $name => $child )
+            {
+                $child = $child instanceof ArangoSearchLink ? $child->toArray() : $child ;
+                $fields[ $name ] = is_array( $child ) ? $this->normaliseLinkNode( $child ) : $child ;
+            }
+            $node[ ViewField::FIELDS ] = $fields ;
+        }
+
+        return $node === [] ? (object) [] : $node ;
     }
 
     /**

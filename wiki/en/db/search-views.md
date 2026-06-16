@@ -102,6 +102,16 @@ Search::ANALYZER => 'text_fr' , // View-level default
 
 Resolution rule: a field declaring `Search::ANALYZER` wins; otherwise it inherits the View-level `Search::ANALYZER` (itself `identity` by default). Since the Analyzer is **fixed at indexing time**, a per-field override is reflected on both sides: the View link indexes the field with its Analyzer, and the query groups expressions by Analyzer — one `ANALYZER(…, "<analyzer>")` per group, `OR`-ed together. With a single Analyzer the output is exactly the former one.
 
+> **Token-exact "code" field.** Declaring `Search::ANALYZER => 'identity'` on a field — to match it as an exact token rather than linguistically — is fully supported and causes **no drift**. Since `identity` is the link's default Analyzer, the server stores such a field without spelling it out; the declaration therefore omits the redundant mention too, so `$model->viewDiff()` stays `IN_SYNC`.
+>
+> ```php
+> Search::FIELDS =>
+> [
+>     'name' => 3 ,                                  // text_fr (the View default)
+>     'code' => [ Search::ANALYZER => 'identity' ] , // exact token, no drift
+> ] ,
+> ```
+
 **Concrete example.** `name` is indexed in French, `summary` in English:
 
 ```

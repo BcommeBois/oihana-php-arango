@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A field declared with the `identity` analyzer no longer reports a permanent false drift.** `buildViewLink()` emitted an explicit `{"analyzers":["identity"]}` for such a field, but `identity` is the link's default analyzer, so the server stores the field as `{}` (the redundant mention is dropped) — `viewDiff()` then compared declared `["identity"]` to server `{}` and reported `DRIFTED` forever (noise on every deploy, `doctor --apply` "repairing" in a loop). The link builder now omits the `analyzers` key when a field's resolved analyzer equals the link default (computed explicitly, not hard-coded), so the declared shape matches the stored one and `viewSync()` stops sending redundant data. Empty field nodes are serialized as JSON objects (`{}`) on the wire — `json_encode([])` would emit `[]`, which the server rejects as an invalid link definition.
+  - **Tests:** unit (`ViewSearchTest` — identity field emits no `analyzers`, default-analyzer fields too, `text_fr` keeps it; `ViewTest` — empty field node serialized as `{}`) + live (`ViewSyncIntegrationTest::testIdentityFieldDoesNotDrift` — round-trip idempotent, no drift on re-sync, the identity field stays token-exact searchable).
+  - **Docs:** FR/EN `db/search-views.md` (token-exact "code" field note in the per-field analyzer section).
+
 - **`doctor` no longer reports the migrations tracking collection as an orphan.** No model declares the tracking collection (`migrationsCollection`, default `migrations`), yet both `migrate` and `doctor --apply` write their journal there — so after a single `migrate` or `doctor --apply`, every following `doctor` flagged it as an orphan (and offered it to `--prune`). `doctorOrphans()` now excludes it by its **configured name**, which also keeps it out of the `--prune` selection. Views orphan detection is unchanged.
 
 ## [1.2.0] - 2026-06-14
