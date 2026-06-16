@@ -7,24 +7,34 @@ shift. The library is versioned through git tags (no `version` field in
 
 ## Where we are
 
-As of **1.0.0**, the library covers the bulk of the AQL surface:
+As of **1.2.0** (released 2026-06-14), the library covers the bulk of the AQL
+surface and a full operational toolchain:
 
 - **All 22 high-level operations** (`FOR`, `FILTER`, `SORT`, `LIMIT`, `LET`,
   `COLLECT`, `WINDOW`, `RETURN`, `INSERT`, `UPDATE`, `REPLACE`, `UPSERT`, `REMOVE`,
-  graph traversal, `PRUNE`, `SEARCH`, `WITH`, `OPTIONS`, …) — `WINDOW` landed in 1.0.0.
-- **~165 AQL functions** across strings, numerics, dates, arrays, documents and geo.
-- **ArangoSearch**: View and Analyzer management clients, plus the `SEARCH` operation.
+  graph traversal, `PRUNE`, `SEARCH`, `WITH`, `OPTIONS`, …).
+- **~190 AQL functions** across strings, numerics (incl. vector/ANN distances),
+  dates, arrays, documents, bit and geo.
+- **ArangoSearch**: the View/Analyzer clients, the `SEARCH` / scored-search DSL,
+  and a model-level `AQL::VIEW` block (relevance-ranked search, per-field
+  boost/fuzzy/analyzer/lang/phrase/permissions — see the per-field DSL below).
+- **Query diagnostics**: typed `explain()` and profiling on the façade and model.
+- **Operational tooling**: dump / restore (profiles, masking, rotation),
+  maintenance commands (`views`, `doctor`, `migrate`).
 - **Transactions**, **18+ index types** (including a vector index), the full
   filter / facet / group engine, and 100% line/method test coverage.
 
 ## Versioning strategy
 
-`1.0.0` ships with all high-level AQL operations supported and a stable public API.
-Everything below is **additive** — new functions, operations and clients are
-non-breaking and ship as **minor** releases.
+`1.0.0` shipped with all high-level AQL operations supported and a stable public
+API. Everything since is **additive** — new functions, operations, clients and
+tooling are non-breaking and ship as **minor** releases.
 
-- **`1.0.0`** — ✅ released (all high-level AQL operations supported).
-- **`1.1.0`+** — feature extensions and consolidation, as below.
+- **`1.0.0`** — ✅ released 2026-06-09 (all high-level AQL operations supported).
+- **`1.1.0`** — ✅ released 2026-06-10 (vector/ANN, query analysis, function consolidation).
+- **`1.2.0`** — ✅ released 2026-06-14 (ArangoSearch DSL, dump/restore, maintenance commands).
+- **Unreleased** — per-field View search DSL, `doctor` index registry, masking
+  extracted to `oihana/php-masking` (see below); pending the next minor.
 
 ## Milestones
 
@@ -34,26 +44,60 @@ non-breaking and ship as **minor** releases.
 |-----|-------|--------|
 | **W — `WINDOW`** | `aqlWindow()` for both forms — row-based (`WINDOW { preceding, following } AGGREGATE …`) and range-based (`WINDOW rangeValue WITH { preceding, following } AGGREGATE …`) — plus the dedicated `aqlWindowBounds()` helper. Unit + live + docs (FR/EN) + CHANGELOG. | ✅ Done |
 
-### 1.1.0
+### 1.1.0 — released
 
-| Lot | Scope | Value | Effort |
-|-----|-------|-------|--------|
-| **V — Vector / ANN** | `APPROX_NEAR_COSINE`, `APPROX_NEAR_L2` function wrappers; implement `L1_DISTANCE` / `L2_DISTANCE` (currently enum-only); a vector-search query helper (`SORT APPROX_NEAR… LIMIT`). Builds on the existing `VectorIndex` / `VectorIndexOptions` / `COSINE_SIMILARITY`. | High (semantic search / RAG) | Medium |
-| **X — Query analysis** | A query `explain()` / profiling client over `/_api/explain` and the cursor `profile` option: execution plan, applied optimizer rules, warnings, and the collections/indexes actually used. Helps verify that filters and traversals hit indexes (and that no cluster traversal full-scans). | High (production diagnostics) | Medium |
-| **F — Function consolidation** | Complete `functions/documents/` (`KEYS`, `VALUES`, `ATTRIBUTES`, `ENTRIES`, `ZIP`, `KEEP`, `UNSET`, `MATCHES`, `MERGE_RECURSIVE`, …); add `functions/bit/` (`BIT_AND`/`OR`/`XOR`/`POPCOUNT`/`SHIFT`…); fill remaining enum↔implementation gaps. Each is a small wrapper file + enum constant. | Medium | Low (mechanical) |
+| Lot | Scope | Status |
+|-----|-------|--------|
+| **V — Vector / ANN** | `approxNearCosine()` / `approxNearL2()` (with `nProbe`), `l1Distance()` / `l2Distance()`, the `aqlVectorSearch()` operation, and the `VectorMetric` / `VectorSearchOption` constants. Builds on the existing `VectorIndex`. | ✅ Done |
+| **X — Query analysis** | Typed `explain()` → `ExplainResult` (optimizer rules, indexes actually used) and profiling via the cursor `profile` option → `ProfileResult` / `ExecutionStats`, wired on both the façade and the model (`explainList()`, `Arango::PROFILE`). | ✅ Done |
+| **F — Function consolidation** | Completed `functions/documents/` (21 helpers) and added `functions/bit/` (12 helpers), filling the enum↔implementation gaps. | ✅ Done |
 
-### 1.2.0
+### 1.2.0 — released
 
-| Lot | Scope | Value | Effort |
-|-----|-------|-------|--------|
-| **S — ArangoSearch DSL** | Search-function wrappers (`ANALYZER()`, `BOOST()`, `PHRASE()`, `NGRAM_MATCH()`, `MIN_MATCH()`, `LEVENSHTEIN_MATCH()`, …) and a `SEARCH` / scored-facet builder integrated with the filter engine. The View/Analyzer/`SEARCH` half of the stack already exists. | High | High |
+| Lot | Scope | Status |
+|-----|-------|--------|
+| **S — ArangoSearch DSL** | `db/functions/search/` wrappers (`ANALYZER()`, `BOOST()`, `PHRASE()`, `LEVENSHTEIN_MATCH()`, …), the completed `aqlSearch()` (`ANALYZER` wrap + `OPTIONS`), the `aqlScoredSearch()` operation (BM25/TFIDF), and the model-level `AQL::VIEW` block with relevance-ranked search, synthetic `score`, lazy provisioning and `ViewManagementTrait`. | ✅ Done |
+| **D — Dump / restore tooling** | `dump` / `restore` actions with config defaults, profiles, `--dry-run` / `--complete`, restore guard-rails, masking, archive rotation (`--prune`), per-profile output directory, and the strategy docs. | ✅ Done |
+| **M — Maintenance commands** | `views` (View diff/sync), `doctor` (collection/index/View diagnose + `--apply` / `--prune`) and `migrate` (versioned migrations: `--create`, `--status`, apply/`--down`). | ✅ Done |
+
+### Unreleased — in `main`, pending the next minor
+
+| Lot | Scope | Status |
+|-----|-------|--------|
+| **VF — Per-field View search DSL** | `Search::FIELDS` array entries accept per-field `FUZZY` (VF1), `ANALYZER` (VF2), `LANG` driven by `?lang=` (VF3), `PHRASE` (VF4a), and `REQUIRES` permissions at field (VF4b) and View level (VF4c), plus `REQUIRES` on the `LIKE` `SEARCHABLE` list via `Search::KEY` (VF5). | ✅ Done |
+| **Doctor index registry** | `collectionIndexes` registry (indexes declared independently of models, reconciled by `doctor`); `AQL::INDEXES` accepts a single `IndexOptions`. | ✅ Done |
+| **ArangoSearch enums** | `BuiltinAnalyzer` / `CaseFolding` / `Compression` / `ConsolidationPolicyType` constants (no more magic strings). | ✅ Done |
+| **Masking extraction** | The masking engine moved to the standalone `oihana/php-masking` library (no behaviour change). | ✅ Done |
+| **identity-analyzer drift fix** | `buildViewLink()` omits the redundant link-default `analyzers`; empty field nodes serialize as `{}`. | ✅ Done |
+
+### Analyzer lifecycle tooling — design frozen (2026-06-16), pending implementation
+
+Manage **custom** analyzers the way Views and indexes are already managed
+(declare → diagnose → provision). Assigning an analyzer (View-level and
+per-field) already works — this milestone only adds the lifecycle. The
+structuring constraint is that analyzers are **immutable, shared and
+database-scoped**: repairing a drifted analyzer means drop + recreate, which
+cascades to every dependent View (an in-use analyzer cannot be dropped without
+`force`, and a forced drop leaves dependent Views dangling until rebuilt). So
+the policy is graduated and never destructive by surprise.
+
+| Lot | Scope | Status |
+|-----|-------|--------|
+| **A1 — Façade** | `AnalyzerManagementTrait`: `analyzerDiff()` / `analyzerSync($force)` (typed `DiffReport`) + `analyzerDependentViews()` (scan links). Comparison: exact `type`, subset `properties`, set-equal `features`, normalized `dbname::` prefix. | Planned |
+| **A2 — Registry** | `AnalyzerDefinition( name, AnalyzerOptions $options, array $features )` value object + `ArangoAnalyzersTrait` + `ArangoCommandParam::ANALYZERS` — declared at database level, mirroring the `collectionIndexes` registry. | Planned |
+| **A3 — `arango:analyzers` action** | `--diff` (report), `--sync` (create missing, report drifted), `--fix` (generate a ready-to-review migration per drift), `--force` (live cascade repair), `--prune` (opt-in: drop unused orphans, report in-use ones; built-ins never touched). Composer script. | Planned |
+| **A4 — Pre-filled migrations** | Extend `MigrationGenerator` to emit a filled `up()/down()` body; `--fix` writes a self-contained same-name drop+recreate+`viewSync` migration. | Planned |
+| **A5 — Doctor integration** | `ArangoDoctorAction` reads the registry, creates missing analyzers, reports drift; never triggers the cascade, never prunes. | Planned |
+| **A6 — Docs** | `db/analyzers.md` (lifecycle + path A vs B), `commands/arangodb.md` (FR/EN), CHANGELOG. | Planned |
 
 ## Backlog (to be triaged)
 
 Lower-priority or large-surface items, not currently scheduled:
 
 - Complete search-alias View support.
+- Additional analyzer types (`ngram`, `pipeline`, `aql`, `geo_*`, `segmentation`,
+  `delimiter`, `minhash`, …) as dedicated `AnalyzerOptions` classes — today only
+  `identity` / `norm` / `stem` / `text` are exposed.
 - Richer stream / JavaScript transaction helpers.
-- Backup / restore clients.
 - Cluster / shard diagnostics.
 - Pregel (distributed graph analytics) — large surface, niche; likely out of scope.
