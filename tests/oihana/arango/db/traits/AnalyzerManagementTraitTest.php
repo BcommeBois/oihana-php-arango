@@ -288,4 +288,60 @@ class AnalyzerManagementTraitTest extends ArangoDBTestCase
         $this->assertFalse( $report->applied ) ;
         $this->assertContains( 'sync failed : denied' , $report->changes ) ;
     }
+
+    // ---- analyzerSync( force: true ) --------------------------------------
+
+    public function testForceRepairsDriftAndRebuildsDependentViews() :void
+    {
+        $definition = $this->definition() ;
+        $calls      = [] ;
+
+        $view = $this->createMock( View::class ) ;
+        $view->method( 'getName' )->willReturn( 'azView' ) ;
+        $view->method( 'properties' )->willReturn( [ 'links' => [ 'things' => [ 'fields' => [ 'title' => [ 'analyzers' => [ 'myz' ] ] ] ] ] ] ) ;
+        $view->method( 'updateProperties' )->willReturnCallback( function( array $props ) use ( &$calls ) { $calls[] = $props ; return [] ; } ) ;
+
+        $analyzer = $this->analyzer( true , $this->serverGet( type: 'norm' ) ) ;
+        $analyzer->expects( $this->once() )->method( 'drop' )->with( true ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'analyzer' )->willReturn( $analyzer ) ;
+        $database->method( 'views' )->willReturn( [ $view ] ) ;
+        $database->expects( $this->once() )->method( 'createAnalyzer' )->with( 'myz' , $definition->options , $definition->features ) ;
+
+        $report = $this->newArangoDB( $database )->analyzerSync( $definition , force: true ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertTrue( $report->applied ) ;
+
+        // the dependent View link is removed then re-added (the rebuild idiom).
+        $this->assertCount( 2 , $calls ) ;
+        $this->assertSame( [ 'links' => [ 'things' => null ] ] , $calls[ 0 ] ) ;
+        $this->assertArrayHasKey( 'things' , $calls[ 1 ][ 'links' ] ) ;
+        $this->assertNotNull( $calls[ 1 ][ 'links' ][ 'things' ] ) ;
+    }
+
+    public function testForceReportsCascadeFailureWithoutRecreating() :void
+    {
+        $analyzer = $this->analyzer( true , $this->serverGet( type: 'norm' ) ) ;
+        $analyzer->method( 'drop' )->willThrowException( new ArangoException( 'cannot drop' ) ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'analyzer' )->willReturn( $analyzer ) ;
+        $database->expects( $this->never() )->method( 'createAnalyzer' ) ;
+
+        $report = $this->newArangoDB( $database )->analyzerSync( $this->definition() , force: true ) ;
+
+        $this->assertFalse( $report->applied ) ;
+        $this->assertContains( 'sync failed : cannot drop' , $report->changes ) ;
+    }
+
+    public function testForceLeavesInSyncUntouched() :void
+    {
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'analyzer' )->willReturn( $this->analyzer( true , $this->serverGet() ) ) ;
+        $database->expects( $this->never() )->method( 'createAnalyzer' ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $this->newArangoDB( $database )->analyzerSync( $this->definition() , force: true )->status ) ;
+    }
 }

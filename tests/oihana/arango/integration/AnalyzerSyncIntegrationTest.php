@@ -142,4 +142,73 @@ final class AnalyzerSyncIntegrationTest extends IntegrationTestCase
         $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertContains( self::ANALYZER . ' : referenced by view(s) azView — they must be rebuilt after the recreate' , $report->changes ) ;
     }
+
+    /**
+     * The forced cascade repairs a drifted analyzer in place and rebuilds the
+     * dependent View's inverted index, so the View reflects the **new**
+     * analyzer (a plain recreate would leave the stale index behind).
+     *
+     * @throws ArangoException
+     * @throws TomlError
+     * @throws Throwable
+     */
+    public function testForceRepairsDriftAndRebuildsTheDependentView() :void
+    {
+        $arango = $this->arango() ;
+        $db     = $arango->database() ;
+
+        $stemmed = new AnalyzerDefinition( 'it_force_az' , new TextAnalyzer( locale: 'en' , case: 'lower' , accent: false , stemming: true  ) , [] ) ;
+        $exact   = new AnalyzerDefinition( 'it_force_az' , new TextAnalyzer( locale: 'en' , case: 'lower' , accent: false , stemming: false ) , [] ) ;
+
+        $arango->analyzerSync( $stemmed ) ;
+
+        $db->collection( 'fdocs' )->create() ;
+        $arango->viewCreate( 'fAzView' ,
+        [
+            'fdocs' => new ArangoSearchLink( fields : [ 'title' => new ArangoSearchLink( analyzers : [ 'it_force_az' ] ) ] ) ,
+        ]) ;
+        $db->collection( 'fdocs' )->insert( [ 'title' => 'running quickly' ] ) ;
+
+        // Baseline : stemming on → 'run' matches 'running'.
+        $this->waitForSearch( $arango , 'run' , [ 'running quickly' ] ) ;
+
+        // Force-repair to the stemming-off declaration.
+        $report = $arango->analyzerSync( $exact , force: true ) ;
+        $this->assertTrue( $report->applied ) ;
+        $this->assertFalse( $db->analyzer( 'it_force_az' )->get()[ 'properties' ][ 'stemming' ] ?? true ) ;
+
+        // The View was rebuilt on the new analyzer : 'run' no longer matches,
+        // but the exact token 'running' does.
+        $this->waitForSearch( $arango , 'run' , [] ) ;
+        $this->waitForSearch( $arango , 'running' , [ 'running quickly' ] ) ;
+    }
+
+    /**
+     * Polls a View `SEARCH` until it returns the expected titles (eventual
+     * consistency of the inverted index).
+     *
+     * @param ArangoDB           $arango
+     * @param string             $term
+     * @param array<int, string> $expected
+     *
+     * @throws ArangoException
+     */
+    private function waitForSearch( ArangoDB $arango , string $term , array $expected ) :void
+    {
+        $aql = 'FOR d IN fAzView SEARCH ANALYZER(d.title IN TOKENS(@t, "it_force_az"), "it_force_az") SORT d.title RETURN d.title' ;
+
+        for ( $attempt = 0 ; $attempt < 150 ; $attempt++ )
+        {
+            $rows = array_values( iterator_to_array( $arango->database()->query( $aql , [ 't' => $term ] ) ) ) ;
+
+            if ( $rows === $expected )
+            {
+                return ;
+            }
+
+            usleep( 100_000 ) ; // 100 ms
+        }
+
+        $this->fail( sprintf( "The search '%s' never reached the expected result." , $term ) ) ;
+    }
 }

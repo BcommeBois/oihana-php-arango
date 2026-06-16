@@ -207,6 +207,13 @@ Deux façons de le créer :
 > immuable, sa correction reste une opération consciente). `analyzerDependentViews()`
 > liste les Views qui référencent un analyzer (ce qu'un drop + recreate
 > impacterait). Ce sont les briques de la future commande `arango:analyzers`.
+>
+> Pour réparer un drift sur place, `analyzerSync( $def, force: true )` exécute la
+> cascade : drop + recreate de l'analyzer **puis** reconstruction de l'index
+> inversé de chaque View dépendante (retrait + ré-ajout du link — la seule
+> manière dont le serveur reconstruit réellement). ⚠️ Non transactionnel :
+> entre le drop et le recreate l'analyzer n'existe plus brièvement. Le chemin
+> sans casse reste une migration « nouveau nom » (voir ci-dessous).
 
 > **Déploiement / dump.** Les analyzers vivent dans la collection **système**
 > `_analyzers`. `arangodump` ne la sauve qu'avec `--include-system-collections`

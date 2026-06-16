@@ -363,6 +363,27 @@ class ViewTest extends TestCase
         $this->assertSame( [ 'analyzers' => [ 'text_en' ] ]   , $body[ 'links' ][ 'coll' ] ) ;
     }
 
+    public function testUpdatePropertiesPassesANullLinkThrough() :void
+    {
+        $history = [] ;
+        $db      = $this->makeDatabase
+        (
+            [ new Response( 200 , [] , '{}' ) ] ,
+            $history ,
+        ) ;
+
+        // A `null` link is the PATCH idiom to drop a collection from the view
+        // (used to force an inverted-index rebuild) — it must reach the server
+        // verbatim, not be coerced through the link normaliser.
+        new View( $db , 'my_view' )->updateProperties( [ 'links' => [ 'coll' => null ] ] ) ;
+
+        /** @var RequestInterface $request */
+        $request = $history[ 0 ][ 'request' ] ;
+        $raw     = (string) $request->getBody() ;
+
+        $this->assertStringContainsString( '"links":{"coll":null}' , $raw ) ;
+    }
+
     public function testReplacePropertiesSendsPutAndNormalisesLinks() :void
     {
         $history = [] ;

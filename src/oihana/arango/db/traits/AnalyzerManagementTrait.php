@@ -182,39 +182,61 @@ trait AnalyzerManagementTrait
     }
 
     /**
-     * Reconciles a declared analyzer with its server state: creates it when
-     * **missing**, and leaves every other status untouched.
+     * Reconciles a declared analyzer with its server state.
      *
-     * A drifted analyzer is **not** repaired here — it is immutable, so
-     * repairing it means a drop + recreate that cascades to its dependent
-     * Views (a deliberate operation: a migration, or the `--force` path of the
-     * `arango:analyzers` action). {@see DiffStatus::IN_SYNC},
-     * {@see DiffStatus::DRIFTED}, {@see DiffStatus::INVALID} and
-     * {@see DiffStatus::UNREACHABLE} reports are returned as-is.
+     * A **missing** analyzer is always created. A **drifted** analyzer is only
+     * repaired when `$force` is true — it is immutable, so repairing it means a
+     * drop + recreate that cascades to its dependent Views (their inverted
+     * index is rebuilt). Without `$force` a drift is left untouched (the safe
+     * default — repair it deliberately, through a migration). {@see DiffStatus::IN_SYNC},
+     * {@see DiffStatus::INVALID} and {@see DiffStatus::UNREACHABLE} reports are
+     * always returned as-is.
+     *
+     * ⚠ The forced repair is **not** transactional: between the drop and the
+     * recreate the analyzer briefly does not exist, and a failure there leaves
+     * the dependent Views referencing a missing analyzer. The truly safe path
+     * for changing an analyzer is a new-name migration (see `db/analyzers.md`).
      *
      * @param AnalyzerDefinition $definition The declared analyzer.
+     * @param bool               $force      Allow the drop + recreate (and dependent-View rebuild) of a drifted analyzer.
      *
-     * @return DiffReport The {@see analyzerDiff()} report, with `$applied` set when the analyzer has been created.
+     * @return DiffReport The {@see analyzerDiff()} report, with `$applied` set when the analyzer has been created or recreated.
      */
-    public function analyzerSync( AnalyzerDefinition $definition ) : DiffReport
+    public function analyzerSync( AnalyzerDefinition $definition , bool $force = false ) : DiffReport
     {
         $report = $this->analyzerDiff( $definition ) ;
 
-        if ( $report->status !== DiffStatus::MISSING )
+        if ( $report->status === DiffStatus::MISSING )
         {
-            return $report ;
+            try
+            {
+                $this->database->createAnalyzer( $definition->name , $definition->options , $definition->features ) ;
+
+                return new DiffReport( $report->name , $report->status , $report->changes , true , DiffKind::ANALYZER ) ;
+            }
+            catch ( ArangoException $exception )
+            {
+                return new DiffReport( $report->name , $report->status , [ ...$report->changes , 'sync failed : ' . $exception->getMessage() ] , false , DiffKind::ANALYZER ) ;
+            }
         }
 
-        try
+        if ( $report->status === DiffStatus::DRIFTED && $force )
         {
-            $this->database->createAnalyzer( $definition->name , $definition->options , $definition->features ) ;
+            try
+            {
+                $this->database->analyzer( $definition->name )->drop( force: true ) ;
+                $this->database->createAnalyzer( $definition->name , $definition->options , $definition->features ) ;
+                $this->rebuildDependentViews( $definition->name ) ;
 
-            return new DiffReport( $report->name , $report->status , $report->changes , true , DiffKind::ANALYZER ) ;
+                return new DiffReport( $report->name , $report->status , $report->changes , true , DiffKind::ANALYZER ) ;
+            }
+            catch ( ArangoException $exception )
+            {
+                return new DiffReport( $report->name , $report->status , [ ...$report->changes , 'sync failed : ' . $exception->getMessage() ] , false , DiffKind::ANALYZER ) ;
+            }
         }
-        catch ( ArangoException $exception )
-        {
-            return new DiffReport( $report->name , $report->status , [ ...$report->changes , 'sync failed : ' . $exception->getMessage() ] , false , DiffKind::ANALYZER ) ;
-        }
+
+        return $report ;
     }
 
     /**
@@ -279,6 +301,44 @@ trait AnalyzerManagementTrait
         }
 
         return $value ;
+    }
+
+    /**
+     * Rebuilds the inverted index of every View referencing the analyzer, by
+     * removing then re-adding each referencing collection link. That remove +
+     * re-add is the only thing the server treats as a real rebuild after the
+     * analyzer was recreated — re-applying an identical link is a no-op, and
+     * a recreated analyzer otherwise leaves a stale index. Used by the forced
+     * cascade of {@see analyzerSync()}.
+     *
+     * @param string $name The analyzer that was just recreated.
+     *
+     * @return void
+     *
+     * @throws ArangoException When a View update fails.
+     */
+    private function rebuildDependentViews( string $name ) : void
+    {
+        $needle = $this->stripAnalyzerNamespace( $name ) ;
+
+        foreach ( $this->database->views() as $view )
+        {
+            $links = $view->properties()[ ViewField::LINKS ] ?? [] ;
+
+            if ( !is_array( $links ) )
+            {
+                continue ;
+            }
+
+            foreach ( $links as $collection => $link )
+            {
+                if ( is_array( $link ) && $this->linksReferenceAnalyzer( $link , $needle ) )
+                {
+                    $view->updateProperties( [ ViewField::LINKS => [ $collection => null ] ] ) ;
+                    $view->updateProperties( [ ViewField::LINKS => [ $collection => $link ] ] ) ;
+                }
+            }
+        }
     }
 
     /**

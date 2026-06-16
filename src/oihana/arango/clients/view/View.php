@@ -319,15 +319,17 @@ readonly class View
      */
     private function normaliseLinks( array $links ) : array
     {
-        $normalised = [] ;
+        $normalized = [] ;
 
         foreach ( $links as $collection => $link )
         {
             $link = $link instanceof ArangoSearchLink ? $link->toArray() : $link ;
-            $normalised[ $collection ] = $this->normaliseLinkNode( $link ) ;
+            // A `null` link is the PATCH idiom to drop a collection from the
+            // view (used to force an inverted-index rebuild) — pass it through.
+            $normalized[ $collection ] = is_array( $link ) ? $this->normaliseLinkNode( $link ) : $link ;
         }
 
-        return $normalised ;
+        return $normalized ;
     }
 
     /**
