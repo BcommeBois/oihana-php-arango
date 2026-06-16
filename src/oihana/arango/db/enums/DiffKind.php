@@ -18,6 +18,12 @@ class DiffKind
     use ConstantsTrait ;
 
     /**
+     * The report is about a custom ArangoSearch analyzer — see
+     * {@see \oihana\arango\db\traits\AnalyzerManagementTrait::analyzerDiff()}.
+     */
+    public const string ANALYZER = 'analyzer' ;
+
+    /**
      * The report is about a collection (existence, type) — see
      * {@see \oihana\arango\db\traits\CollectionManagementTrait::collectionDiff()}.
      */

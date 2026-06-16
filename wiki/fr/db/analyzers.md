@@ -200,6 +200,14 @@ Deux façons de le créer :
   reproductible avant les Views qui en dépendent. Voir
   [Outillage de migration](../commands/arangodb.md).
 
+> **Diff / sync programmatique.** La façade `ArangoDB` expose
+> `analyzerDiff( AnalyzerDefinition )` (compare le déclaré au serveur →
+> `MISSING` / `IN_SYNC` / `DRIFTED` / `INVALID`) et `analyzerSync()` (crée les
+> **manquants**, et **signale** seulement les driftés — un analyzer étant
+> immuable, sa correction reste une opération consciente). `analyzerDependentViews()`
+> liste les Views qui référencent un analyzer (ce qu'un drop + recreate
+> impacterait). Ce sont les briques de la future commande `arango:analyzers`.
+
 > **Déploiement / dump.** Les analyzers vivent dans la collection **système**
 > `_analyzers`. `arangodump` ne la sauve qu'avec `--include-system-collections`
 > — les intégrés (`text_fr`, …) sont toujours là, mais tes analyzers **custom**

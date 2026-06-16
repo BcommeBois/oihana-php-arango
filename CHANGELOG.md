@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Analyzer diff & safe-sync façade (Lot A1a — analyzer lifecycle tooling).** The first piece of managing **custom** analyzers the way Views and indexes are managed. New on the `ArangoDB` façade (`AnalyzerManagementTrait`):
+  - `analyzerDiff( AnalyzerDefinition ): DiffReport` — compares a declared analyzer with the server: exact `type`, declared `properties` as a subset (server defaults the declaration omits are ignored), `features` as an order-insensitive set; the `dbname::` prefix is normalized. Resolves to `MISSING` / `IN_SYNC` / `DRIFTED` / `INVALID` / `UNREACHABLE`. A drift is annotated `drop + recreate required (an analyzer is immutable)` plus the dependent Views.
+  - `analyzerSync( AnalyzerDefinition ): DiffReport` — creates the analyzer when **missing**; a drifted analyzer is **left untouched** (immutable → repairing it cascades to its Views, a deliberate operation: a migration, or the `--force` path landing in A1b/A3). `IN_SYNC` / `INVALID` / `UNREACHABLE` are returned as-is.
+  - `analyzerDependentViews( name ): string[]` — the Views whose links reference an analyzer (link-level or any nested field), i.e. what a drop + recreate would cascade to.
+  - New `AnalyzerDefinition` value object (`db/options/analyzers/`, `name` + `AnalyzerOptions` + `features`) and `DiffKind::ANALYZER`.
+  - **Tests:** unit (`AnalyzerManagementTraitTest` — diff missing/in-sync/drift on type-property-features/dependent-views/invalid/unreachable, dependent-view scan with prefix stripping, sync create-missing/leave-drift/leave-in-sync/report-failure) + live (`AnalyzerSyncIntegrationTest` — create → in sync → no-op re-sync, drift left untouched, dependent Views listed).
+  - **Docs:** FR/EN `db/analyzers.md` (programmatic diff/sync note). Additive — no existing call site changes.
+
 - **Enums for ArangoSearch string vocabularies (no more magic strings).** Four constants classes catalogue the fixed server-side vocabularies that were previously written as bare strings in analyzer/View payloads and queries:
   - `clients\analyzer\enums\BuiltinAnalyzer` — built-in analyzer **names** (`identity`, `text_de` … `text_zh`), to use for `Search::ANALYZER`, `ArangoSearchLink` analyzers, `phrase()` / `tokens()` (distinct from `AnalyzerType`, which is the analyzer *type* discriminator).
   - `clients\analyzer\enums\CaseFolding` — the `case` property of the `norm` / `text` analyzers (`lower` / `upper` / `none`).

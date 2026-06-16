@@ -196,6 +196,14 @@ Two ways to create it:
   in a migration (`arango:migrate`), so it is provisioned reproducibly before the
   Views that depend on it. See [Migration tooling](../commands/arangodb.md).
 
+> **Programmatic diff / sync.** The `ArangoDB` façade exposes
+> `analyzerDiff( AnalyzerDefinition )` (compares the declaration to the server →
+> `MISSING` / `IN_SYNC` / `DRIFTED` / `INVALID`) and `analyzerSync()` (creates the
+> **missing** ones, and only **reports** drifted ones — an analyzer being
+> immutable, fixing it stays a deliberate operation). `analyzerDependentViews()`
+> lists the Views that reference an analyzer (what a drop + recreate would
+> affect). These are the building blocks of the upcoming `arango:analyzers` command.
+
 > **Deployment / dump.** Analyzers live in the **system** `_analyzers`
 > collection. `arangodump` only saves it with `--include-system-collections` —
 > the built-ins (`text_fr`, …) are always there, but your **custom** analyzers
