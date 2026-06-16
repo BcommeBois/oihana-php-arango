@@ -5,14 +5,15 @@
 1. [Overview](#overview)
 2. [The `Field::SKINS` marker at the document level](#the-fieldskins-marker-at-the-document-level)
 3. [Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition](#composed-projection--aqlfields--aqledges-on-the-edge-definition)
-4. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
-5. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
-6. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
-7. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
-8. [Which mechanism to use?](#which-mechanism-to-use)
-9. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
-10. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
-11. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
+4. [Projecting edge properties — `Field::SCOPE`](#projecting-edge-properties--fieldscope)
+5. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
+6. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
+7. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
+8. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
+9. [Which mechanism to use?](#which-mechanism-to-use)
+10. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
+11. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
+12. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
 
 ## Overview
 
@@ -115,6 +116,53 @@ Important points:
 - `AQL::FIELDS` on the edge definition **is read** by `buildEdgeVariable`. This is the effective projection used to hydrate the target document.
 - `AQL::EDGES` on the edge definition declares the sub-edges referenced by `Filter::EDGE` or `Filter::EDGES` markers in the projection.
 - `Field::FIELDS` placed **inline at the parent field level** is ignored for `Filter::EDGES` (it's only honoured for `Filter::DOCUMENT` and `Filter::MAP`). A common pitfall: declare the projection at the right level (on the edge definition, not on the parent field).
+
+## Projecting edge properties — `Field::SCOPE`
+
+By default, the fields declared in an edge definition's `AQL::FIELDS` are projected from the **target vertex** of the traversal (the other end of the relationship). But an edge is more than a connector: it often carries its own metadata (`created`, `weight`, `role`, `order`, …). The `Field::SCOPE` marker hoists those properties into the **same object**, next to the vertex fields.
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\enums\Field ;
+use oihana\arango\enums\Filter ;
+use oihana\arango\enums\Scope ;
+
+AQL::EDGES =>
+[
+    Prop::FRIENDS =>
+    [
+        AQL::MODEL  => EdgesDefinition::PERSON_HAS_FRIEND ,
+        AQL::FIELDS =>
+        [
+            Prop::NAME => Filter::DEFAULT ,                                  // from the target vertex
+            'since'    => [ Field::FILTER => Filter::DATETIME ,
+                            Field::NAME  => 'created' ,
+                            Field::SCOPE => Scope::EDGE ] ,                  // from the edge
+            'weight'   => [ Field::FILTER => Filter::NUMBER ,
+                            Field::SCOPE => Scope::EDGE ] ,                  // from the edge
+        ] ,
+    ] ,
+]
+```
+
+Generated AQL (the inner `RETURN` reads `v` **and** `e`):
+
+```aql
+LET friends = (
+  FOR v, e IN OUTBOUND doc person_has_friend
+  SORT e.created DESC
+  RETURN { name: v.name, since: ... e.created ..., weight: TO_NUMBER(e.weight) }
+)
+```
+
+Rules and key points:
+
+- **Scope value.** `Scope::VERTEX` (default) reads from the vertex, `Scope::EDGE` reads from the edge. The constants are exactly equal to `AQL::VERTEX` / `AQL::EDGE`, so `Field::SCOPE => AQL::EDGE` is strictly equivalent and avoids an extra `use` when `AQL` is already imported.
+- **Absent = vertex.** A field with no `Field::SCOPE` behaves as before — the feature is fully backward compatible.
+- **Name collisions.** Both sources may carry the same attribute (`name` on the vertex AND on the edge). Since the **field key = the output label**, just give the edge field a distinct label and alias its source with `Field::NAME`: `'edgeName' => [ Field::NAME => 'name' , Field::SCOPE => Scope::EDGE ]`.
+- **Order.** The projection preserves the declaration order of the fields in `AQL::FIELDS` — vertex and edge fields can be freely interleaved.
+- **Guardrail — outside a traversal.** `Field::SCOPE => edge` only makes sense inside an edge sub-query. Placed at the root, on a *join*, or in a nested sub-document (where the edge no longer exists), it **throws** (`UnsupportedOperationException`) rather than silently falling back to the vertex.
+- **Guardrail — structural filters.** `Field::SCOPE => edge` on a structural filter (`Filter::EDGE`, `Filter::EDGES`, `Filter::JOIN`, `Filter::JOINS`, `Filter::EDGES_COUNT`, …) would have no effect (those filters are driven by a precomputed variable, not by the document reference): it **throws** instead of being silently ignored.
 
 ## Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`
 

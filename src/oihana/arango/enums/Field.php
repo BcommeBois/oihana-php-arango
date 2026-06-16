@@ -20,6 +20,7 @@ class Field
     public const string PROPERTY = 'property' ;
     public const string REQUIRES = 'requires' ;
     public const string QUOTED   = 'quoted'   ;
+    public const string SCOPE    = 'scope'    ;
     public const string SKINS    = 'skins'    ;
     public const string UNIQUE   = 'unique'   ;
 }

@@ -272,7 +272,7 @@ Les hooks `beforeModelCall`/`afterModelCall` viennent du trait `ModelCallTrait` 
 
 ## Voir aussi
 
-- [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`.
+- [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::SCOPE`.
 - [Recherche & filtrage](db/search-and-filtering.md) — vue d'ensemble des 3 leviers (`?search` / `?filter` / `?facets`).
 - [Recherche HTTP `?search=`](db/search.md) — recherche multi-champs `LIKE`.
 - [Filtres HTTP `?filter=`](db/filter.md) — syntaxe URL des filtres, transformations `alt`, opérateurs.

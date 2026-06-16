@@ -447,6 +447,7 @@ trait FieldsTrait
             Field::PROPERTY => $options[ Field::PROPERTY ] ?? null ,
             Field::QUOTED   => $options[ Field::QUOTED   ] ?? null ,
             Field::REQUIRES => $options[ Field::REQUIRES ] ?? null ,
+            Field::SCOPE    => $options[ Field::SCOPE    ] ?? null ,
         ]
         , CleanFlag::NULLS );
 

@@ -272,7 +272,7 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 
 ## See also
 
-- [Edge and join projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`.
+- [Edge and join projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::SCOPE`.
 - [Search & filtering](db/search-and-filtering.md) — overview of the 3 levers (`?search` / `?filter` / `?facets`).
 - [HTTP search `?search=`](db/search.md) — multi-field `LIKE` search.
 - [HTTP filters `?filter=`](db/filter.md) — URL filter syntax, `alt` transformations, operators.

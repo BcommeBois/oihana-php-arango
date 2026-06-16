@@ -225,6 +225,7 @@ Besides `Field::FILTER`, each field definition accepts options:
 | `Field::QUOTED` | Double-quoted output label (keys with special characters) | `` "my-key":doc.`my-key` `` |
 | `Field::UNIQUE` | Unique variable name for the AQL expression | — |
 | `Field::REQUIRES` | Permission subject(s): the field is dropped if authorization is denied | — |
+| `Field::SCOPE` | Projection source inside an edge sub-query: `Scope::VERTEX` (default) or `Scope::EDGE` (the relationship metadata) | `since:DATE_ISO8601(e.created)` |
 
 > `Field::QUOTED` quotes **only the output label** and reaches the attribute with **backticks** (`` doc.`my-key` ``) — the valid AQL form for a special-character attribute (`doc."my-key"` is invalid and rejected by ArangoDB). A `Field::NAME` then supplies the source: only the label is quoted (`"slug":doc.title`).
 

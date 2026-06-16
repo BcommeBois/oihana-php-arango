@@ -6,6 +6,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
+use oihana\arango\enums\Scope;
 use oihana\exceptions\UnsupportedOperationException;
 
 use PHPUnit\Framework\TestCase;
@@ -242,5 +243,122 @@ final class AqlFieldsTest extends TestCase
     {
         $this->expectException( \oihana\exceptions\ValidationException::class ) ;
         aqlFields( [ 'slug' => [ Field::NAME => 'title) || 1==1' ] ] ) ;
+    }
+
+    // ========================================
+    // Field::SCOPE — project from the traversal edge instead of the vertex
+    // ========================================
+
+    /**
+     * Field::SCOPE => Scope::EDGE reads the field from the edge reference
+     * (5th argument) instead of the vertex reference.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testScopeEdgeProjectsFromTheEdgeReference(): void
+    {
+        $result = aqlFields
+        (
+            [ 'weight' => [ Field::FILTER => Filter::NUMBER , Field::SCOPE => Scope::EDGE ] ] ,
+            'v_1' , null , [] , 'e_1'
+        ) ;
+        $this->assertSame( 'weight:TO_NUMBER(e_1.weight)' , $result ) ;
+    }
+
+    /**
+     * Scope::EDGE equals AQL::EDGE, so the two forms are interchangeable.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testScopeEdgeAcceptsTheAqlEdgeConstant(): void
+    {
+        $this->assertSame( Scope::EDGE , AQL::EDGE ) ;
+
+        $result = aqlFields
+        (
+            [ 'role' => [ Field::SCOPE => AQL::EDGE ] ] ,
+            'v_1' , null , [] , 'e_1'
+        ) ;
+        $this->assertSame( 'role:e_1.role' , $result ) ;
+    }
+
+    /**
+     * A vertex field and an edge field with the same source attribute name
+     * coexist in a single flat projection by giving the edge one a distinct
+     * output label via Field::NAME.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testScopeEdgeMixedWithVertexFieldsAndAlias(): void
+    {
+        $result = aqlFields
+        (
+            [
+                'name'  => [] ,
+                'since' => [ Field::FILTER => Filter::DATETIME , Field::NAME => 'created' , Field::SCOPE => Scope::EDGE ] ,
+                'edgeName' => [ Field::NAME => 'name' , Field::SCOPE => Scope::EDGE ] ,
+            ] ,
+            'v_1' , null , [] , 'e_1'
+        ) ;
+        $this->assertSame
+        (
+            'name:v_1.name, since:IS_DATESTRING(e_1.created) ? DATE_FORMAT(e_1.created,"%yyyy-%mm-%ddT%hh:%ii:%ssZ") : null, edgeName:e_1.name' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * An explicit Scope::VERTEX (or no scope) keeps the default vertex
+     * projection — fully backward compatible.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testScopeVertexIsTheDefault(): void
+    {
+        $explicit = aqlFields( [ 'name' => [ Field::SCOPE => Scope::VERTEX ] ] , 'v_1' , null , [] , 'e_1' ) ;
+        $implicit = aqlFields( [ 'name' => [] ] , 'v_1' , null , [] , 'e_1' ) ;
+
+        $this->assertSame( 'name:v_1.name' , $explicit ) ;
+        $this->assertSame( 'name:v_1.name' , $implicit ) ;
+    }
+
+    /**
+     * Field::SCOPE => edge outside an edge traversal (no edge reference)
+     * is a definition error and throws.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testScopeEdgeWithoutEdgeReferenceThrows(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        aqlFields( [ 'weight' => [ Field::SCOPE => Scope::EDGE ] ] ) ;
+    }
+
+    /**
+     * Field::SCOPE => edge on a structural/variable-backed filter (here EDGES)
+     * has no effect, so it is rejected rather than silently ignored.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     */
+    public function testScopeEdgeOnStructuralFilterThrows(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        aqlFields
+        (
+            [ 'friends' => [ Field::FILTER => Filter::EDGES , Field::SCOPE => Scope::EDGE ] ] ,
+            'v_1' , null , [] , 'e_1'
+        ) ;
     }
 }

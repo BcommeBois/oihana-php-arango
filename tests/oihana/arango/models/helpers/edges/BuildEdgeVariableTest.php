@@ -6,6 +6,8 @@ use UnexpectedValueException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
+use oihana\arango\enums\Scope;
 
 use PHPUnit\Framework\TestCase;
 
@@ -84,6 +86,26 @@ final class BuildEdgeVariableTest extends TestCase
 
         $this->assertStringStartsWith( 'LET roles = (FOR vertex, edge IN OUTBOUND doc user_has_roles' , $result ) ;
         $this->assertStringContainsString( 'RETURN {' , $result ) ; // projected object, not the bare vertex
+    }
+
+    public function testFieldsBranchProjectsEdgeScopedFieldsFromTheEdge() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        // `name` comes from the target vertex, `role` is carried by the edge.
+        $result = $this->normalize( buildEdgeVariable( 'roles' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'name' => [] ,
+                'role' => [ Field::SCOPE => Scope::EDGE ] ,
+            ] ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( 'RETURN {' , $result ) ;
+        $this->assertStringContainsString( 'name:vertex.name' , $result ) ;
+        $this->assertStringContainsString( 'role:edge.role' , $result ) ;
     }
 
     public function testHonorsCustomStartVertex() :void

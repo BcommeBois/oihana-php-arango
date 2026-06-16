@@ -145,7 +145,7 @@ function buildEdgeVariable
 
             buildVariables( $subVariables , $fields , $targetEdges , $targetJoins , $container , $vertexRef , $init ) ;
 
-            $return = aqlReturn( betweenBraces( aqlFields( $fields , $vertexRef , $container , $init ) ) ) ;
+            $return = aqlReturn( betweenBraces( aqlFields( $fields , $vertexRef , $container , $init , $edgeRef ) ) ) ;
         }
         else
         {

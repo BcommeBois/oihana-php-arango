@@ -63,6 +63,12 @@ use function oihana\core\strings\keyValue;
  *                      value (e.g. `["trim","lower"]` => `name: LOWER(TRIM(doc.name))`).
  *                      Applied only to the default scalar projection (`key: doc.key`);
  *                      ignored on typed/structural filters (BOOL, DATETIME, EDGE, JOIN, …).
+ * - `Field::SCOPE`    : Optional projection source — `Scope::VERTEX` (default) reads the
+ *                      field from `$docRef`, `Scope::EDGE` reads it from `$edgeRef` (the
+ *                      traversal edge). The edge scope is only valid inside an edge
+ *                      sub-query (where `$edgeRef` is provided) and only on filters that
+ *                      project from a reference; it throws otherwise. `Scope::EDGE` equals
+ *                      `AQL::EDGE`, so both forms are interchangeable.
  *
  * @param array|null              $fields    Array of fields definitions to filter.
  *                                           The array keys are the field identifiers, and the values are
@@ -71,6 +77,9 @@ use function oihana\core\strings\keyValue;
  * @param string                  $docRef    The document reference to use in AQL expressions. Defaults to `AQL::DOC`.
  * @param ContainerInterface|null $container The optional DI Container reference.
  * @param array                   $init      Optional associative array definition.
+ * @param string|null             $edgeRef   The traversal edge reference, used to project fields flagged
+ *                                           with `Field::SCOPE => Scope::EDGE`. Only set inside an edge
+ *                                           sub-query; `null` everywhere else.
  *
  * @return string|null A string containing the filtered fields as AQL expressions,
  * suitable for use in a RETURN or LET statement. Returns
@@ -108,6 +117,18 @@ use function oihana\core\strings\keyValue;
  * aqlFields([ 'tags' => [ Field::FILTER => Filter::ARRAY ] ], 'edge');
  * // tags:IS_ARRAY(edge.tags) ? edge.tags : []
  *
+ * // Edge-scoped projection inside an edge sub-query (Field::SCOPE): the field
+ * // is read from the edge variable instead of the target vertex. Combine with
+ * // Field::NAME to avoid a label collision with a vertex field.
+ * aqlFields(
+ *     [
+ *         'name'  => [] ,
+ *         'since' => [ Field::FILTER => Filter::DATETIME , Field::NAME => 'created' , Field::SCOPE => Scope::EDGE ] ,
+ *     ] ,
+ *     'v_42' , null , [] , 'e_42'
+ * );
+ * // name:v_42.name, since:DATE_ISO8601(e_42.created)
+ *
  * // Alias: output key differs from the source attribute (Field::NAME)
  * aqlFields([ 'slug' => [ Field::NAME => 'title' ] ]);
  * // slug:doc.title
@@ -135,13 +156,24 @@ function aqlFields
     ?array              $fields ,
     string              $docRef     = AQL::DOC ,
     ?ContainerInterface $container  = null ,
-    array               $init       = []
+    array               $init       = [] ,
+    ?string             $edgeRef    = null
 )
 : ?string
 {
     if( is_array( $fields ) && count( $fields ) > 0 )
     {
         $filters = [] ;
+
+        // Filters whose value is backed by a precomputed LET variable (or a
+        // fixed binding) rather than the per-field document reference. For
+        // these, Field::SCOPE has no effect, so requesting the edge scope on
+        // them is a definition error rather than a silent no-op.
+        $edgeScopeDenied =
+        [
+            Filter::ARRAY_FIRST , Filter::DISTANCE , Filter::EDGE  , Filter::EDGES ,
+            Filter::EDGES_COUNT , Filter::JOIN     , Filter::JOINS , Filter::UNIQUE_NAME ,
+        ] ;
 
         foreach( $fields as $key => $options )
         {
@@ -153,10 +185,34 @@ function aqlFields
             $path    = $options[ Field::PATH    ] ?? null ;
             $quoted  = $options[ Field::QUOTED  ] ?? null ;
             $value   = $options[ Field::UNIQUE  ] ?? $key ;
+            $scope   = $options[ Field::SCOPE   ] ?? AQL::VERTEX ;
+
+            // Field::SCOPE selects the projection source: the target vertex
+            // (default) or the traversal edge. The edge variable only exists
+            // inside an edge sub-query (buildEdgeVariable passes $edgeRef);
+            // everywhere else $edgeRef is null, so requesting the edge scope
+            // outside an edge traversal — including nested sub-documents, where
+            // the edge ref is intentionally not propagated — is a definition
+            // error. Structural/variable-backed filters ignore the reference
+            // entirely, so the edge scope on them is rejected too.
+            if ( $scope === AQL::EDGE )
+            {
+                if ( $edgeRef === null )
+                {
+                    throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::SCOPE '" . AQL::EDGE . "' on the field '" . (string) $key . "' is only valid inside an edge traversal projection." ) ;
+                }
+
+                if ( in_array( $filter , $edgeScopeDenied , true ) )
+                {
+                    throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::SCOPE '" . AQL::EDGE . "' on the field '" . (string) $key . "' is not supported with the structural filter '" . (string) $filter . "'." ) ;
+                }
+            }
+
+            $ref = $scope === AQL::EDGE ? $edgeRef : $docRef ;
 
             // Field reference captured before `$key` is (possibly) quoted, so the
-            // output-side `alters` chain always wraps the real `doc.<field>`.
-            $fieldRef = key( $keyName ?? $key , $docRef ) ;
+            // output-side `alters` chain always wraps the real `<ref>.<field>`.
+            $fieldRef = key( $keyName ?? $key , $ref ) ;
 
             // Defense-in-depth: the bare source attribute flows into `doc.<attr>`.
             // Validate it against AQL injection — except the quoted-key escape
@@ -207,27 +263,27 @@ function aqlFields
 
             $filters[] = match ( $filter )
             {
-                Filter::ARRAY      => aqlFieldArray     ( $key , $docRef , $default ) ,
-                Filter::BOOL       => aqlFieldBool      ( $key , $docRef , $keyName ) ,
-                Filter::DATETIME   => aqlFieldDateTime  ( $key , $docRef , $keyName , $format ) ,
-                Filter::DOCUMENT   => aqlFieldDocument  ( $key , $docRef , $options , $container , $init ) ,
-                Filter::MAP        => aqlFieldMap       ( $key , $docRef , $options , $container , $init ) ,
-                Filter::NUMBER     => aqlFieldNumber    ( $key , $docRef , $keyName),
-                Filter::TRANSLATE  => aqlFieldTranslate ( $key , $docRef , $keyName , $init ) ,
-                Filter::URL        => aqlFieldUrl       ( $key , $docRef , $path , $keyName , $container , $init ) ,
+                Filter::ARRAY      => aqlFieldArray     ( $key , $ref , $default ) ,
+                Filter::BOOL       => aqlFieldBool      ( $key , $ref , $keyName ) ,
+                Filter::DATETIME   => aqlFieldDateTime  ( $key , $ref , $keyName , $format ) ,
+                Filter::DOCUMENT   => aqlFieldDocument  ( $key , $ref , $options , $container , $init ) ,
+                Filter::MAP        => aqlFieldMap       ( $key , $ref , $options , $container , $init ) ,
+                Filter::NUMBER     => aqlFieldNumber    ( $key , $ref , $keyName),
+                Filter::TRANSLATE  => aqlFieldTranslate ( $key , $ref , $keyName , $init ) ,
+                Filter::URL        => aqlFieldUrl       ( $key , $ref , $path , $keyName , $container , $init ) ,
 
                 Filter::DISTANCE => keyValue        ( $key , Prop::DISTANCE ) ,
-                Filter::ID       => aqlFieldNumber  ( $key , $docRef , $keyName ?? Prop::_KEY ) ,
-                Filter::REVISION => aqlFieldDefault ( $key , $docRef , $keyName ?? Prop::_REV ) ,
+                Filter::ID       => aqlFieldNumber  ( $key , $ref , $keyName ?? Prop::_KEY ) ,
+                Filter::REVISION => aqlFieldDefault ( $key , $ref , $keyName ?? Prop::_REV ) ,
 
-                Filter::ARRAY_COUNT , Filter::JOINS_COUNT => aqlFieldArrayCount ( $key , $docRef , $keyName ) ,
+                Filter::ARRAY_COUNT , Filter::JOINS_COUNT => aqlFieldArrayCount ( $key , $ref , $keyName ) ,
                 Filter::ARRAY_FIRST                       => aqlFieldArrayFirst ( $key , $value ) ,
                 Filter::EDGE , Filter::JOIN               => aqlFieldObject     ( $key , $value ) ,
 
                 Filter::EDGES , Filter::EDGES_COUNT ,
                 Filter::JOINS , Filter::UNIQUE_NAME => keyValue( $key , $value ) ,
 
-                default => aqlFieldDefault( $key , $docRef , $keyName ) ,
+                default => aqlFieldDefault( $key , $ref , $keyName ) ,
             };
         }
 
