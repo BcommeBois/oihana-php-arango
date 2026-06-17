@@ -20,7 +20,8 @@ surface and a full operational toolchain:
   boost/fuzzy/analyzer/lang/phrase/permissions — see the per-field DSL below).
 - **Query diagnostics**: typed `explain()` and profiling on the façade and model.
 - **Operational tooling**: dump / restore (profiles, masking, rotation),
-  maintenance commands (`views`, `doctor`, `migrate`).
+  maintenance commands (`views`, `doctor`, `migrate`, `analyzers` — custom
+  analyzer lifecycle: diff / sync / fix / prune).
 - **Transactions**, **18+ index types** (including a vector index), the full
   filter / facet / group engine, and 100% line/method test coverage.
 
@@ -70,7 +71,7 @@ tooling are non-breaking and ship as **minor** releases.
 | **Masking extraction** | The masking engine moved to the standalone `oihana/php-masking` library (no behaviour change). | ✅ Done |
 | **identity-analyzer drift fix** | `buildViewLink()` omits the redundant link-default `analyzers`; empty field nodes serialize as `{}`. | ✅ Done |
 
-### Analyzer lifecycle tooling — design frozen (2026-06-16), pending implementation
+### Analyzer lifecycle tooling — delivered (in `main`, pending the next minor)
 
 Manage **custom** analyzers the way Views and indexes are already managed
 (declare → diagnose → provision). Assigning an analyzer (View-level and
@@ -83,12 +84,12 @@ the policy is graduated and never destructive by surprise.
 
 | Lot | Scope | Status |
 |-----|-------|--------|
-| **A1 — Façade** | `AnalyzerManagementTrait`: `analyzerDiff()` / `analyzerSync($force)` (typed `DiffReport`) + `analyzerDependentViews()` (scan links). Comparison: exact `type`, subset `properties`, set-equal `features`, normalized `dbname::` prefix. | Planned |
-| **A2 — Registry** | `AnalyzerDefinition( name, AnalyzerOptions $options, array $features )` value object + `ArangoAnalyzersTrait` + `ArangoCommandParam::ANALYZERS` — declared at database level, mirroring the `collectionIndexes` registry. | Planned |
-| **A3 — `arango:analyzers` action** | `--diff` (report), `--sync` (create missing, report drifted), `--fix` (generate a ready-to-review migration per drift), `--force` (live cascade repair), `--prune` (opt-in: drop unused orphans, report in-use ones; built-ins never touched). Composer script. | Planned |
-| **A4 — Pre-filled migrations** | Extend `MigrationGenerator` to emit a filled `up()/down()` body; `--fix` writes a self-contained same-name drop+recreate+`viewSync` migration. | Planned |
-| **A5 — Doctor integration** | `ArangoDoctorAction` reads the registry, creates missing analyzers, reports drift; never triggers the cascade, never prunes. | Planned |
-| **A6 — Docs** | `db/analyzers.md` (lifecycle + path A vs B), `commands/arangodb.md` (FR/EN), CHANGELOG. | Planned |
+| **A1 — Façade** | `AnalyzerManagementTrait`: `analyzerDiff()` / `analyzerSync($force)` (typed `DiffReport`) + `analyzerDependentViews()` (scan links). Comparison: exact `type`, subset `properties`, set-equal `features`, normalized `dbname::` prefix. | ✅ Done (`2cd6005`, `3483103`) |
+| **A2 — Registry** | `AnalyzerDefinition( name, AnalyzerOptions $options, array $features )` value object + `ArangoAnalyzersTrait` + `ArangoCommandParam::ANALYZERS` — declared at database level, mirroring the `collectionIndexes` registry. | ✅ Done (`b9132ce`) |
+| **A3 — `arango:analyzers` action** | `--diff` (report), `--sync` (create missing, report drifted), `--fix` (generate a ready-to-review migration per drift), `--force` (live cascade repair), `--prune` (opt-in: drop unused orphans, report in-use ones; built-ins never touched). Composer script. | ✅ Done (`ff39a6f`, `c152352`) |
+| **A4 — Pre-filled migrations** | Extend `MigrationGenerator` to emit a filled `up()/down()` body; `--fix` writes a self-contained same-name drop+recreate+`viewSync` migration via a `RawAnalyzer`. | ✅ Done (`816e7a1`) |
+| **A5 — Doctor integration** | `ArangoDoctorAction` reads the registry, creates missing analyzers, reports drift (pointing to `arango:analyzers`); never triggers the cascade, never prunes. | ✅ Done (`d7ecb8d`) |
+| **A6 — Docs** | `db/analyzers.md` (lifecycle + path A vs B), `commands/arangodb.md` (FR/EN), CHANGELOG. | ✅ Done |
 
 ## Backlog (to be triaged)
 

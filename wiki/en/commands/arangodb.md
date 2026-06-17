@@ -1001,7 +1001,7 @@ These are **two separate worlds that never cross**:
 > generated migration. A `uses` parameter (a list of fully-qualified class names)
 > adds the `use …;` imports at the top so the injected body can reference its
 > classes by their short name (`Migration` is always imported; imports are
-> deduplicated and sorted). This is the mechanism `arango:analyzers --fix` will use
+> deduplicated and sorted). This is the mechanism `arango:analyzers --fix` uses
 > to **write a ready-to-review repair migration for you** (drop + recreate a
 > drifted analyzer + rebuild its dependent Views) instead of leaving you to
 > hand-write it. You review the generated migration, then apply it with

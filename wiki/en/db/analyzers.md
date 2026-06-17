@@ -201,7 +201,7 @@ Two ways to create it:
 > `AnalyzerDefinition` under the `ArangoCommandParam::ANALYZERS` key — at the
 > database level, like `collectionIndexes` for indexes (a single
 > `AnalyzerDefinition` is tolerated in place of a list). It is the single source
-> the `arango:analyzers` command will read to diagnose and provision them.
+> the `arango:analyzers` command (and `doctor`) reads to diagnose and provision them.
 
 > **Programmatic diff / sync.** The `ArangoDB` façade exposes
 > `analyzerDiff( AnalyzerDefinition )` (compares the declaration to the server →

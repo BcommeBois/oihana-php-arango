@@ -63,7 +63,7 @@
         "arango:restore": "Restore the ArangoDB database (flags after `--`, e.g. `composer arango:restore -- --last`).",
         "arango:list": "List existing dump archives in the configured dumps directory.",
         "arango:views": "Manage the ArangoSearch Views (list by default; flags after `--`, e.g. `composer arango:views -- --diff`, `-- --sync`, `-- --drop=a,b`).",
-        "arango:analyzers": "Manage the custom ArangoSearch analyzers (list by default; flags after `--`, e.g. `composer arango:analyzers -- --diff`, `-- --sync`, `-- --sync --force`).",
+        "arango:analyzers": "Manage the custom ArangoSearch analyzers (list by default; flags after `--`, e.g. `composer arango:analyzers -- --diff`, `-- --sync`, `-- --sync --force`, `-- --fix`, `-- --prune`).",
         "arango:doctor": "Diagnose the declared structure against the server (report by default; flags after `--`, e.g. `composer arango:doctor -- --apply`, `-- --apply --force`, `-- --prune`)."
     },
     "autoload": {

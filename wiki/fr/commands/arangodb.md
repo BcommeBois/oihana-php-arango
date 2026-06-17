@@ -1012,7 +1012,7 @@ Ce sont **deux mondes séparés qui ne se croisent jamais** :
 > migration générée. Un paramètre `uses` (liste de noms de classes complets)
 > ajoute les `use …;` en tête du fichier, pour que le corps injecté référence
 > ses classes par leur nom court (`Migration` est toujours importé ; les imports
-> sont dédupliqués et triés). C'est le mécanisme qu'utilisera `arango:analyzers --fix`
+> sont dédupliqués et triés). C'est le mécanisme qu'utilise `arango:analyzers --fix`
 > pour **écrire pour toi** une migration de réparation prête à relire (drop +
 > recreate d'un analyzer drifté + reconstruction des Views dépendantes), au lieu
 > de te laisser la rédiger à la main. Tu relis la migration générée, puis tu
