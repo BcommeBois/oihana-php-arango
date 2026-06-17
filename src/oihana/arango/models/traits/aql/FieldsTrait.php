@@ -446,12 +446,23 @@ trait FieldsTrait
             Field::PATH     => $options[ Field::PATH     ] ?? null ,
             Field::PROPERTY => $options[ Field::PROPERTY ] ?? null ,
             Field::QUOTED   => $options[ Field::QUOTED   ] ?? null ,
+            Field::RAW      => $options[ Field::RAW      ] ?? null ,
             Field::REQUIRES => $options[ Field::REQUIRES ] ?? null ,
             Field::SCOPE    => $options[ Field::SCOPE    ] ?? null ,
         ]
         , CleanFlag::NULLS );
 
-        if ( ( $filter === Filter::DOCUMENT || $filter === Filter::MAP ) && !empty( $subFields ) )
+        if ( $filter === Filter::WRAP )
+        {
+            // Filter::WRAP wraps the reference itself under the key — like DOCUMENT/MAP it is rendered inline
+            // (no LET variable, so no Field::UNIQUE). Keep the projected sub-fields (recursively
+            // prepared) ; the Field::RAW opt-in is already preserved above.
+            if ( !empty( $subFields ) )
+            {
+                $definition[ Field::FIELDS ] = $this->prepareQueryFields( $subFields ) ;
+            }
+        }
+        else if ( ( $filter === Filter::DOCUMENT || $filter === Filter::MAP ) && !empty( $subFields ) )
         {
             $definition[ Field::FIELDS ] = $this->prepareQueryFields( $subFields ) ;
 

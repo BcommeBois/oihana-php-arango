@@ -7,6 +7,7 @@ use UnexpectedValueException;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
+use oihana\arango\enums\Filter;
 use oihana\arango\enums\Scope;
 
 use PHPUnit\Framework\TestCase;
@@ -106,6 +107,59 @@ final class BuildEdgeVariableTest extends TestCase
         $this->assertStringContainsString( 'RETURN {' , $result ) ;
         $this->assertStringContainsString( 'name:vertex.name' , $result ) ;
         $this->assertStringContainsString( 'role:edge.role' , $result ) ;
+    }
+
+    /**
+     * `Filter::WRAP` nests the traversal vertex under a named key (`subject`)
+     * beside an edge-scoped scalar (`role`), instead of flattening the vertex
+     * fields at the root. Exercises the full model path (`prepareQueryFields` →
+     * `normalizeFieldDefinition` → `aqlFields` → `aqlFieldWrap`) — the
+     * normalization must preserve `Field::FIELDS` for `Filter::WRAP`.
+     */
+    public function testFieldsBranchWrapsTheVertexUnderAKeyWithFilterWrap() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'role'    => [ Field::SCOPE => Scope::EDGE ] ,
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'id'   => [] ,
+                        'name' => [] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( 'role:edge.role' , $result ) ;
+        $this->assertStringContainsString( 'subject:{id:vertex.id, name:vertex.name}' , $result ) ;
+    }
+
+    /**
+     * `Filter::WRAP` with `Field::RAW => true` embeds the whole vertex under the
+     * key — the normalization must preserve `Field::RAW`.
+     */
+    public function testFieldsBranchWrapsTheWholeVertexWithFieldRaw() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' => [ Field::FILTER => Filter::WRAP , Field::RAW => true ] ,
+            ] ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( 'subject:vertex' , $result ) ;
     }
 
     public function testHonorsCustomStartVertex() :void
