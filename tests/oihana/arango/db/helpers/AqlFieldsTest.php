@@ -9,6 +9,7 @@ use oihana\arango\enums\Filter;
 use oihana\arango\enums\Scope;
 use oihana\exceptions\UnsupportedOperationException;
 
+use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 use Psr\Container\ContainerExceptionInterface;
@@ -22,6 +23,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testFieldsWithFilterArray(): void
     {
@@ -48,6 +50,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testNullFieldsReturnsNull(): void
     {
@@ -60,6 +63,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testFieldDroppedWhenAuthorizerDenies(): void
     {
@@ -73,6 +77,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testAltersChainWrapsScalarProjection(): void
     {
@@ -84,6 +89,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testAltersSingleFunctionWithRenamedField(): void
     {
@@ -96,6 +102,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testAltersFunctionWithParams(): void
     {
@@ -107,6 +114,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testAltersMixedChainOfPlainAndParameterizedFunctions(): void
     {
@@ -120,6 +128,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testAltersHonoursTheDocumentReference(): void
     {
@@ -131,6 +140,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testAltersIsIgnoredOnTypedFilter(): void
     {
@@ -144,6 +154,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testAltersOnlyAffectsTheOptingFieldInAMix(): void
     {
@@ -167,6 +178,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testQuotedKeyWithNameQuotesOnlyTheLabel(): void
     {
@@ -181,6 +193,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testQuotedKeyWithAltersQuotesOnlyTheLabel(): void
     {
@@ -197,6 +210,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testQuotedKeyWithoutNameBacktickQuotesTheAttributeAccess(): void
     {
@@ -211,6 +225,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testQuotedKeyUnderTypedFilterBacktickQuotesTheAttributeAccess(): void
     {
@@ -228,7 +243,7 @@ final class AqlFieldsTest extends TestCase
      */
     public function testInjectionInBareFieldKeyThrows(): void
     {
-        $this->expectException( \oihana\exceptions\ValidationException::class ) ;
+        $this->expectException( ValidationException::class ) ;
         aqlFields( [ 'name) RETURN doc //' => [] ] ) ;
     }
 
@@ -241,7 +256,7 @@ final class AqlFieldsTest extends TestCase
      */
     public function testInjectionInFieldNameAliasThrows(): void
     {
-        $this->expectException( \oihana\exceptions\ValidationException::class ) ;
+        $this->expectException( ValidationException::class ) ;
         aqlFields( [ 'slug' => [ Field::NAME => 'title) || 1==1' ] ] ) ;
     }
 
@@ -256,6 +271,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testScopeEdgeProjectsFromTheEdgeReference(): void
     {
@@ -273,6 +289,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testScopeEdgeAcceptsTheAqlEdgeConstant(): void
     {
@@ -294,6 +311,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testScopeEdgeMixedWithVertexFieldsAndAlias(): void
     {
@@ -320,6 +338,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testScopeVertexIsTheDefault(): void
     {
@@ -337,6 +356,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testScopeEdgeWithoutEdgeReferenceThrows(): void
     {
@@ -351,6 +371,7 @@ final class AqlFieldsTest extends TestCase
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testScopeEdgeOnStructuralFilterThrows(): void
     {
@@ -360,5 +381,86 @@ final class AqlFieldsTest extends TestCase
             [ 'friends' => [ Field::FILTER => Filter::EDGES , Field::SCOPE => Scope::EDGE ] ] ,
             'v_1' , null , [] , 'e_1'
         ) ;
+    }
+
+    /**
+     * Filter::WRAP nests the projected reference under a named key — the
+     * symmetric companion of Field::SCOPE. Inside an edge traversal it lets a
+     * definition hoist the traversal vertex under a key (e.g. `subject`)
+     * alongside the edge metadata (`role` via Scope::EDGE), instead of
+     * flattening the vertex fields at the root.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWrapNestsTheVertexBesideEdgeMetadata(): void
+    {
+        $result = aqlFields
+        (
+            [
+                'role'    => [ Field::SCOPE  => Scope::EDGE ] ,
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'id'        => [] ,
+                        'givenName' => [] ,
+                    ]
+                ] ,
+            ] ,
+            'v_1' , null , [] , 'e_1'
+        ) ;
+        $this->assertSame
+        (
+            'role:e_1.role, subject:{id:v_1.id, givenName:v_1.givenName}' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * Filter::WRAP with Field::SCOPE => Scope::EDGE wraps the edge reference
+     * itself under the key.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWrapAgainstTheEdgeScope(): void
+    {
+        $result = aqlFields
+        (
+            [
+                'link' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::SCOPE  => Scope::EDGE ,
+                    Field::FIELDS => [ 'role' => [] ] ,
+                ] ,
+            ] ,
+            'v_1' , null , [] , 'e_1'
+        ) ;
+        $this->assertSame( 'link:{role:e_1.role}' , $result ) ;
+    }
+
+    /**
+     * Filter::WRAP with Field::RAW => true embeds the whole reference as-is.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWrapRawEmbedsTheWholeVertex(): void
+    {
+        $result = aqlFields
+        (
+            [ 'subject' => [ Field::FILTER => Filter::WRAP , Field::RAW => true ] ] ,
+            'v_1' , null , [] , 'e_1'
+        ) ;
+        $this->assertSame( 'subject:v_1' , $result ) ;
     }
 }

@@ -28,6 +28,7 @@ use function oihana\arango\db\helpers\fields\aqlFieldNumber;
 use function oihana\arango\db\helpers\fields\aqlFieldObject;
 use function oihana\arango\db\helpers\fields\aqlFieldTranslate;
 use function oihana\arango\db\helpers\fields\aqlFieldUrl;
+use function oihana\arango\db\helpers\fields\aqlFieldWrap;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\core\strings\betweenDoubleQuotes;
 use function oihana\core\strings\compile;
@@ -128,6 +129,20 @@ use function oihana\core\strings\keyValue;
  *     'v_42' , null , [] , 'e_42'
  * );
  * // name:v_42.name, since:DATE_ISO8601(e_42.created)
+ *
+ * // Wrap the reference under a named key (Filter::WRAP): the symmetric
+ * // companion of Field::SCOPE. Inside an edge traversal it nests the vertex
+ * // under a key (e.g. `subject`) beside the edge metadata, instead of
+ * // flattening the vertex fields at the root. A field whitelist is required
+ * // unless Field::RAW => true is set (then the whole reference is embedded).
+ * aqlFields(
+ *     [
+ *         'role'    => [ Field::SCOPE => Scope::EDGE ] ,
+ *         'subject' => [ Field::FILTER => Filter::WRAP , Field::FIELDS => [ 'id' => [] , 'givenName' => [] ] ] ,
+ *     ] ,
+ *     'v_42' , null , [] , 'e_42'
+ * );
+ * // role:e_42.role, subject:{id:v_42.id, givenName:v_42.givenName}
  *
  * // Alias: output key differs from the source attribute (Field::NAME)
  * aqlFields([ 'slug' => [ Field::NAME => 'title' ] ]);
@@ -271,6 +286,7 @@ function aqlFields
                 Filter::NUMBER     => aqlFieldNumber    ( $key , $ref , $keyName),
                 Filter::TRANSLATE  => aqlFieldTranslate ( $key , $ref , $keyName , $init ) ,
                 Filter::URL        => aqlFieldUrl       ( $key , $ref , $path , $keyName , $container , $init ) ,
+                Filter::WRAP       => aqlFieldWrap      ( $key , $ref , $options , $container , $init ) ,
 
                 Filter::DISTANCE => keyValue        ( $key , Prop::DISTANCE ) ,
                 Filter::ID       => aqlFieldNumber  ( $key , $ref , $keyName ?? Prop::_KEY ) ,

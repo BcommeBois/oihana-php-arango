@@ -62,6 +62,7 @@ class Filter
     public const string URL_API               = 'url_api' ;
     public const string UNIQUE_NAME           = 'unique_name' ;
     public const string VALUE                 = 'value' ;
+    public const string WRAP                  = 'wrap' ;
 }
 
 

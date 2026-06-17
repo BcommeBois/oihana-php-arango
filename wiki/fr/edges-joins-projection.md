@@ -6,14 +6,15 @@
 2. [Le marqueur `Field::SKINS` au niveau document](#le-marqueur-fieldskins-au-niveau-document)
 3. [Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge](#projection-composée--aqlfields--aqledges-sur-la-définition-dedge)
 4. [Projeter les propriétés de l'edge — `Field::SCOPE`](#projeter-les-propriétés-de-ledge--fieldscope)
-5. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
-6. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
-7. [Projection variable selon le skin de la requête — `Field::SKINS` sur les sous-champs](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs)
-8. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
-9. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
-10. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
-11. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
-12. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
+5. [Envelopper la référence sous une clé — `Filter::WRAP`](#envelopper-la-référence-sous-une-clé--filterwrap)
+6. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
+7. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+8. [Projection variable selon le skin de la requête — `Field::SKINS` sur les sous-champs](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs)
+9. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
+10. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
+11. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
+12. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
+13. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
 
 ## Vue d'ensemble
 
@@ -163,6 +164,57 @@ Règles et points importants :
 - **Ordre.** La projection conserve l'ordre de déclaration des champs dans `AQL::FIELDS` — vecteur et edge peuvent être entrelacés librement.
 - **Garde-fou — hors traversal.** `Field::SCOPE => edge` n'a de sens qu'à l'intérieur d'une sous-requête d'edge. Posé à la racine, sur un *join* ou dans un sous-document imbriqué (où l'edge n'existe plus), il **lève une exception** (`UnsupportedOperationException`) plutôt que de retomber silencieusement sur le vecteur.
 - **Garde-fou — filtres structurels.** `Field::SCOPE => edge` sur un filtre structurel (`Filter::EDGE`, `Filter::EDGES`, `Filter::JOIN`, `Filter::JOINS`, `Filter::EDGES_COUNT`, …) n'aurait aucun effet (ces filtres sont pilotés par une variable précalculée, pas par le document de référence) : il **lève une exception** au lieu d'être ignoré.
+
+## Envelopper la référence sous une clé — `Filter::WRAP`
+
+`Field::SCOPE` remonte une **métadonnée scalaire** de l'edge à côté des champs du vecteur (projection à plat). Son pendant symétrique, `Filter::WRAP`, fait l'inverse pour un **objet** : il **enveloppe la référence courante entière sous une clé nommée**, au lieu d'aplatir ses champs à la racine.
+
+Le cas typique : une traversée d'edge retourne par défaut le vecteur cible *à plat*. Quand le modèle de sortie attend l'entité liée **rangée dans une sous-clé** (par exemple `subject`), à côté de la métadonnée d'edge (`role`), `Filter::WRAP` produit cette forme imbriquée — impossible à obtenir avec la projection à plat.
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\enums\Field ;
+use oihana\arango\enums\Filter ;
+use oihana\arango\enums\Scope ;
+
+AQL::EDGES =>
+[
+    'memberships' =>
+    [
+        AQL::MODEL  => EdgesDefinition::PERSON_HAS_TEAM ,
+        AQL::FIELDS =>
+        [
+            'role'    => [ Field::SCOPE => Scope::EDGE ] ,                   // scalaire, depuis l'edge
+            'subject' =>                                                     // objet, enveloppe le vecteur
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS =>
+                [
+                    'id'   => Filter::DEFAULT ,
+                    'name' => Filter::DEFAULT ,
+                ] ,
+            ] ,
+        ] ,
+    ] ,
+]
+```
+
+AQL généré (le vecteur est rangé sous `subject`, l'edge reste à plat) :
+
+```aql
+LET memberships = (
+  FOR v, e IN OUTBOUND doc person_has_team
+  RETURN { role: e.role, subject: { id: v.id, name: v.name } }
+)
+```
+
+Règles et points importants :
+
+- **Liste de champs requise par défaut.** `Field::FIELDS` projette les sous-champs **contre la référence elle-même** (`v.id`), et non contre un sous-attribut (`v.subject.id`) — c'est la différence clé avec `Filter::DOCUMENT`, qui plonge dans `ref.clé`. Sans `Field::FIELDS`, la projection **lève une exception** (`UnsupportedOperationException`) : envelopper l'objet entier doit être délibéré.
+- **Objet entier — opt-in `Field::RAW`.** Pour embarquer la référence telle quelle, sans liste de champs, déclarer `Field::RAW => true` : la sortie devient `subject: v` (tous les attributs du vecteur, sans projection). C'est le seul moyen d'omettre `Field::FIELDS`.
+- **Vecteur par défaut, edge possible.** Comme tout champ, `Field::SCOPE => Scope::EDGE` bascule la référence enveloppée vers l'edge — on enveloppe alors **l'edge entier** sous la clé (utile pour exposer le lien lui-même comme objet).
+- **Différence avec `Filter::DOCUMENT`.** `Filter::DOCUMENT` imbrique un **sous-attribut existant** (`address: { city: v.address.city }`). `Filter::WRAP` enveloppe **la référence elle-même** sous une clé neuve (`subject: { … v … }`).
+- **Compagnon de `Field::SCOPE`.** `Field::SCOPE` remonte des **scalaires** d'edge à plat ; `Filter::WRAP` range un **objet** (vecteur ou edge) sous une clé. Les deux se combinent librement dans le même `AQL::FIELDS`.
 
 ## Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`
 

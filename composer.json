@@ -316,6 +316,7 @@
             "src/oihana/arango/db/helpers/fields/aqlFieldObject.php",
             "src/oihana/arango/db/helpers/fields/aqlFieldTranslate.php",
             "src/oihana/arango/db/helpers/fields/aqlFieldUrl.php",
+            "src/oihana/arango/db/helpers/fields/aqlFieldWrap.php",
             "src/oihana/arango/db/helpers/isAQLExpression.php",
             "src/oihana/arango/db/helpers/isAQLFunction.php",
             "src/oihana/arango/db/helpers/isAQLId.php",

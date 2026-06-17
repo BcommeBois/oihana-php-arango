@@ -6,14 +6,15 @@
 2. [The `Field::SKINS` marker at the document level](#the-fieldskins-marker-at-the-document-level)
 3. [Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition](#composed-projection--aqlfields--aqledges-on-the-edge-definition)
 4. [Projecting edge properties — `Field::SCOPE`](#projecting-edge-properties--fieldscope)
-5. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
-6. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
-7. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
-8. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
-9. [Which mechanism to use?](#which-mechanism-to-use)
-10. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
-11. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
-12. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
+5. [Wrapping the reference under a key — `Filter::WRAP`](#wrapping-the-reference-under-a-key--filterwrap)
+6. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
+7. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
+8. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
+9. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
+10. [Which mechanism to use?](#which-mechanism-to-use)
+11. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
+12. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
+13. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
 
 ## Overview
 
@@ -163,6 +164,57 @@ Rules and key points:
 - **Order.** The projection preserves the declaration order of the fields in `AQL::FIELDS` — vertex and edge fields can be freely interleaved.
 - **Guardrail — outside a traversal.** `Field::SCOPE => edge` only makes sense inside an edge sub-query. Placed at the root, on a *join*, or in a nested sub-document (where the edge no longer exists), it **throws** (`UnsupportedOperationException`) rather than silently falling back to the vertex.
 - **Guardrail — structural filters.** `Field::SCOPE => edge` on a structural filter (`Filter::EDGE`, `Filter::EDGES`, `Filter::JOIN`, `Filter::JOINS`, `Filter::EDGES_COUNT`, …) would have no effect (those filters are driven by a precomputed variable, not by the document reference): it **throws** instead of being silently ignored.
+
+## Wrapping the reference under a key — `Filter::WRAP`
+
+`Field::SCOPE` hoists a **scalar** edge metadata next to the vertex fields (flat projection). Its symmetric counterpart, `Filter::WRAP`, does the opposite for an **object**: it **wraps the whole current reference under a named key**, instead of flattening its fields at the root.
+
+The typical case: an edge traversal returns the target vertex *flat* by default. When the output model expects the related entity **nested under a sub-key** (e.g. `subject`), next to the edge metadata (`role`), `Filter::WRAP` produces that nested shape — impossible with the flat projection.
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\enums\Field ;
+use oihana\arango\enums\Filter ;
+use oihana\arango\enums\Scope ;
+
+AQL::EDGES =>
+[
+    'memberships' =>
+    [
+        AQL::MODEL  => EdgesDefinition::PERSON_HAS_TEAM ,
+        AQL::FIELDS =>
+        [
+            'role'    => [ Field::SCOPE => Scope::EDGE ] ,                   // scalar, from the edge
+            'subject' =>                                                     // object, wraps the vertex
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS =>
+                [
+                    'id'   => Filter::DEFAULT ,
+                    'name' => Filter::DEFAULT ,
+                ] ,
+            ] ,
+        ] ,
+    ] ,
+]
+```
+
+Generated AQL (the vertex is nested under `subject`, the edge stays flat):
+
+```aql
+LET memberships = (
+  FOR v, e IN OUTBOUND doc person_has_team
+  RETURN { role: e.role, subject: { id: v.id, name: v.name } }
+)
+```
+
+Rules and key points:
+
+- **Field whitelist required by default.** `Field::FIELDS` projects the sub-fields **against the reference itself** (`v.id`), not against a sub-attribute (`v.subject.id`) — the key difference with `Filter::DOCUMENT`, which dives into `ref.key`. Without `Field::FIELDS`, the projection **throws** (`UnsupportedOperationException`): embedding the whole object must be deliberate.
+- **Whole object — `Field::RAW` opt-in.** To embed the reference as-is, with no field list, declare `Field::RAW => true`: the output becomes `subject: v` (every vertex attribute, no projection). It is the only way to omit `Field::FIELDS`.
+- **Vertex by default, edge possible.** Like any field, `Field::SCOPE => Scope::EDGE` switches the wrapped reference to the edge — wrapping **the whole edge** under the key (handy to expose the link itself as an object).
+- **Difference with `Filter::DOCUMENT`.** `Filter::DOCUMENT` nests an **existing sub-attribute** (`address: { city: v.address.city }`). `Filter::WRAP` wraps **the reference itself** under a fresh key (`subject: { … v … }`).
+- **Companion of `Field::SCOPE`.** `Field::SCOPE` hoists edge **scalars** flat; `Filter::WRAP` nests an **object** (vertex or edge) under a key. The two combine freely in the same `AQL::FIELDS`.
 
 ## Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`
 

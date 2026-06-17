@@ -18,6 +18,7 @@ class Field
     public const string NAME     = 'name'     ;
     public const string PATH     = 'path'     ;
     public const string PROPERTY = 'property' ;
+    public const string RAW      = 'raw'      ;
     public const string REQUIRES = 'requires' ;
     public const string QUOTED   = 'quoted'   ;
     public const string SCOPE    = 'scope'    ;
