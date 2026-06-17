@@ -14,20 +14,33 @@ use Throwable;
 
 use Devium\Toml\TomlError;
 
+use oihana\arango\clients\analyzer\TextAnalyzer;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
+use oihana\arango\commands\actions\ArangoDoctorAction;
+use oihana\arango\commands\options\ArangoCommandOption;
+use oihana\arango\commands\traits\ArangoConfigTrait;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\db\enums\DiffKind;
 use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\options\analyzers\AnalyzerDefinition;
 use oihana\arango\db\options\indexes\IndexOptions;
 use oihana\arango\db\options\indexes\PersistentIndexOptions;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Search;
 
+use oihana\commands\enums\ExitCode;
+
 use PHPUnit\Framework\Attributes\Group;
+
+use Symfony\Component\Console\Helper\QuestionHelper;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 use function oihana\init\initConfig;
 
@@ -218,5 +231,115 @@ final class DoctorIntegrationTest extends IntegrationTestCase
         $this->assertTrue( $reports[0]->applied , 'The missing collection must be recreated.' ) ;
 
         $this->assertSame( [ true , true , true ] , array_map( fn( $r ) => $r->inSync() , $model->diagnose() ) ) ;
+    }
+
+    public static function databaseName() :string
+    {
+        return static::$database ;
+    }
+
+    /**
+     * A `doctor` command host (the real action) wired to the disposable
+     * database with the given analyzer registry — no model, no index registry.
+     *
+     * @param array<int, AnalyzerDefinition> $analyzers
+     *
+     * @throws TomlError
+     * @throws Throwable
+     */
+    private function doctorHost( array $analyzers ) :object
+    {
+        $configDir = dirname( __DIR__ , 4 ) . DIRECTORY_SEPARATOR . 'configs' ;
+        $config    = initConfig( basePath: $configDir ) ;
+        $arango    = is_array( $config[ 'arango' ] ?? null ) ? $config[ 'arango' ] : [] ;
+
+        return new class( $arango , $analyzers )
+        {
+            use ArangoDoctorAction ;
+            use ArangoConfigTrait ;
+
+            public Container $container ;
+
+            public function __construct( array $arango , array $analyzers )
+            {
+                $this->container = new Container() ;
+                $this->endpoint  = $arango[ ArangoConfig::ENDPOINT ] ?? '' ;
+                $this->username  = $arango[ ArangoConfig::USER ]     ?? '' ;
+                $this->password  = $arango[ ArangoConfig::PASSWORD ] ?? '' ;
+                $this->database  = DoctorIntegrationTest::databaseName() ;
+                $this->analyzers = $analyzers ;
+            }
+
+            public function getQuestionHelper() :QuestionHelper
+            {
+                return new QuestionHelper() ;
+            }
+
+            public function run( $input , $output ) :int
+            {
+                return $this->doctor( $input , $output ) ;
+            }
+        } ;
+    }
+
+    private function doctorInput( array $options = [] ) :ArrayInput
+    {
+        $definition = new InputDefinition
+        ([
+            new InputOption( ArangoCommandOption::DATABASE , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::ENDPOINT , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::PASSWORD , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::USER     , null , InputOption::VALUE_OPTIONAL ) ,
+            new InputOption( ArangoCommandOption::APPLY    , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::FORCE    , null , InputOption::VALUE_NONE ) ,
+            new InputOption( ArangoCommandOption::PRUNE    , null , InputOption::VALUE_NONE ) ,
+        ]) ;
+
+        $input = new ArrayInput( $options , $definition ) ;
+        $input->setInteractive( false ) ;
+        return $input ;
+    }
+
+    /**
+     * `doctor` reconciles the custom-analyzer registry on a real server: a
+     * declared analyzer is reported MISSING (run fails), created by `--apply`,
+     * then IN_SYNC; a drift is signalled and **never** repaired — even with
+     * `--apply --force` — pointing to the dedicated `arango:analyzers` action.
+     *
+     * @throws TomlError
+     * @throws Throwable
+     */
+    public function testDoctorProvisionsAndSignalsTheAnalyzerRegistry() :void
+    {
+        $declared = new AnalyzerDefinition( 'doctor_az' , new TextAnalyzer( locale: 'en' , case: 'lower' , accent: false , stemming: true ) , [] ) ;
+
+        // A fresh host per run : getIO() memoizes its SymfonyStyle on first use.
+
+        // 1 — report : the declared analyzer is missing → the run fails.
+        $output = new BufferedOutput() ;
+        $code   = $this->doctorHost( [ $declared ] )->run( $this->doctorInput() , $output ) ;
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( 'doctor_az [analyzer] — missing on the server' , $output->fetch() ) ;
+
+        // 2 — apply : it gets created.
+        $output = new BufferedOutput() ;
+        $this->doctorHost( [ $declared ] )->run( $this->doctorInput( [ '--' . ArangoCommandOption::APPLY => true ] ) , $output ) ;
+        $this->assertStringContainsString( 'doctor_az [analyzer] — created' , $output->fetch() ) ;
+
+        // 3 — report again : now in sync.
+        $output = new BufferedOutput() ;
+        $this->doctorHost( [ $declared ] )->run( $this->doctorInput() , $output ) ;
+        $this->assertStringContainsString( 'doctor_az [analyzer] — in sync' , $output->fetch() ) ;
+
+        // 4 — a changed declaration drifts : signalled, never repaired (even
+        //     with --apply --force), with the pointer to arango:analyzers.
+        $drift  = new AnalyzerDefinition( 'doctor_az' , new TextAnalyzer( locale: 'en' , case: 'lower' , accent: false , stemming: false ) , [] ) ;
+        $output = new BufferedOutput() ;
+        $code   = $this->doctorHost( [ $drift ] )->run( $this->doctorInput( [ '--' . ArangoCommandOption::APPLY => true , '--' . ArangoCommandOption::FORCE => true ] ) , $output ) ;
+        $text   = $output->fetch() ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( 'doctor_az [analyzer] — drifted (not repaired)' , $text ) ;
+        $this->assertStringContainsString( 'arango:analyzers --fix' , $text ) ;
     }
 }

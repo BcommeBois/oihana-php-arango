@@ -13,6 +13,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\commands\options\ArangoCommandOption;
+use oihana\arango\commands\traits\ArangoAnalyzersTrait;
 use oihana\arango\commands\traits\ArangoClientTrait;
 use oihana\arango\commands\traits\ArangoIndexesTrait;
 use oihana\arango\commands\traits\ArangoMigrationsTrait;
@@ -35,7 +36,7 @@ use oihana\commands\traits\IOTrait;
 use oihana\enums\Char;
 
 // Diagnose / repair the whole declared structure of the database
-// $ php bin/console.php command:arangodb doctor                    (report only : collections, indexes, views, orphans)
+// $ php bin/console.php command:arangodb doctor                    (report only : collections, indexes, views, analyzers, orphans)
 // $ php bin/console.php command:arangodb doctor --apply            (create what is missing, resync the views)
 // $ php bin/console.php command:arangodb doctor --apply --force    (+ drop & recreate the drifted indexes)
 // $ php bin/console.php command:arangodb doctor --prune            (interactive removal of the orphans)
@@ -68,6 +69,14 @@ use oihana\enums\Char;
  *                    configured model declares) to remove — never automatic,
  *                    nothing in non-interactive mode.
  *
+ * Beyond the models, the action also reconciles two database-level registries:
+ * the collection-index registry ({@see ArangoIndexesTrait}) and the custom
+ * **analyzer** registry ({@see ArangoAnalyzersTrait}). For the analyzers it
+ * creates the **missing** ones under `--apply` and only **signals** the drifted
+ * ones — an analyzer is immutable, so repairing a drift (a cascade to the
+ * dependent Views) is **never** done here, even with `--force`: it is reserved
+ * for the dedicated `arango:analyzers` action (`--fix` / `--force`).
+ *
  * Like `views --diff`, the walk is side-effect free: the lazy provisioning
  * of the resolved models is disabled through the container `lazy` entry.
  *
@@ -77,7 +86,8 @@ use oihana\enums\Char;
  */
 trait ArangoDoctorAction
 {
-    use ArangoClientTrait ,
+    use ArangoAnalyzersTrait ,
+        ArangoClientTrait ,
         ArangoIndexesTrait ,
         ArangoMigrationsTrait ,
         ArangoModelsTrait ,
@@ -104,9 +114,11 @@ trait ArangoDoctorAction
 
         $io->section( $apply ? 'Repair the declared structure' : 'Diagnose the declared structure' ) ;
 
-        if( $this->models === [] && $this->collectionIndexes === [] )
+        $analyzers = $this->getAnalyzerDefinitions() ;
+
+        if( $this->models === [] && $this->collectionIndexes === [] && $analyzers === [] )
         {
-            $io->warning( 'Nothing configured — pass model container ids via the `models` init key and/or a collection→indexes registry via `collectionIndexes`.' ) ;
+            $io->warning( 'Nothing configured — pass model container ids via the `models` init key, and/or a collection→indexes registry via `collectionIndexes`, and/or custom analyzers via `analyzers`.' ) ;
             return ExitCode::SUCCESS ;
         }
 
@@ -188,6 +200,34 @@ trait ArangoDoctorAction
                 $this->doctorAccount( $io , $report , $apply , $counters , $applied , $healthy ) ;
 
                 $declaredCollections[] = $collection ;
+            }
+        }
+
+        // Custom-analyzer registry — diagnose each declared analyzer (create the
+        // missing ones under --apply, signal the drifted ones). The doctor never
+        // repairs a drifted analyzer, even with --force : an analyzer is immutable,
+        // so its repair (a cascade to the dependent Views) is reserved for the
+        // dedicated `arango:analyzers` action. Analyzers are database-scoped — not
+        // a collection nor a view — so they never join the declared/orphan set.
+        if( $analyzers !== [] )
+        {
+            $facade = $this->resolveFacade( $input ) ;
+
+            foreach( $analyzers as $definition )
+            {
+                $io->text( sprintf( '<info>%s</info>' , $definition->name ) ) ;
+
+                $report = $facade === null
+                        ? new DiffReport( $definition->name , DiffStatus::UNREACHABLE , [ 'no database available' ] , kind : DiffKind::ANALYZER )
+                        : ( $apply ? $facade->analyzerSync( $definition ) : $facade->analyzerDiff( $definition ) ) ;
+
+                $this->doctorAccount( $io , $report , $apply , $counters , $applied , $healthy ) ;
+
+                // A drift is never repaired here : point to the dedicated action.
+                if( $report->status === DiffStatus::DRIFTED )
+                {
+                    $io->text( '      · → run `arango:analyzers --fix` (migration) or `--force` (in place) to repair it' ) ;
+                }
             }
         }
 

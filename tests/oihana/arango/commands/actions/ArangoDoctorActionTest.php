@@ -11,10 +11,12 @@ use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
 use stdClass;
 
+use oihana\arango\clients\analyzer\TextAnalyzer;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\collection\Collection;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\View;
+use oihana\arango\db\options\analyzers\AnalyzerDefinition;
 use oihana\arango\commands\actions\ArangoDoctorAction;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\traits\ArangoConfigTrait;
@@ -1052,6 +1054,146 @@ class ArangoDoctorActionTest extends TestCase
 
         $this->assertSame( ExitCode::FAILURE , $code ) ;
         $this->assertStringContainsString( '! places [indexes] — unreachable' , $text ) ;
+        $this->assertStringContainsString( '· no database available' , $text ) ;
+    }
+
+    // ---- custom-analyzer registry (Lot A5) ----------------------------------
+
+    /** A declared analyzer (content irrelevant — the façade double answers). */
+    private function analyzerDefinition( string $name = 'az' ) :AnalyzerDefinition
+    {
+        return new AnalyzerDefinition( $name , new TextAnalyzer( locale: 'en' , stemming: true ) , [] ) ;
+    }
+
+    /** A façade double answering the analyzer reports (diff and non-forced sync alike). */
+    private function analyzerFacade( DiffReport $report ) :ArangoDB
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'analyzerDiff' )->willReturn( $report ) ;
+        $facade->method( 'analyzerSync' )->willReturn( $report ) ;
+        return $facade ;
+    }
+
+    /**
+     * The analyzer registry is reconciled even with no model nor index registry
+     * configured — the guard accepts an analyzer-only run.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorReconcilesTheAnalyzerRegistryWithoutAnyModel() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->analyzers  = [ $this->analyzerDefinition() ] ;
+        $host->fakeFacade = $this->analyzerFacade( new DiffReport( 'az' , DiffStatus::IN_SYNC , kind : DiffKind::ANALYZER ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( '✓ az [analyzer] — in sync' , $text ) ;
+        $this->assertStringContainsString( '0 model(s) — 1 in sync, 0 missing, 0 drifted, 0 invalid, 0 unreachable ; 0 orphan(s).' , $text ) ;
+    }
+
+    /**
+     * A drifted analyzer fails the report-mode run and points to the dedicated
+     * `arango:analyzers` action (the doctor never repairs it).
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorFailsOnAnalyzerDriftAndPointsToTheDedicatedAction() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->analyzers  = [ $this->analyzerDefinition() ] ;
+        $host->fakeFacade = $this->analyzerFacade( new DiffReport( 'az' , DiffStatus::DRIFTED , [ 'az : drop + recreate required (an analyzer is immutable)' ] , kind : DiffKind::ANALYZER ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( '~ az [analyzer] — drifted' , $text ) ;
+        $this->assertStringContainsString( 'arango:analyzers --fix' , $text ) ;
+    }
+
+    /**
+     * `--apply` creates the missing analyzer through analyzerSync(); an applied
+     * report keeps the run healthy.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorCreatesMissingAnalyzerUnderApply() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->analyzers  = [ $this->analyzerDefinition() ] ;
+        $host->fakeFacade = $this->analyzerFacade( new DiffReport( 'az' , DiffStatus::MISSING , [] , true , DiffKind::ANALYZER ) ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::APPLY => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'az [analyzer] — created' , $output->fetch() ) ;
+    }
+
+    /**
+     * Even with `--apply --force`, the doctor never force-repairs a drifted
+     * analyzer — `--force` is not forwarded to analyzerSync(), so the drift
+     * survives and the run fails.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorNeverForceRepairsADriftedAnalyzer() :void
+    {
+        $captured = null ;
+
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'analyzerSync' )->willReturnCallback(
+            function( AnalyzerDefinition $definition , bool $force = false ) use ( &$captured ) : DiffReport
+            {
+                $captured = $force ;
+                return new DiffReport( 'az' , DiffStatus::DRIFTED , [ 'az : drop + recreate required (an analyzer is immutable)' ] , false , DiffKind::ANALYZER ) ;
+            } ) ;
+
+        $host = new ArangoDoctorActionHost() ;
+        $host->analyzers  = [ $this->analyzerDefinition() ] ;
+        $host->fakeFacade = $facade ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::APPLY => true , '--' . ArangoCommandOption::FORCE => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertFalse( $captured , 'The doctor must never forward --force to analyzerSync().' ) ;
+        $this->assertStringContainsString( '~ az [analyzer] — drifted (not repaired)' , $output->fetch() ) ;
+    }
+
+    /**
+     * Without a façade, each declared analyzer yields an UNREACHABLE report and
+     * the run fails.
+     *
+     * @return void
+     * @throws ExitException
+     * @throws ReflectionException
+     */
+    public function testDoctorAnalyzerUnreachableWithoutFacade() :void
+    {
+        $host = new ArangoDoctorActionHost() ;
+        $host->analyzers  = [ $this->analyzerDefinition() ] ;
+        $host->fakeFacade = null ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+        $text = $output->fetch() ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( '! az [analyzer] — unreachable' , $text ) ;
         $this->assertStringContainsString( '· no database available' , $text ) ;
     }
 }
