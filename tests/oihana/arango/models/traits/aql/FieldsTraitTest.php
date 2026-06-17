@@ -127,6 +127,25 @@ class FieldsTraitTest extends TestCase
         $this->assertSame( 'x'          , $x[ Field::UNIQUE   ] ) ;
     }
 
+    public function testWhenAndElseOptionsArePreserved() :void
+    {
+        // Field::WHEN / Field::ELSE must survive the model → query normalization,
+        // otherwise the conditional projection is silently lost.
+        $out = $this->stub()->prepareQueryFields
+        ([
+            'price' =>
+            [
+                Field::WHEN => [ 'visibility' , 'public' ] ,
+                Field::ELSE => [ Field::PROPERTY => 'basePrice' ] ,
+            ],
+        ]) ;
+
+        $price = $out[ 'price' ] ;
+
+        $this->assertSame( [ 'visibility' , 'public' ] , $price[ Field::WHEN ] ) ;
+        $this->assertSame( [ Field::PROPERTY => 'basePrice' ] , $price[ Field::ELSE ] ) ;
+    }
+
     public function testFieldDefaultOptionLandsUnderTheNullKey() :void
     {
         // Field::DEFAULT === null, so [ Field::DEFAULT => 'd' ] becomes [ '' => 'd' ]

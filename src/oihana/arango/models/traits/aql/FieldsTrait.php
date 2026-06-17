@@ -441,6 +441,7 @@ trait FieldsTrait
             Field::FILTER   => $filter ,
             Field::ALTERS   => $options[ Field::ALTERS   ] ?? null ,
             Field::DEFAULT  => $options[ Field::DEFAULT  ] ?? null ,
+            Field::ELSE     => $options[ Field::ELSE     ] ?? null ,
             Field::FORMAT   => $options[ Field::FORMAT   ] ?? null ,
             Field::NAME     => $options[ Field::NAME     ] ?? null ,
             Field::PATH     => $options[ Field::PATH     ] ?? null ,
@@ -450,6 +451,7 @@ trait FieldsTrait
             Field::RAW      => $options[ Field::RAW      ] ?? null ,
             Field::REQUIRES => $options[ Field::REQUIRES ] ?? null ,
             Field::SCOPE    => $options[ Field::SCOPE    ] ?? null ,
+            Field::WHEN     => $options[ Field::WHEN     ] ?? null ,
         ]
         , CleanFlag::NULLS );
 

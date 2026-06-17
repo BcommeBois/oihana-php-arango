@@ -226,6 +226,7 @@ Besides `Field::FILTER`, each field definition accepts options:
 | `Field::UNIQUE` | Unique variable name for the AQL expression | — |
 | `Field::REQUIRES` | Permission subject(s): the field is dropped if authorization is denied | — |
 | `Field::SCOPE` | Projection source inside an edge sub-query: `Scope::VERTEX` (default) or `Scope::EDGE` (the relationship metadata) | `since:DATE_ISO8601(e.created)` |
+| `Field::WHEN` / `Field::ELSE` | Conditional value: project the field only when a condition holds, else fall back. See [Conditional fields](conditional-fields.md). | `price:doc.visibility == 'public' ? doc.price : null` |
 
 > `Field::QUOTED` quotes **only the output label** and reaches the attribute with **backticks** (`` doc.`my-key` ``) — the valid AQL form for a special-character attribute (`doc."my-key"` is invalid and rejected by ArangoDB). A `Field::NAME` then supplies the source: only the label is quoted (`"slug":doc.title`).
 

@@ -20,6 +20,7 @@ use function oihana\arango\db\helpers\fields\aqlFieldArray;
 use function oihana\arango\db\helpers\fields\aqlFieldArrayCount;
 use function oihana\arango\db\helpers\fields\aqlFieldArrayFirst;
 use function oihana\arango\db\helpers\fields\aqlFieldBool;
+use function oihana\arango\db\helpers\fields\aqlFieldConditional;
 use function oihana\arango\db\helpers\fields\aqlFieldDateTime;
 use function oihana\arango\db\helpers\fields\aqlFieldDefault;
 use function oihana\arango\db\helpers\fields\aqlFieldDocument;
@@ -200,6 +201,7 @@ function aqlFields
             $quoted  = $options[ Field::QUOTED  ] ?? null ;
             $value   = $options[ Field::UNIQUE  ] ?? $key ;
             $scope   = $options[ Field::SCOPE   ] ?? AQL::VERTEX ;
+            $when    = $options[ Field::WHEN    ] ?? null ;
 
             // Field::SCOPE selects the projection source: the target vertex
             // (default) or the traversal edge. The edge variable only exists
@@ -265,14 +267,33 @@ function aqlFields
                 $key     = betweenDoubleQuotes( $key , trim: false ) ;
             }
 
-            // Output-side `alters` (Field::ALTERS): wrap the projected value with
-            // the alt chain — `name: LOWER(TRIM(doc.name))`. Applied only to the
-            // default scalar projection; typed/structural filters keep their own
-            // shape (a scalar alt chain has no meaning on a sub-object).
-            if( $alters !== null && $filter === Field::DEFAULT )
+            // Output-side `when`/`alters`: both decorate the default scalar projection only.
+            //   - Field::ALTERS wraps the projected value with the alt chain
+            //     (`name: LOWER(TRIM(doc.name))`).
+            //   - Field::WHEN guards the value behind a condition
+            //     (`price: doc.visibility == "public" ? doc.price : null`).
+            // They compose: `cond ? ALTERS(value) : else`. A typed/structural filter keeps
+            // its own shape, so WHEN on it is a definition error (throws) while a stray
+            // ALTERS is silently ignored (legacy behaviour, falls through to the match).
+            if( $when !== null || $alters !== null )
             {
-                $filters[] = keyValue( $key , alterExpression( $fieldRef , $alters ) ) ;
-                continue ;
+                if( $filter !== Field::DEFAULT )
+                {
+                    if( $when !== null )
+                    {
+                        throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::WHEN on the field '" . (string) $key . "' is only valid on the default scalar projection, not the '" . (string) $filter . "' filter." ) ;
+                    }
+                }
+                else
+                {
+                    $thenExpr = $alters !== null ? alterExpression( $fieldRef , $alters ) : $fieldRef ;
+
+                    $filters[] = $when !== null
+                        ? aqlFieldConditional( $key , $thenExpr , $when , $options[ Field::ELSE ] ?? null , $ref )
+                        : keyValue( $key , $thenExpr ) ;
+
+                    continue ;
+                }
             }
 
             $filters[] = match ( $filter )

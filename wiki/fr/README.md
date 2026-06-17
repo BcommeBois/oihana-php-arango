@@ -80,6 +80,7 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 - [Vue d'ensemble de la couche db](db/README.md) — la façade `ArangoDB`, quand l'utiliser vs le client HTTP, cartographie du dossier `db/`.
 - [Quickstart `ArangoDB`](db/quickstart.md) — instancier la façade, configurer (clés `ArangoConfig`, DI), exécuter AQL, hydrater les résultats, gérer collections et indexes.
 - [Helpers AQL `db/helpers/`](db/helpers.md) — `aqlExpression`, `aqlDocument`, `aqlValue`, *field builders* et compagnie.
+- [Champs conditionnels `Field::WHEN`](db/conditional-fields.md) — garder une valeur projetée derrière une condition (`cond ? valeur : else`), groupes AND/OR/NOT, `alt` sur les opérandes.
 - [Bind variables `db/binds/`](db/binds.md) — `aqlBind`, validation et formatage des valeurs injectées.
 - [Filtres HTTP `?filter=`](db/filter.md) — syntaxe `?filter=`, opérateurs (`eq`, `ne`, `like`, `in`, ...), transformations `alt`, chaînage, `FilterType::*`.
 - [Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`](db/filter-internal.md) — conditions serveur-only, `FilterType::VIRTUAL`, règle de choix URL vs interne.

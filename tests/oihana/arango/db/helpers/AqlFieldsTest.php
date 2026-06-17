@@ -463,4 +463,89 @@ final class AqlFieldsTest extends TestCase
         ) ;
         $this->assertSame( 'subject:v_1' , $result ) ;
     }
+
+    // ---------------------------------------------------------------- Field::WHEN (conditional projection)
+
+    /**
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenDispatchesConditionalProjection(): void
+    {
+        $result = aqlFields( [ 'price' => [ Field::WHEN => [ 'visibility' , 'public' ] ] ] , 'doc' ) ;
+        $this->assertSame( "price:doc.visibility == 'public' ? doc.price : null" , $result ) ;
+    }
+
+    /**
+     * WHEN composes with ALTERS (then branch) and NAME (source alias); the condition
+     * attribute is independent of the projected one.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenComposesWithAltersAndName(): void
+    {
+        $result = aqlFields
+        ([
+            'slug' =>
+            [
+                Field::NAME   => 'title' ,
+                Field::WHEN   => [ 'published' , 'eq' , true ] ,
+                Field::ALTERS => [ 'trim' , 'lower' ] ,
+            ],
+        ], 'doc' ) ;
+        $this->assertSame( 'slug:doc.published == true ? LOWER(TRIM(doc.title)) : null' , $result ) ;
+    }
+
+    /**
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenWithElseAttributeFallback(): void
+    {
+        $result = aqlFields
+        ([
+            'price' =>
+            [
+                Field::WHEN => [ 'visibility' , 'public' ] ,
+                Field::ELSE => [ Field::PROPERTY => 'basePrice' ] ,
+            ],
+        ], 'doc' ) ;
+        $this->assertSame( "price:doc.visibility == 'public' ? doc.price : doc.basePrice" , $result ) ;
+    }
+
+    /**
+     * The condition reads from the same reference as the projected field.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenUsesTheProjectionReference(): void
+    {
+        $result = aqlFields( [ 'role' => [ Field::WHEN => [ 'active' , true ] ] ] , 'v_1' ) ;
+        $this->assertSame( 'role:v_1.active == true ? v_1.role : null' , $result ) ;
+    }
+
+    /**
+     * Field::WHEN on a typed/structural filter is a definition error.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenOnStructuralFilterThrows(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessage( 'only valid on the default scalar projection' ) ;
+        aqlFields( [ 'tags' => [ Field::FILTER => Filter::EDGES , Field::WHEN => [ 'a' , 'b' ] ] ] , 'doc' ) ;
+    }
 }

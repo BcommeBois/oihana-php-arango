@@ -11,6 +11,7 @@ class Field
     public const string ALTERS   = 'alters'   ;
     public const null   DEFAULT  = null       ;
     public const string EDGES    = 'edges'    ;
+    public const string ELSE     = 'else'     ;
     public const string FIELDS   = 'fields'   ;
     public const string JOINS    = 'joins'    ;
     public const string FILTER   = 'filter'   ;
@@ -25,6 +26,7 @@ class Field
     public const string SCOPE    = 'scope'    ;
     public const string SKINS    = 'skins'    ;
     public const string UNIQUE   = 'unique'   ;
+    public const string WHEN     = 'when'     ;
 }
 
 
