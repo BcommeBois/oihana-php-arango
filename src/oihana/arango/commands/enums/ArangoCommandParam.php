@@ -123,6 +123,13 @@ class ArangoCommandParam
     public const string RETENTION = 'retention' ;
 
     /**
+     * The 'searchAliasViews' init key — the database-level registry of declared
+     * `search-alias` views ({@see \oihana\arango\db\options\views\SearchAliasView}),
+     * consumed by the `views` action.
+     */
+    public const string SEARCH_ALIAS_VIEWS = 'searchAliasViews' ;
+
+    /**
      * The 'timezone' parameter.
      */
     public const string TIMEZONE = 'timezone' ;

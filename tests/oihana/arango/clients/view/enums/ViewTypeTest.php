@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass ;
 use PHPUnit\Framework\TestCase ;
 
 /**
- * Tests for {@see ViewType} — V1 must-have view type discriminator.
+ * Tests for {@see ViewType} — view type discriminator (arangosearch + search-alias).
  */
 #[CoversClass( ViewType::class )]
 class ViewTypeTest extends TestCase
@@ -16,17 +16,19 @@ class ViewTypeTest extends TestCase
     public function testCanonicalConstantValues() :void
     {
         $this->assertSame( 'arangosearch' , ViewType::ARANGOSEARCH ) ;
+        $this->assertSame( 'search-alias' , ViewType::SEARCH_ALIAS ) ;
     }
 
-    public function testEnumsContainsArangosearch() :void
+    public function testEnumsContainsBothTypes() :void
     {
         $this->assertContains( ViewType::ARANGOSEARCH , ViewType::enums() ) ;
+        $this->assertContains( ViewType::SEARCH_ALIAS , ViewType::enums() ) ;
     }
 
-    public function testIncludesRecognisesArangosearchAndRejectsV2Types() :void
+    public function testIncludesRecognisesBothTypes() :void
     {
         $this->assertTrue ( ViewType::includes( 'arangosearch' ) ) ;
-        // V2 type intentionally not exposed yet.
-        $this->assertFalse( ViewType::includes( 'search-alias' ) ) ;
+        $this->assertTrue ( ViewType::includes( 'search-alias' ) ) ;
+        $this->assertFalse( ViewType::includes( 'bogus' ) ) ;
     }
 }

@@ -179,6 +179,70 @@ class ViewTest extends TestCase
         ) ;
     }
 
+    // =========================================================================
+    // createSearchAlias()
+    // =========================================================================
+
+    public function testCreateSearchAliasMinimalPostsTypeAndName() :void
+    {
+        $history = [] ;
+        $db      = $this->makeDatabase
+        (
+            [ new Response( 201 , [] , '{"name":"global_search","type":"search-alias","id":"1","globallyUniqueId":"abc"}' ) ] ,
+            $history ,
+        ) ;
+
+        $description = new View( $db , 'global_search' )->createSearchAlias() ;
+
+        $this->assertSame( 'global_search' , $description[ 'name' ] ) ;
+        $this->assertSame( 'search-alias'  , $description[ 'type' ] ) ;
+
+        /** @var RequestInterface $request */
+        $request = $history[ 0 ][ 'request' ] ;
+        $body    = json_decode( (string) $request->getBody() , true ) ;
+
+        $this->assertSame( HttpMethod::POST      , $request->getMethod() ) ;
+        $this->assertSame( '/_db/mydb/_api/view' , $request->getUri()->getPath() ) ;
+        $this->assertSame( 'global_search'       , $body[ 'name' ] ) ;
+        $this->assertSame( 'search-alias'        , $body[ 'type' ] ) ;
+        $this->assertArrayNotHasKey( 'indexes' , $body ) ;
+    }
+
+    public function testCreateSearchAliasPostsIndexesAndOptions() :void
+    {
+        $history = [] ;
+        $db      = $this->makeDatabase
+        (
+            [ new Response( 201 , [] , '{}' ) ] ,
+            $history ,
+        ) ;
+
+        new View( $db , 'global_search' )->createSearchAlias
+        (
+            indexes :
+            [
+                [ 'collection' => 'customers' , 'index' => 'inv' ] ,
+                [ 'collection' => 'products'  , 'index' => 'inv' ] ,
+            ] ,
+            options : [ 'cleanupIntervalStep' => 3 ] ,
+        ) ;
+
+        /** @var RequestInterface $request */
+        $request = $history[ 0 ][ 'request' ] ;
+        $body    = json_decode( (string) $request->getBody() , true ) ;
+
+        $this->assertSame( 'search-alias' , $body[ 'type' ] ) ;
+        $this->assertSame( 3              , $body[ 'cleanupIntervalStep' ] ) ;
+        $this->assertSame
+        (
+            [
+                [ 'collection' => 'customers' , 'index' => 'inv' ] ,
+                [ 'collection' => 'products'  , 'index' => 'inv' ] ,
+            ] ,
+            $body[ 'indexes' ] ,
+        ) ;
+    }
+
     public function testCreateSerialisesEmptyFieldNodesAsObjects() :void
     {
         $history = [] ;

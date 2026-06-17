@@ -39,6 +39,12 @@ class ViewField
     public const string ANALYZERS = 'analyzers' ;
 
     /**
+     * Per-entry source collection name of a `search-alias` view's
+     * `indexes` list.
+     */
+    public const string COLLECTION = 'collection' ;
+
+    /**
      * Commit interval in milliseconds between two index updates
      * (arangosearch property).
      */
@@ -86,6 +92,19 @@ class ViewField
      * document is indexed regardless of the `fields` whitelist.
      */
     public const string INCLUDE_ALL_FIELDS = 'includeAllFields' ;
+
+    /**
+     * Per-entry inverted-index name of a `search-alias` view's
+     * `indexes` list.
+     */
+    public const string INDEX = 'index' ;
+
+    /**
+     * Wrapper field carrying the `{collection, index}` list of a
+     * `search-alias` view (the counterpart of {@see self::LINKS} for
+     * the arangosearch type).
+     */
+    public const string INDEXES = 'indexes' ;
 
     /**
      * Per-link flag: when true, the index is built in the

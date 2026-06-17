@@ -117,6 +117,42 @@ $view->replaceProperties([
 ]) ;
 ```
 
+### `search-alias` views
+
+The second view type, `search-alias`, does **not** own its index. It is a thin alias
+over one **`inverted` index per collection** — each collection owns and manages its own
+index (shareable, independent lifecycle), and the view simply aggregates them. This is the
+natural substrate for a **federated, multi-collection search** (one search bar over
+`customers`, `products`, …).
+
+First declare an inverted index on each collection, then create the alias:
+
+```php
+use oihana\arango\clients\collection\indexes\InvertedIndex ;
+use oihana\arango\db\options\views\SearchAliasView ;
+
+// 1. one inverted index per collection (a first-class index type)
+$inv = new InvertedIndex( fields: [ 'name' , 'email' ] , name: 'inv_search' , analyzer: 'text_fr' ) ;
+$db->collection( 'customers' )->createIndex( $inv ) ;
+$db->collection( 'products'  )->createIndex( $inv ) ;
+
+// 2. a search-alias view aggregating them
+$view = new SearchAliasView( 'global_search' ,
+[
+    'customers' => 'inv_search' ,   // collection => inverted-index name
+    'products'  => 'inv_search' ,
+] ) ;
+$db->view( 'global_search' )->createSearchAlias( $view->getIndexes() ) ;
+
+// 3. a single federated SEARCH spans every aliased collection
+$db->query( 'FOR d IN global_search SEARCH ANALYZER(d.name IN TOKENS(@q, "text_fr"), "text_fr") SORT BM25(d) DESC RETURN d' , [ 'q' => 'dupont' ] ) ;
+```
+
+`SearchAliasView::getIndexes()` accepts either the `collection => index` map shown above or
+an explicit `[ [ 'collection' => 'customers', 'index' => 'inv_search' ], … ]` list. For a
+managed, declarative setup, declare the views in the `searchAliasViews` registry
+(`ArangoSearchAliasViewsTrait`) — the database-level counterpart of the analyzer registry.
+
 ## Searching from AQL
 
 A view is consumed via the `SEARCH ... IN view` clause:

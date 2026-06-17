@@ -28,9 +28,10 @@ use oihana\arango\clients\view\enums\ViewType ;
  * no rename either, and the operation is not supported on cluster
  * deployments).
  *
- * Only the `arangosearch` view type is exposed in V1. The
- * `search-alias` type shipped by arangojs is deferred to a V2
- * follow-up.
+ * Both view types are covered: `arangosearch` (the view owns its
+ * inverted index through `links`, via {@see create()}) and
+ * `search-alias` (a thin alias over per-collection `inverted`
+ * indexes, via {@see createSearchAlias()}).
  *
  * Example:
  * ```php
@@ -91,8 +92,8 @@ readonly class View
      *
      * Wraps `POST /_api/view`. The view name and type are taken
      * from {@see $name} and forced to
-     * {@see \oihana\arango\clients\view\enums\ViewType::ARANGOSEARCH}
-     * — only the `arangosearch` type is exposed in V1.
+     * {@see ViewType::ARANGOSEARCH} — for a `search-alias` view use
+     * {@see createSearchAlias()} instead.
      *
      * `$links` is the per-collection link map: keys are collection
      * names, values are {@see ArangoSearchLink} instances describing
@@ -128,6 +129,52 @@ readonly class View
         if ( $links !== [] )
         {
             $body[ ViewField::LINKS ] = $this->normaliseLinks( $links ) ;
+        }
+
+        $response = $this->database->request
+        (
+            method : HttpMethod::POST ,
+            path   : ArangoRoute::VIEW ,
+            body   : $body ,
+        ) ;
+
+        return is_array( $response->body ) ? $response->body : [] ;
+    }
+
+    /**
+     * Creates this view on the server as a `search-alias` view.
+     *
+     * Wraps `POST /_api/view` with the `search-alias` type. Unlike an
+     * `arangosearch` view (which owns its inverted index through `links`), a
+     * search-alias view is a thin alias over one `inverted` index per
+     * collection, referenced through `$indexes`.
+     *
+     * `$indexes` is the server-ready list of `{collection, index}` entries
+     * (e.g. the output of
+     * {@see \oihana\arango\db\options\views\SearchAliasView::getIndexes()}).
+     * `$options` is forwarded verbatim as the rest of the create body.
+     *
+     * @param array<int, array{collection:string, index:string}> $indexes The `{collection, index}` entries.
+     * @param array<string, mixed>                                $options Extra options forwarded verbatim.
+     *
+     * @return array<string, mixed> Raw view description as returned by the server.
+     *
+     * @throws ArangoException When the request fails.
+     */
+    public function createSearchAlias( array $indexes = [] , array $options = [] ) : array
+    {
+        $body = array_merge
+        (
+            $options ,
+            [
+                ViewField::NAME => $this->name ,
+                ViewField::TYPE => ViewType::SEARCH_ALIAS ,
+            ] ,
+        ) ;
+
+        if ( $indexes !== [] )
+        {
+            $body[ ViewField::INDEXES ] = array_values( $indexes ) ;
         }
 
         $response = $this->database->request

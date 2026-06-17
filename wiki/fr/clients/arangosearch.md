@@ -117,6 +117,42 @@ $view->replaceProperties([
 ]) ;
 ```
 
+### Vues `search-alias`
+
+Le second type de vue, `search-alias`, ne **possède pas** son index. C'est un simple alias
+au-dessus d'**un index `inverted` par collection** — chaque collection possède et gère son
+propre index (partageable, cycle de vie indépendant), et la vue ne fait que les agréger.
+C'est le substrat naturel d'une **recherche fédérée multi-collections** (une seule barre de
+recherche sur `customers`, `products`, …).
+
+On déclare d'abord un index inversé sur chaque collection, puis on crée l'alias :
+
+```php
+use oihana\arango\clients\collection\indexes\InvertedIndex ;
+use oihana\arango\db\options\views\SearchAliasView ;
+
+// 1. un index inversé par collection (type d'index de plein droit)
+$inv = new InvertedIndex( fields: [ 'name' , 'email' ] , name: 'inv_search' , analyzer: 'text_fr' ) ;
+$db->collection( 'customers' )->createIndex( $inv ) ;
+$db->collection( 'products'  )->createIndex( $inv ) ;
+
+// 2. une vue search-alias qui les agrège
+$view = new SearchAliasView( 'global_search' ,
+[
+    'customers' => 'inv_search' ,   // collection => nom de l'index inversé
+    'products'  => 'inv_search' ,
+] ) ;
+$db->view( 'global_search' )->createSearchAlias( $view->getIndexes() ) ;
+
+// 3. un seul SEARCH fédéré couvre toutes les collections aliasées
+$db->query( 'FOR d IN global_search SEARCH ANALYZER(d.name IN TOKENS(@q, "text_fr"), "text_fr") SORT BM25(d) DESC RETURN d' , [ 'q' => 'dupont' ] ) ;
+```
+
+`SearchAliasView::getIndexes()` accepte soit la map `collection => index` ci-dessus, soit une
+liste explicite `[ [ 'collection' => 'customers', 'index' => 'inv_search' ], … ]`. Pour une
+configuration déclarative et gérée, déclarez les vues dans le registre `searchAliasViews`
+(`ArangoSearchAliasViewsTrait`) — le pendant niveau-base du registre d'analyzers.
+
 ## Rechercher depuis AQL
 
 Une view se consomme via la clause `SEARCH ... IN view` :

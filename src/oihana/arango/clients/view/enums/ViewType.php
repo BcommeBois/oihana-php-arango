@@ -9,8 +9,12 @@ use oihana\reflect\traits\ConstantsTrait ;
  * payload sent to `POST /_api/view` and returned by
  * `GET /_api/view/{name}` and `GET /_api/view/{name}/properties`.
  *
- * Only the V1 must-have type is exposed today — the `search-alias`
- * type shipped by arangojs is deferred to a V2 follow-up.
+ * Two types are supported:
+ * - `arangosearch` — the view owns its inverted index, configured through
+ *   per-collection `links`,
+ * - `search-alias` — the view is a thin alias over one or more `inverted`
+ *   indexes declared on the collections themselves (shareable, independent
+ *   lifecycle, federatable across collections).
  *
  * @see https://docs.arangodb.com/stable/index-and-search/arangosearch/
  *
@@ -28,4 +32,12 @@ class ViewType
      * collection to per-field analyzer chains.
      */
     public const string ARANGOSEARCH = 'arangosearch' ;
+
+    /**
+     * Search-alias view — aggregates one `inverted` index per collection
+     * (declared on the collections), referenced through an `indexes` list
+     * of `{collection, index}` entries. The natural substrate for a
+     * federated, multi-collection search.
+     */
+    public const string SEARCH_ALIAS = 'search-alias' ;
 }
