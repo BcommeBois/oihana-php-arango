@@ -86,7 +86,7 @@ use function oihana\core\strings\randomKey;
  *      If empty string or empty array → no fields are returned (`prepareQueryFields()` returns null).
  * - Normalization:
  *      Each field is converted to an array with keys:
- *      - Field::FILTER, Field::DEFAULT, Field::FORMAT, Field::NAME, Field::PATH, Field::PROPERTY, Field::QUOTED
+ *      - Field::FILTER, Field::DEFAULT, Field::FORMAT, Field::NAME, Field::PATH, Field::PATHS, Field::PROPERTY, Field::QUOTED
  *      - Field::FIELDS for DOCUMENT or MAP subfields
  *      - Field::UNIQUE for unique key generation for edges, joins, or unique names
  * - `returnFields()`:
@@ -444,6 +444,7 @@ trait FieldsTrait
             Field::FORMAT   => $options[ Field::FORMAT   ] ?? null ,
             Field::NAME     => $options[ Field::NAME     ] ?? null ,
             Field::PATH     => $options[ Field::PATH     ] ?? null ,
+            Field::PATHS    => $options[ Field::PATHS    ] ?? null ,
             Field::PROPERTY => $options[ Field::PROPERTY ] ?? null ,
             Field::QUOTED   => $options[ Field::QUOTED   ] ?? null ,
             Field::RAW      => $options[ Field::RAW      ] ?? null ,

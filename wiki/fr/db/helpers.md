@@ -201,7 +201,7 @@ Compose une expression `RETURN { ... }` complète à partir d'un tableau de déf
 | `aqlFieldObject` | `Filter::OBJECT` | Objet ou premier élément d'un tableau. |
 | `aqlFieldMap` | `Filter::MAP` | Mapping d'un tableau vers des documents structurés. |
 | `aqlFieldTranslate` | `Filter::TRANSLATE` | Champ traduit (sélection de la *locale* courante). |
-| `aqlFieldUrl` | `Filter::URL` | URL d'un document avec *placeholders* dynamiques. |
+| `aqlFieldUrl` | `Filter::URL` | URL d'un document avec *placeholders* dynamiques (et routage par type optionnel). |
 
 Exemple minimal du *builder* le plus simple :
 
@@ -264,6 +264,42 @@ aqlFields([ 'name' => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ]);
 aqlFields([ 'my-key' => [ Field::QUOTED => true ] ]);
 // "my-key":doc.`my-key`
 ```
+
+### Champs URL — `Filter::URL`
+
+Un champ `Filter::URL` construit une URL complète `CONCAT(<chemin>, '/', doc._key)`. Le
+chemin (`Field::PATH`) est résolu **au moment de la construction**, côté PHP : les
+*placeholders* `{param}` sont remplacés depuis `Arango::ARGS` et l'*URL de base* (résolue
+depuis le conteneur) est préfixée — le même chemin s'applique donc à tous les documents.
+
+```php
+aqlFields([ 'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/places' ] ], 'doc', $container);
+// url:CONCAT('https://base.url/places','/',doc._key)
+```
+
+**Routage par type — `Field::PATHS`.** Lorsque la route dépend du type du document,
+déclarez une *map* `Field::PATHS` `'<valeur discriminante>' => '<route>'`. Le chemin est
+alors choisi **à l'exécution** via la fonction AQL `TRANSLATE()` sur un attribut
+discriminant — par défaut `Schema::ADDITIONAL_TYPE`, surchargeable avec `Field::PROPERTY`.
+`Field::PATH` devient la route de repli **obligatoire** pour les documents dont le type
+n'est pas dans la *map* (elle est émise comme troisième argument de `TRANSLATE()`, de sorte
+qu'un type non mappé ne laisse jamais fuiter le discriminant brut dans l'URL).
+
+```php
+aqlFields([ 'url' =>
+[
+    Field::FILTER   => Filter::URL ,
+    Field::PATH     => '/thing' ,                              // repli (obligatoire avec PATHS)
+    Field::PATHS    => [ 'Place' => '/places' , 'Person' => '/people' ] ,
+    Field::PROPERTY => Schema::ADDITIONAL_TYPE ,               // optionnel, c'est la valeur par défaut
+]], 'doc');
+// url:CONCAT(TRANSLATE(doc.additionalType,{Place:'/places',Person:'/people'},'/thing'),'/',doc._key)
+```
+
+> Les *placeholders* et l'*URL de base* sont appliqués à **chaque** branche comme au repli.
+> Déclarer `Field::PATHS` **sans** repli `Field::PATH` (ou avec une *map* vide / non associative)
+> lève une `UnsupportedOperationException` au build ; l'attribut discriminant est validé par
+> `assertAttributeName` (garde anti-injection).
 
 ## Introspection AQL
 

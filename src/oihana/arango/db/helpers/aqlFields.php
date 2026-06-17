@@ -197,7 +197,6 @@ function aqlFields
             $filter  = $options[ Field::FILTER  ] ?? null ;
             $format  = $options[ Field::FORMAT  ] ?? null ;
             $keyName = $options[ Field::NAME    ] ?? null ;
-            $path    = $options[ Field::PATH    ] ?? null ;
             $quoted  = $options[ Field::QUOTED  ] ?? null ;
             $value   = $options[ Field::UNIQUE  ] ?? $key ;
             $scope   = $options[ Field::SCOPE   ] ?? AQL::VERTEX ;
@@ -285,7 +284,7 @@ function aqlFields
                 Filter::MAP        => aqlFieldMap       ( $key , $ref , $options , $container , $init ) ,
                 Filter::NUMBER     => aqlFieldNumber    ( $key , $ref , $keyName),
                 Filter::TRANSLATE  => aqlFieldTranslate ( $key , $ref , $keyName , $init ) ,
-                Filter::URL        => aqlFieldUrl       ( $key , $ref , $path , $keyName , $container , $init ) ,
+                Filter::URL        => aqlFieldUrl       ( $key , $ref , $options , $container , $init ) ,
                 Filter::WRAP       => aqlFieldWrap      ( $key , $ref , $options , $container , $init ) ,
 
                 Filter::DISTANCE => keyValue        ( $key , Prop::DISTANCE ) ,

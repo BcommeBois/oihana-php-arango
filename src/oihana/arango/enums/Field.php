@@ -17,6 +17,7 @@ class Field
     public const string FORMAT   = 'format'   ;
     public const string NAME     = 'name'     ;
     public const string PATH     = 'path'     ;
+    public const string PATHS    = 'paths'    ;
     public const string PROPERTY = 'property' ;
     public const string RAW      = 'raw'      ;
     public const string REQUIRES = 'requires' ;

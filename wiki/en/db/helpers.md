@@ -201,7 +201,7 @@ Composes a complete `RETURN { ... }` expression from an array of field definitio
 | `aqlFieldObject` | `Filter::OBJECT` | Object or first element of an array. |
 | `aqlFieldMap` | `Filter::MAP` | Mapping of an array to structured documents. |
 | `aqlFieldTranslate` | `Filter::TRANSLATE` | Translated field (current *locale* selection). |
-| `aqlFieldUrl` | `Filter::URL` | Document URL with dynamic *placeholders*. |
+| `aqlFieldUrl` | `Filter::URL` | Document URL with dynamic *placeholders* (and optional per-type routing). |
 
 Minimal example of the simplest *builder*:
 
@@ -264,6 +264,42 @@ aqlFields([ 'name' => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ]);
 aqlFields([ 'my-key' => [ Field::QUOTED => true ] ]);
 // "my-key":doc.`my-key`
 ```
+
+### URL fields — `Filter::URL`
+
+A `Filter::URL` field builds a full URL `CONCAT(<path>, '/', doc._key)`. The path
+(`Field::PATH`) is resolved **at build time** in PHP: `{param}` placeholders are
+replaced from `Arango::ARGS` and the *base URL* (resolved from the container) is
+prefixed, so the same path applies to every document.
+
+```php
+aqlFields([ 'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/places' ] ], 'doc', $container);
+// url:CONCAT('https://base.url/places','/',doc._key)
+```
+
+**Per-type routing — `Field::PATHS`.** When the route depends on the document's type,
+declare a `Field::PATHS` map `'<discriminant value>' => '<route>'`. The path is then
+chosen **at query time** with AQL `TRANSLATE()` on a discriminant attribute — by default
+`Schema::ADDITIONAL_TYPE`, overridable with `Field::PROPERTY`. `Field::PATH` becomes the
+**mandatory** fallback route for documents whose type is not in the map (it is emitted as
+the third `TRANSLATE()` argument, so an unmatched type never leaks the raw discriminant
+into the URL).
+
+```php
+aqlFields([ 'url' =>
+[
+    Field::FILTER   => Filter::URL ,
+    Field::PATH     => '/thing' ,                              // fallback (mandatory with PATHS)
+    Field::PATHS    => [ 'Place' => '/places' , 'Person' => '/people' ] ,
+    Field::PROPERTY => Schema::ADDITIONAL_TYPE ,               // optional, this is the default
+]], 'doc');
+// url:CONCAT(TRANSLATE(doc.additionalType,{Place:'/places',Person:'/people'},'/thing'),'/',doc._key)
+```
+
+> Placeholders and the *base URL* are applied to **each** branch and to the fallback alike.
+> Declaring `Field::PATHS` **without** a `Field::PATH` fallback (or with an empty / non-associative
+> map) throws an `UnsupportedOperationException` at build time; the discriminant attribute is
+> validated by `assertAttributeName` (injection guard).
 
 ## AQL introspection
 
