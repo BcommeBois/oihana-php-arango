@@ -33,6 +33,16 @@ use function oihana\core\strings\keyValue;
  *   `Field::RAW => true` to deliberately embed the **whole** reference as-is
  *   (`key: ref`) — every attribute of the vertex/edge, no projection.
  *
+ * The wrapped reference may also carry **its own relations**. The sub-fields can
+ * include the usual relation markers (`Filter::EDGE` / `Filter::EDGES` /
+ * `Filter::EDGES_COUNT`) and the field declares a companion `Field::EDGES` map of
+ * sub-traversals that start **from the wrapped vertex** — exactly the same shape as
+ * a top-level projection (fields markers beside an edges registry). The backing
+ * `LET` variables are emitted upstream by `buildVariables()` with `$ref` as the
+ * traversal root, so the related entities nest **inside** the wrapped object (e.g.
+ * `subject.worksFor`) in a single query. `Field::RAW` and `Field::EDGES` are
+ * mutually exclusive (a verbatim reference has no projected object to nest into).
+ *
  * Example usage:
  * ```php
  * // Wrap the traversal vertex under "subject", with a projection
@@ -46,6 +56,25 @@ use function oihana\core\strings\keyValue;
  * ]);
  * // Produces: "subject: { id: v.id, givenName: v.givenName }"
  *
+ * // Wrap the vertex AND nest one of its relations under the wrapped key.
+ * // The sub-edge declares the cardinality marker in Field::FIELDS and the
+ * // traversal definition in Field::EDGES (here reached INBOUND).
+ * aqlFieldWrap( 'subject', 'v',
+ * [
+ *     Field::FIELDS =>
+ *     [
+ *         'id'       => Filter::DEFAULT ,
+ *         'name'     => Filter::DEFAULT ,
+ *         'worksFor' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'worksFor_e1' ] ,
+ *     ] ,
+ *     Field::EDGES =>
+ *     [
+ *         'worksFor' => [ AQL::MODEL => OrgHasMember::class , AQL::DIRECTION => Traversal::INBOUND ] ,
+ *     ] ,
+ * ]);
+ * // Produces (the worksFor_e1 LET being emitted upstream against `v`):
+ * // "subject: { id: v.id, name: v.name, worksFor: (IS_OBJECT(worksFor_e1) ? … ) }"
+ *
  * // Wrap the whole vertex as-is (opt-in)
  * aqlFieldWrap( 'subject', 'v', [ Field::RAW => true ] );
  * // Produces: "subject: v"
@@ -55,8 +84,9 @@ use function oihana\core\strings\keyValue;
  * @param string $ref The reference to wrap (the traversal vertex `v` by default,
  *                    or the edge `e` when the field declares `Field::SCOPE => Scope::EDGE`).
  * @param array $options Field options, typically including:
- * - Field::FIELDS => array of sub-fields projected against `$ref`
- * - Field::RAW    => bool, embed the whole reference when no sub-fields are given
+ * - Field::FIELDS => array of sub-fields projected against `$ref` (may include relation markers)
+ * - Field::EDGES  => array of sub-traversal definitions starting from `$ref`, nested under `$key`
+ * - Field::RAW    => bool, embed the whole reference when no sub-fields are given (excludes Field::EDGES)
  * @param ContainerInterface|null $container The optional DI Container reference.
  * @param array $init Optional associative array definition.
  *
@@ -64,7 +94,8 @@ use function oihana\core\strings\keyValue;
  *
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
- * @throws UnsupportedOperationException If neither `Field::FIELDS` nor `Field::RAW => true` is provided.
+ * @throws UnsupportedOperationException If neither `Field::FIELDS` nor `Field::RAW => true` is provided,
+ *                                       or if `Field::RAW => true` is combined with `Field::EDGES`.
  * @throws ValidationException
  *
  * @package oihana\arango\db\helpers
@@ -82,13 +113,28 @@ function aqlFieldWrap
 : string
 {
     $fields = $options[ Field::FIELDS ] ?? null;
+    $edges  = $options[ Field::EDGES  ] ?? null;
+    $raw    = ( $options[ Field::RAW ] ?? false ) === true ;
+
+    // Field::RAW embeds the whole reference verbatim (`key: ref`) — there is no projected object to graft a relation onto.
+    // Declaring sub-edges alongside RAW is therefore contradictory and rejected explicitly rather than silently dropping one of the two intents.
+    if ( $raw && is_array( $edges ) && count( $edges ) > 0 )
+    {
+        throw new UnsupportedOperationException
+        (
+            __FUNCTION__ . " failed, Filter::WRAP on the field '" . $key . "' cannot combine Field::RAW => true with Field::EDGES : the raw reference is embedded as-is, there is no projected object to nest the sub-edges into."
+        ) ;
+    }
 
     if ( is_array( $fields ) && count( $fields ) > 0 )
     {
+        // The wrapped sub-fields may include relation markers (Filter::EDGE / EDGES / EDGES_COUNT)
+        // whose backing `LET` variables were emitted by buildVariables() with the wrapped reference as traversal root ;
+        // aqlFields() projects them as `relation: <letVariable>` here, exactly as a top-level projection does.
         return keyValue( $key , aqlDocument( aqlFields( $fields , $ref , $container , $init ) ) ) ;
     }
 
-    if ( ( $options[ Field::RAW ] ?? false ) === true )
+    if ( $raw )
     {
         return keyValue( $key , $ref ) ;
     }

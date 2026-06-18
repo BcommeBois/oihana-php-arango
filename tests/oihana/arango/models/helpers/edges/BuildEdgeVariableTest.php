@@ -9,6 +9,7 @@ use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\arango\enums\Scope;
+use oihana\arango\db\enums\Traversal;
 
 use PHPUnit\Framework\TestCase;
 
@@ -162,6 +163,146 @@ final class BuildEdgeVariableTest extends TestCase
         $this->assertStringContainsString( 'subject:vertex' , $result ) ;
     }
 
+    /**
+     * `Filter::WRAP` can carry the wrapped vertex's own relations : a sub-edge
+     * declared under `Field::EDGES` is traversed **from the wrapped vertex** and
+     * nested **inside** the wrapped object, beside the scalar fields — in a single
+     * query. The cardinality marker (`Filter::EDGE`) lives in `Field::FIELDS`,
+     * exactly like a top-level projection. The backing `LET` is emitted in the
+     * enclosing `FOR vertex` scope and projected as `relation:(IS_OBJECT(...))`.
+     */
+    public function testWrapNestsAnOutboundSubEdgeUnderTheWrappedKey() :void
+    {
+        $edges = $this->wiredEdges() ;
+        $sub   = $this->wiredSubEdges( 'org_has_member' , 'organizations' , inbound: false ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'id'       => [] ,
+                        'name'     => [] ,
+                        'worksFor' => [ Field::FILTER => Filter::EDGE ] ,
+                    ] ,
+                    Field::EDGES =>
+                    [
+                        'worksFor' => [ AQL::MODEL => $sub , AQL::FIELDS => [ 'id' => [] , 'name' => [] ] ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ) ) ;
+
+        // The sub-edge LET is emitted inside the FOR-vertex scope, traversing FROM the wrapped vertex.
+        $this->assertMatchesRegularExpression( '/LET worksFor_e\d+ = \(FOR vertex, edge IN OUTBOUND vertex org_has_member/' , $result ) ;
+        // The wrapped object nests the related entity beside the scalar fields.
+        $this->assertStringContainsString( 'subject:{' , $result ) ;
+        $this->assertStringContainsString( 'id:vertex.id' , $result ) ;
+        $this->assertMatchesRegularExpression( '/worksFor:IS_OBJECT\(worksFor_e\d+\)/' , $result ) ;
+    }
+
+    /**
+     * The related entity is most often reached the other way round : a sub-edge
+     * declares `AQL::DIRECTION => Traversal::INBOUND` and is still traversed from
+     * the wrapped vertex (`IN INBOUND vertex …`).
+     */
+    public function testWrapNestsAnInboundSubEdgeUnderTheWrappedKey() :void
+    {
+        $edges = $this->wiredEdges() ;
+        $sub   = $this->wiredSubEdges( 'org_has_member' , 'organizations' , inbound: true ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'name'     => [] ,
+                        'worksFor' => [ Field::FILTER => Filter::EDGE ] ,
+                    ] ,
+                    Field::EDGES =>
+                    [
+                        'worksFor' => [ AQL::MODEL => $sub , AQL::DIRECTION => Traversal::INBOUND , AQL::FIELDS => [ 'name' => [] ] ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ) ) ;
+
+        $this->assertMatchesRegularExpression( '/LET worksFor_e\d+ = \(FOR vertex, edge IN INBOUND vertex org_has_member/' , $result ) ;
+        $this->assertStringContainsString( 'subject:{' , $result ) ;
+        $this->assertMatchesRegularExpression( '/worksFor:IS_OBJECT\(worksFor_e\d+\)/' , $result ) ;
+    }
+
+    /**
+     * A wrapped relation can also be a **count** : a `Filter::EDGES_COUNT` marker
+     * nests the cardinality of the sub-traversal under the wrapped key, exactly
+     * like a top-level edge count — proof the whole edge grammar applies verbatim.
+     */
+    public function testWrapNestsASubEdgeCountUnderTheWrappedKey() :void
+    {
+        $edges = $this->wiredEdges() ;
+        $sub   = $this->wiredSubEdges( 'org_has_member' , 'organizations' , inbound: false ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'name'      => [] ,
+                        'teamCount' => [ Field::FILTER => Filter::EDGES_COUNT ] ,
+                    ] ,
+                    Field::EDGES =>
+                    [
+                        'teamCount' => [ AQL::MODEL => $sub ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ) ) ;
+
+        $this->assertMatchesRegularExpression( '/LET teamCount_e\d+ = /' , $result ) ;
+        $this->assertStringContainsString( 'OUTBOUND vertex org_has_member' , $result ) ;
+        $this->assertMatchesRegularExpression( '/teamCount:teamCount_e\d+/' , $result ) ;
+    }
+
+    /**
+     * Retro-compatibility : a `Filter::WRAP` field that declares no relation
+     * behaves exactly as before — only the scalar projection, no extra `LET`.
+     */
+    public function testWrapWithoutEdgesIsUnchanged() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS => [ 'id' => [] , 'name' => [] ] ,
+                ] ,
+            ] ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( 'subject:{id:vertex.id, name:vertex.name}' , $result ) ;
+        $this->assertStringNotContainsString( 'LET worksFor' , $result ) ;
+    }
+
     public function testHonorsCustomStartVertex() :void
     {
         $edges = new MockEdges( 'user_has_roles' ) ;
@@ -184,6 +325,35 @@ final class BuildEdgeVariableTest extends TestCase
 
         $edges = new MockEdges( 'user_has_roles' ) ;
         $edges->to = $to ;
+
+        return $edges ;
+    }
+
+    /**
+     * A {@see MockEdges} for a wrapped sub-traversal : the target vertex model is
+     * wired on `to` (OUTBOUND) or `from` (INBOUND), the direction buildEdgeVariable
+     * reads to pick the projected document model.
+     *
+     * @param string $collection       The sub-edge collection (e.g. 'org_has_member').
+     * @param string $vertexCollection The related vertex collection (e.g. 'organizations').
+     * @param bool   $inbound          Whether the sub-edge is reached INBOUND.
+     *
+     * @return MockEdges
+     */
+    private function wiredSubEdges( string $collection , string $vertexCollection , bool $inbound ) :MockEdges
+    {
+        $vertex = new MockDocuments( $vertexCollection ) ;
+        $vertex->initializeDeleteSignals() ;
+
+        $edges = new MockEdges( $collection ) ;
+        if ( $inbound )
+        {
+            $edges->from = $vertex ;
+        }
+        else
+        {
+            $edges->to = $vertex ;
+        }
 
         return $edges ;
     }

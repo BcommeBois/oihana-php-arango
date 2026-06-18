@@ -458,11 +458,24 @@ trait FieldsTrait
         if ( $filter === Filter::WRAP )
         {
             // Filter::WRAP wraps the reference itself under the key — like DOCUMENT/MAP it is rendered inline
-            // (no LET variable, so no Field::UNIQUE). Keep the projected sub-fields (recursively
-            // prepared) ; the Field::RAW opt-in is already preserved above.
+            // (no LET variable on the WRAP entry itself, so no Field::UNIQUE). Keep the projected sub-fields
+            // (recursively prepared, so a nested edge/join marker gets its own generated Field::UNIQUE) ;
+            // the Field::RAW opt-in is already preserved above.
             if ( !empty( $subFields ) )
             {
                 $definition[ Field::FIELDS ] = $this->prepareQueryFields( $subFields ) ;
+            }
+
+            // The wrapped reference can carry its own relations : a Field::EDGES map declares the
+            // sub-traversals that start from the wrapped vertex and nest under the wrapped key. The
+            // map is kept verbatim (the same shape as a model-level edges registry) — buildVariables()
+            // descends into it and buildEdgeVariable() prepares each sub-edge target later on. The
+            // matching cardinality marker lives in the wrapped Field::FIELDS (Filter::EDGE / EDGES /
+            // EDGES_COUNT), exactly like a top-level projection.
+            $edges = $options[ Field::EDGES ] ?? [] ;
+            if ( !empty( $edges ) )
+            {
+                $definition[ Field::EDGES ] = $edges ;
             }
         }
         else if ( ( $filter === Filter::DOCUMENT || $filter === Filter::MAP ) && !empty( $subFields ) )

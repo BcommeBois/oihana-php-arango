@@ -121,4 +121,25 @@ final class AqlFieldWrapTest extends TestCase
         $this->expectException( UnsupportedOperationException::class );
         aqlFieldWrap( 'subject' , 'v' , [ Field::FIELDS => [] ] );
     }
+
+    /**
+     * `Field::RAW => true` embeds the whole reference verbatim — there is no
+     * projected object to nest a sub-edge into, so combining it with
+     * `Field::EDGES` is a contradiction and rejected explicitly.
+     *
+     * @throws Exception
+     */
+    public function testRawCombinedWithEdgesThrows(): void
+    {
+        $this->expectException( UnsupportedOperationException::class );
+
+        aqlFieldWrap( 'subject' , 'v' ,
+        [
+            Field::RAW   => true ,
+            Field::EDGES =>
+            [
+                'worksFor' => [ Field::FILTER => Filter::EDGE ] ,
+            ] ,
+        ] );
+    }
 }

@@ -74,6 +74,32 @@ function buildVariables
 
         switch( $filter )
         {
+            case Filter::WRAP :
+            {
+                // A wrapped reference can carry its own relations : the sub-edges
+                // declared under Field::EDGES start from the wrapped vertex (the
+                // current $docRef) and nest under the wrapped key. We simply recurse
+                // with the wrapped fields + their edges map and the SAME $docRef as
+                // traversal root, so the whole top-level edge machinery (EDGE /
+                // EDGES / EDGES_COUNT, gating, sub-projections, …) applies verbatim
+                // and the matching `LET` lands in the enclosing FOR scope. Field::RAW
+                // embeds the whole reference as-is (key: ref) — no place to graft a
+                // sub-edge — so it is skipped here (aqlFieldWrap rejects RAW + EDGES).
+                if ( ( $field[ Field::RAW ] ?? false ) === true )
+                {
+                    break ;
+                }
+
+                $subFields = $field[ Field::FIELDS ] ?? [] ;
+                $subEdges  = $field[ Field::EDGES  ] ?? [] ;
+
+                if ( !empty( $subFields ) && !empty( $subEdges ) )
+                {
+                    buildVariables( $variables , $subFields , $subEdges , [] , $container , $docRef , $init ) ;
+                }
+                break ;
+            }
+
             case Filter::DOCUMENT :
             {
                 $subFields = $field[ Field::FIELDS ] ?? [] ;

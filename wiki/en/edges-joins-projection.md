@@ -216,6 +216,75 @@ Rules and key points:
 - **Difference with `Filter::DOCUMENT`.** `Filter::DOCUMENT` nests an **existing sub-attribute** (`address: { city: v.address.city }`). `Filter::WRAP` wraps **the reference itself** under a fresh key (`subject: { … v … }`).
 - **Companion of `Field::SCOPE`.** `Field::SCOPE` hoists edge **scalars** flat; `Filter::WRAP` nests an **object** (vertex or edge) under a key. The two combine freely in the same `AQL::FIELDS`.
 
+### Carrying the wrapped vertex's relations — `Field::EDGES`
+
+A wrapped vertex can also carry **its own relations**, nested **under the same key**. The typical case: a list of links projected as `[{ subject: <vertex> }]`, where the `subject` is itself linked to a **third entity** by another edge (often reached `INBOUND`). You want that entity **nested inside the `subject`** (`subject.worksFor`), **in a single query** — neither flattened at the entry level nor fetched in a second round-trip.
+
+The declaration reuses **exactly the top-level grammar**: the **cardinality marker** (`Filter::EDGE` single / `Filter::EDGES` list / `Filter::EDGES_COUNT` count) in `Field::FIELDS`, and the **sub-traversal definition** in `Field::EDGES`, under the same key. The sub-traversal starts **from the wrapped vertex** (not the root document).
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\db\enums\Traversal ;
+use oihana\arango\enums\Field ;
+use oihana\arango\enums\Filter ;
+
+// account --[account_has_identity]--> person   (the projected link)
+// person  <--[org_has_member]-- organization   (the person's organization, INBOUND)
+AQL::EDGES =>
+[
+    'identities' =>
+    [
+        AQL::MODEL  => EdgesDefinition::ACCOUNT_HAS_IDENTITY ,
+        AQL::FIELDS =>
+        [
+            'subject' =>
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS =>
+                [
+                    'id'       => Filter::DEFAULT ,
+                    'name'     => Filter::DEFAULT ,
+                    'worksFor' => [ Field::FILTER => Filter::EDGE ] ,           // ← marker, just like at the root
+                ] ,
+                Field::EDGES =>                                                // ← sub-traversal definition
+                [
+                    'worksFor' =>
+                    [
+                        AQL::MODEL     => EdgesDefinition::ORG_HAS_MEMBER ,
+                        AQL::DIRECTION => Traversal::INBOUND ,
+                        AQL::FIELDS    => [ 'id' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ,
+    ] ,
+]
+```
+
+Generated AQL (the sub-traversal starts from `v`, its `LET` is emitted inside the `FOR v`, the result is nested into `subject`):
+
+```aql
+LET identities = (
+  FOR v, e IN OUTBOUND doc account_has_identity
+    LET worksFor = ( FOR v2, e2 IN INBOUND v org_has_member RETURN { id: v2.id, name: v2.name } )
+    RETURN {
+      subject: {
+        id: v.id, name: v.name,
+        worksFor: ( IS_OBJECT(worksFor) ? worksFor : IS_ARRAY(worksFor) ? FIRST(worksFor) : null )
+      }
+    }
+)
+```
+
+Rules and key points:
+
+- **Everything works like at the root.** `Filter::EDGE` (single object), `Filter::EDGES` (list) and `Filter::EDGES_COUNT` (count) are used identically; permission gating (`Field::REQUIRES`), sorts and sub-projections all apply verbatim.
+- **Both directions.** `AQL::DIRECTION => Traversal::INBOUND` (or `OUTBOUND`, the default) — the related entity is often reached `INBOUND`.
+- **Natural depth.** The sub-traversal is an ordinary edge: it carries its own `AQL::EDGES` / `AQL::JOINS`, so the related entity can project further (`subject.worksFor.locatedIn`). Each level adds a `FOR` sub-query: this is a matter of **performance**, not a hard limit — keep the nesting shallow (2–3 levels).
+- **`Field::RAW` excludes `Field::EDGES`.** A raw reference (`subject: v`) has no projected object to graft a relation onto — combining them **throws**.
+- **Marker and definition go together.** A `Field::EDGES` declared without a matching marker in `Field::FIELDS` (or vice versa) is a no-op, exactly as at the root.
+- **Retro-compatible.** A `Filter::WRAP` without `Field::EDGES` behaves exactly as before.
+
 ## Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`
 
 Where an *edge* traverses an edge collection, a **join** resolves a **reference stored in the document itself** to the documents of another collection. The **field type** picks the cardinality, exactly like `Filter::EDGE` (single) vs `Filter::EDGES` (multiple):

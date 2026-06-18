@@ -216,6 +216,75 @@ Règles et points importants :
 - **Différence avec `Filter::DOCUMENT`.** `Filter::DOCUMENT` imbrique un **sous-attribut existant** (`address: { city: v.address.city }`). `Filter::WRAP` enveloppe **la référence elle-même** sous une clé neuve (`subject: { … v … }`).
 - **Compagnon de `Field::SCOPE`.** `Field::SCOPE` remonte des **scalaires** d'edge à plat ; `Filter::WRAP` range un **objet** (vecteur ou edge) sous une clé. Les deux se combinent librement dans le même `AQL::FIELDS`.
 
+### Porter les relations du vecteur enveloppé — `Field::EDGES`
+
+Un vecteur enveloppé peut aussi porter **ses propres relations**, imbriquées **sous la même clé**. Le cas typique : une liste de liens projetée sous la forme `[{ subject: <vecteur> }]`, où le `subject` est lui-même lié à une **3ᵉ entité** par un autre edge (souvent traversé en `INBOUND`). On veut cette entité **rangée dans le `subject`** (`subject.worksFor`), **en une seule requête** — ni aplatie au niveau de l'entrée, ni via un second aller-retour.
+
+La déclaration reprend **exactement la grammaire du niveau racine** : le **marqueur de cardinalité** (`Filter::EDGE` unique / `Filter::EDGES` liste / `Filter::EDGES_COUNT` comptage) dans `Field::FIELDS`, et la **définition de la sous-traversée** dans `Field::EDGES`, sous la même clé. La sous-traversée part **du vecteur enveloppé** (et non du document racine).
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\db\enums\Traversal ;
+use oihana\arango\enums\Field ;
+use oihana\arango\enums\Filter ;
+
+// account --[account_has_identity]--> person   (le lien projeté)
+// person  <--[org_has_member]-- organization   (l'organisation de la personne, INBOUND)
+AQL::EDGES =>
+[
+    'identities' =>
+    [
+        AQL::MODEL  => EdgesDefinition::ACCOUNT_HAS_IDENTITY ,
+        AQL::FIELDS =>
+        [
+            'subject' =>
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS =>
+                [
+                    'id'       => Filter::DEFAULT ,
+                    'name'     => Filter::DEFAULT ,
+                    'worksFor' => [ Field::FILTER => Filter::EDGE ] ,           // ← marqueur, comme au niveau racine
+                ] ,
+                Field::EDGES =>                                                // ← définition de la sous-traversée
+                [
+                    'worksFor' =>
+                    [
+                        AQL::MODEL     => EdgesDefinition::ORG_HAS_MEMBER ,
+                        AQL::DIRECTION => Traversal::INBOUND ,
+                        AQL::FIELDS    => [ 'id' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ,
+    ] ,
+]
+```
+
+AQL généré (la sous-traversée part de `v`, son `LET` est émis dans le `FOR v`, le résultat est imbriqué dans `subject`) :
+
+```aql
+LET identities = (
+  FOR v, e IN OUTBOUND doc account_has_identity
+    LET worksFor = ( FOR v2, e2 IN INBOUND v org_has_member RETURN { id: v2.id, name: v2.name } )
+    RETURN {
+      subject: {
+        id: v.id, name: v.name,
+        worksFor: ( IS_OBJECT(worksFor) ? worksFor : IS_ARRAY(worksFor) ? FIRST(worksFor) : null )
+      }
+    }
+)
+```
+
+Règles et points importants :
+
+- **Tout fonctionne comme au niveau racine.** `Filter::EDGE` (objet unique), `Filter::EDGES` (liste) et `Filter::EDGES_COUNT` (comptage) s'utilisent à l'identique ; le gating par permission (`Field::REQUIRES`), les tris et les sous-projections s'appliquent verbatim.
+- **Les deux directions.** `AQL::DIRECTION => Traversal::INBOUND` (ou `OUTBOUND`, défaut) — l'entité liée est souvent atteinte en `INBOUND`.
+- **Profondeur naturelle.** La sous-traversée est un edge ordinaire : elle porte elle-même ses propres `AQL::EDGES` / `AQL::JOINS`, donc l'entité liée peut projeter plus loin (`subject.worksFor.locatedIn`). Chaque niveau ajoute une sous-requête `FOR` : c'est une question de **performance**, pas de limite dure — garder l'imbrication peu profonde (2–3 niveaux).
+- **`Field::RAW` exclut `Field::EDGES`.** Une référence brute (`subject: v`) n'a pas d'objet projeté où greffer une relation — les combiner **lève une exception**.
+- **Marqueur et définition vont de pair.** Un `Field::EDGES` déclaré sans marqueur correspondant dans `Field::FIELDS` (ou l'inverse) reste sans effet, exactement comme au niveau racine.
+- **Rétro-compatible.** Un `Filter::WRAP` sans `Field::EDGES` se comporte exactement comme avant.
+
 ## Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`
 
 Là où un *edge* traverse une collection d'arêtes, un **join** résout une **référence stockée dans le document lui-même** vers les documents d'une autre collection. Le **type du champ** choisit la cardinalité, exactement comme `Filter::EDGE` (unique) vs `Filter::EDGES` (multiple) :
