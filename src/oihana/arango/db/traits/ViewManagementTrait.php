@@ -7,6 +7,7 @@ use oihana\arango\clients\view\ArangoSearchLink;
 use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\clients\view\enums\ViewType;
 use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\options\views\SearchAliasView;
 use oihana\arango\db\results\DiffReport;
 
 /**
@@ -23,9 +24,98 @@ use oihana\arango\db\results\DiffReport;
  */
 trait ViewManagementTrait
 {
-    // =========================================================================
-    // Views (alphabetical)
-    // =========================================================================
+    /**
+     * Creates a `search-alias` view if it does not already exist.
+     *
+     * @param SearchAliasView $view The declared search-alias view.
+     *
+     * @return bool TRUE when the view has been created, FALSE when it already existed or the request failed.
+     */
+    public function searchAliasViewCreate( SearchAliasView $view ) : bool
+    {
+        try
+        {
+            $entity = $this->database->view( $view->name ) ;
+            if ( !$entity->exists() )
+            {
+                $entity->createSearchAlias( $view->getIndexes() , $view->options ) ;
+                return true ;
+            }
+        }
+        catch ( ArangoException ) {}
+
+        return false ;
+    }
+
+    /**
+     * Compares a `search-alias` view declaration with the server state and
+     * reports the differences — the read-only half of {@see searchAliasViewSync()}.
+     *
+     * The comparison is set-oriented on the `{collection, index}` pairs: every
+     * declared pair must be aliased on the server, and any server pair absent
+     * from the declaration is reported as drift.
+     *
+     * @param SearchAliasView $view The declared search-alias view.
+     *
+     * @return DiffReport The typed report — see {@see DiffStatus} for the possible statuses.
+     */
+    public function searchAliasViewDiff( SearchAliasView $view ) : DiffReport
+    {
+        $name = $view->name ;
+
+        try
+        {
+            $properties = $this->loadViewProperties( $name , ViewType::SEARCH_ALIAS ) ;
+            if ( $properties instanceof DiffReport )
+            {
+                return $properties ;
+            }
+
+            $changes = $this->compareViewIndexes( $view->getIndexes() , $properties[ ViewField::INDEXES ] ?? [] ) ;
+
+            return new DiffReport( $name , $changes === [] ? DiffStatus::IN_SYNC : DiffStatus::DRIFTED , $changes ) ;
+        }
+        catch ( ArangoException $exception )
+        {
+            return new DiffReport( $name , DiffStatus::UNREACHABLE , [ $exception->getMessage() ] ) ;
+        }
+    }
+
+    /**
+     * Reconciles a `search-alias` view with its declaration: creates it when
+     * missing, drop + recreate on drift, does nothing when already in sync.
+     *
+     * A search-alias view holds no data — it only references the inverted
+     * indexes declared on the collections — so a drop + recreate is safe (the
+     * underlying indexes survive) and far simpler than the per-entry
+     * add/del PATCH operations. It is **not** transactional: between the drop
+     * and the recreate the view briefly does not exist (search unavailable for
+     * a few ms), which is acceptable for a maintenance sync.
+     *
+     * @param SearchAliasView $view The declared search-alias view.
+     *
+     * @return DiffReport The {@see searchAliasViewDiff()} report, with `$applied` set when created or recreated.
+     */
+    public function searchAliasViewSync( SearchAliasView $view ) : DiffReport
+    {
+        $report = $this->searchAliasViewDiff( $view ) ;
+
+        try
+        {
+            $applied = match( $report->status )
+            {
+                DiffStatus::MISSING => $this->searchAliasViewCreate( $view ) ,
+                DiffStatus::DRIFTED => $this->searchAliasViewRecreate( $view ) ,
+                default             => false ,
+            } ;
+
+            return new DiffReport( $report->name , $report->status , $report->changes , $applied ) ;
+        }
+        catch ( ArangoException $exception )
+        {
+            return new DiffReport( $report->name , $report->status , [ ...$report->changes , 'sync failed : ' . $exception->getMessage() ] ) ;
+        }
+    }
 
     /**
      * Creates an `arangosearch` View if it does not already exist.
@@ -70,22 +160,10 @@ trait ViewManagementTrait
     {
         try
         {
-            $view = $this->database->view( $name ) ;
-
-            if ( !$view->exists() )
+            $properties = $this->loadViewProperties( $name , ViewType::ARANGOSEARCH ) ;
+            if ( $properties instanceof DiffReport )
             {
-                return new DiffReport( $name , DiffStatus::MISSING ) ;
-            }
-
-            $properties = $view->properties() ;
-
-            $type = $properties[ ViewField::TYPE ] ?? null ;
-            if ( $type !== ViewType::ARANGOSEARCH )
-            {
-                return new DiffReport( $name , DiffStatus::INVALID ,
-                [
-                    sprintf( "%s : the server entity is of type '%s', not '%s'" , $name , $type , ViewType::ARANGOSEARCH )
-                ] ) ;
+                return $properties ;
             }
 
             $changes = $this->compareViewLinks( $links , $properties[ ViewField::LINKS ] ?? [] ) ;
@@ -175,6 +253,59 @@ trait ViewManagementTrait
         {
             return new DiffReport( $report->name , $report->status , [ ...$report->changes , 'sync failed : ' . $exception->getMessage() ] ) ;
         }
+    }
+
+    /**
+     * Accumulates one change line per `{collection, index}` pair that differs
+     * between the declared list and the server `indexes` — see
+     * {@see searchAliasViewDiff()} for the comparison semantics.
+     *
+     * @param array<int, array{collection:string, index:string}> $desired Declared, normalized `{collection, index}` list.
+     * @param array<int, mixed>                                   $actual  Server-side `indexes` list (from `properties()`).
+     *
+     * @return array<int, string>
+     */
+    private function compareViewIndexes( array $desired , array $actual ) : array
+    {
+        $changes     = [] ;
+        $actualPairs = [] ;
+
+        foreach ( $actual as $entry )
+        {
+            if ( is_array( $entry ) && isset( $entry[ ViewField::COLLECTION ] , $entry[ ViewField::INDEX ] ) )
+            {
+                $actualPairs[ $entry[ ViewField::COLLECTION ] . '|' . $entry[ ViewField::INDEX ] ] = true ;
+            }
+        }
+
+        $desiredPairs = [] ;
+
+        foreach ( $desired as $entry )
+        {
+            $key = $entry[ ViewField::COLLECTION ] . '|' . $entry[ ViewField::INDEX ] ;
+            $desiredPairs[ $key ] = true ;
+
+            if ( !isset( $actualPairs[ $key ] ) )
+            {
+                $changes[] = sprintf( '%s : index "%s" not aliased on the server' , $entry[ ViewField::COLLECTION ] , $entry[ ViewField::INDEX ] ) ;
+            }
+        }
+
+        foreach ( $actual as $entry )
+        {
+            if ( !is_array( $entry ) || !isset( $entry[ ViewField::COLLECTION ] , $entry[ ViewField::INDEX ] ) )
+            {
+                continue ;
+            }
+
+            $key = $entry[ ViewField::COLLECTION ] . '|' . $entry[ ViewField::INDEX ] ;
+            if ( !isset( $desiredPairs[ $key ] ) )
+            {
+                $changes[] = sprintf( '%s : index "%s" aliased on the server but not declared' , $entry[ ViewField::COLLECTION ] , $entry[ ViewField::INDEX ] ) ;
+            }
+        }
+
+        return $changes ;
     }
 
     /**
@@ -287,5 +418,60 @@ trait ViewManagementTrait
                 $changes[] = sprintf( '%s.fields.%s : indexed on the server but not declared' , $path , $field ) ;
             }
         }
+    }
+
+    /**
+     * Loads a view's server properties, guarding both existence and type — the
+     * shared preamble of {@see viewDiff()} and {@see searchAliasViewDiff()}.
+     *
+     * @param string $name         The view name.
+     * @param string $expectedType The expected {@see ViewType} of the server view.
+     *
+     * @return array<string, mixed>|DiffReport The server properties on success, or a terminal
+     *                                         {@see DiffStatus::MISSING} / {@see DiffStatus::INVALID}
+     *                                         report the caller must return as-is.
+     *
+     * @throws ArangoException When the server is unreachable.
+     */
+    private function loadViewProperties( string $name , string $expectedType ) : array|DiffReport
+    {
+        $view = $this->database->view( $name ) ;
+
+        if ( !$view->exists() )
+        {
+            return new DiffReport( $name , DiffStatus::MISSING ) ;
+        }
+
+        $properties = $view->properties() ;
+
+        $type = $properties[ ViewField::TYPE ] ?? null ;
+        if ( $type !== $expectedType )
+        {
+            return new DiffReport( $name , DiffStatus::INVALID ,
+            [
+                sprintf( "%s : the server entity is of type '%s', not '%s'" , $name , $type , $expectedType )
+            ] ) ;
+        }
+
+        return $properties ;
+    }
+
+    /**
+     * Drops and recreates a `search-alias` view to repair a drift — safe because
+     * the alias owns no data (the underlying inverted indexes survive).
+     *
+     * @param SearchAliasView $view The declared search-alias view.
+     *
+     * @return bool Always TRUE (a failure surfaces as the thrown {@see ArangoException}).
+     *
+     * @throws ArangoException When the drop or the recreate fails.
+     */
+    private function searchAliasViewRecreate( SearchAliasView $view ) : bool
+    {
+        $entity = $this->database->view( $view->name ) ;
+        $entity->drop() ;
+        $entity->createSearchAlias( $view->getIndexes() , $view->options ) ;
+
+        return true ;
     }
 }

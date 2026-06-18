@@ -2,12 +2,19 @@
 
 namespace tests\oihana\arango\integration;
 
+use Psr\Log\NullLogger;
+
 use oihana\arango\clients\Database;
 use oihana\arango\clients\collection\indexes\InvertedIndex;
 use oihana\arango\clients\exceptions\ArangoException;
+use oihana\arango\db\ArangoDB;
+use oihana\arango\db\enums\ArangoConfig;
+use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\options\views\SearchAliasView;
 
 use PHPUnit\Framework\Attributes\Group;
+
+use function oihana\init\initConfig;
 
 /**
  * Live validation of the `search-alias` substrate (Lot G1a): an `inverted`
@@ -62,6 +69,39 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
         $ids = $this->waitForSearch( 'shared' , [ self::CUSTOMERS . '/c1' , self::PRODUCTS . '/p1' ] ) ;
 
         $this->assertSame( [ self::CUSTOMERS . '/c1' , self::PRODUCTS . '/p1' ] , $ids ) ;
+    }
+
+    /**
+     * The façade lifecycle (Lot G1b): sync creates a missing search-alias view,
+     * a second diff reports it in sync, on a real server.
+     *
+     * @throws ArangoException
+     */
+    public function testFacadeSyncCreatesThenDiffsInSync() :void
+    {
+        $facade = $this->facade() ;
+        $view   = new SearchAliasView( 'it_sa_facade' , [ self::CUSTOMERS => self::INDEX , self::PRODUCTS => self::INDEX ] ) ;
+
+        $created = $facade->searchAliasViewSync( $view ) ;
+        $this->assertSame( DiffStatus::MISSING , $created->status ) ;
+        $this->assertTrue( $created->applied ) ;
+
+        $diff = $facade->searchAliasViewDiff( $view ) ;
+        $this->assertSame( DiffStatus::IN_SYNC , $diff->status ) ;
+
+        $facade->viewDrop( 'it_sa_facade' ) ;
+    }
+
+    /**
+     * Builds a live {@see ArangoDB} façade bound to the disposable database.
+     */
+    private function facade() :ArangoDB
+    {
+        $configDir = dirname( __DIR__ , 4 ) . DIRECTORY_SEPARATOR . 'configs' ;
+        $config    = initConfig( basePath: $configDir ) ;
+        $arango    = is_array( $config[ 'arango' ] ?? null ) ? $config[ 'arango' ] : [] ;
+
+        return new ArangoDB( [ ...$arango , ArangoConfig::DATABASE => static::$database ] , new NullLogger() ) ;
     }
 
     /**

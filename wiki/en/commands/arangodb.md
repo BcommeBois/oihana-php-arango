@@ -801,6 +801,21 @@ The model provisioning ([View search](../db/search-views.md)) is *create-if-miss
 
 A listed model without an `AQL::VIEW` block is simply reported as "no View declared" and skipped. Each model is queried on **its own** database (`AQL::DATABASE`).
 
+### Federated `search-alias` views
+
+Beyond the model-driven `arangosearch` views, `--diff` / `--sync` also reconcile the database-level **`search-alias`** view registry — views that aggregate one `inverted` index per collection and belong to no single model (the substrate of a federated, multi-collection search, see [ArangoSearch client](../clients/arangosearch.md)). Declare them via the `searchAliasViews` init key (`ArangoCommandParam::SEARCH_ALIAS_VIEWS`) as a list of `SearchAliasView`:
+
+```php
+use oihana\arango\db\options\views\SearchAliasView ;
+
+ArangoCommandParam::SEARCH_ALIAS_VIEWS =>
+[
+    new SearchAliasView( 'global_search' , [ 'customers' => 'inv_search' , 'products' => 'inv_search' ] ) ,
+] ,
+```
+
+`--diff` reports each declared search-alias view (missing / in sync / drifted on its `{collection, index}` set, or `invalid` if a server view of that name is of another type); `--sync` creates the missing ones and repairs a drift by **drop + recreate** (safe — the alias owns no data, the underlying inverted indexes survive). The action runs with the registry alone (no models required), and declared search-alias names are excluded from the orphan footnote. The underlying `inverted` index on each collection is provisioned like any index (`collectionIndexes` / `InvertedIndex`).
+
 ```bash
 $ php bin/console.php command:arangodb views --diff
 

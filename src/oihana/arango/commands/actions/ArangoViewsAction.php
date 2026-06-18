@@ -12,9 +12,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\enums\ViewField;
+use oihana\arango\clients\view\enums\ViewType;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\commands\traits\ArangoClientTrait;
 use oihana\arango\commands\traits\ArangoModelsTrait;
+use oihana\arango\commands\traits\ArangoSearchAliasViewsTrait;
 use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
@@ -65,6 +67,7 @@ trait ArangoViewsAction
 {
     use ArangoClientTrait ,
         ArangoModelsTrait ,
+        ArangoSearchAliasViewsTrait ,
         IOTrait ;
 
     /**
@@ -251,14 +254,20 @@ trait ArangoViewsAction
 
                 try
                 {
-                    $links = array_keys( $db->view( $name )->properties()[ ViewField::LINKS ] ?? [] ) ;
+                    $properties = $db->view( $name )->properties() ;
+
+                    $detail = $type === ViewType::SEARCH_ALIAS
+                        ? array_map( fn( $entry ) => $entry[ ViewField::COLLECTION ] ?? Char::EMPTY , $properties[ ViewField::INDEXES ] ?? [] )
+                        : array_keys( $properties[ ViewField::LINKS ] ?? [] ) ;
                 }
                 catch( ArangoException )
                 {
-                    $links = [] ;
+                    $detail = [] ;
                 }
 
-                $io->text( sprintf( '→ %s (%s)%s' , $name , $type , $links !== [] ? ' — ' . implode( ', ' , $links ) : Char::EMPTY ) ) ;
+                $detail = array_values( array_unique( array_filter( $detail ) ) ) ;
+
+                $io->text( sprintf( '→ %s (%s)%s' , $name , $type , $detail !== [] ? ' — ' . implode( ', ' , $detail ) : Char::EMPTY ) ) ;
             }
         }
 
@@ -282,9 +291,9 @@ trait ArangoViewsAction
     {
         $io->section( $apply ? 'Synchronize the declared views' : 'Diff the declared views' ) ;
 
-        if( $this->models === [] )
+        if( $this->models === [] && $this->getSearchAliasViews() === [] )
         {
-            $io->warning( 'No models configured — pass their container ids via the `models` init key of the command.' ) ;
+            $io->warning( 'No models or search-alias views configured — pass model container ids via the `models` init key, or search-alias views via the `searchAliasViews` init key.' ) ;
             return ExitCode::SUCCESS ;
         }
 
@@ -339,12 +348,71 @@ trait ArangoViewsAction
             }
         }
 
+        // Reconcile the database-level search-alias view registry (federated
+        // views own no model — they are declared via the `searchAliasViews` key).
+        if( $this->viewsReportSearchAliases( $input , $io , $apply , $filter , $declared ) === ExitCode::FAILURE )
+        {
+            $status = ExitCode::FAILURE ;
+        }
+
         if( $filter === null )
         {
             $this->viewsRenderOrphans( $input , $io , $declared ) ;
         }
 
         $io->newLine() ;
+
+        return $status ;
+    }
+
+    /**
+     * Reconciles the database-level `search-alias` view registry (the
+     * `searchAliasViews` init key) — the federated counterpart of the
+     * model-driven loop. Declared names are appended to `$declared` so they are
+     * not later flagged as orphans.
+     *
+     * @param InputInterface     $input
+     * @param SymfonyStyle       $io
+     * @param bool               $apply    False → diff (read-only) ; true → sync.
+     * @param array<int, string>|null $filter Restrict to these view names, or null for all.
+     * @param array<int, string> $declared The declared view names, appended by reference.
+     * @return int {@see ExitCode::FAILURE} when a view is unreachable, {@see ExitCode::SUCCESS} otherwise.
+     */
+    private function viewsReportSearchAliases( InputInterface $input , SymfonyStyle $io , bool $apply , ?array $filter , array &$declared ) :int
+    {
+        $views = $this->getSearchAliasViews() ;
+        if( $views === [] )
+        {
+            return ExitCode::SUCCESS ;
+        }
+
+        $facade = $this->resolveFacade( $input ) ;
+        if( $facade === null )
+        {
+            $io->error( 'No ArangoDB façade available for the search-alias views.' ) ;
+            return ExitCode::FAILURE ;
+        }
+
+        $status = ExitCode::SUCCESS ;
+
+        foreach( $views as $view )
+        {
+            $declared[] = $view->name ;
+
+            if( $filter !== null && !in_array( $view->name , $filter , true ) )
+            {
+                continue ;
+            }
+
+            $report = $apply ? $facade->searchAliasViewSync( $view ) : $facade->searchAliasViewDiff( $view ) ;
+
+            $this->viewsRenderReport( $io , 'search-alias' , $report , $apply ) ;
+
+            if( $report->status === DiffStatus::UNREACHABLE )
+            {
+                $status = ExitCode::FAILURE ;
+            }
+        }
 
         return $status ;
     }

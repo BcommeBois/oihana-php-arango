@@ -14,6 +14,7 @@ use oihana\arango\commands\traits\ArangoConfigTrait;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\options\views\SearchAliasView;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -32,6 +33,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Console\Helper\QuestionHelper;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -54,6 +56,12 @@ class ArangoViewsActionHost
 
     /** The fake database returned by the buildDatabase() seam. */
     public ?Database $fakeDatabase = null ;
+
+    /** When true, the resolveFacade() seam returns null (no façade). */
+    public bool $returnNullFacade = false ;
+
+    /** The fake façade returned by the resolveFacade() seam. */
+    public ?ArangoDB $fakeFacade = null ;
 
     /** The exit label of the interactive selections (mirrors ArangoCommand). */
     public string $exit = 'Exit the command.' ;
@@ -85,6 +93,11 @@ class ArangoViewsActionHost
     protected function buildDatabase( string $endpoint , string $username , string $password , string $database ) :?Database
     {
         return $this->returnNullDatabase ? null : $this->fakeDatabase ;
+    }
+
+    protected function resolveFacade( InputInterface $input ) :?ArangoDB
+    {
+        return $this->returnNullFacade ? null : $this->fakeFacade ;
     }
 }
 
@@ -279,7 +292,7 @@ class ArangoViewsActionTest extends TestCase
         $code = $host->run( $this->input( [ '--' . ArangoCommandOption::DIFF => true ] ) , $output ) ;
 
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
-        $this->assertStringContainsString( 'No models configured' , $output->fetch() ) ;
+        $this->assertStringContainsString( 'No models or search-alias views configured' , $output->fetch() ) ;
     }
 
     public function testDiffRendersInSyncAndTheOrphanFootnote() :void
@@ -639,5 +652,111 @@ class ArangoViewsActionTest extends TestCase
         fwrite( $stream , $answer ) ;
         rewind( $stream ) ;
         return $stream ;
+    }
+
+    // ---- search-alias registry reconciliation ----------------------------
+
+    public function testDiffReconcilesTheSearchAliasRegistry() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'searchAliasViewDiff' )->willReturn( new DiffReport( 'global_search' , DiffStatus::IN_SYNC ) ) ;
+
+        $host = new ArangoViewsActionHost() ;
+        $host->searchAliasViews = new SearchAliasView( 'global_search' , [ 'customers' => 'inv' ] ) ;
+        $host->fakeFacade       = $facade ;
+        $host->fakeDatabase     = $this->databaseListing( [ [ 'name' => 'global_search' , 'type' => 'search-alias' ] ] ) ;
+
+        $output = new BufferedOutput() ;
+        $code   = $host->run( $this->input( [ '--' . ArangoCommandOption::DIFF => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'global_search (search-alias) — in sync' , $output->fetch() ) ;
+    }
+
+    public function testSyncCreatesAMissingSearchAliasView() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'searchAliasViewSync' )->willReturn( new DiffReport( 'global_search' , DiffStatus::MISSING , [] , true ) ) ;
+
+        $host = new ArangoViewsActionHost() ;
+        $host->searchAliasViews = [ new SearchAliasView( 'global_search' , [ 'customers' => 'inv' ] ) ] ;
+        $host->fakeFacade       = $facade ;
+        $host->fakeDatabase     = $this->databaseListing( [ [ 'name' => 'global_search' , 'type' => 'search-alias' ] ] ) ;
+
+        $output = new BufferedOutput() ;
+        $code   = $host->run( $this->input( [ '--' . ArangoCommandOption::SYNC => null ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'global_search (search-alias) — created' , $output->fetch() ) ;
+    }
+
+    public function testSearchAliasReportFailsWhenFacadeIsUnavailable() :void
+    {
+        $host = new ArangoViewsActionHost() ;
+        $host->searchAliasViews = new SearchAliasView( 'global_search' , [ 'customers' => 'inv' ] ) ;
+        $host->returnNullFacade = true ;
+
+        $output = new BufferedOutput() ;
+        $code   = $host->run( $this->input( [ '--' . ArangoCommandOption::DIFF => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( 'No ArangoDB façade available' , $output->fetch() ) ;
+    }
+
+    public function testSearchAliasDiffMarksUnreachableAsFailure() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'searchAliasViewDiff' )->willReturn( new DiffReport( 'global_search' , DiffStatus::UNREACHABLE , [ 'boom' ] ) ) ;
+
+        $host = new ArangoViewsActionHost() ;
+        $host->searchAliasViews = new SearchAliasView( 'global_search' , [ 'customers' => 'inv' ] ) ;
+        $host->fakeFacade       = $facade ;
+        $host->fakeDatabase     = $this->databaseListing( [] ) ;
+
+        $output = new BufferedOutput() ;
+        $code   = $host->run( $this->input( [ '--' . ArangoCommandOption::DIFF => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+    }
+
+    public function testSyncFilterSkipsUnselectedSearchAliasViews() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->expects( $this->never() )->method( 'searchAliasViewSync' ) ;
+
+        $host = new ArangoViewsActionHost() ;
+        $host->searchAliasViews = new SearchAliasView( 'global_search' , [ 'customers' => 'inv' ] ) ;
+        $host->fakeFacade       = $facade ;
+
+        $output = new BufferedOutput() ;
+        // restrict the sync to another view → the declared search-alias is skipped
+        $code   = $host->run( $this->input( [ '--' . ArangoCommandOption::SYNC => 'other_view' ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringNotContainsString( 'global_search' , $output->fetch() ) ;
+    }
+
+    public function testListShowsSearchAliasCollections() :void
+    {
+        $db = $this->createMock( Database::class ) ;
+        $db->method( 'listViews' )->willReturn( [ [ 'name' => 'global_search' , 'type' => 'search-alias' ] ] ) ;
+        $db->method( 'view' )->willReturn( $this->view( properties :
+        [
+            'indexes' =>
+            [
+                [ 'collection' => 'customers' , 'index' => 'inv' ] ,
+                [ 'collection' => 'products'  , 'index' => 'inv' ] ,
+            ] ,
+        ] ) ) ;
+
+        $host = new ArangoViewsActionHost() ;
+        $host->fakeDatabase = $db ;
+
+        $output = new BufferedOutput() ;
+        $code   = $host->run( $this->input() , $output ) ;
+
+        $text = $output->fetch() ;
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'global_search (search-alias) — customers, products' , $text ) ;
     }
 }

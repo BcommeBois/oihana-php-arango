@@ -7,6 +7,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\ArangoSearchLink;
 use oihana\arango\clients\view\View;
 use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\options\views\SearchAliasView;
 use oihana\arango\db\traits\ViewManagementTrait;
 
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -351,6 +352,198 @@ class ViewManagementTraitTest extends ArangoDBTestCase
         $view->method( 'updateProperties' )->willThrowException( new ArangoException( 'boom' ) ) ;
 
         $report = $this->newArangoDB( $this->databaseReturning( $view ) )->viewSync( 'placesView' , $this->declaredLinks() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertFalse( $report->applied ) ;
+        $this->assertContains( 'sync failed : boom' , $report->changes ) ;
+    }
+
+    // ---- search-alias views ----------------------------------------------
+
+    /**
+     * The declared search-alias view of the fixtures : customers + products,
+     * each aliasing an `inv_search` inverted index.
+     */
+    private function declaredSearchAlias() :SearchAliasView
+    {
+        return new SearchAliasView( 'global_search' , [ 'customers' => 'inv_search' , 'products' => 'inv_search' ] ) ;
+    }
+
+    /**
+     * A server-side search-alias `properties()` payload.
+     */
+    private function serverAliasProperties( array $indexes , string $type = 'search-alias' ) :array
+    {
+        return [ 'name' => 'global_search' , 'type' => $type , 'indexes' => $indexes ] ;
+    }
+
+    public function testSearchAliasCreateCreatesWhenAbsent() :void
+    {
+        $view = $this->createMock( View::class ) ;
+        $view->method( 'exists' )->willReturn( false ) ;
+        $view->expects( $this->once() )
+             ->method( 'createSearchAlias' )
+             ->with
+             (
+                 [
+                     [ 'collection' => 'customers' , 'index' => 'inv_search' ] ,
+                     [ 'collection' => 'products'  , 'index' => 'inv_search' ] ,
+                 ] ,
+                 [] ,
+             ) ;
+
+        $db = $this->newArangoDB( $this->databaseReturning( $view ) ) ;
+
+        $this->assertTrue( $db->searchAliasViewCreate( $this->declaredSearchAlias() ) ) ;
+    }
+
+    public function testSearchAliasCreateReturnsFalseWhenAlreadyPresent() :void
+    {
+        $view = $this->createMock( View::class ) ;
+        $view->method( 'exists' )->willReturn( true ) ;
+        $view->expects( $this->never() )->method( 'createSearchAlias' ) ;
+
+        $this->assertFalse( $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewCreate( $this->declaredSearchAlias() ) ) ;
+    }
+
+    public function testSearchAliasCreateSwallowsClientException() :void
+    {
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'view' )->willThrowException( new ArangoException( 'boom' ) ) ;
+
+        $this->assertFalse( $this->newArangoDB( $database )->searchAliasViewCreate( $this->declaredSearchAlias() ) ) ;
+    }
+
+    public function testSearchAliasDiffReportsMissing() :void
+    {
+        $view = $this->createMock( View::class ) ;
+        $view->method( 'exists' )->willReturn( false ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewDiff( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::MISSING , $report->status ) ;
+        $this->assertSame( 'global_search'    , $report->name ) ;
+    }
+
+    public function testSearchAliasDiffReportsUnreachable() :void
+    {
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'view' )->willThrowException( new ArangoException( 'connection refused' ) ) ;
+
+        $report = $this->newArangoDB( $database )->searchAliasViewDiff( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::UNREACHABLE , $report->status ) ;
+        $this->assertSame( [ 'connection refused' ] , $report->changes ) ;
+    }
+
+    public function testSearchAliasDiffReportsInvalidOnTypeConflict() :void
+    {
+        $view = $this->viewWithProperties( $this->serverAliasProperties( [] , type : 'arangosearch' ) ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewDiff( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
+        $this->assertStringContainsString( "'arangosearch'" , $report->changes[0] ) ;
+    }
+
+    public function testSearchAliasDiffIsInSyncRegardlessOfOrder() :void
+    {
+        $view = $this->viewWithProperties( $this->serverAliasProperties(
+        [
+            [ 'collection' => 'products'  , 'index' => 'inv_search' ] ,
+            [ 'collection' => 'customers' , 'index' => 'inv_search' ] ,
+        ] ) ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewDiff( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status ) ;
+        $this->assertSame( [] , $report->changes ) ;
+    }
+
+    public function testSearchAliasDiffReportsDriftBothWays() :void
+    {
+        // Server is missing `products` and aliases an undeclared `sellers`.
+        $view = $this->viewWithProperties( $this->serverAliasProperties(
+        [
+            [ 'collection' => 'customers' , 'index' => 'inv_search' ] ,
+            [ 'collection' => 'sellers'   , 'index' => 'inv_search' ] ,
+        ] ) ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewDiff( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertContains( 'products : index "inv_search" not aliased on the server' , $report->changes ) ;
+        $this->assertContains( 'sellers : index "inv_search" aliased on the server but not declared' , $report->changes ) ;
+    }
+
+    public function testSearchAliasDiffSkipsMalformedServerEntries() :void
+    {
+        // A bogus server entry (not a {collection, index} object) is ignored,
+        // not counted as drift.
+        $view = $this->viewWithProperties( $this->serverAliasProperties(
+        [
+            [ 'collection' => 'customers' , 'index' => 'inv_search' ] ,
+            'bogus' ,
+            [ 'collection' => 'products'  , 'index' => 'inv_search' ] ,
+        ] ) ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewDiff( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status ) ;
+    }
+
+    public function testSearchAliasSyncCreatesWhenMissing() :void
+    {
+        $view = $this->createMock( View::class ) ;
+        $view->method( 'exists' )->willReturn( false ) ;
+        $view->expects( $this->once() )->method( 'createSearchAlias' ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewSync( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::MISSING , $report->status ) ;
+        $this->assertTrue( $report->applied ) ;
+    }
+
+    public function testSearchAliasSyncRecreatesOnDrift() :void
+    {
+        $view = $this->viewWithProperties( $this->serverAliasProperties(
+        [
+            [ 'collection' => 'customers' , 'index' => 'inv_search' ] ,
+        ] ) ) ;
+        $view->expects( $this->once() )->method( 'drop' ) ;
+        $view->expects( $this->once() )->method( 'createSearchAlias' ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewSync( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertTrue( $report->applied ) ;
+    }
+
+    public function testSearchAliasSyncLeavesInSyncUntouched() :void
+    {
+        $view = $this->viewWithProperties( $this->serverAliasProperties(
+        [
+            [ 'collection' => 'customers' , 'index' => 'inv_search' ] ,
+            [ 'collection' => 'products'  , 'index' => 'inv_search' ] ,
+        ] ) ) ;
+        $view->expects( $this->never() )->method( 'drop' ) ;
+        $view->expects( $this->never() )->method( 'createSearchAlias' ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewSync( $this->declaredSearchAlias() ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status ) ;
+        $this->assertFalse( $report->applied ) ;
+    }
+
+    public function testSearchAliasSyncReportsAFailedRecreate() :void
+    {
+        $view = $this->viewWithProperties( $this->serverAliasProperties(
+        [
+            [ 'collection' => 'customers' , 'index' => 'inv_search' ] ,
+        ] ) ) ;
+        $view->method( 'drop' )->willThrowException( new ArangoException( 'boom' ) ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $view ) )->searchAliasViewSync( $this->declaredSearchAlias() ) ;
 
         $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertFalse( $report->applied ) ;
