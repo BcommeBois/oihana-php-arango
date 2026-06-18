@@ -4,6 +4,7 @@ namespace oihana\arango\db\helpers;
 
 use Exception;
 
+use oihana\exceptions\ValidationException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -88,10 +89,10 @@ use function oihana\core\strings\keyValue;
  * null if the input `$fields` is null or empty.
  *
  * @throws ContainerExceptionInterface
+ * @throws Exception
  * @throws NotFoundExceptionInterface
  * @throws UnsupportedOperationException
- * @throws \oihana\exceptions\ValidationException When a (non-quoted) source attribute name is unsafe.
- * @throws Exception
+ * @throws ValidationException When a (non-quoted) source attribute name is unsafe.
  *
  * @example
  * ```php
