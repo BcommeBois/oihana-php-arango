@@ -2,6 +2,8 @@
 
 namespace tests\oihana\arango\integration;
 
+use DI\Container;
+
 use Psr\Log\NullLogger;
 
 use oihana\arango\clients\Database;
@@ -11,6 +13,10 @@ use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\options\views\SearchAliasView;
+use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\Search;
+use oihana\arango\search\FederatedSearch;
+use oihana\arango\search\enums\FederatedSearchParam;
 
 use PHPUnit\Framework\Attributes\Group;
 
@@ -136,6 +142,65 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
         $report = $this->facade()->indexesDiff( $collection , [ $declared ] ) ;
 
         $this->assertSame( DiffStatus::IN_SYNC , $report->status , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    /**
+     * C2 — the *find* stage on a real server: the federated engine runs one
+     * scored SEARCH over the search-alias view and returns the ranked
+     * provenance (collection + key + score) of the matches across both
+     * collections.
+     *
+     * @throws ArangoException
+     */
+    public function testFederatedFindReturnsRankedProvenance() :void
+    {
+        $engine = new FederatedSearch( new Container() ,
+        [
+            FederatedSearchParam::VIEW       => self::VIEW ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'tag' ] , Search::ANALYZER => 'identity' ] ,
+            FederatedSearchParam::MODELS     => [ self::CUSTOMERS => 'model.customers' , self::PRODUCTS => 'model.products' ] ,
+            Arango::DATABASE                 => $this->facade() ,
+        ]) ;
+
+        [ $pairs , $rows ] = $this->waitForFind( $engine , 'shared' , 2 ) ;
+
+        $this->assertSame( [ [ self::CUSTOMERS , 'c1' ] , [ self::PRODUCTS , 'p1' ] ] , $pairs ) ;
+        $this->assertArrayHasKey( FederatedSearch::SCORE , $rows[ 0 ] ) ;
+    }
+
+    /**
+     * Polls the federated `find()` until it returns the expected number of
+     * matches (inverted-index eventual consistency), then returns the sorted
+     * `[ collection , key ]` pairs and the raw rows.
+     *
+     * @param FederatedSearch $engine
+     * @param string          $term
+     * @param int             $expected
+     *
+     * @return array{0: array<int, array{0: string, 1: string}>, 1: array<int, array<string, mixed>>}
+     *
+     * @throws ArangoException
+     */
+    private function waitForFind( FederatedSearch $engine , string $term , int $expected ) :array
+    {
+        $rows = [] ;
+
+        for ( $attempt = 0 ; $attempt < 150 ; $attempt++ )
+        {
+            $rows = $engine->find( [ Arango::SEARCH => $term ] ) ;
+
+            if ( count( $rows ) === $expected )
+            {
+                break ;
+            }
+
+            usleep( 100_000 ) ; // 100 ms
+        }
+
+        $pairs = array_map( static fn( array $row ) => [ $row[ Arango::COLLECTION ] , $row[ Arango::KEY ] ] , $rows ) ;
+        sort( $pairs ) ;
+
+        return [ $pairs , $rows ] ;
     }
 
     /**

@@ -4,6 +4,11 @@ namespace tests\oihana\arango\search ;
 
 use DI\Container ;
 
+use oihana\arango\clients\Database ;
+use oihana\arango\clients\cursor\Cursor ;
+use oihana\arango\db\ArangoDB ;
+use oihana\arango\enums\Arango ;
+use oihana\arango\models\enums\Search ;
 use oihana\arango\search\FederatedSearch ;
 use oihana\arango\search\enums\FederatedSearchParam ;
 
@@ -98,15 +103,130 @@ final class FederatedSearchTest extends TestCase
         $this->assertSame( [] , $this->make( [ FederatedSearchParam::SEARCHABLE => 'not-an-array' ] )->searchable ) ;
     }
 
-    public function testSearchReturnsAnEmptyResultSetForNow() :void
+    // ---- find (Lot C2) ------------------------------------------------------
+
+    /**
+     * A canned search spec + registry, paired with a database double whose
+     * `query()` captures the AQL + binds and whose cursor returns `$rows`.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, mixed>|null        $captured Filled by reference with `[ aql, binds ]`.
+     *
+     * @return FederatedSearch
+     */
+    private function engineWithDatabase( array $rows , ?array &$captured = null ) :FederatedSearch
     {
-        // Lot C1 skeleton : the find / rebuild stages are not wired yet.
-        $engine = $this->make(
+        $cursor = $this->createMock( Cursor::class ) ;
+        $cursor->method( 'all' )->willReturn( $rows ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'query' )->willReturnCallback( function( $aql , $binds = [] , $options = [] ) use ( &$captured , $cursor )
+        {
+            $captured = [ 'aql' => $aql , 'binds' => $binds ] ;
+            return $cursor ;
+        } ) ;
+
+        $arango = $this->createMock( ArangoDB::class ) ;
+        $arango->method( 'database' )->willReturn( $database ) ;
+
+        return new FederatedSearch( $this->createMock( Container::class ) ,
         [
-            FederatedSearchParam::VIEW   => 'global_search' ,
-            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ,
+            FederatedSearchParam::VIEW       => 'global_search' ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'name' , 'label' ] , Search::ANALYZER => 'text_fr' ] ,
+            FederatedSearchParam::MODELS     => [ 'customers' => 'model.customers' ] ,
+            Arango::DATABASE                 => $arango ,
+        ]) ;
+    }
+
+    public function testFindRunsAScoredSearchAndReturnsTheRows() :void
+    {
+        $rows = [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] , [ 'collection' => 'products' , 'key' => 'p1' , 'score' => 7.4 ] ] ;
+
+        $engine = $this->engineWithDatabase( $rows , $captured ) ;
+
+        $this->assertSame( $rows , $engine->find( [ Arango::SEARCH => 'dupont' , Arango::LIMIT => 10 ] ) ) ;
+
+        // the bound term, never inlined
+        $this->assertSame( [ 'search' => 'dupont' ] , $captured[ 'binds' ] ) ;
+
+        // the query shape : view, tokenized + analyzer-wrapped match, BM25 ranking, pagination, provenance return
+        $aql = $captured[ 'aql' ] ;
+        $this->assertStringContainsString( 'FOR doc IN global_search' , $aql ) ;
+        $this->assertStringContainsString( 'TOKENS(@search,"text_fr")' , $aql ) ;
+        $this->assertStringContainsString( 'ANALYZER(' , $aql ) ;
+        $this->assertStringContainsString( 'BM25(doc)' , $aql ) ;
+        $this->assertStringContainsString( 'SORT score DESC' , $aql ) ;
+        $this->assertStringContainsString( 'LIMIT 10' , $aql ) ;
+        $this->assertStringContainsString( 'MERGE(PARSE_IDENTIFIER(doc._id)' , $aql ) ;
+    }
+
+    public function testFindUsesTheDefaultLimitWhenNoneGiven() :void
+    {
+        $engine = $this->engineWithDatabase( [] , $captured ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' ] ) ;
+
+        $this->assertStringContainsString( 'LIMIT ' . FederatedSearch::DEFAULT_LIMIT , $captured[ 'aql' ] ) ;
+    }
+
+    public function testFindReturnsEmptyWithoutATerm() :void
+    {
+        $this->assertSame( [] , $this->engineWithDatabase( [ [ 'collection' => 'x' ] ] )->find() ) ;
+    }
+
+    public function testFindReturnsEmptyWithoutAView() :void
+    {
+        $arango = $this->createMock( ArangoDB::class ) ;
+        $engine = new FederatedSearch( $this->createMock( Container::class ) ,
+        [
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'name' ] ] ,
+            Arango::DATABASE                 => $arango ,
         ]) ;
 
-        $this->assertSame( [] , $engine->search( [ 'q' => 'dupont' ] ) ) ;
+        $this->assertSame( [] , $engine->find( [ Arango::SEARCH => 'dupont' ] ) ) ;
+    }
+
+    public function testFindReturnsEmptyWithoutADatabase() :void
+    {
+        // no Arango::DATABASE → the engine cannot run anything
+        $engine = $this->make(
+        [
+            FederatedSearchParam::VIEW       => 'global_search' ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'name' ] ] ,
+        ]) ;
+
+        $this->assertSame( [] , $engine->find( [ Arango::SEARCH => 'dupont' ] ) ) ;
+    }
+
+    public function testFindReturnsEmptyWhenNoFieldIsDeclared() :void
+    {
+        $arango = $this->createMock( ArangoDB::class ) ;
+        $engine = new FederatedSearch( $this->createMock( Container::class ) ,
+        [
+            FederatedSearchParam::VIEW => 'global_search' ,
+            Arango::DATABASE           => $arango , // searchable spec without fields
+        ]) ;
+
+        $this->assertSame( [] , $engine->find( [ Arango::SEARCH => 'dupont' ] ) ) ;
+    }
+
+    public function testDatabaseResolvedFromAContainerId() :void
+    {
+        $arango    = $this->createMock( ArangoDB::class ) ;
+        $container = $this->createMock( Container::class ) ;
+        $container->method( 'has' )->with( 'db.arango' )->willReturn( true ) ;
+        $container->method( 'get' )->with( 'db.arango' )->willReturn( $arango ) ;
+
+        $engine = new FederatedSearch( $container , [ Arango::DATABASE => 'db.arango' ] ) ;
+
+        $this->assertSame( $arango , $engine->arangodb ) ;
+    }
+
+    public function testSearchDelegatesToFind() :void
+    {
+        $rows   = [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 3.2 ] ] ;
+        $engine = $this->engineWithDatabase( $rows ) ;
+
+        $this->assertSame( $rows , $engine->search( [ Arango::SEARCH => 'dupont' ] ) ) ;
     }
 }
