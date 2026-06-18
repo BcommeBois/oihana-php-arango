@@ -10,6 +10,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ChoiceQuestion;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+use oihana\arango\clients\collection\indexes\IndexDefinition;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\view\enums\ViewField;
 use oihana\arango\commands\options\ArangoCommandOption;
@@ -180,9 +181,9 @@ trait ArangoDoctorAction
 
             foreach( $this->collectionIndexes as $collection => $declared )
             {
-                // A single IndexOptions value is normalized to a one-element
-                // list ; a raw array is always treated as the index list.
-                $indexes = $declared instanceof IndexOptions ? [ $declared ] : $declared ;
+                // A single IndexOptions / IndexDefinition value (e.g. an InvertedIndex) is normalized to a one-element list ;
+                // a raw array is always treated as the index list.
+                $indexes = ( $declared instanceof IndexOptions || $declared instanceof IndexDefinition ) ? [ $declared ] : $declared ;
 
                 if( empty( $indexes ) )
                 {

@@ -9,6 +9,7 @@ use oihana\arango\clients\exceptions\ArangoException ;
 use oihana\arango\clients\collection\Collection ;
 use oihana\arango\clients\collection\indexes\enums\IndexField ;
 use oihana\arango\clients\collection\indexes\enums\IndexType ;
+use oihana\arango\clients\collection\indexes\IndexDefinition ;
 use oihana\arango\clients\collection\indexes\RawIndexDefinition ;
 
 use oihana\arango\db\enums\DiffKind ;
@@ -39,24 +40,27 @@ trait IndexManagementTrait
     /**
      * Creates an index on a collection.
      *
-     * @param string|Collection  $collection   Collection name or {@see Collection} client handle.
-     * @param array|IndexOptions $indexOptions An {@see IndexOptions} value object or a raw associative array matching the `POST /_api/index` body.
+     * @param string|Collection                   $collection   Collection name or {@see Collection} client handle.
+     * @param IndexDefinition|IndexOptions|array  $indexOptions An {@see IndexDefinition} value object (e.g. {@see \oihana\arango\clients\collection\indexes\InvertedIndex}), an {@see IndexOptions} value object, or a raw associative array matching the `POST /_api/index` body.
      *
      * @return array|null The server response of the created index, or null on failure.
      *
      * @throws ReflectionException When the {@see IndexOptions} cannot be serialised.
      */
-    public function createIndex( string|Collection $collection , array|IndexOptions $indexOptions ) : ?array
+    public function createIndex( string|Collection $collection , IndexDefinition|IndexOptions|array $indexOptions ) : ?array
     {
         try
         {
-            $body = $indexOptions instanceof IndexOptions
-                ? $indexOptions->jsonSerialize()
-                : $indexOptions ;
+            $definition = match( true )
+            {
+                $indexOptions instanceof IndexDefinition => $indexOptions ,
+                $indexOptions instanceof IndexOptions    => new RawIndexDefinition( $indexOptions->jsonSerialize() ) ,
+                default                                  => new RawIndexDefinition( $indexOptions ) ,
+            } ;
 
             return $this->database
                         ->collection( $this->resolveCollectionName( $collection ) )
-                        ->createIndex( new RawIndexDefinition( $body ) ) ;
+                        ->createIndex( $definition ) ;
         }
         catch ( ArangoException $exception )
         {
@@ -154,8 +158,15 @@ trait IndexManagementTrait
      * immutable — repairing means drop + recreate, see `indexesSync()`
      * `$force`); a missing collection → {@see DiffStatus::INVALID}.
      *
-     * @param string                                $collection The name of the collection.
-     * @param array<int, IndexOptions|array<string, mixed>> $indexes The declared indexes (the model `AQL::INDEXES` list).
+     * Inverted indexes are diffed canonically: a declared string field
+     * (`"name"`) is lined up with the server's `{ name }` object, the
+     * `primarySort` direction is normalised across its `direction` /
+     * `asc` spellings, and the server defaults the declaration omits
+     * (`compression`, per-field flags, …) are projected away — so an
+     * inverted index that is actually in sync no longer reads as drift.
+     *
+     * @param string                                                          $collection The name of the collection.
+     * @param array<int, IndexDefinition|IndexOptions|array<string, mixed>>    $indexes    The declared indexes (the model `AQL::INDEXES` list).
      *
      * @return DiffReport The typed report ({@see DiffKind::INDEXES}).
      *
@@ -231,9 +242,9 @@ trait IndexManagementTrait
      * `$force` the drift is only reported. Server indexes that no
      * declaration mentions are never touched.
      *
-     * @param string                                $collection The name of the collection.
-     * @param array<int, IndexOptions|array<string, mixed>> $indexes The declared indexes (the model `AQL::INDEXES` list).
-     * @param bool                                  $force      Allow the drop + recreate of drifted indexes.
+     * @param string                                                          $collection The name of the collection.
+     * @param array<int, IndexDefinition|IndexOptions|array<string, mixed>>    $indexes    The declared indexes (the model `AQL::INDEXES` list).
+     * @param bool                                                            $force      Allow the drop + recreate of drifted indexes.
      *
      * @return DiffReport The {@see indexesDiff()} report, with `$applied` set when at least one index has been created or rebuilt.
      *
@@ -280,6 +291,72 @@ trait IndexManagementTrait
     }
 
     /**
+     * Canonicalises a declared inverted-index body and its matched server
+     * body so the per-key comparison of {@see compareIndexBody()} no longer
+     * trips over the shapes the server normalises:
+     *
+     * - `fields` — a declared string `"x"` is the server's `{ name:"x", … }`,
+     *   so declared strings are lifted to `{ name }` objects;
+     * - `primarySort` — the declared `{ direction:"asc" }` and the server's
+     *   `{ asc:true }` are folded to one spelling (see {@see normalisePrimarySort()});
+     * - `features` — compared order-insensitively (the server may reorder them);
+     * - `fields` / `primarySort` / `storedValues` — every server key the
+     *   declaration does not mention (`compression`, per-field flags, …) is
+     *   projected away (see {@see projectOntoDeclared()}), per the
+     *   "compare only what is declared" contract.
+     *
+     * @param array<string, mixed> $declared The declared inverted-index body.
+     * @param array<string, mixed> $actual   The matched server index body.
+     *
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>} The canonicalised `[ declared , actual ]` pair.
+     */
+    private function canonicaliseInvertedBodies( array $declared , array $actual ) : array
+    {
+        if ( array_key_exists( IndexField::FIELDS , $declared ) )
+        {
+            $declared[ IndexField::FIELDS ] = array_map
+            (
+                fn( $field ) => is_string( $field ) ? [ IndexField::NAME => $field ] : $field ,
+                array_values( $declared[ IndexField::FIELDS ] )
+            ) ;
+        }
+
+        if ( array_key_exists( IndexField::PRIMARY_SORT , $declared ) )
+        {
+            $declared[ IndexField::PRIMARY_SORT ] = $this->normalisePrimarySort( $declared[ IndexField::PRIMARY_SORT ] ) ;
+
+            if ( array_key_exists( IndexField::PRIMARY_SORT , $actual ) )
+            {
+                $actual[ IndexField::PRIMARY_SORT ] = $this->normalisePrimarySort( $actual[ IndexField::PRIMARY_SORT ] ) ;
+            }
+        }
+
+        if ( array_key_exists( IndexField::FEATURES , $declared ) && is_array( $declared[ IndexField::FEATURES ] ) )
+        {
+            $declaredFeatures = $declared[ IndexField::FEATURES ] ;
+            sort( $declaredFeatures ) ;
+            $declared[ IndexField::FEATURES ] = $declaredFeatures ;
+
+            if ( is_array( $actual[ IndexField::FEATURES ] ?? null ) )
+            {
+                $actualFeatures = $actual[ IndexField::FEATURES ] ;
+                sort( $actualFeatures ) ;
+                $actual[ IndexField::FEATURES ] = $actualFeatures ;
+            }
+        }
+
+        foreach ( [ IndexField::FIELDS , IndexField::PRIMARY_SORT , IndexField::STORED_VALUES ] as $key )
+        {
+            if ( array_key_exists( $key , $declared ) && array_key_exists( $key , $actual ) )
+            {
+                $actual[ $key ] = $this->projectOntoDeclared( $declared[ $key ] , $actual[ $key ] ) ;
+            }
+        }
+
+        return [ $declared , $actual ] ;
+    }
+
+    /**
      * Accumulates one line per declared key whose server value differs —
      * see {@see indexesDiff()} for the comparison semantics. The `fields`
      * lists compare order-sensitively; every drift line carries the
@@ -293,6 +370,11 @@ trait IndexManagementTrait
      */
     private function compareIndexBody( string $label , array $body , array $actual ) : array
     {
+        if ( ( $body[ IndexField::TYPE ] ?? null ) === IndexType::INVERTED )
+        {
+            [ $body , $actual ] = $this->canonicaliseInvertedBodies( $body , $actual ) ;
+        }
+
         $changes = [] ;
 
         foreach ( $body as $key => $value )
@@ -319,19 +401,25 @@ trait IndexManagementTrait
     }
 
     /**
-     * Normalises a declared index ({@see IndexOptions} value object or raw
-     * array) into its comparable body: the serialised creation payload,
-     * minus `inBackground` (a creation-time option the server never echoes).
+     * Normalises a declared index ({@see IndexDefinition} value object,
+     * {@see IndexOptions} value object or raw array) into its comparable
+     * body: the serialised creation payload, minus `inBackground` (a
+     * creation-time option the server never echoes).
      *
-     * @param IndexOptions|array<string, mixed> $declared
+     * @param IndexDefinition|IndexOptions|array<string, mixed> $declared
      *
      * @return array<string, mixed>
      *
      * @throws ReflectionException When the {@see IndexOptions} cannot be serialised.
      */
-    private function indexBody( IndexOptions|array $declared ) : array
+    private function indexBody( IndexDefinition|IndexOptions|array $declared ) : array
     {
-        $body = $declared instanceof IndexOptions ? $declared->jsonSerialize() : $declared ;
+        $body = match( true )
+        {
+            $declared instanceof IndexDefinition => $declared->toArray() ,
+            $declared instanceof IndexOptions    => $declared->jsonSerialize() ,
+            default                              => $declared ,
+        } ;
 
         unset( $body[ IndexField::IN_BACKGROUND ] ) ;
 
@@ -378,13 +466,109 @@ trait IndexManagementTrait
             }
 
             if ( ( $index[ IndexField::TYPE ] ?? null ) === ( $body[ IndexField::TYPE ] ?? null )
-              && array_values( $index[ IndexField::FIELDS ] ?? [] ) === array_values( $body[ IndexField::FIELDS ] ?? [] ) )
+              && $this->fieldsSignature( $index ) === $this->fieldsSignature( $body ) )
             {
                 return $index ;
             }
         }
 
         return null ;
+    }
+
+    /**
+     * Returns the ordered `fields` signature used to match an unnamed index.
+     * For an inverted index the server expands each declared string field
+     * into a `{ name, … }` object, so both sides are reduced to their bare
+     * attribute names; every other type keeps its raw `fields` list.
+     *
+     * @param array<string, mixed> $body The declared or server index body.
+     *
+     * @return array<int, mixed>
+     */
+    private function fieldsSignature( array $body ) : array
+    {
+        $fields = array_values( $body[ IndexField::FIELDS ] ?? [] ) ;
+
+        if ( ( $body[ IndexField::TYPE ] ?? null ) !== IndexType::INVERTED )
+        {
+            return $fields ;
+        }
+
+        return array_map
+        (
+            fn( $field ) => is_array( $field ) ? ( $field[ IndexField::NAME ] ?? null ) : $field ,
+            $fields
+        ) ;
+    }
+
+    /**
+     * Folds a `primarySort` definition to one canonical spelling of its sort
+     * direction: the declared `{ field, direction:"asc"|"desc" }` and the
+     * server's `{ field, asc:bool }` both become `{ field, asc:bool }`, so the
+     * two compare equal. Non-array input and direction-less fields pass
+     * through untouched.
+     *
+     * @param mixed $primarySort The declared or server `primarySort` value.
+     *
+     * @return mixed The canonicalised value (an array when the input was one).
+     */
+    private function normalisePrimarySort( mixed $primarySort ) : mixed
+    {
+        if ( !is_array( $primarySort ) || !is_array( $primarySort[ IndexField::FIELDS ] ?? null ) )
+        {
+            return $primarySort ;
+        }
+
+        $primarySort[ IndexField::FIELDS ] = array_map( function( $field )
+        {
+            if ( !is_array( $field ) )
+            {
+                return $field ;
+            }
+
+            if ( array_key_exists( IndexField::ASC , $field ) )
+            {
+                $field[ IndexField::ASC ] = (bool) $field[ IndexField::ASC ] ;
+            }
+            elseif ( array_key_exists( IndexField::DIRECTION , $field ) )
+            {
+                $field[ IndexField::ASC ] = strtolower( (string) $field[ IndexField::DIRECTION ] ) !== 'desc' ;
+                unset( $field[ IndexField::DIRECTION ] ) ;
+            }
+
+            return $field ;
+        } , array_values( $primarySort[ IndexField::FIELDS ] ) ) ;
+
+        return $primarySort ;
+    }
+
+    /**
+     * Projects `$actual` onto the shape of `$declared`, recursively: only the
+     * keys present in `$declared` are kept (by key for maps, by position for
+     * lists), so the defaults the server fills in but the declaration omits
+     * never read as drift. A scalar (or a `$declared` leaf) returns `$actual`
+     * verbatim.
+     *
+     * @param mixed $declared The declared sub-tree.
+     * @param mixed $actual   The matched server sub-tree.
+     *
+     * @return mixed The server value reduced to the declared shape.
+     */
+    private function projectOntoDeclared( mixed $declared , mixed $actual ) : mixed
+    {
+        if ( !is_array( $declared ) || !is_array( $actual ) )
+        {
+            return $actual ;
+        }
+
+        $projected = [] ;
+
+        foreach ( $declared as $key => $value )
+        {
+            $projected[ $key ] = $this->projectOntoDeclared( $value , $actual[ $key ] ?? null ) ;
+        }
+
+        return $projected ;
     }
 
     /**

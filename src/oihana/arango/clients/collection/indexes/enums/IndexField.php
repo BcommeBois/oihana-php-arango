@@ -27,6 +27,13 @@ class IndexField
     public const string ANALYZER = 'analyzer' ;
 
     /**
+     * Ascending-direction flag the server stores for each
+     * `primarySort` field (`{ field, asc:bool }`, `inverted` only) — the
+     * response-side counterpart of the request-side {@see DIRECTION}.
+     */
+    public const string ASC = 'asc' ;
+
+    /**
      * Whether inverted-index entries are cached in memory
      * (`inverted` only).
      */
@@ -61,6 +68,13 @@ class IndexField
      * silently deduplicated rather than rejected (`persistent` only).
      */
     public const string DEDUPLICATE = 'deduplicate' ;
+
+    /**
+     * Sort direction declared for a `primarySort` field
+     * (`{ field, direction:"asc"|"desc" }`, `inverted` only) — the
+     * request-side counterpart of the response-side {@see ASC}.
+     */
+    public const string DIRECTION = 'direction' ;
 
     /**
      * Whether the index should maintain selectivity estimates for the

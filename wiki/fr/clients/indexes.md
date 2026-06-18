@@ -125,6 +125,18 @@ new InvertedIndex(
 ) ;
 ```
 
+#### Différence (diff) d'un index inversé
+
+`indexesDiff()` et `arango:doctor` réconcilient un index inversé de façon **canonique**. Le serveur normalise ce qu'il stocke : un champ déclaré sous forme de chaîne (`'title'`) est renvoyé sous forme d'objet `{ name: 'title' }`, la direction de `primarySort` s'écrit `{ asc: true }` plutôt que `{ direction: 'asc' }`, et les valeurs par défaut omises par la déclaration (`compression`, les indicateurs par champ, …) sont complétées. Ces normalisations sont absorbées avant la comparaison : un index inversé réellement à jour ne ressort donc plus comme un faux drift — seule une vraie divergence (un `primarySort` différent, un `storedValues` supprimé, …) est signalée.
+
+Un objet `InvertedIndex` peut être déclaré **directement** — dans le [registre `collectionIndexes`](../commands/arangodb.md), ou passé à `indexesDiff()` / `createIndex()` — au lieu d'être écrit à la main sous forme de tableau brut :
+
+```php
+$collectionIndexes = [
+    'articles' => new InvertedIndex( fields: [ 'title' , 'body' ] , name: 'inv_search' , analyzer: 'text_en' ) ,
+] ;
+```
+
 ### `FulltextIndex` — legacy
 
 Déprécié depuis ArangoDB 3.10 au profit d'`InvertedIndex`. Toujours présent pour la rétrocompatibilité :

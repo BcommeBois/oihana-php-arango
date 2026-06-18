@@ -4,6 +4,7 @@ namespace tests\oihana\arango\db\traits;
 
 use oihana\arango\clients\Database;
 use oihana\arango\clients\collection\Collection;
+use oihana\arango\clients\collection\indexes\InvertedIndex;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\db\enums\DiffKind;
 use oihana\arango\db\enums\DiffStatus;
@@ -14,6 +15,7 @@ use oihana\arango\db\traits\IndexManagementTrait;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversTrait;
 
+use ReflectionException;
 use tests\oihana\arango\db\ArangoDBTestCase;
 
 /**
@@ -319,6 +321,10 @@ class IndexManagementTraitTest extends ArangoDBTestCase
 
     // ---- indexesSync --------------------------------------------------------
 
+    /**
+     * @return void
+     * @throws ReflectionException
+     */
     public function testIndexesSyncCreatesAMissingIndex() :void
     {
         $collection = $this->collectionWithIndexes( [] ) ;
@@ -330,6 +336,10 @@ class IndexManagementTraitTest extends ArangoDBTestCase
         $this->assertTrue( $report->applied ) ;
     }
 
+    /**
+     * @return void
+     * @throws ReflectionException
+     */
     public function testIndexesSyncLeavesADriftedIndexWithoutForce() :void
     {
         $collection = $this->collectionWithIndexes( [ $this->serverIndex( [ 'unique' => false ] ) ] ) ;
@@ -342,6 +352,10 @@ class IndexManagementTraitTest extends ArangoDBTestCase
         $this->assertFalse( $report->applied ) ;
     }
 
+    /**
+     * @return void
+     * @throws ReflectionException
+     */
     public function testIndexesSyncRebuildsADriftedIndexWithForce() :void
     {
         $collection = $this->collectionWithIndexes( [ $this->serverIndex( [ 'unique' => false ] ) ] ) ;
@@ -413,5 +427,206 @@ class IndexManagementTraitTest extends ArangoDBTestCase
 
         $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertFalse( $report->applied ) ;
+    }
+
+    // ---- inverted indexes ---------------------------------------------------
+
+    /**
+     * A server-side inverted index payload, normalised the way the server
+     * answers (string fields expanded to `{ name }` objects, `primarySort`
+     * direction stored as `{ asc }`, defaults filled in, extras added) — the
+     * real shape captured live on ArangoDB 3.12.
+     */
+    private function serverInvertedIndex( array $overrides = [] ) :array
+    {
+        return
+        [
+            'analyzer'                  => 'identity' ,
+            'cleanupIntervalStep'       => 2 ,
+            'commitIntervalMsec'        => 1000 ,
+            'consolidationIntervalMsec' => 1000 ,
+            'consolidationPolicy'       => [ 'type' => 'tier' , 'segmentsMax' => 10 , 'segmentsMin' => 1 ] ,
+            'features'                  => [ 'frequency' , 'norm' ] ,
+            'fields'                    => [ [ 'name' => 'tag' ] ] ,
+            'id'                        => 'places/100' ,
+            'includeAllFields'          => false ,
+            'name'                      => 'inv_search' ,
+            'primarySort'               => [ 'fields' => [] , 'compression' => 'lz4' ] ,
+            'searchField'               => false ,
+            'sparse'                    => true ,
+            'storedValues'              => [] ,
+            'trackListPositions'        => false ,
+            'type'                      => 'inverted' ,
+            'unique'                    => false ,
+            'version'                   => 1 ,
+            'writebufferActive'         => 0 ,
+            'writebufferIdle'           => 64 ,
+            'writebufferSizeMax'        => 33554432 ,
+            ...$overrides ,
+        ] ;
+    }
+
+    public function testIndexesDiffIsInSyncOnASimpleInvertedIndex() :void
+    {
+        // declared string field + top-level analyzer vs the server's expanded
+        // `{ name }` field and filled-in defaults : no false drift.
+        $declared = [ new InvertedIndex( fields: [ 'tag' ] , name: 'inv_search' , analyzer: 'identity' ) ] ;
+
+        $db = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $this->serverInvertedIndex() ] ) ) ) ;
+
+        $report = $db->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertTrue( $report->inSync() , implode( ' | ' , $report->changes ) ) ;
+        $this->assertSame( [] , $report->changes ) ;
+    }
+
+    public function testIndexesDiffIsInSyncOnInvertedPrimarySortAndStoredValues() :void
+    {
+        // the special inverted options : declared `{ direction:"asc" }` vs the
+        // server's `{ asc:true }`, declared `storedValues` without the server's
+        // default `compression` — all reconciled, no false drift.
+        $declared =
+        [
+            new InvertedIndex
+            (
+                fields       : [ 'title' ] ,
+                name         : 'inv_nested' ,
+                analyzer     : 'identity' ,
+                primarySort  : [ 'fields' => [ [ 'field' => 'title' , 'direction' => 'asc' ] ] ] ,
+                storedValues : [ [ 'fields' => [ 'title' ] ] ] ,
+            )
+        ] ;
+
+        $server = $this->serverInvertedIndex(
+        [
+            'name'         => 'inv_nested' ,
+            'fields'       => [ [ 'name' => 'title' ] ] ,
+            'primarySort'  => [ 'fields' => [ [ 'field' => 'title' , 'asc' => true ] ] , 'compression' => 'lz4' ] ,
+            'storedValues' => [ [ 'fields' => [ 'title' ] , 'compression' => 'lz4' ] ] ,
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertTrue( $report->inSync() , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    public function testIndexesDiffDetectsARealPrimarySortDrift() :void
+    {
+        // declared ascending, server descending : a genuine drift must surface.
+        $declared =
+        [
+            new InvertedIndex
+            (
+                fields      : [ 'title' ] ,
+                name        : 'inv_nested' ,
+                primarySort : [ 'fields' => [ [ 'field' => 'title' , 'direction' => 'asc' ] ] ] ,
+            )
+        ] ;
+
+        $server = $this->serverInvertedIndex(
+        [
+            'name'        => 'inv_nested' ,
+            'fields'      => [ [ 'name' => 'title' ] ] ,
+            'primarySort' => [ 'fields' => [ [ 'field' => 'title' , 'asc' => false ] ] , 'compression' => 'lz4' ] ,
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertStringContainsString( 'inv_nested.primarySort' , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    public function testIndexesDiffDetectsARealStoredValuesDrift() :void
+    {
+        // declared a stored value the server does not keep : genuine drift.
+        $declared =
+        [
+            new InvertedIndex
+            (
+                fields       : [ 'title' ] ,
+                name         : 'inv_nested' ,
+                storedValues : [ [ 'fields' => [ 'title' ] ] ] ,
+            )
+        ] ;
+
+        $server = $this->serverInvertedIndex(
+        [
+            'name'         => 'inv_nested' ,
+            'fields'       => [ [ 'name' => 'title' ] ] ,
+            'storedValues' => [] ,
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertStringContainsString( 'inv_nested.storedValues' , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    public function testIndexesDiffComparesInvertedFeaturesOrderInsensitively() :void
+    {
+        $declared = [ new InvertedIndex( fields: [ 'tag' ] , name: 'inv_search' , features: [ 'position' , 'frequency' ] ) ] ;
+
+        $server = $this->serverInvertedIndex( [ 'features' => [ 'frequency' , 'position' ] ] ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertTrue( $report->inSync() , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    public function testIndexesDiffMatchesUnnamedInvertedIndexByExpandedFields() :void
+    {
+        // a raw, unnamed inverted declaration (string field) must still match
+        // the server index whose fields are `{ name }` objects.
+        $declared = [ [ 'type' => 'inverted' , 'fields' => [ 'tag' ] ] ] ;
+
+        $server = $this->serverInvertedIndex( [ 'name' => 'idx_auto_inverted' ] ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertTrue( $report->inSync() , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    public function testIndexesDiffToleratesANonArrayPrimarySort() :void
+    {
+        // defensive : a malformed (non-array) primarySort passes through the
+        // canonicaliser untouched on both sides.
+        $declared = [ [ 'type' => 'inverted' , 'fields' => [ 'tag' ] , 'name' => 'inv_search' , 'primarySort' => 'unexpected' ] ] ;
+
+        $server = $this->serverInvertedIndex( [ 'primarySort' => 'unexpected' ] ) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertTrue( $report->inSync() , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    public function testIndexesDiffToleratesScalarPrimarySortFields() :void
+    {
+        // defensive : a primarySort whose field entries are bare scalars (not
+        // `{ field, asc }` maps) is left as-is by the direction folding.
+        $declared = [ [ 'type' => 'inverted' , 'fields' => [ 'title' ] , 'name' => 'inv_nested' , 'primarySort' => [ 'fields' => [ 'title' ] ] ] ] ;
+
+        $server = $this->serverInvertedIndex(
+        [
+            'name'        => 'inv_nested' ,
+            'fields'      => [ [ 'name' => 'title' ] ] ,
+            'primarySort' => [ 'fields' => [ 'title' ] ] ,
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertTrue( $report->inSync() , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    public function testCreateIndexAcceptsAnInvertedIndexDefinition() :void
+    {
+        $collection = $this->createMock( Collection::class ) ;
+        $collection->expects( $this->once() )
+                   ->method( 'createIndex' )
+                   ->with( $this->isInstanceOf( InvertedIndex::class ) )
+                   ->willReturn( [ 'id' => 'products/9' ] ) ;
+
+        $db = $this->newArangoDB( $this->databaseReturning( $collection ) ) ;
+
+        $this->assertSame( [ 'id' => 'products/9' ] , $db->createIndex( 'products' , new InvertedIndex( fields: [ 'name' ] , analyzer: 'text_en' ) ) ) ;
     }
 }

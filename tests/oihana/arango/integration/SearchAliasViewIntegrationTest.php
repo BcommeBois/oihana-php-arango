@@ -93,6 +93,52 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * G1c — the inverted index seeded per collection is reported IN_SYNC by
+     * `indexesDiff()` on a real server: proves the canonicaliser lines up the
+     * declared string field with the server's `{ name }` object (no false
+     * drift) on ArangoDB itself.
+     *
+     * @throws ArangoException
+     */
+    public function testIndexesDiffOnSeededInvertedIndexIsInSync() :void
+    {
+        $facade   = $this->facade() ;
+        $declared = new InvertedIndex( fields: [ 'tag' ] , name: self::INDEX , analyzer: 'identity' ) ;
+
+        $report = $facade->indexesDiff( self::CUSTOMERS , [ $declared ] ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    /**
+     * G1c — the special inverted options reconcile against the live server:
+     * the declared `{ direction:"asc" }` vs the stored `{ asc:true }`, and the
+     * declared `storedValues` without the server's default `compression`, all
+     * read IN_SYNC.
+     *
+     * @throws ArangoException
+     */
+    public function testIndexesDiffReconcilesInvertedSpecialOptions() :void
+    {
+        $collection = 'it_sa_nested' ;
+        self::$db->collection( $collection )->create() ;
+
+        $declared = new InvertedIndex
+        (
+            fields       : [ 'title' ] ,
+            name         : 'inv_nested' ,
+            analyzer     : 'identity' ,
+            primarySort  : [ 'fields' => [ [ 'field' => 'title' , 'direction' => 'asc' ] ] ] ,
+            storedValues : [ [ 'fields' => [ 'title' ] ] ] ,
+        ) ;
+        self::$db->collection( $collection )->createIndex( $declared ) ;
+
+        $report = $this->facade()->indexesDiff( $collection , [ $declared ] ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    /**
      * Builds a live {@see ArangoDB} façade bound to the disposable database.
      */
     private function facade() :ArangoDB
