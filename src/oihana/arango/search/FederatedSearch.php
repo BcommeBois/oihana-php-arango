@@ -4,23 +4,25 @@ namespace oihana\arango\search ;
 
 use DI\Container ;
 
-use DI\DependencyException;
-use DI\NotFoundException;
 use oihana\arango\clients\analyzer\enums\AnalyzerType ;
-use oihana\arango\clients\exceptions\ArangoException;
+use oihana\arango\clients\cursor\enums\CursorField ;
 use oihana\arango\db\ArangoDB ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\db\enums\Comparator ;
 use oihana\arango\db\enums\Logic ;
 use oihana\arango\enums\Arango ;
+use oihana\arango\models\Documents ;
 use oihana\arango\models\enums\Search ;
+use oihana\arango\models\enums\filters\FilterComparator ;
+use oihana\arango\models\enums\filters\FilterParam ;
 use oihana\arango\search\enums\FederatedSearchParam ;
 
+use oihana\controllers\enums\Skin ;
 use oihana\enums\Char ;
-use oihana\exceptions\BindException;
 use oihana\traits\ContainerTrait ;
 
-use ReflectionException;
+use org\schema\constants\Schema ;
+
 use function oihana\arango\db\binds\aqlBind ;
 use function oihana\arango\db\functions\documents\parseIdentifier ;
 use function oihana\arango\db\functions\strings\tokens ;
@@ -40,21 +42,26 @@ use function oihana\core\strings\key ;
  * a librarian who first hands you a ranked list of call numbers, then fetches
  * each book at its own shelf:
  *
- * 1. **Find** — {@see find()} runs one SEARCH over the `search-alias` view and
- *    returns, for every match, only its source collection, its `_key` and its
- *    relevance score (BM25), ranked and paginated.
- * 2. **Rebuild** — the matches are grouped by collection and each group is
- *    re-hydrated by the model that owns it (resolved through the
- *    collection → model registry), reusing that model's own projection
- *    pipeline; the results are then merged back in score order (Lot C3).
+ * 1. **Find** — {@see find()} runs one scored SEARCH over the `search-alias`
+ *    view and returns, for every match, only its source collection, its `_key`
+ *    and its relevance score (BM25), globally ranked and **paginated** (the
+ *    LIMIT is applied once, on the whole ranking).
+ * 2. **Rebuild** — {@see rebuild()} groups the page by collection and re-hydrates
+ *    each group **in one `list()` call per collection** (not per result) through
+ *    the model that owns it, reusing that model's own projection pipeline
+ *    (fields, joins, skin, permissions); the documents are then merged back in
+ *    score order, each wrapped as `{ collection, score, document }`.
  *
- * This is the read-only orchestrator. It is **not** a {@see \oihana\arango\models\Documents}
- * subclass — it owns no single collection — but a standalone, container-aware
- * service: the container resolves the per-collection models at rebuild time.
+ * Pagination is done once, in the cheap *find* stage, so *rebuild* only ever
+ * touches one page of documents. The total number of matches (before the LIMIT)
+ * is exposed by {@see foundRows()}, the federated counterpart of the model
+ * `foundRows()`, so a UI can render "X results, page Y".
  *
- * Lots delivered so far: C1 (skeleton + registry) and C2 (the *find* stage).
- * The *rebuild* stage, the per-source permission gate and the HTTP triplet
- * land in the later lots.
+ * This is the read-only orchestrator. It is **not** a {@see Documents} subclass
+ * — it owns no single collection — but a standalone, container-aware service:
+ * the container resolves the per-collection models at rebuild time.
+ *
+ * The per-source permission gate and the HTTP triplet land in the later lots.
  *
  * @package oihana\arango\search
  * @author  Marc Alcaraz (ekameleon)
@@ -65,17 +72,15 @@ class FederatedSearch
     /**
      * Creates a new FederatedSearch engine.
      *
-     * @param Container $container The DI container, used to resolve the database and the per-collection models.
-     * @param array<string, mixed> $init The engine options:
+     * @param Container            $container The DI container, used to resolve the database and the per-collection models.
+     * @param array<string, mixed> $init      The engine options:
      * <ul>
      *   <li>{@see FederatedSearchParam::VIEW}       — the `search-alias` view name to query.</li>
      *   <li>{@see FederatedSearchParam::SEARCHABLE} — the federated search spec (`fields` + `analyzer`).</li>
      *   <li>{@see FederatedSearchParam::MODELS}     — the `collection => model-service-id` registry.</li>
+     *   <li>{@see FederatedSearchParam::SKIN}       — the default skin used to rebuild documents (default {@see Skin::DEFAULT}).</li>
      *   <li>{@see Arango::DATABASE}                 — the {@see ArangoDB} façade (or its container id) used to run the search.</li>
      * </ul>
-     *
-     * @throws DependencyException
-     * @throws NotFoundException
      */
     public function __construct( Container $container , array $init = [] )
     {
@@ -84,6 +89,7 @@ class FederatedSearch
         $this->initializeDatabase  ( $init )
              ->initializeView      ( $init )
              ->initializeSearchable( $init )
+             ->initializeSkin      ( $init )
              ->initializeModels    ( $init ) ;
     }
 
@@ -95,8 +101,13 @@ class FederatedSearch
     public const int DEFAULT_LIMIT = 25 ;
 
     /**
-     * The relevance-score key carried by each {@see find()} result row (and
-     * the AQL `LET` score variable name).
+     * The rebuilt-document key carried by each {@see search()} result row.
+     */
+    public const string DOCUMENT = 'document' ;
+
+    /**
+     * The relevance-score key carried by each result row (and the AQL `LET`
+     * score variable name).
      */
     public const string SCORE = 'score' ;
 
@@ -107,6 +118,14 @@ class FederatedSearch
      * @var ArangoDB|null
      */
     public ?ArangoDB $arangodb = null ;
+
+    /**
+     * The total number of matches of the last {@see find()} — before the
+     * LIMIT, exposed by {@see foundRows()}.
+     *
+     * @var int
+     */
+    private int $found = 0 ;
 
     /**
      * The collection → model-service-id registry — the directory telling the
@@ -125,6 +144,14 @@ class FederatedSearch
     public array $searchable = [] ;
 
     /**
+     * The default skin (projection variant) used to rebuild the matched
+     * documents, overridable per request by `Arango::SKIN`.
+     *
+     * @var string|null
+     */
+    public ?string $skin = Skin::DEFAULT ;
+
+    /**
      * The name of the `search-alias` view to query, or null when none is set.
      *
      * @var string|null
@@ -138,8 +165,9 @@ class FederatedSearch
      *
      * The query term is **bound** (never inlined); the search-alias view, the
      * search spec, the database or the term being absent each yield an empty
-     * result set (nothing to search). The full documents are not fetched here —
-     * that is the *rebuild* stage (Lot C3).
+     * result set (nothing to search). The query runs with `fullCount`, so
+     * {@see foundRows()} returns the total number of matches before the LIMIT.
+     * The full documents are not fetched here — that is {@see rebuild()}.
      *
      * @param array<string, mixed> $init The request options:
      * <ul>
@@ -150,12 +178,14 @@ class FederatedSearch
      *
      * @return array<int, array<string, mixed>> The ranked `{ collection, key, score }` rows.
      *
-     * @throws ArangoException
-     * @throws BindException
-     * @throws ReflectionException
+     * @throws \oihana\exceptions\BindException
+     * @throws \ReflectionException
+     * @throws \oihana\arango\clients\exceptions\ArangoException
      */
     public function find( array $init = [] ) : array
     {
+        $this->found = 0 ;
+
         $term = $init[ Arango::SEARCH ] ?? null ;
         $view = $this->getViewName() ;
 
@@ -183,7 +213,24 @@ class FederatedSearch
             return   : $this->returnExpression() ,
         ) ;
 
-        return $this->arangodb->database()->query( $aql , $binds )->all() ;
+        $cursor = $this->arangodb->database()->query( $aql , $binds , [ CursorField::OPTIONS => [ CursorField::FULL_COUNT => true ] ] ) ;
+        $rows   = $cursor->all() ;
+
+        $this->found = $cursor->getFullCount() ;
+
+        return $rows ;
+    }
+
+    /**
+     * Returns the total number of matches of the last {@see find()} / {@see search()}
+     * before the LIMIT — the federated counterpart of the model `foundRows()`,
+     * for "X results, page Y" pagination.
+     *
+     * @return int
+     */
+    public function foundRows() : int
+    {
+        return $this->found ;
     }
 
     /**
@@ -197,25 +244,116 @@ class FederatedSearch
     }
 
     /**
-     * Runs a federated search and returns the matching documents, rebuilt by
-     * their own model and ranked by relevance.
+     * Stage 2 — *rebuild*: re-hydrates a *find* result page into full documents,
+     * ranked by relevance. The matches are grouped by collection and each group
+     * is rebuilt **in one `list()` call per collection** (a `_key IN […]` filter)
+     * by the model that owns it — resolved through the collection → model
+     * registry — applying the resolved skin (request `Arango::SKIN` → the engine
+     * default → {@see Skin::DEFAULT}). The documents are then merged back in the
+     * find order, each wrapped as `{ collection, score, document }`.
      *
-     * As of Lot C2 the *find* stage is wired but the *rebuild* stage (Lot C3)
-     * is not, so this returns the raw ranked `{ collection, key, score }` rows
-     * of {@see find()}; the per-collection re-hydration and the score merge
-     * land next.
+     * A match whose collection is not in the registry (or whose model does not
+     * resolve to a {@see Documents}, or whose document the model does not return
+     * — filtered out by its own rules) is dropped: the model stays authoritative.
      *
-     * @param array<string, mixed> $init The request options (the query term, pagination, the authorizer, …).
+     * @param array<int, array<string, mixed>> $matches The {@see find()} rows.
+     * @param array<string, mixed>             $init    The request options (`Arango::SKIN` overrides the engine default).
      *
-     * @return array<int, mixed> The flat, score-ranked result list.
+     * @return array<int, array<string, mixed>> The ranked `{ collection, score, document }` rows.
+     */
+    public function rebuild( array $matches , array $init = [] ) : array
+    {
+        if ( $matches === [] )
+        {
+            return [] ;
+        }
+
+        $skin = $init[ Arango::SKIN ] ?? $this->skin ;
+
+        // group keys by collection : one batched list() per collection, not per result
+        $keysByCollection = [] ;
+
+        foreach ( $matches as $match )
+        {
+            $collection = $match[ Arango::COLLECTION ] ?? null ;
+            $key        = $match[ Arango::KEY        ] ?? null ;
+
+            if ( is_string( $collection ) && is_string( $key ) )
+            {
+                $keysByCollection[ $collection ][] = $key ;
+            }
+        }
+
+        // rebuild each collection through its model, index the documents by key
+        $hydrated = [] ;
+
+        foreach ( $keysByCollection as $collection => $keys )
+        {
+            $model = $this->resolveModel( $collection ) ;
+
+            if ( $model === null )
+            {
+                continue ;
+            }
+
+            $documents = $model->list
+            ([
+                Arango::FILTER => [ FilterParam::KEY => Schema::_KEY , FilterParam::OP => FilterComparator::IN , FilterParam::VAL => $keys ] ,
+                Arango::SKIN   => $skin ,
+            ]) ;
+
+            foreach ( $documents as $document )
+            {
+                $documentKey = $this->documentKey( $document ) ;
+
+                if ( $documentKey !== null )
+                {
+                    $hydrated[ $collection ][ $documentKey ] = $document ;
+                }
+            }
+        }
+
+        // re-merge in find (score) order, wrapping each rebuilt document
+        $results = [] ;
+
+        foreach ( $matches as $match )
+        {
+            $collection = $match[ Arango::COLLECTION ] ?? null ;
+            $key        = $match[ Arango::KEY        ] ?? null ;
+            $document   = ( is_string( $collection ) && is_string( $key ) ) ? ( $hydrated[ $collection ][ $key ] ?? null ) : null ;
+
+            if ( $document !== null )
+            {
+                $results[] =
+                [
+                    Arango::COLLECTION => $collection ,
+                    self::SCORE        => $match[ self::SCORE ] ?? 0 ,
+                    self::DOCUMENT     => $document ,
+                ] ;
+            }
+        }
+
+        return $results ;
+    }
+
+    /**
+     * Runs a federated search end to end: the *find* stage ranks and paginates
+     * the matches across every collection, the *rebuild* stage re-hydrates the
+     * page through each owning model. Returns a flat list ranked by relevance,
+     * each row `{ collection, score, document }`; {@see foundRows()} carries the
+     * total for pagination.
      *
-     * @throws BindException
-     * @throws ReflectionException
-     * @throws ArangoException
+     * @param array<string, mixed> $init The request options (the query term, pagination, the skin, …).
+     *
+     * @return array<int, array<string, mixed>> The ranked `{ collection, score, document }` rows.
+     *
+     * @throws \oihana\exceptions\BindException
+     * @throws \ReflectionException
+     * @throws \oihana\arango\clients\exceptions\ArangoException
      */
     public function search( array $init = [] ) : array
     {
-        return $this->find( $init ) ;
+        return $this->rebuild( $this->find( $init ) , $init ) ;
     }
 
     /**
@@ -226,9 +364,6 @@ class FederatedSearch
      * @param array<string, mixed> $init
      *
      * @return static
-     *
-     * @throws DependencyException
-     * @throws NotFoundException
      */
     protected function initializeDatabase( array $init ) : static
     {
@@ -292,6 +427,23 @@ class FederatedSearch
     }
 
     /**
+     * Reads the engine default skin, keeping {@see Skin::DEFAULT} when none is
+     * declared (a non-string value is ignored).
+     *
+     * @param array<string, mixed> $init
+     *
+     * @return static
+     */
+    protected function initializeSkin( array $init ) : static
+    {
+        $skin = $init[ FederatedSearchParam::SKIN ] ?? null ;
+
+        $this->skin = is_string( $skin ) && $skin !== Char::EMPTY ? $skin : Skin::DEFAULT ;
+
+        return $this ;
+    }
+
+    /**
      * Reads the `search-alias` view name, keeping only a non-empty string.
      *
      * @param array<string, mixed> $init
@@ -326,12 +478,10 @@ class FederatedSearch
      * OR-combined. The term is bound (developer-trusted field names are inlined
      * by {@see key()}). Returns null when no usable field is declared.
      *
-     * @param string $term The query term.
+     * @param string                $term  The query term.
      * @param array<string, mixed> &$binds The bind variables, filled by reference.
      *
      * @return string|null
-     * 
-     * @throws BindException
      */
     private function buildSearchExpression( string $term , array &$binds ) : ?string
     {
@@ -356,6 +506,52 @@ class FederatedSearch
         }
 
         return $matches === [] ? null : compile( $matches , Char::SPACE . Logic::OR . Char::SPACE ) ;
+    }
+
+    /**
+     * Returns the `_key` of a rebuilt document, reading it from an array or an
+     * object shape (a model hydrates to either). Null when absent.
+     *
+     * @param mixed $document
+     *
+     * @return string|null
+     */
+    private function documentKey( mixed $document ) : ?string
+    {
+        if ( is_array( $document ) )
+        {
+            return isset( $document[ Schema::_KEY ] ) ? (string) $document[ Schema::_KEY ] : null ;
+        }
+
+        if ( is_object( $document ) && isset( $document->{ Schema::_KEY } ) )
+        {
+            return (string) $document->{ Schema::_KEY } ;
+        }
+
+        return null ;
+    }
+
+    /**
+     * Resolves the {@see Documents} model that rebuilds a collection through the
+     * registry + the container. Null when the collection is unregistered, the
+     * service is missing, or it is not a {@see Documents}.
+     *
+     * @param string $collection
+     *
+     * @return Documents|null
+     */
+    private function resolveModel( string $collection ) : ?Documents
+    {
+        $modelId = $this->models[ $collection ] ?? null ;
+
+        if ( $modelId === null || !$this->container->has( $modelId ) )
+        {
+            return null ;
+        }
+
+        $model = $this->container->get( $modelId ) ;
+
+        return $model instanceof Documents ? $model : null ;
     }
 
     /**

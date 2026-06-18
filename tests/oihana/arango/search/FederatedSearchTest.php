@@ -8,9 +8,12 @@ use oihana\arango\clients\Database ;
 use oihana\arango\clients\cursor\Cursor ;
 use oihana\arango\db\ArangoDB ;
 use oihana\arango\enums\Arango ;
+use oihana\arango\models\Documents ;
 use oihana\arango\models\enums\Search ;
 use oihana\arango\search\FederatedSearch ;
 use oihana\arango\search\enums\FederatedSearchParam ;
+
+use oihana\controllers\enums\Skin ;
 
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations ;
 use PHPUnit\Framework\Attributes\CoversClass ;
@@ -107,22 +110,25 @@ final class FederatedSearchTest extends TestCase
 
     /**
      * A canned search spec + registry, paired with a database double whose
-     * `query()` captures the AQL + binds and whose cursor returns `$rows`.
+     * `query()` captures the AQL + binds + options and whose cursor returns
+     * `$rows` and reports `$fullCount` total matches.
      *
      * @param array<int, array<string, mixed>> $rows
-     * @param array<string, mixed>|null        $captured Filled by reference with `[ aql, binds ]`.
+     * @param array<string, mixed>|null        $captured  Filled by reference with `[ aql, binds, options ]`.
+     * @param int                              $fullCount The total reported by `getFullCount()`.
      *
      * @return FederatedSearch
      */
-    private function engineWithDatabase( array $rows , ?array &$captured = null ) :FederatedSearch
+    private function engineWithDatabase( array $rows , ?array &$captured = null , int $fullCount = 0 ) :FederatedSearch
     {
         $cursor = $this->createMock( Cursor::class ) ;
         $cursor->method( 'all' )->willReturn( $rows ) ;
+        $cursor->method( 'getFullCount' )->willReturn( $fullCount ) ;
 
         $database = $this->createMock( Database::class ) ;
         $database->method( 'query' )->willReturnCallback( function( $aql , $binds = [] , $options = [] ) use ( &$captured , $cursor )
         {
-            $captured = [ 'aql' => $aql , 'binds' => $binds ] ;
+            $captured = [ 'aql' => $aql , 'binds' => $binds , 'options' => $options ] ;
             return $cursor ;
         } ) ;
 
@@ -138,11 +144,40 @@ final class FederatedSearchTest extends TestCase
         ]) ;
     }
 
+    /**
+     * A {@see Documents} test double (a real subtype, so it satisfies the
+     * engine's `instanceof Documents` guard) whose `list()` captures its init
+     * (read back via `$model->captured`) and returns the given documents.
+     *
+     * @param array<int, mixed> $documents
+     *
+     * @return FakeFederatedModel
+     */
+    private function modelReturning( array $documents ) :FakeFederatedModel
+    {
+        return new FakeFederatedModel( $documents ) ;
+    }
+
+    /**
+     * A container double resolving each `model-service-id => Documents` entry.
+     *
+     * @param array<string, Documents> $services
+     *
+     * @return Container
+     */
+    private function containerWith( array $services ) :Container
+    {
+        $container = $this->createMock( Container::class ) ;
+        $container->method( 'has' )->willReturnCallback( static fn( $id ) => isset( $services[ $id ] ) ) ;
+        $container->method( 'get' )->willReturnCallback( static fn( $id ) => $services[ $id ] ?? null ) ;
+        return $container ;
+    }
+
     public function testFindRunsAScoredSearchAndReturnsTheRows() :void
     {
         $rows = [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] , [ 'collection' => 'products' , 'key' => 'p1' , 'score' => 7.4 ] ] ;
 
-        $engine = $this->engineWithDatabase( $rows , $captured ) ;
+        $engine = $this->engineWithDatabase( $rows , $captured , 936 ) ;
 
         $this->assertSame( $rows , $engine->find( [ Arango::SEARCH => 'dupont' , Arango::LIMIT => 10 ] ) ) ;
 
@@ -158,6 +193,10 @@ final class FederatedSearchTest extends TestCase
         $this->assertStringContainsString( 'SORT score DESC' , $aql ) ;
         $this->assertStringContainsString( 'LIMIT 10' , $aql ) ;
         $this->assertStringContainsString( 'MERGE(PARSE_IDENTIFIER(doc._id)' , $aql ) ;
+
+        // fullCount requested → foundRows() exposes the total (before the LIMIT)
+        $this->assertSame( [ 'options' => [ 'fullCount' => true ] ] , $captured[ 'options' ] ) ;
+        $this->assertSame( 936 , $engine->foundRows() ) ;
     }
 
     public function testFindUsesTheDefaultLimitWhenNoneGiven() :void
@@ -222,11 +261,213 @@ final class FederatedSearchTest extends TestCase
         $this->assertSame( $arango , $engine->arangodb ) ;
     }
 
-    public function testSearchDelegatesToFind() :void
+    public function testFoundRowsIsZeroBeforeAnySearch() :void
     {
-        $rows   = [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 3.2 ] ] ;
-        $engine = $this->engineWithDatabase( $rows ) ;
+        $this->assertSame( 0 , $this->make()->foundRows() ) ;
+    }
 
-        $this->assertSame( $rows , $engine->search( [ Arango::SEARCH => 'dupont' ] ) ) ;
+    // ---- rebuild (Lot C3) ---------------------------------------------------
+
+    public function testRebuildGroupsByCollectionOrdersByScoreAndWraps() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] , [ '_key' => 'c2' , 'name' => 'Dupont & Fils' ] ] ) ;
+        $products  = $this->modelReturning( [ [ '_key' => 'p7' , 'name' => 'Colle Dupont' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers , 'model.products' => $products ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' , 'products' => 'model.products' ] ,
+            FederatedSearchParam::SKIN   => Skin::LIST ,
+        ]) ;
+
+        $matches =
+        [
+            [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ,
+            [ 'collection' => 'products'  , 'key' => 'p7' , 'score' => 7.4 ] ,
+            [ 'collection' => 'customers' , 'key' => 'c2' , 'score' => 5.2 ] ,
+        ] ;
+
+        // wrapped { collection, score, document }, in the find (score) order
+        $this->assertSame(
+        [
+            [ 'collection' => 'customers' , 'score' => 9.1 , 'document' => [ '_key' => 'c1' , 'name' => 'Dupont SARL'  ] ] ,
+            [ 'collection' => 'products'  , 'score' => 7.4 , 'document' => [ '_key' => 'p7' , 'name' => 'Colle Dupont' ] ] ,
+            [ 'collection' => 'customers' , 'score' => 5.2 , 'document' => [ '_key' => 'c2' , 'name' => 'Dupont & Fils' ] ] ,
+        ] , $engine->rebuild( $matches ) ) ;
+
+        // one batched list() per collection : a `_key IN [...]` filter + the resolved skin
+        $this->assertSame( [ 'key' => '_key' , 'op' => 'in' , 'val' => [ 'c1' , 'c2' ] ] , $customers->captured[ Arango::FILTER ] ) ;
+        $this->assertSame( Skin::LIST , $customers->captured[ Arango::SKIN ] ) ;
+        $this->assertSame( [ 'p7' ] , $products->captured[ Arango::FILTER ][ 'val' ] ) ;
+    }
+
+    public function testRebuildSkipsAnUnregisteredCollection() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] , // 'products' is NOT registered
+        ]) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ,
+            [ 'collection' => 'products'  , 'key' => 'p7' , 'score' => 7.4 ] , // dropped : no model
+        ]) ;
+
+        $this->assertCount( 1 , $results ) ;
+        $this->assertSame( 'customers' , $results[ 0 ][ 'collection' ] ) ;
+    }
+
+    public function testRebuildSkipsAMatchTheModelDoesNotReturn() :void
+    {
+        // the model returns c1 but not c2 (filtered out by its own rules) → c2 dropped
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ,
+        ]) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ,
+            [ 'collection' => 'customers' , 'key' => 'c2' , 'score' => 5.2 ] ,
+        ]) ;
+
+        $this->assertSame( [ 'c1' ] , array_map( static fn( $r ) => $r[ 'document' ][ '_key' ] , $results ) ) ;
+    }
+
+    public function testRebuildSkipsANonDocumentsService() :void
+    {
+        $container = $this->createMock( Container::class ) ;
+        $container->method( 'has' )->willReturn( true ) ;
+        $container->method( 'get' )->willReturn( new \stdClass() ) ; // not a Documents
+
+        $engine = new FederatedSearch( $container , [ FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ] ) ;
+
+        $this->assertSame( [] , $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ] ) ) ;
+    }
+
+    public function testRebuildReturnsEmptyOnNoMatches() :void
+    {
+        $this->assertSame( [] , $this->make()->rebuild( [] ) ) ;
+    }
+
+    public function testRebuildRequestSkinOverridesTheEngineDefault() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ,
+            FederatedSearchParam::SKIN   => Skin::LIST , // engine default
+        ]) ;
+
+        $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 1.0 ] ] , [ Arango::SKIN => Skin::COMPACT ] ) ;
+
+        $this->assertSame( Skin::COMPACT , $customers->captured[ Arango::SKIN ] ) ; // request wins
+    }
+
+    public function testRebuildFallsBackToSkinDefaultWhenNoneConfigured() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] , // no SKIN configured
+        ]) ;
+
+        $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 1.0 ] ] ) ;
+
+        $this->assertSame( Skin::DEFAULT , $customers->captured[ Arango::SKIN ] ) ;
+    }
+
+    public function testRebuildReadsTheKeyFromObjectDocuments() :void
+    {
+        // a model that hydrates to objects (not arrays) is still placed back by its _key
+        $document  = (object) [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ;
+        $customers = $this->modelReturning( [ $document ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ,
+        ]) ;
+
+        $results = $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ] ) ;
+
+        $this->assertSame( $document , $results[ 0 ][ 'document' ] ) ;
+    }
+
+    public function testRebuildDropsADocumentWithoutAResolvableKey() :void
+    {
+        // a key-less document cannot be matched back to its score → dropped
+        $customers = $this->modelReturning( [ 'orphan-without-key' ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ,
+        ]) ;
+
+        $this->assertSame( [] , $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ] ) ) ;
+    }
+
+    // ---- search (find + rebuild) --------------------------------------------
+
+    public function testSearchFindsThenRebuilds() :void
+    {
+        // database double feeding find() ...
+        $cursor = $this->createMock( Cursor::class ) ;
+        $cursor->method( 'all' )->willReturn( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ] ) ;
+        $cursor->method( 'getFullCount' )->willReturn( 1 ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'query' )->willReturn( $cursor ) ;
+
+        $arango = $this->createMock( ArangoDB::class ) ;
+        $arango->method( 'database' )->willReturn( $database ) ;
+
+        // ... and a model rebuilding the matched key
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::VIEW       => 'global_search' ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'name' ] ] ,
+            FederatedSearchParam::MODELS     => [ 'customers' => 'model.customers' ] ,
+            Arango::DATABASE                 => $arango ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            [ 'collection' => 'customers' , 'score' => 9.1 , 'document' => [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ,
+        ] , $engine->search( [ Arango::SEARCH => 'dupont' ] ) ) ;
+
+        $this->assertSame( 1 , $engine->foundRows() ) ;
+    }
+}
+
+/**
+ * A minimal {@see Documents} subtype for the rebuild tests: it satisfies the
+ * engine's `instanceof Documents` guard without booting the real model
+ * (the parent constructor is bypassed), captures its `list()` init in
+ * `$captured`, and returns canned documents.
+ */
+final class FakeFederatedModel extends Documents
+{
+    /** @var array<string, mixed> The last `list()` init. */
+    public array $captured = [] ;
+
+    /** @param array<int, mixed> $documents */
+    public function __construct( public array $documents = [] ) {}
+
+    /**
+     * @param array<string, mixed> $init
+     * @return array<int, mixed>
+     */
+    public function list( array $init = [] ) :array
+    {
+        $this->captured = $init ;
+        return $this->documents ;
     }
 }

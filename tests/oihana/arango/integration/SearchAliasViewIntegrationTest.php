@@ -14,6 +14,7 @@ use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\options\views\SearchAliasView;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Search;
 use oihana\arango\search\FederatedSearch;
 use oihana\arango\search\enums\FederatedSearchParam;
@@ -201,6 +202,76 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
         sort( $pairs ) ;
 
         return [ $pairs , $rows ] ;
+    }
+
+    /**
+     * C3 — the *rebuild* stage end to end on a real server: a federated
+     * `search()` finds the matches, then re-hydrates them through real
+     * {@see Documents} models (one per collection), returning the ranked
+     * `{ collection, score, document }` rows; `foundRows()` reports the total.
+     *
+     * @throws ArangoException
+     */
+    public function testFederatedSearchRebuildsRankedDocuments() :void
+    {
+        $container = new Container() ;
+        $facade    = $this->facade() ;
+
+        $customers = new Documents( $container , [ Arango::DATABASE => $facade , 'collection' => self::CUSTOMERS ] ) ;
+        $products  = new Documents( $container , [ Arango::DATABASE => $facade , 'collection' => self::PRODUCTS  ] ) ;
+        $container->set( 'model.customers' , $customers ) ;
+        $container->set( 'model.products'  , $products  ) ;
+
+        $engine = new FederatedSearch( $container ,
+        [
+            FederatedSearchParam::VIEW       => self::VIEW ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'tag' ] , Search::ANALYZER => 'identity' ] ,
+            FederatedSearchParam::MODELS     => [ self::CUSTOMERS => 'model.customers' , self::PRODUCTS => 'model.products' ] ,
+            Arango::DATABASE                 => $facade ,
+        ]) ;
+
+        $results = $this->waitForFederatedSearch( $engine , 'shared' , 2 ) ;
+
+        $pairs = array_map( static function( array $row )
+        {
+            $document = $row[ FederatedSearch::DOCUMENT ] ; // the model hydrates to an object
+            return [ $row[ Arango::COLLECTION ] , is_array( $document ) ? $document[ '_key' ] : $document->_key ] ;
+        } , $results ) ;
+        sort( $pairs ) ;
+
+        $this->assertSame( [ [ self::CUSTOMERS , 'c1' ] , [ self::PRODUCTS , 'p1' ] ] , $pairs ) ;
+        $this->assertSame( 2 , $engine->foundRows() ) ;
+    }
+
+    /**
+     * Polls the federated `search()` until it returns the expected number of
+     * rebuilt documents (inverted-index eventual consistency).
+     *
+     * @param FederatedSearch $engine
+     * @param string          $term
+     * @param int             $expected
+     *
+     * @return array<int, array<string, mixed>>
+     *
+     * @throws ArangoException
+     */
+    private function waitForFederatedSearch( FederatedSearch $engine , string $term , int $expected ) :array
+    {
+        $results = [] ;
+
+        for ( $attempt = 0 ; $attempt < 150 ; $attempt++ )
+        {
+            $results = $engine->search( [ Arango::SEARCH => $term ] ) ;
+
+            if ( count( $results ) === $expected )
+            {
+                break ;
+            }
+
+            usleep( 100_000 ) ; // 100 ms
+        }
+
+        return $results ;
     }
 
     /**

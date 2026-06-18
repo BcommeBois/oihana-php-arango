@@ -31,6 +31,13 @@ class FederatedSearchParam
     public const string SEARCHABLE = 'searchable' ;
 
     /**
+     * The default skin (projection variant) applied when rebuilding the
+     * matched documents — overridden per request by `?skin=`, and itself
+     * defaulting to {@see \oihana\controllers\enums\Skin::DEFAULT} when unset.
+     */
+    public const string SKIN = 'skin' ;
+
+    /**
      * The name of the `search-alias` view to query (the view aggregating one
      * inverted index per collection — see {@see \oihana\arango\db\options\views\SearchAliasView}).
      */
