@@ -154,6 +154,66 @@ $authorizer = fn( string $s ) => in_array( $s , [ 'products:list' ] , true ) ;
 - **Aucune collection autorisée** → résultat vide, total 0.
 - Les **permissions par champ** (tel champ caché à tel utilisateur) restent assurées **par chaque modèle** au moment de la reconstruction — ce filtre-ci ne gère que le niveau « collection entière ».
 
+## Exposer en HTTP
+
+Le moteur s'utilise tel quel en PHP. Pour le brancher derrière **une URL**, la lib fournit un **triplet read-only** calqué sur celui des documents (`route → contrôleur → modèle`), mais où le contrôleur tient un `FederatedSearch` au lieu d'un modèle de collection unique :
+
+- [`FederatedSearchController`](../../../src/oihana/arango/controllers/FederatedSearchController.php) — la **prise HTTP** : il traduit la requête en `$init`, branche les permissions, appelle le moteur et renvoie le JSON. Une **seule action** read-only, `search()`.
+- [`SearchRoute`](../../../src/oihana/arango/routes/SearchRoute.php) — déclare la route `GET` liée à l'action `search`.
+
+### La requête
+
+```
+GET /search?search=dupont&limit=25&offset=0&skin=compact
+```
+
+```json
+{
+  "status": "success",
+  "url": "/search?search=dupont&limit=25&offset=0&skin=compact",
+  "count": 3,
+  "total": 47,
+  "result": [
+    { "collection": "customers", "score": 4.2, "document": { "_key": "…", "name": "Dupont SARL" } },
+    { "collection": "products",  "score": 3.1, "document": { "_key": "…", "name": "Colle Dupont" } },
+    { "collection": "sellers",   "score": 2.8, "document": { "_key": "…", "name": "Jean Dupont" } }
+  ]
+}
+```
+
+`search` / `limit` / `offset` / `skin` sont lus dans la *query string* ; `total` (via `foundRows()`) accompagne la page pour afficher « X résultats, page Y ».
+
+### Câblage DI
+
+Le moteur est déclaré **une fois** comme service, puis référencé par son id dans le contrôleur, lui-même référencé par son id dans la route :
+
+```php
+use oihana\arango\controllers\FederatedSearchController ;
+use oihana\arango\routes\SearchRoute ;
+use oihana\arango\search\FederatedSearch ;
+use oihana\routes\Route ;
+
+// definitions/services.php — le moteur (cf. § Configuration)
+'search.engine' => fn( Container $c ) => new FederatedSearch( $c, [ /* VIEW, SEARCHABLE, MODELS, REQUIRES, DATABASE … */ ] ) ,
+
+// definitions/controllers.php
+'search.controller' => fn( Container $c ) => new FederatedSearchController( $c,
+[
+    FederatedSearchController::ENGINE => 'search.engine' , // id du service moteur (ou une instance)
+]) ,
+
+// definitions/routes.php
+'search.route' => fn( Container $c ) => new SearchRoute( $c,
+[
+    Route::CONTROLLER_ID => 'search.controller' ,
+    Route::ROUTE         => '/search' ,
+]) ,
+```
+
+### Et les permissions ?
+
+**Rien de neuf à brancher.** Exactement comme `DocumentsController`, le contrôleur résout l'enforcer (Casbin…) et le résolveur de subjects depuis le container, construit à partir de la requête un authorizer `fn(string $subject): bool` et le **pose sous `Arango::AUTHORIZER`** dans l'`$init` du moteur. Le moteur applique alors son filtre par collection (voir § Permissions) tout seul. Sans enforcer (tests, CLI, auth désactivée) l'authorizer est `null` et le garde-barrière s'ouvre (*fail-open*) — comportement inchangé. Le contrôle d'accès par *query-param* (droit de chercher / d'utiliser tel skin) est réutilisé tel quel depuis le socle des contrôleurs documents.
+
 ## Voir aussi
 
 - [Vues `search-alias`](../clients/arangosearch.md) — le substrat (un index inversé par collection, fédérable).

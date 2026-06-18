@@ -154,6 +154,66 @@ $authorizer = fn( string $s ) => in_array( $s , [ 'products:list' ] , true ) ;
 - **No collection allowed** → empty result, total 0.
 - **Field-level permissions** (a given field hidden from a given user) stay enforced **by each model** at rebuild time — this gate only handles the "whole collection" level.
 
+## Exposing it over HTTP
+
+The engine is usable as-is from PHP. To put it behind **a URL**, the library ships a **read-only triplet** mirroring the documents one (`route → controller → model`), except the controller holds a `FederatedSearch` instead of a single-collection model:
+
+- [`FederatedSearchController`](../../../src/oihana/arango/controllers/FederatedSearchController.php) — the **HTTP plug**: it turns the request into the engine `$init`, wires permissions, runs the engine and renders the JSON. A **single** read-only action, `search()`.
+- [`SearchRoute`](../../../src/oihana/arango/routes/SearchRoute.php) — declares the `GET` route bound to the `search` action.
+
+### The request
+
+```
+GET /search?search=dupont&limit=25&offset=0&skin=compact
+```
+
+```json
+{
+  "status": "success",
+  "url": "/search?search=dupont&limit=25&offset=0&skin=compact",
+  "count": 3,
+  "total": 47,
+  "result": [
+    { "collection": "customers", "score": 4.2, "document": { "_key": "…", "name": "Dupont SARL" } },
+    { "collection": "products",  "score": 3.1, "document": { "_key": "…", "name": "Colle Dupont" } },
+    { "collection": "sellers",   "score": 2.8, "document": { "_key": "…", "name": "Jean Dupont" } }
+  ]
+}
+```
+
+`search` / `limit` / `offset` / `skin` are read from the query string; `total` (from `foundRows()`) rides along with the page for "X results, page Y".
+
+### DI wiring
+
+The engine is declared **once** as a service, then referenced by its id in the controller, itself referenced by its id in the route:
+
+```php
+use oihana\arango\controllers\FederatedSearchController ;
+use oihana\arango\routes\SearchRoute ;
+use oihana\arango\search\FederatedSearch ;
+use oihana\routes\Route ;
+
+// definitions/services.php — the engine (see § Configuration)
+'search.engine' => fn( Container $c ) => new FederatedSearch( $c, [ /* VIEW, SEARCHABLE, MODELS, REQUIRES, DATABASE … */ ] ) ,
+
+// definitions/controllers.php
+'search.controller' => fn( Container $c ) => new FederatedSearchController( $c,
+[
+    FederatedSearchController::ENGINE => 'search.engine' , // engine service id (or an instance)
+]) ,
+
+// definitions/routes.php
+'search.route' => fn( Container $c ) => new SearchRoute( $c,
+[
+    Route::CONTROLLER_ID => 'search.controller' ,
+    Route::ROUTE         => '/search' ,
+]) ,
+```
+
+### What about permissions?
+
+**Nothing new to wire.** Exactly like `DocumentsController`, the controller resolves the enforcer (Casbin…) and the subject resolver from the container, builds a request-scoped authorizer `fn(string $subject): bool` and **poses it under `Arango::AUTHORIZER`** in the engine `$init`. The engine then applies its per-collection gate (see § Permissions) on its own. With no enforcer (tests, CLI, auth disabled) the authorizer is `null` and the gate falls open (*fail-open*) — behaviour unchanged. The query-param capability gating (right to search / to use a given skin) is reused verbatim from the documents controller foundation.
+
 ## See also
 
 - [`search-alias` views](../clients/arangosearch.md) — the substrate (one inverted index per collection, federatable).

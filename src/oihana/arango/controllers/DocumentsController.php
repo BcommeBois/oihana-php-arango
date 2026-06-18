@@ -11,6 +11,7 @@ use DI\NotFoundException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
+use oihana\arango\controllers\traits\AuthorizationContextTrait;
 use oihana\arango\controllers\traits\PayloadsTrait;
 use oihana\arango\controllers\traits\documents\DocumentsControllerCountTrait;
 use oihana\arango\controllers\traits\documents\DocumentsControllerDeleteTrait;
@@ -21,10 +22,8 @@ use oihana\arango\controllers\traits\documents\DocumentsControllerPatchTrait;
 use oihana\arango\controllers\traits\documents\DocumentsControllerPostTrait;
 use oihana\arango\controllers\traits\documents\DocumentsControllerPutTrait;
 
-use oihana\auth\CapabilityEnforcerInterface;
 use oihana\auth\controllers\traits\DocumentsControllerCapabilitiesTrait;
 use oihana\auth\controllers\traits\PermissionAuthorizerTrait;
-use oihana\auth\PermissionSubjectResolverInterface;
 
 use oihana\controllers\Controller;
 use oihana\controllers\traits\ModelCallTrait;
@@ -62,30 +61,18 @@ class DocumentsController extends Controller
     {
         parent::__construct( $container , $init ) ;
 
-        $resolved = $container->has( CapabilityEnforcerInterface::class )
-                  ? $container->get( CapabilityEnforcerInterface::class )
-                  : null ;
-
-        $enforcer = $resolved instanceof CapabilityEnforcerInterface ? $resolved : null ;
-
-        $resolvedSubject = $container->has( PermissionSubjectResolverInterface::class )
-                         ? $container->get( PermissionSubjectResolverInterface::class )
-                         : null ;
-
-        $subjectResolver = $resolvedSubject instanceof PermissionSubjectResolverInterface ? $resolvedSubject : null ;
-
-        $this->initializeModel                        ( $init )
-             ->initializeLanguages                    ( $init , $container )
-             ->initializeLimit                        ( $init )
-             ->initializeOwner                        ( $init )
-             ->initializePayload                      ( $init )
-             ->initializeSkins                        ( $init )
-             ->initializeSortDefault                  ( $init )
-             ->initializeCapabilities                 ( $init , $enforcer )
-             ->initializePermissionSubjectResolver    ( $subjectResolver ) ;
+        $this->initializeModel               ( $init )
+             ->initializeLanguages           ( $init , $container )
+             ->initializeLimit               ( $init )
+             ->initializeOwner               ( $init )
+             ->initializePayload             ( $init )
+             ->initializeSkins               ( $init )
+             ->initializeSortDefault         ( $init )
+             ->initializeAuthorizationContext( $init ) ;
     }
 
-    use DocumentsControllerCapabilitiesTrait ,
+    use AuthorizationContextTrait        ,
+        DocumentsControllerCapabilitiesTrait ,
         DocumentsControllerCountTrait  ,
         DocumentsControllerDeleteTrait ,
         DocumentsControllerGetTrait    ,
