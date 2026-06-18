@@ -208,6 +208,62 @@ final class BuildVariablesTest extends TestCase
         $this->assertSame( [] , $variables ) ;
     }
 
+    // ---- wrap -----------------------------------------------------------
+
+    public function testWrapRecursesIntoItsEdges() :void
+    {
+        $variables = [] ;
+        buildVariables( $variables ,
+        [
+            'subject' =>
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS => [ 'worksFor' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'wf' ] ] ,
+                Field::EDGES  => [ 'worksFor' => [ AQL::MODEL => $this->wiredEdges() ] ] ,
+            ] ,
+        ] , [] , [] , null , 'vertex' ) ;
+
+        // the sub-edge LET is emitted with the wrapped vertex (`vertex`) as traversal root
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'LET wf = (FOR' , $this->normalize( $variables[ 0 ] ) ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND vertex user_has_roles' , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
+    public function testWrapRecursesIntoItsJoins() :void
+    {
+        $variables = [] ;
+        buildVariables( $variables ,
+        [
+            'subject' =>
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS => [ 'role' => [ Field::FILTER => Filter::JOIN , Field::UNIQUE => 'r' ] ] ,
+                Field::JOINS  => [ 'role' => [ AQL::MODEL => new MockDocuments( 'roles' ) ] ] ,
+            ] ,
+        ] , [] , [] , null , 'vertex' ) ;
+
+        // the sub-join LET resolves the stored reference from the wrapped vertex (`vertex.role`)
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'doc_join._key == vertex.role' , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
+    public function testWrapWithRawSkipsItsRelations() :void
+    {
+        $variables = [] ;
+        buildVariables( $variables ,
+        [
+            'subject' =>
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::RAW    => true ,
+                Field::JOINS  => [ 'role' => [ AQL::MODEL => new MockDocuments( 'roles' ) ] ] ,
+            ] ,
+        ] , [] , [] , null , 'vertex' ) ;
+
+        // RAW embeds the whole reference — no place to nest a relation, so no LET is emitted
+        $this->assertSame( [] , $variables ) ;
+    }
+
     // ---- nested document ------------------------------------------------
 
     public function testDocumentFilterRecursesIntoSubFields() :void

@@ -35,13 +35,15 @@ use function oihana\core\strings\keyValue;
  *
  * The wrapped reference may also carry **its own relations**. The sub-fields can
  * include the usual relation markers (`Filter::EDGE` / `Filter::EDGES` /
- * `Filter::EDGES_COUNT`) and the field declares a companion `Field::EDGES` map of
- * sub-traversals that start **from the wrapped vertex** — exactly the same shape as
- * a top-level projection (fields markers beside an edges registry). The backing
- * `LET` variables are emitted upstream by `buildVariables()` with `$ref` as the
- * traversal root, so the related entities nest **inside** the wrapped object (e.g.
- * `subject.worksFor`) in a single query. `Field::RAW` and `Field::EDGES` are
- * mutually exclusive (a verbatim reference has no projected object to nest into).
+ * `Filter::EDGES_COUNT` for edges, `Filter::JOIN` / `Filter::JOINS` for joins) and
+ * the field declares a companion `Field::EDGES` / `Field::JOINS` map of sub-relations
+ * that start **from the wrapped vertex** — exactly the same shape as a top-level
+ * projection (fields markers beside an edges/joins registry). The backing `LET`
+ * variables are emitted upstream by `buildVariables()` with `$ref` as the traversal
+ * root, so the related entities nest **inside** the wrapped object (e.g.
+ * `subject.worksFor`) in a single query. `Field::RAW` is mutually exclusive with
+ * `Field::EDGES` / `Field::JOINS` (a verbatim reference has no projected object to
+ * nest into).
  *
  * Example usage:
  * ```php
@@ -86,7 +88,8 @@ use function oihana\core\strings\keyValue;
  * @param array $options Field options, typically including:
  * - Field::FIELDS => array of sub-fields projected against `$ref` (may include relation markers)
  * - Field::EDGES  => array of sub-traversal definitions starting from `$ref`, nested under `$key`
- * - Field::RAW    => bool, embed the whole reference when no sub-fields are given (excludes Field::EDGES)
+ * - Field::JOINS  => array of sub-join definitions resolved from `$ref`, nested under `$key`
+ * - Field::RAW    => bool, embed the whole reference when no sub-fields are given (excludes Field::EDGES / Field::JOINS)
  * @param ContainerInterface|null $container The optional DI Container reference.
  * @param array $init Optional associative array definition.
  *
@@ -95,7 +98,7 @@ use function oihana\core\strings\keyValue;
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
  * @throws UnsupportedOperationException If neither `Field::FIELDS` nor `Field::RAW => true` is provided,
- *                                       or if `Field::RAW => true` is combined with `Field::EDGES`.
+ *                                       or if `Field::RAW => true` is combined with `Field::EDGES` / `Field::JOINS`.
  * @throws ValidationException
  *
  * @package oihana\arango\db\helpers
@@ -114,21 +117,22 @@ function aqlFieldWrap
 {
     $fields = $options[ Field::FIELDS ] ?? null;
     $edges  = $options[ Field::EDGES  ] ?? null;
+    $joins  = $options[ Field::JOINS  ] ?? null;
     $raw    = ( $options[ Field::RAW ] ?? false ) === true ;
 
     // Field::RAW embeds the whole reference verbatim (`key: ref`) — there is no projected object to graft a relation onto.
-    // Declaring sub-edges alongside RAW is therefore contradictory and rejected explicitly rather than silently dropping one of the two intents.
-    if ( $raw && is_array( $edges ) && count( $edges ) > 0 )
+    // Declaring sub-edges/sub-joins alongside RAW is therefore contradictory and rejected explicitly rather than silently dropping one of the two intents.
+    if ( $raw && ( ( is_array( $edges ) && count( $edges ) > 0 ) || ( is_array( $joins ) && count( $joins ) > 0 ) ) )
     {
         throw new UnsupportedOperationException
         (
-            __FUNCTION__ . " failed, Filter::WRAP on the field '" . $key . "' cannot combine Field::RAW => true with Field::EDGES : the raw reference is embedded as-is, there is no projected object to nest the sub-edges into."
+            __FUNCTION__ . " failed, Filter::WRAP on the field '" . $key . "' cannot combine Field::RAW => true with Field::EDGES or Field::JOINS : the raw reference is embedded as-is, there is no projected object to nest the relations into."
         ) ;
     }
 
     if ( is_array( $fields ) && count( $fields ) > 0 )
     {
-        // The wrapped sub-fields may include relation markers (Filter::EDGE / EDGES / EDGES_COUNT)
+        // The wrapped sub-fields may include relation markers (Filter::EDGE / EDGES / EDGES_COUNT / JOIN / JOINS)
         // whose backing `LET` variables were emitted by buildVariables() with the wrapped reference as traversal root ;
         // aqlFields() projects them as `relation: <letVariable>` here, exactly as a top-level projection does.
         return keyValue( $key , aqlDocument( aqlFields( $fields , $ref , $container , $init ) ) ) ;

@@ -76,15 +76,16 @@ function buildVariables
         {
             case Filter::WRAP :
             {
-                // A wrapped reference can carry its own relations : the sub-edges
-                // declared under Field::EDGES start from the wrapped vertex (the
-                // current $docRef) and nest under the wrapped key. We simply recurse
-                // with the wrapped fields + their edges map and the SAME $docRef as
-                // traversal root, so the whole top-level edge machinery (EDGE /
-                // EDGES / EDGES_COUNT, gating, sub-projections, …) applies verbatim
-                // and the matching `LET` lands in the enclosing FOR scope. Field::RAW
-                // embeds the whole reference as-is (key: ref) — no place to graft a
-                // sub-edge — so it is skipped here (aqlFieldWrap rejects RAW + EDGES).
+                // A wrapped reference can carry its own relations : the sub-edges /
+                // sub-joins declared under Field::EDGES / Field::JOINS start from the
+                // wrapped vertex (the current $docRef) and nest under the wrapped key.
+                // We simply recurse with the wrapped fields + their edges/joins maps
+                // and the SAME $docRef as traversal root, so the whole top-level
+                // relation machinery (EDGE / EDGES / EDGES_COUNT / JOIN / JOINS,
+                // gating, sub-projections, …) applies verbatim and the matching `LET`
+                // lands in the enclosing FOR scope. Field::RAW embeds the whole
+                // reference as-is (key: ref) — no place to graft a relation — so it is
+                // skipped here (aqlFieldWrap rejects RAW + EDGES/JOINS).
                 if ( ( $field[ Field::RAW ] ?? false ) === true )
                 {
                     break ;
@@ -92,10 +93,11 @@ function buildVariables
 
                 $subFields = $field[ Field::FIELDS ] ?? [] ;
                 $subEdges  = $field[ Field::EDGES  ] ?? [] ;
+                $subJoins  = $field[ Field::JOINS  ] ?? [] ;
 
-                if ( !empty( $subFields ) && !empty( $subEdges ) )
+                if ( !empty( $subFields ) && ( !empty( $subEdges ) || !empty( $subJoins ) ) )
                 {
-                    buildVariables( $variables , $subFields , $subEdges , [] , $container , $docRef , $init ) ;
+                    buildVariables( $variables , $subFields , $subEdges , $subJoins , $container , $docRef , $init ) ;
                 }
                 break ;
             }

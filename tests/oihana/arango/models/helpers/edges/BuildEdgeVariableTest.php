@@ -279,6 +279,43 @@ final class BuildEdgeVariableTest extends TestCase
     }
 
     /**
+     * A wrapped vertex can also nest a **join** (a stored reference resolved to
+     * another collection's document), declared with the same top-level grammar :
+     * the `Filter::JOIN` marker in `Field::FIELDS` and the resolution in
+     * `Field::JOINS`. The join reads the stored attribute from the wrapped vertex.
+     */
+    public function testWrapNestsAJoinUnderTheWrappedKey() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'name' => [] ,
+                        'role' => [ Field::FILTER => Filter::JOIN ] ,
+                    ] ,
+                    Field::JOINS =>
+                    [
+                        'role' => [ AQL::MODEL => new MockDocuments( 'roles' ) ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ) ) ;
+
+        // The join LET resolves the stored reference from the wrapped vertex.
+        $this->assertMatchesRegularExpression( '/LET role_\w+ = \(FOR \w+ IN roles FILTER \w+\._key == vertex\.role/' , $result ) ;
+        $this->assertStringContainsString( 'subject:{' , $result ) ;
+        $this->assertMatchesRegularExpression( '/role:IS_OBJECT\(role_\w+\)/' , $result ) ;
+    }
+
+    /**
      * Retro-compatibility : a `Filter::WRAP` field that declares no relation
      * behaves exactly as before — only the scalar projection, no extra `LET`.
      */

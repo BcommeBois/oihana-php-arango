@@ -283,7 +283,8 @@ Rules and key points:
 - **Natural depth.** The sub-traversal is an ordinary edge: it carries its own `AQL::EDGES` / `AQL::JOINS`, so the related entity can project further (`subject.worksFor.locatedIn`). Each level adds a `FOR` sub-query: this is a matter of **performance**, not a hard limit — keep the nesting shallow (2–3 levels).
 - **`Field::RAW` excludes `Field::EDGES`.** A raw reference (`subject: v`) has no projected object to graft a relation onto — combining them **throws**.
 - **Marker and definition go together.** A `Field::EDGES` declared without a matching marker in `Field::FIELDS` (or vice versa) is a no-op, exactly as at the root.
-- **Retro-compatible.** A `Filter::WRAP` without `Field::EDGES` behaves exactly as before.
+- **Joins too.** The same mechanism applies to **joins**: a `Filter::JOIN` / `Filter::JOINS` marker in `Field::FIELDS` and a definition in a companion `Field::JOINS` — the join then resolves a stored reference **on the wrapped vertex** (`vertex.role`). `Field::EDGES` and `Field::JOINS` combine freely under the same key.
+- **Retro-compatible.** A `Filter::WRAP` without `Field::EDGES` nor `Field::JOINS` behaves exactly as before.
 
 ## Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`
 

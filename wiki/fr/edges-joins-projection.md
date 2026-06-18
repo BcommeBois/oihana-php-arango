@@ -283,7 +283,8 @@ Règles et points importants :
 - **Profondeur naturelle.** La sous-traversée est un edge ordinaire : elle porte elle-même ses propres `AQL::EDGES` / `AQL::JOINS`, donc l'entité liée peut projeter plus loin (`subject.worksFor.locatedIn`). Chaque niveau ajoute une sous-requête `FOR` : c'est une question de **performance**, pas de limite dure — garder l'imbrication peu profonde (2–3 niveaux).
 - **`Field::RAW` exclut `Field::EDGES`.** Une référence brute (`subject: v`) n'a pas d'objet projeté où greffer une relation — les combiner **lève une exception**.
 - **Marqueur et définition vont de pair.** Un `Field::EDGES` déclaré sans marqueur correspondant dans `Field::FIELDS` (ou l'inverse) reste sans effet, exactement comme au niveau racine.
-- **Rétro-compatible.** Un `Filter::WRAP` sans `Field::EDGES` se comporte exactement comme avant.
+- **Jointures aussi.** La même mécanique vaut pour les **joins** : un marqueur `Filter::JOIN` / `Filter::JOINS` dans `Field::FIELDS` et une définition dans un `Field::JOINS` compagnon — le join résout alors une référence stockée **sur le vecteur enveloppé** (`vertex.role`). `Field::EDGES` et `Field::JOINS` se combinent librement sous une même clé.
+- **Rétro-compatible.** Un `Filter::WRAP` sans `Field::EDGES` ni `Field::JOINS` se comporte exactement comme avant.
 
 ## Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`
 

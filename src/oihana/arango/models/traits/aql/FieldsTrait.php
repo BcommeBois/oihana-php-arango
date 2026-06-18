@@ -466,16 +466,23 @@ trait FieldsTrait
                 $definition[ Field::FIELDS ] = $this->prepareQueryFields( $subFields ) ;
             }
 
-            // The wrapped reference can carry its own relations : a Field::EDGES map declares the
-            // sub-traversals that start from the wrapped vertex and nest under the wrapped key. The
-            // map is kept verbatim (the same shape as a model-level edges registry) — buildVariables()
-            // descends into it and buildEdgeVariable() prepares each sub-edge target later on. The
-            // matching cardinality marker lives in the wrapped Field::FIELDS (Filter::EDGE / EDGES /
-            // EDGES_COUNT), exactly like a top-level projection.
+            // The wrapped reference can carry its own relations : a Field::EDGES / Field::JOINS map
+            // declares the sub-traversals (edges) or stored-reference resolutions (joins) that start
+            // from the wrapped vertex and nest under the wrapped key. Each map is kept verbatim (the
+            // same shape as a model-level edges/joins registry) — buildVariables() descends into it
+            // and buildEdgeVariable() / buildJoinVariable() prepare each target later on. The matching
+            // cardinality marker lives in the wrapped Field::FIELDS (Filter::EDGE / EDGES / EDGES_COUNT
+            // or Filter::JOIN / JOINS), exactly like a top-level projection.
             $edges = $options[ Field::EDGES ] ?? [] ;
             if ( !empty( $edges ) )
             {
                 $definition[ Field::EDGES ] = $edges ;
+            }
+
+            $joins = $options[ Field::JOINS ] ?? [] ;
+            if ( !empty( $joins ) )
+            {
+                $definition[ Field::JOINS ] = $joins ;
             }
         }
         else if ( ( $filter === Filter::DOCUMENT || $filter === Filter::MAP ) && !empty( $subFields ) )
