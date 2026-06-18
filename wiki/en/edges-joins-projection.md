@@ -282,7 +282,7 @@ Rules and key points:
 - **Both directions.** `AQL::DIRECTION => Traversal::INBOUND` (or `OUTBOUND`, the default) — the related entity is often reached `INBOUND`.
 - **Natural depth.** The sub-traversal is an ordinary edge: it carries its own `AQL::EDGES` / `AQL::JOINS`, so the related entity can project further (`subject.worksFor.locatedIn`). Each level adds a `FOR` sub-query: this is a matter of **performance**, not a hard limit — keep the nesting shallow (2–3 levels).
 - **`Field::RAW` excludes `Field::EDGES`.** A raw reference (`subject: v`) has no projected object to graft a relation onto — combining them **throws**.
-- **Marker and definition go together.** A `Field::EDGES` declared without a matching marker in `Field::FIELDS` (or vice versa) is a no-op, exactly as at the root.
+- **Marker and definition go together.** As at the root, both are required: a definition in `Field::EDGES` without a matching marker in `Field::FIELDS` is simply **unused** (nothing is projected); conversely, a marker **without** a definition projects a **dangling `LET` reference** → an AQL runtime error. Always declare both.
 - **Joins too.** The same mechanism applies to **joins**: a `Filter::JOIN` / `Filter::JOINS` marker in `Field::FIELDS` and a definition in a companion `Field::JOINS` — the join then resolves a stored reference **on the wrapped vertex** (`vertex.role`). `Field::EDGES` and `Field::JOINS` combine freely under the same key.
 - **Retro-compatible.** A `Filter::WRAP` without `Field::EDGES` nor `Field::JOINS` behaves exactly as before.
 

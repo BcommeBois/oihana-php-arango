@@ -247,6 +247,23 @@ final class BuildVariablesTest extends TestCase
         $this->assertStringContainsString( 'doc_join._key == vertex.role' , $this->normalize( $variables[ 0 ] ) ) ;
     }
 
+    public function testWrapSubEdgeDeniedByGatingEmitsNoLet() :void
+    {
+        $variables = [] ;
+        buildVariables( $variables ,
+        [
+            'subject' =>
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS => [ 'worksFor' => [ Field::FILTER => Filter::EDGE , Field::REQUIRES => 'org.read' ] ] ,
+                Field::EDGES  => [ 'worksFor' => [ AQL::MODEL => $this->wiredEdges() ] ] ,
+            ] ,
+        ] , [] , [] , null , 'vertex' , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        // the wrapped sub-edge is gated: no LET is emitted (mirrored by aqlFields dropping the projection)
+        $this->assertSame( [] , $variables ) ;
+    }
+
     public function testWrapWithRawSkipsItsRelations() :void
     {
         $variables = [] ;

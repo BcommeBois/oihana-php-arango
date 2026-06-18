@@ -316,6 +316,100 @@ final class BuildEdgeVariableTest extends TestCase
     }
 
     /**
+     * Depth is recursive by nature : a wrapped sub-edge is an ordinary traversal,
+     * so it carries its OWN edges — the related entity can project further
+     * (`subject.worksFor` then `worksFor.locatedIn`). Two nested `LET` are emitted,
+     * the inner one rooted on the sub-edge's own target vertex.
+     */
+    public function testWrapSubEdgeProjectsItsOwnNestedEdge() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        // worksFor : org_has_member, whose target organization itself exposes locatedIn (org_in_place).
+        $org = new MockEdges( 'org_has_member' ) ;
+        $orgTo = new MockDocuments( 'organizations' ) ;
+        $orgTo->initializeDeleteSignals() ;
+        $org->to = $orgTo ;
+
+        $place = $this->wiredSubEdges( 'org_in_place' , 'places' , inbound: false ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'name'     => [] ,
+                        'worksFor' => [ Field::FILTER => Filter::EDGE ] ,
+                    ] ,
+                    Field::EDGES =>
+                    [
+                        'worksFor' =>
+                        [
+                            AQL::MODEL  => $org ,
+                            AQL::FIELDS =>
+                            [
+                                'name'      => [] ,
+                                'locatedIn' => [ Field::FILTER => Filter::EDGE ] ,
+                            ] ,
+                            AQL::EDGES =>
+                            [
+                                'locatedIn' => [ AQL::MODEL => $place , AQL::FIELDS => [ 'name' => [] ] ] ,
+                            ] ,
+                        ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ) ) ;
+
+        // outer sub-edge traverses from the wrapped vertex, inner one from the sub-edge's own vertex
+        $this->assertStringContainsString( 'IN OUTBOUND vertex org_has_member' , $result ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND vertex org_in_place'   , $result ) ;
+        $this->assertMatchesRegularExpression( '/worksFor:IS_OBJECT\(worksFor_e\d+\)/'            , $result ) ;
+        $this->assertMatchesRegularExpression( '/locatedIn:IS_OBJECT\(\w*locatedIn_e\d+\)/' , $result ) ;
+    }
+
+    /**
+     * Permission gating applies verbatim inside a WRAP : a denied sub-edge
+     * (`Field::REQUIRES`) is dropped from BOTH sides — no `LET` is emitted and
+     * the key does not appear in the wrapped object (no dangling reference).
+     */
+    public function testWrapSubEdgeDeniedByGatingIsFullyDropped() :void
+    {
+        $edges = $this->wiredEdges() ;
+        $sub   = $this->wiredSubEdges( 'org_has_member' , 'organizations' , inbound: false ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'name'     => [] ,
+                        'worksFor' => [ Field::FILTER => Filter::EDGE , Field::REQUIRES => 'org.read' ] ,
+                    ] ,
+                    Field::EDGES =>
+                    [
+                        'worksFor' => [ AQL::MODEL => $sub , AQL::FIELDS => [ 'name' => [] ] ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ) ;
+
+        $this->assertStringContainsString( 'subject:{name:vertex.name}' , $result ) ; // only the scalar survives
+        $this->assertStringNotContainsString( 'worksFor' , $result ) ;                // no projection key
+        $this->assertStringNotContainsString( 'org_has_member' , $result ) ;          // no LET traversal
+    }
+
+    /**
      * Retro-compatibility : a `Filter::WRAP` field that declares no relation
      * behaves exactly as before — only the scalar projection, no extra `LET`.
      */
