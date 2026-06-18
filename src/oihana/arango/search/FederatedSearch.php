@@ -4,13 +4,17 @@ namespace oihana\arango\search ;
 
 use DI\Container ;
 
+use DI\DependencyException;
+use DI\NotFoundException;
 use oihana\arango\clients\analyzer\enums\AnalyzerType ;
 use oihana\arango\clients\cursor\enums\CursorField ;
+use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\db\ArangoDB ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\db\enums\Comparator ;
 use oihana\arango\db\enums\Logic ;
 use oihana\arango\enums\Arango ;
+use oihana\arango\enums\Field ;
 use oihana\arango\models\Documents ;
 use oihana\arango\models\enums\Search ;
 use oihana\arango\models\enums\filters\FilterComparator ;
@@ -19,14 +23,24 @@ use oihana\arango\search\enums\FederatedSearchParam ;
 
 use oihana\controllers\enums\Skin ;
 use oihana\enums\Char ;
+use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
+use oihana\reflect\exceptions\ConstantException;
 use oihana\traits\ContainerTrait ;
 
 use org\schema\constants\Schema ;
 
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+use ReflectionException;
 use function oihana\arango\db\binds\aqlBind ;
+use function oihana\arango\db\functions\documents\merge ;
 use function oihana\arango\db\functions\documents\parseIdentifier ;
 use function oihana\arango\db\functions\strings\tokens ;
+use function oihana\arango\db\helpers\aqlDocument ;
 use function oihana\arango\db\operations\aqlScoredSearch ;
+use function oihana\arango\models\helpers\isAuthorized ;
 use function oihana\core\strings\compile ;
 use function oihana\core\strings\key ;
 
@@ -72,8 +86,8 @@ class FederatedSearch
     /**
      * Creates a new FederatedSearch engine.
      *
-     * @param Container            $container The DI container, used to resolve the database and the per-collection models.
-     * @param array<string, mixed> $init      The engine options:
+     * @param Container $container The DI container, used to resolve the database and the per-collection models.
+     * @param array<string, mixed> $init The engine options:
      * <ul>
      *   <li>{@see FederatedSearchParam::VIEW}       — the `search-alias` view name to query.</li>
      *   <li>{@see FederatedSearchParam::SEARCHABLE} — the federated search spec (`fields` + `analyzer`).</li>
@@ -81,6 +95,9 @@ class FederatedSearch
      *   <li>{@see FederatedSearchParam::SKIN}       — the default skin used to rebuild documents (default {@see Skin::DEFAULT}).</li>
      *   <li>{@see Arango::DATABASE}                 — the {@see ArangoDB} façade (or its container id) used to run the search.</li>
      * </ul>
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
      */
     public function __construct( Container $container , array $init = [] )
     {
@@ -90,10 +107,17 @@ class FederatedSearch
              ->initializeView      ( $init )
              ->initializeSearchable( $init )
              ->initializeSkin      ( $init )
-             ->initializeModels    ( $init ) ;
+             ->initializeModels    ( $init )
+             ->initializeRequires  ( $init ) ;
     }
 
     use ContainerTrait ;
+
+    /**
+     * The `SEARCH … OPTIONS { collections: [...] }` key restricting the search
+     * to a subset of the view's source collections.
+     */
+    private const string COLLECTIONS_OPTION = 'collections' ;
 
     /**
      * The default page size of the federated SEARCH when none is supplied.
@@ -134,6 +158,15 @@ class FederatedSearch
      * @var array<string, string>
      */
     public array $models = [] ;
+
+    /**
+     * The collection → required permission subject(s) registry. A collection
+     * absent from this map is public; each value is a subject string or an
+     * OR-list, evaluated by {@see isAuthorized()} against the request authorizer.
+     *
+     * @var array<string, string|array<int, string>>
+     */
+    public array $requires = [] ;
 
     /**
      * The federated search specification (`fields` + `analyzer`) applied
@@ -178,9 +211,9 @@ class FederatedSearch
      *
      * @return array<int, array<string, mixed>> The ranked `{ collection, key, score }` rows.
      *
-     * @throws \oihana\exceptions\BindException
-     * @throws \ReflectionException
-     * @throws \oihana\arango\clients\exceptions\ArangoException
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ReflectionException
      */
     public function find( array $init = [] ) : array
     {
@@ -202,12 +235,23 @@ class FederatedSearch
             return [] ;
         }
 
+        // Permission gate : restrict the SEARCH to the registered collections the
+        // request is authorized for (OPTIONS { collections }) — applied before the
+        // LIMIT, so the page and the fullCount only ever cover allowed collections.
+        $allowed = $this->allowedCollections( $init ) ;
+
+        if ( $allowed === [] )
+        {
+            return [] ;
+        }
+
         $aql = aqlScoredSearch
         (
             view     : $view ,
             search   : $expression ,
             limit    : (int) ( $init[ Arango::LIMIT  ] ?? self::DEFAULT_LIMIT ) ,
             analyzer : $this->analyzerName() ,
+            options  : [ self::COLLECTIONS_OPTION => $allowed ] ,
             offset   : (int) ( $init[ Arango::OFFSET ] ?? 0 ) ,
             scoreRef : self::SCORE ,
             return   : $this->returnExpression() ,
@@ -257,9 +301,20 @@ class FederatedSearch
      * — filtered out by its own rules) is dropped: the model stays authoritative.
      *
      * @param array<int, array<string, mixed>> $matches The {@see find()} rows.
-     * @param array<string, mixed>             $init    The request options (`Arango::SKIN` overrides the engine default).
+     * @param array<string, mixed> $init The request options (`Arango::SKIN` overrides the engine default).
      *
      * @return array<int, array<string, mixed>> The ranked `{ collection, score, document }` rows.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws ReflectionException
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     * @throws ConstantException
      */
     public function rebuild( array $matches , array $init = [] ) : array
     {
@@ -268,7 +323,8 @@ class FederatedSearch
             return [] ;
         }
 
-        $skin = $init[ Arango::SKIN ] ?? $this->skin ;
+        $skin    = $init[ Arango::SKIN ] ?? $this->skin ;
+        $allowed = $this->allowedCollections( $init ) ; // defensive : honour the permission gate here too
 
         // group keys by collection : one batched list() per collection, not per result
         $keysByCollection = [] ;
@@ -289,6 +345,11 @@ class FederatedSearch
 
         foreach ( $keysByCollection as $collection => $keys )
         {
+            if ( !in_array( $collection , $allowed , true ) )
+            {
+                continue ; // unregistered or unauthorized collection
+            }
+
             $model = $this->resolveModel( $collection ) ;
 
             if ( $model === null )
@@ -347,9 +408,16 @@ class FederatedSearch
      *
      * @return array<int, array<string, mixed>> The ranked `{ collection, score, document }` rows.
      *
-     * @throws \oihana\exceptions\BindException
-     * @throws \ReflectionException
-     * @throws \oihana\arango\clients\exceptions\ArangoException
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function search( array $init = [] ) : array
     {
@@ -364,6 +432,9 @@ class FederatedSearch
      * @param array<string, mixed> $init
      *
      * @return static
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
      */
     protected function initializeDatabase( array $init ) : static
     {
@@ -406,6 +477,36 @@ class FederatedSearch
         }
 
         $this->models = $registry ;
+
+        return $this ;
+    }
+
+    /**
+     * Normalises the collection → required-permission registry: keeps the
+     * entries whose value is a subject string or an OR-list of subjects.
+     *
+     * @param array<string, mixed> $init
+     *
+     * @return static
+     */
+    protected function initializeRequires( array $init ) : static
+    {
+        $requires = $init[ FederatedSearchParam::REQUIRES ] ?? [] ;
+
+        $registry = [] ;
+
+        if ( is_array( $requires ) )
+        {
+            foreach ( $requires as $collection => $subjects )
+            {
+                if ( is_string( $collection ) && $collection !== Char::EMPTY && ( is_string( $subjects ) || is_array( $subjects ) ) )
+                {
+                    $registry[ $collection ] = $subjects ;
+                }
+            }
+        }
+
+        $this->requires = $registry ;
 
         return $this ;
     }
@@ -460,6 +561,32 @@ class FederatedSearch
     }
 
     /**
+     * Returns the registered collections the request is authorized to search:
+     * each collection of the registry whose declared {@see FederatedSearchParam::REQUIRES}
+     * subject(s) are granted by the request authorizer (`Arango::AUTHORIZER`),
+     * via {@see isAuthorized()}. A collection without a declared requirement is
+     * public; without an authorizer everything is allowed (fail-open).
+     *
+     * @param array<string, mixed> $init The request options (`Arango::AUTHORIZER`).
+     *
+     * @return array<int, string> The allowed collection names.
+     */
+    private function allowedCollections( array $init ) : array
+    {
+        $allowed = [] ;
+
+        foreach ( array_keys( $this->models ) as $collection )
+        {
+            if ( isAuthorized( [ Field::REQUIRES => $this->requires[ $collection ] ?? null ] , $init ) )
+            {
+                $allowed[] = $collection ;
+            }
+        }
+
+        return $allowed ;
+    }
+
+    /**
      * Returns the analyzer the federated search applies, defaulting to
      * {@see AnalyzerType::IDENTITY} when the spec declares none.
      *
@@ -478,10 +605,12 @@ class FederatedSearch
      * OR-combined. The term is bound (developer-trusted field names are inlined
      * by {@see key()}). Returns null when no usable field is declared.
      *
-     * @param string                $term  The query term.
+     * @param string $term The query term.
      * @param array<string, mixed> &$binds The bind variables, filled by reference.
      *
      * @return string|null
+     *
+     * @throws BindException
      */
     private function buildSearchExpression( string $term , array &$binds ) : ?string
     {
@@ -539,6 +668,9 @@ class FederatedSearch
      * @param string $collection
      *
      * @return Documents|null
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
      */
     private function resolveModel( string $collection ) : ?Documents
     {
@@ -560,9 +692,15 @@ class FederatedSearch
      * relevance score.
      *
      * @return string
+     *
+     * @throws UnsupportedOperationException
      */
     private function returnExpression() : string
     {
-        return 'MERGE(' . parseIdentifier( AQL::DOC . '._id' ) . ', { ' . self::SCORE . ': ' . self::SCORE . ' })' ;
+        return merge
+        ([
+            parseIdentifier( key( Schema::_ID , AQL::DOC ) ) ,
+            aqlDocument( [ self::SCORE => self::SCORE ] , [ AQL::USE_SPACE => true , AQL::RAW_VALUES => [ self::SCORE ] ] ) ,
+        ]) ;
     }
 }

@@ -24,6 +24,16 @@ class FederatedSearchParam
     public const string MODELS = 'models' ;
 
     /**
+     * The collection → required permission subject(s) registry: a map declaring
+     * which permission a collection demands to be searchable
+     * (`[ 'customers' => 'customers:list', 'users' => [ 'users:list', 'users:admin' ] ]`,
+     * a string or an OR-list, mirroring {@see \oihana\arango\enums\Field::REQUIRES}).
+     * A collection absent from this map is **public** (searchable by everyone);
+     * the gate is evaluated by {@see \oihana\arango\models\helpers\isAuthorized()}.
+     */
+    public const string REQUIRES = 'requires' ;
+
+    /**
      * The federated search specification — what to search across the
      * heterogeneous collections (the fields and the analyzer), reusing the
      * {@see \oihana\arango\models\enums\Search} vocabulary.

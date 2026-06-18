@@ -445,6 +445,133 @@ final class FederatedSearchTest extends TestCase
 
         $this->assertSame( 1 , $engine->foundRows() ) ;
     }
+
+    // ---- permissions / per-collection gate (Lot C4) -------------------------
+
+    /**
+     * A db-backed engine with a custom registry + `requires`, capturing the AQL.
+     *
+     * @param array<string, string>                       $models
+     * @param array<string, string|array<int, string>>    $requires
+     * @param array<string, mixed>|null                   $captured
+     *
+     * @return FederatedSearch
+     */
+    private function gateEngine( array $models , array $requires , ?array &$captured = null ) :FederatedSearch
+    {
+        $cursor = $this->createMock( Cursor::class ) ;
+        $cursor->method( 'all' )->willReturn( [] ) ;
+        $cursor->method( 'getFullCount' )->willReturn( 0 ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'query' )->willReturnCallback( function( $aql , $binds = [] , $options = [] ) use ( &$captured , $cursor )
+        {
+            $captured = [ 'aql' => $aql ] ;
+            return $cursor ;
+        } ) ;
+
+        $arango = $this->createMock( ArangoDB::class ) ;
+        $arango->method( 'database' )->willReturn( $database ) ;
+
+        return new FederatedSearch( $this->createMock( Container::class ) ,
+        [
+            FederatedSearchParam::VIEW       => 'global_search' ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'name' ] ] ,
+            FederatedSearchParam::MODELS     => $models ,
+            FederatedSearchParam::REQUIRES   => $requires ,
+            Arango::DATABASE                 => $arango ,
+        ]) ;
+    }
+
+    public function testFindRestrictsTheSearchToAuthorizedCollections() :void
+    {
+        $engine = $this->gateEngine(
+            [ 'customers' => 'm.c' , 'products' => 'm.p' , 'sellers' => 'm.s' ] ,
+            [ 'customers' => 'customers:list' , 'sellers' => 'sellers:list' ] , // products has no requirement → public
+            $captured
+        ) ;
+
+        // a sales rep : granted customers:list, not sellers:list
+        $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'customers:list' ] ) ;
+
+        $aql = $captured[ 'aql' ] ;
+        $this->assertStringContainsString( 'OPTIONS {"collections":[' , $aql ) ;
+        $this->assertStringContainsString( '"customers"' , $aql ) ; // granted
+        $this->assertStringContainsString( '"products"'  , $aql ) ; // public
+        $this->assertStringNotContainsString( 'sellers'  , $aql ) ; // denied → excluded
+    }
+
+    public function testFindIsFailOpenWithoutAnAuthorizer() :void
+    {
+        $engine = $this->gateEngine( [ 'customers' => 'm.c' , 'sellers' => 'm.s' ] , [ 'sellers' => 'sellers:list' ] , $captured ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' ] ) ; // no authorizer
+
+        $this->assertStringContainsString( '"sellers"' , $captured[ 'aql' ] ) ; // fail-open : everything allowed
+    }
+
+    public function testFindReturnsEmptyWhenNoCollectionIsAuthorized() :void
+    {
+        $engine = $this->gateEngine( [ 'customers' => 'm.c' ] , [ 'customers' => 'customers:list' ] , $captured ) ;
+
+        $result = $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn() => false ] ) ;
+
+        $this->assertSame( [] , $result ) ;
+        $this->assertNull( $captured ) ; // the query is never even issued
+    }
+
+    public function testRebuildSkipsAnUnauthorizedCollection() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ) ;
+        $sellers   = $this->modelReturning( [ [ '_key' => 's1' , 'name' => 'Jean Dupont'  ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'm.c' => $customers , 'm.s' => $sellers ] ) ,
+        [
+            FederatedSearchParam::MODELS   => [ 'customers' => 'm.c' , 'sellers' => 'm.s' ] ,
+            FederatedSearchParam::REQUIRES => [ 'sellers' => 'sellers:list' ] , // customers public
+        ]) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ,
+            [ 'collection' => 'sellers'   , 'key' => 's1' , 'score' => 7.4 ] , // denied → dropped
+        ] , [ Arango::AUTHORIZER => static fn() => false ] ) ;
+
+        $this->assertCount( 1 , $results ) ;
+        $this->assertSame( 'customers' , $results[ 0 ][ 'collection' ] ) ;
+    }
+
+    public function testRequiresRegistryKeepsStringAndListEntriesAndDropsTheRest() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::REQUIRES =>
+            [
+                'customers' => 'customers:list' ,                  // string : kept
+                'users'     => [ 'users:list' , 'users:admin' ] ,  // OR-list : kept
+                ''          => 'x' ,                               // empty collection : dropped
+                'sellers'   => 123 ,                               // non-string / non-array : dropped
+            ] ,
+        ]) ;
+
+        $this->assertSame( [ 'customers' => 'customers:list' , 'users' => [ 'users:list' , 'users:admin' ] ] , $engine->requires ) ;
+    }
+
+    public function testRequiresIgnoresANonArrayDeclaration() :void
+    {
+        $this->assertSame( [] , $this->make( [ FederatedSearchParam::REQUIRES => 'not-an-array' ] )->requires ) ;
+    }
+
+    public function testRebuildSkipsACollectionWhoseModelServiceIsMissing() :void
+    {
+        // 'customers' is registered and authorized, but the container cannot resolve its service
+        $container = $this->createMock( Container::class ) ;
+        $container->method( 'has' )->willReturn( false ) ;
+
+        $engine = new FederatedSearch( $container , [ FederatedSearchParam::MODELS => [ 'customers' => 'm.c' ] ] ) ;
+
+        $this->assertSame( [] , $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ] ) ) ;
+    }
 }
 
 /**

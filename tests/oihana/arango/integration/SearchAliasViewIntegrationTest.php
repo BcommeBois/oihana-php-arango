@@ -244,6 +244,47 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * C4 — the per-collection permission gate on a real server: the **same**
+     * `search('shared')`, run with two different authorizers, returns two
+     * different result sets — each user only sees the collections their
+     * permissions grant, with a `foundRows()` that honours the restriction.
+     *
+     * @throws ArangoException
+     */
+    public function testFederatedSearchHonoursPerCollectionPermissions() :void
+    {
+        $container = new Container() ;
+        $facade    = $this->facade() ;
+
+        $customers = new Documents( $container , [ Arango::DATABASE => $facade , 'collection' => self::CUSTOMERS ] ) ;
+        $products  = new Documents( $container , [ Arango::DATABASE => $facade , 'collection' => self::PRODUCTS  ] ) ;
+        $container->set( 'model.customers' , $customers ) ;
+        $container->set( 'model.products'  , $products  ) ;
+
+        $engine = new FederatedSearch( $container ,
+        [
+            FederatedSearchParam::VIEW       => self::VIEW ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'tag' ] , Search::ANALYZER => 'identity' ] ,
+            FederatedSearchParam::MODELS     => [ self::CUSTOMERS => 'model.customers' , self::PRODUCTS => 'model.products' ] ,
+            FederatedSearchParam::REQUIRES   => [ self::CUSTOMERS => 'customers:list' , self::PRODUCTS => 'products:list' ] ,
+            Arango::DATABASE                 => $facade ,
+        ]) ;
+
+        // wait until both are searchable (no authorizer → fail-open → both)
+        $this->waitForFederatedSearch( $engine , 'shared' , 2 ) ;
+
+        // authorizer A : only customers
+        $a = $engine->search( [ Arango::SEARCH => 'shared' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'customers:list' ] ) ;
+        $this->assertSame( [ self::CUSTOMERS ] , array_map( static fn( array $r ) => $r[ Arango::COLLECTION ] , $a ) ) ;
+        $this->assertSame( 1 , $engine->foundRows() ) ;
+
+        // authorizer B : only products → a different result set, same query
+        $b = $engine->search( [ Arango::SEARCH => 'shared' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'products:list' ] ) ;
+        $this->assertSame( [ self::PRODUCTS ] , array_map( static fn( array $r ) => $r[ Arango::COLLECTION ] , $b ) ) ;
+        $this->assertSame( 1 , $engine->foundRows() ) ;
+    }
+
+    /**
      * Polls the federated `search()` until it returns the expected number of
      * rebuilt documents (inverted-index eventual consistency).
      *
