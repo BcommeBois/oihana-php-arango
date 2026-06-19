@@ -12,7 +12,7 @@ use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
-use function oihana\controllers\helpers\resolveDependency;
+use function oihana\core\container\resolveDependency;
 
 /**
  * Provides utilities for initialize edge `to` vertex references in ArangoDB edge queries.

@@ -11,7 +11,7 @@ use oihana\arango\auth\CasbinPolicySync;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
-use function oihana\controllers\helpers\resolveDependency;
+use function oihana\core\container\resolveDependency;
 
 /**
  * Shared wiring for controllers that need to invoke {@see CasbinPolicySync}

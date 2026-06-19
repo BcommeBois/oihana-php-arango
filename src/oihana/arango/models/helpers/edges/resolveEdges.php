@@ -12,8 +12,8 @@ use oihana\arango\models\Edges;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
-use function oihana\controllers\helpers\resolveDependency;
 use function oihana\core\arrays\isIndexed;
+use function oihana\core\container\resolveDependency;
 
 /**
  * Resolves and initializes internal edge model definitions from a dependency container.

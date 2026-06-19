@@ -9,7 +9,7 @@ use oihana\arango\auth\UserMaxLevelResolver;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
-use function oihana\controllers\helpers\resolveDependency;
+use function oihana\core\container\resolveDependency;
 
 /**
  * Standalone trait for the {@see UserMaxLevelResolver} dependency.

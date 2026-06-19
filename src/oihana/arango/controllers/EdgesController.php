@@ -27,7 +27,7 @@ use ReflectionException;
 
 use Throwable;
 
-use function oihana\controllers\helpers\resolveDependency;
+use function oihana\core\container\resolveDependency;
 
 /**
  * Generic controller for managing edge relationships between two vertex collections.
