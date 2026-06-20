@@ -11,10 +11,8 @@ The library is versioned through git tags (no `version` field in
 
 ## Where we are
 
-As of **1.2.0** (released 2026-06-14), plus a large body of **additive work
-already merged in `main`** and pending the next minor, the library covers the
-bulk of the AQL surface, a full operational toolchain, and a federated search
-engine:
+As of **1.3.0** (released 2026-06-20), the library covers the bulk of the AQL
+surface, a full operational toolchain, and a federated search engine:
 
 - **All 22 high-level operations** (`FOR`, `FILTER`, `SORT`, `LIMIT`, `LET`,
   `COLLECT`, `WINDOW`, `RETURN`, `INSERT`, `UPDATE`, `REPLACE`, `UPSERT`,
@@ -51,9 +49,10 @@ tooling are non-breaking and ship as **minor** releases.
 - **`1.0.0`** — released 2026-06-09 (all high-level AQL operations supported).
 - **`1.1.0`** — released 2026-06-10 (vector/ANN, query analysis, function consolidation).
 - **`1.2.0`** — released 2026-06-14 (ArangoSearch DSL, dump/restore, maintenance commands).
-- **Next minor** — everything currently under `[Unreleased]` in the CHANGELOG
-  (per-field View search DSL, custom-analyzer lifecycle, field projection DSL,
-  `search-alias` views, federated search, …), cut when Marc decides.
+- **`1.3.0`** — released 2026-06-20 (per-field View search DSL, custom-analyzer
+  lifecycle, field projection DSL, `search-alias` views, federated search).
+- **Next minor** — the next batch accumulated under `[Unreleased]` in the
+  CHANGELOG, cut when Marc decides.
 
 ## Backlog (to be triaged)
 
