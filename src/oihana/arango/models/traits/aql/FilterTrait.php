@@ -13,6 +13,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Clause;
 use oihana\arango\db\enums\Operator;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\filters\FilterType;
@@ -460,6 +461,18 @@ trait FilterTrait
             }
 
             if ( str_contains( $key , Char::DOT ) )
+            {
+                return $this->prepareHierarchicalFilter( $init , $binds , $docRef ) ;
+            }
+
+            // A single-segment relation key (e.g. `members[*]` for an edge, or a
+            // `company` join) carries no leaf field: it is a pure existence /
+            // absence / cardinality check on the relation itself. Route it to the
+            // hierarchical builder, which owns the traversal logic and `quant`.
+            $relationKey = str_replace( Operator::ARRAY_EXPANSION , '' , $key ) ;
+            $relationDef = $this->filters[ $relationKey ] ?? null ;
+
+            if ( is_array( $relationDef ) && in_array( $relationDef[ AQL::TYPE ] ?? null , [ Filter::EDGE , Filter::EDGES , Filter::JOIN , Filter::JOINS ] , true ) )
             {
                 return $this->prepareHierarchicalFilter( $init , $binds , $docRef ) ;
             }

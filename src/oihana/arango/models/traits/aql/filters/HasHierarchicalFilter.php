@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits\aql\filters;
 
 use Exception;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use org\schema\constants\Schema;
 use ReflectionException;
 use RuntimeException;
@@ -36,6 +37,7 @@ use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLimit;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlTraversal;
+use function oihana\arango\db\helpers\resolveTraversalQuantifier;
 use function oihana\arango\models\helpers\edges\getEdges;
 use function oihana\arango\models\helpers\extractNestedRelations;
 use function oihana\arango\models\helpers\parseFilterSegment;
@@ -67,6 +69,7 @@ trait HasHierarchicalFilter
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     protected function prepareHierarchicalFilter
     (
@@ -117,6 +120,7 @@ trait HasHierarchicalFilter
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     private function buildFilterRecursive
     (
@@ -165,10 +169,34 @@ trait HasHierarchicalFilter
             return null;
         }
 
-        // If it's the last segment, delegate to existing prepareFilter logic
+        // If it's the last segment, delegate to the leaf logic — unless the
+        // segment is itself a relation (edge/join), in which case there is no
+        // leaf field: it is a pure existence/absence check on the relation
+        // (e.g. `members[*]` with `quant`), routed to the traversal builders.
         if ( $isLast )
         {
-            return $this->buildLeafCondition( $segmentInfo , $init , $binds , $docRef ) ;
+            return match( $segmentInfo->type )
+            {
+                Filter::EDGE, Filter::EDGES => $this->buildEdgeTraversal
+                (
+                    remainingSegments : []              ,
+                    segmentInfo       : $segmentInfo    ,
+                    init              : $init           ,
+                    binds             : $binds          ,
+                    docRef            : $docRef         ,
+                    availableEdges    : $availableEdges ,
+                ),
+                Filter::JOIN, Filter::JOINS => $this->buildJoinTraversal
+                (
+                    remainingSegments : []              ,
+                    segmentInfo       : $segmentInfo    ,
+                    init              : $init           ,
+                    binds             : $binds          ,
+                    docRef            : $docRef         ,
+                    availableJoins    : $availableJoins ,
+                ),
+                default => $this->buildLeafCondition( $segmentInfo , $init , $binds , $docRef ),
+            };
         }
 
         // Not last - must traverse structure
@@ -225,6 +253,7 @@ trait HasHierarchicalFilter
      *
      * @throws BindException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     private function buildArrayTraversal
     (
@@ -283,6 +312,7 @@ trait HasHierarchicalFilter
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     private function buildDocumentTraversal
     (
@@ -327,6 +357,7 @@ trait HasHierarchicalFilter
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException If edge configuration is invalid or not found.
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     private function buildEdgeTraversal
     (
@@ -373,25 +404,39 @@ trait HasHierarchicalFilter
             targetModel : $targetModel  ,
         ) ;
 
-        // Build condition for remaining path recursively
-        $innerCondition = $this->buildFilterRecursive
-        (
-            segments     : $remainingSegments                ,
-            filters      : $segmentInfo->nestedFilters ?? [] ,
-            init         : $init                             ,
-            binds      : $binds                            ,
-            docRef       : $vertexID                         ,
-            parentPath   : $segmentInfo->path                ,
-            currentEdges : $nextLevel[ AQL::EDGES ]          ,
-            currentJoins : $nextLevel[ AQL::JOINS ]          ,
-        );
+        // The `quant` quantifier shapes the existence check: any (> 0, default),
+        // none (== 0), or « at least n » (>= n, counted without LIMIT).
+        $quantifier = resolveTraversalQuantifier( $init[ FilterParam::QUANT ] ?? null ) ;
 
-        if ( !$innerCondition )
+        // Build the leaf condition for the remaining path, if any. With no
+        // remaining segment the traversal is a pure existence/absence check
+        // (no FILTER clause on the vertex).
+        $innerCondition = null ;
+
+        if ( !empty( $remainingSegments ) )
         {
-            $pathStr = implode( '.' , $segmentInfo->path ) ;
-            $this->logger->warning( "Failed to build inner condition for edge at path: $pathStr" ) ;
-            return null ;
+            $innerCondition = $this->buildFilterRecursive
+            (
+                segments     : $remainingSegments                ,
+                filters      : $segmentInfo->nestedFilters ?? [] ,
+                init         : $init                             ,
+                binds      : $binds                            ,
+                docRef       : $vertexID                         ,
+                parentPath   : $segmentInfo->path                ,
+                currentEdges : $nextLevel[ AQL::EDGES ]          ,
+                currentJoins : $nextLevel[ AQL::JOINS ]          ,
+            );
+
+            if ( !$innerCondition )
+            {
+                $pathStr = implode( '.' , $segmentInfo->path ) ;
+                $this->logger->warning( "Failed to build inner condition for edge at path: $pathStr" ) ;
+                return null ;
+            }
         }
+
+        $filter = $innerCondition !== null ? aqlFilter( [ $innerCondition ] ) : '' ;
+        $limit  = $quantifier->useLimit    ? aqlLimit ( limit : 1 )           : '' ;
 
         return betweenParentheses( predicate
         (
@@ -407,12 +452,12 @@ trait HasHierarchicalFilter
                     ] ,
                     $binds
                 ),
-                aqlFilter ( [ $innerCondition ] ) ,
-                aqlLimit  ( limit      : 1      ) ,
-                aqlReturn ( expression : 1      )
+                $filter ,
+                $limit  ,
+                aqlReturn ( expression : 1 )
             ])),
-            operator     : Comparator::GREATER_THAN,
-            rightOperand : 0
+            operator     : $quantifier->comparator ,
+            rightOperand : $quantifier->threshold
         ));
     }
 
@@ -435,6 +480,7 @@ trait HasHierarchicalFilter
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     private function buildJoinTraversal
     (
@@ -490,23 +536,38 @@ trait HasHierarchicalFilter
             targetModel : $documents   ,
         ) ;
 
-        // Build condition for remaining path recursively
-        $innerCondition = $this->buildFilterRecursive
-        (
-            segments     : $remainingSegments                ,
-            filters      : $segmentInfo->nestedFilters ?? [] ,
-            init         : $init                             ,
-            binds      : $binds                            ,
-            docRef       : $joinDocRef                       ,
-            parentPath   : $segmentInfo->path                ,
-            currentEdges : $nextLevel[ AQL::EDGES ]          ,
-            currentJoins : $nextLevel[ AQL::JOINS ]          ,
-        );
+        // The `quant` quantifier shapes the existence check: any (> 0, default),
+        // none (== 0), or « at least n » (>= n, counted without LIMIT).
+        $quantifier = resolveTraversalQuantifier( $init[ FilterParam::QUANT ] ?? null ) ;
 
-        if ( !$innerCondition )
+        // Build the leaf condition for the remaining path, if any. With no
+        // remaining segment the join is a pure existence/absence check — only
+        // the structural key condition constrains the joined document.
+        $innerCondition = null ;
+
+        if ( !empty( $remainingSegments ) )
         {
-            return null;
+            $innerCondition = $this->buildFilterRecursive
+            (
+                segments     : $remainingSegments                ,
+                filters      : $segmentInfo->nestedFilters ?? [] ,
+                init         : $init                             ,
+                binds      : $binds                            ,
+                docRef       : $joinDocRef                       ,
+                parentPath   : $segmentInfo->path                ,
+                currentEdges : $nextLevel[ AQL::EDGES ]          ,
+                currentJoins : $nextLevel[ AQL::JOINS ]          ,
+            );
+
+            if ( !$innerCondition )
+            {
+                return null;
+            }
         }
+
+        $keyCondition = predicate( key( $joinKey , $joinDocRef ) , Comparator::EQUAL , $sourceKey ) ;
+        $conditions   = $innerCondition !== null ? [ $keyCondition , $innerCondition ] : [ $keyCondition ] ;
+        $limit        = $quantifier->useLimit ? aqlLimit( limit : 1 ) : '' ;
 
         return betweenParentheses( predicate
         (
@@ -517,16 +578,12 @@ trait HasHierarchicalFilter
                     AQL::DOC_REF => $joinDocRef,
                     AQL::IN      => aqlBindCollection( $collection , $binds )
                 ]),
-                aqlFilter
-                ([
-                    predicate( key( $joinKey , $joinDocRef ) , Comparator::EQUAL , $sourceKey ) ,
-                    $innerCondition
-                ]),
-                aqlLimit  ( limit      : 1 ) ,
+                aqlFilter ( $conditions ) ,
+                $limit ,
                 aqlReturn ( expression : 1 )
             ])),
-            operator     : Comparator::GREATER_THAN ,
-            rightOperand : 0
+            operator     : $quantifier->comparator ,
+            rightOperand : $quantifier->threshold
         ));
     }
 

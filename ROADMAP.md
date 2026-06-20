@@ -56,20 +56,35 @@ tooling are non-breaking and ship as **minor** releases.
 
 ## In progress / next
 
-- **Generalize array quantifiers (`quant`) to edges & joins** — *(audit done,
-  design pending validation)* the `any` / `all` / `none` / `n` quantifier today
-  only works on arrays; extend it to `Filter::EDGE(S)` / `Filter::JOIN(S)`
-  traversals so a relation filter can express "no linked match"
-  (`none` → `LENGTH(…) == 0`), "at least n linked" (`>= n`) and "all linked
-  match", instead of the hardcoded existence `LENGTH(…) > 0`. Also enables pure
-  existence/absence on a relation key with no leaf condition (`members[*]` +
-  `quant`), which is silently dropped today. Strictly backward-compatible
-  (absent `quant` → current `> 0`); reuses the existing quantifier vocabulary,
-  resolver and `ValidationException`.
+- **Generalize array quantifiers (`quant`) to edges & joins** — *(design
+  validated, implementation in 4 checkpoints)* the `any` / `all` / `none` / `n`
+  quantifier today only works on arrays; extend it to `Filter::EDGE(S)` /
+  `Filter::JOIN(S)` traversals so a relation filter can express "no linked match"
+  (`none` → `LENGTH(…) == 0`), "at least n linked" (`>= n`, threshold inlined as
+  an int like the array surface) and "all linked match" (`all`, vacuously true on
+  zero relations — combine with `any` for "all and at least one"), instead of the
+  hardcoded existence `LENGTH(…) > 0`. Also enables pure existence/absence on a
+  relation key with no leaf condition (`members[*]` + `quant`), silently dropped
+  today. Guardrails: `all` without a leaf condition and `n < 1` are rejected
+  (`ValidationException`); for "none" use `none`. Strictly backward-compatible
+  (absent `quant` → current `> 0`); reuses the existing quantifier vocabulary
+  and `ValidationException`.
 
 ## Backlog (to be triaged)
 
 Forward-looking items not yet scheduled, roughly by theme.
+
+### Filtering & query DSL
+
+- **`match` (multi-attribute condition) on edges & joins** — the array surface
+  supports a `match` condition (several sub-fields on the same object, e.g.
+  `members[*]` + `match {active:true, role:'admin'}`); extend it to relation
+  traversals so a single edge/join filter can constrain the linked vertex on
+  several attributes at once. Natural companion to the `quant` generalization
+  (e.g. "no member with `{active:false, role:'admin'}`"). Aggregate comparisons
+  (sum/avg/min/max) and key membership over a relation are intentionally **not**
+  in scope here — they already live in `?facets` (`EDGE_AGGREGATE` /
+  `JOIN_AGGREGATE`, and the `"-key"` negation).
 
 ### Federated search & ArangoSearch
 

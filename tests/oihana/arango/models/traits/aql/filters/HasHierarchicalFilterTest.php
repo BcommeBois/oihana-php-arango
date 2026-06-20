@@ -7,6 +7,7 @@ use DI\DependencyException;
 use DI\NotFoundException;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerExceptionInterface;
@@ -35,10 +36,6 @@ class HasHierarchicalFilterTest extends TestCase
     private Container $container;
     private array $binds;
 
-    /**
-     * @throws DependencyException
-     * @throws NotFoundException
-     */
     protected function setUp(): void
     {
         $this->container = new Container() ;
@@ -51,11 +48,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testNestedDocumentFilterSimple(): void
     {
@@ -90,11 +91,15 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testNestedDocumentFilterWithPostalCode(): void
     {
@@ -1097,5 +1102,249 @@ class HasHierarchicalFilterTest extends TestCase
         $this->expectException( RuntimeException::class ) ;
         $this->expectExceptionMessage( 'Cannot resolve collection' ) ;
         $model->prepareFilter( [ 'key' => 'company.name' , 'val' => 'Acme' ] , $this->binds ) ;
+    }
+
+    // ========================================
+    // EDGE / JOIN QUANTIFIERS (quant)
+    // ========================================
+
+    /**
+     * Builds a model whose `members` edge is filterable, used by the quantifier tests.
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    private function edgeQuantifierModel(): Documents
+    {
+        $this->container->set( 'MemberEdge' , new MockEdges( 'member_edges' ) ) ;
+
+        return new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'organizations' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'members' =>
+                [
+                    AQL::TYPE    => Filter::EDGES ,
+                    AQL::FILTERS => [ 'active' => FilterType::BOOL ] ,
+                ]
+            ],
+            AQL::EDGES =>
+            [
+                'members' => [ AQL::MODEL => 'MemberEdge' , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+            ],
+        ]);
+    }
+
+    /**
+     * Builds a model whose `company` join is filterable, used by the quantifier tests.
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    private function joinQuantifierModel(): Documents
+    {
+        $company = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'companies' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'name' => FilterType::STRING ] ,
+        ]);
+        $this->container->set( 'CompanyModel' , $company ) ;
+
+        return new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'customers' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'company' =>
+                [
+                    AQL::TYPE    => Filter::JOIN ,
+                    AQL::FILTERS => [ 'name' => FilterType::STRING ] ,
+                ]
+            ],
+            AQL::JOINS =>
+            [
+                'company' => [ AQL::MODEL => 'CompanyModel' , AQL::KEY => '_key' ] ,
+            ],
+        ]);
+    }
+
+    /**
+     * Backward-compatibility: no `quant` keeps the historical existence form
+     * (`LENGTH(...) > 0` with a `LIMIT 1` short-circuit).
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEdgeDefaultQuantifierIsUnchanged(): void
+    {
+        $model  = $this->edgeQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'members[*].active' , 'val' => true ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'OUTBOUND doc' , $result ) ;
+        $this->assertStringContainsString( 'LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( '> 0' , $result ) ;
+        $this->assertStringNotContainsString( '== 0' , $result ) ;
+    }
+
+    /**
+     * `quant:none` with a leaf condition → « no linked match » (`== 0`, LIMIT 1).
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEdgeNoneWithLeaf(): void
+    {
+        $model  = $this->edgeQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'members[*].active' , 'val' => true , 'quant' => 'none' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'OUTBOUND doc' , $result ) ;
+        $this->assertStringContainsString( '.active == @' , $result ) ;
+        $this->assertStringContainsString( 'LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( '== 0' , $result ) ;
+        $this->assertStringNotContainsString( '> 0' , $result ) ;
+    }
+
+    /**
+     * `quant:none` without a leaf → pure absence (no FILTER on the vertex).
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEdgeNonePureAbsence(): void
+    {
+        $model  = $this->edgeQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'members[*]' , 'quant' => 'none' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'OUTBOUND doc' , $result ) ;
+        $this->assertStringContainsString( 'LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( '== 0' , $result ) ;
+        $this->assertStringNotContainsString( 'FILTER' , $result ) ;
+    }
+
+    /**
+     * `members[*]` without `quant` → pure existence (`> 0`), previously dropped.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEdgePureExistence(): void
+    {
+        $model  = $this->edgeQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'members[*]' ] , $this->binds ) ;
+
+        $this->assertNotNull( $result ) ;
+        $this->assertStringContainsString( 'OUTBOUND doc' , $result ) ;
+        $this->assertStringContainsString( 'LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( '> 0' , $result ) ;
+        $this->assertStringNotContainsString( 'FILTER' , $result ) ;
+    }
+
+    /**
+     * Integer `quant` → « at least n » (`>= n` inlined, no LIMIT).
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEdgeAtLeastN(): void
+    {
+        $model  = $this->edgeQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'members[*].active' , 'val' => true , 'quant' => 3 ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'OUTBOUND doc' , $result ) ;
+        $this->assertStringContainsString( '.active == @' , $result ) ;
+        $this->assertStringContainsString( '>= 3' , $result ) ;
+        $this->assertStringNotContainsString( 'LIMIT' , $result ) ;
+    }
+
+    /**
+     * `quant:0` (or negative) is rejected — « at least 0 » is meaningless.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEdgeAtLeastZeroIsRejected(): void
+    {
+        $model = $this->edgeQuantifierModel() ;
+
+        $this->expectException( ValidationException::class ) ;
+        $model->prepareFilter( [ 'key' => 'members[*].active' , 'val' => true , 'quant' => 0 ] , $this->binds ) ;
+    }
+
+    /**
+     * An unknown `quant` keyword is rejected.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEdgeUnknownQuantifierIsRejected(): void
+    {
+        $model = $this->edgeQuantifierModel() ;
+
+        $this->expectException( ValidationException::class ) ;
+        $model->prepareFilter( [ 'key' => 'members[*].active' , 'val' => true , 'quant' => 'most' ] , $this->binds ) ;
+    }
+
+    /**
+     * `quant:none` on a join → « no joined match » (`== 0`), key condition kept.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testJoinNoneWithLeaf(): void
+    {
+        $model  = $this->joinQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'company.name' , 'val' => 'Acme' , 'quant' => 'none' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '._key == doc.company' , $result ) ;
+        $this->assertStringContainsString( '.name == @' , $result ) ;
+        $this->assertStringContainsString( 'LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( '== 0' , $result ) ;
+    }
+
+    /**
+     * Integer `quant` on a join → « at least n » (`>= n`, no LIMIT).
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testJoinAtLeastN(): void
+    {
+        $model  = $this->joinQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'company.name' , 'val' => 'Acme' , 'quant' => 2 ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '._key == doc.company' , $result ) ;
+        $this->assertStringContainsString( '>= 2' , $result ) ;
+        $this->assertStringNotContainsString( 'LIMIT' , $result ) ;
     }
 }

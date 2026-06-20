@@ -434,6 +434,7 @@
             "src/oihana/arango/models/helpers/resolveAltSides.php",
             "src/oihana/arango/models/helpers/resolveGeoPoint.php",
             "src/oihana/arango/models/helpers/resolveQuantifier.php",
+            "src/oihana/arango/models/helpers/resolveTraversalQuantifier.php",
             "src/oihana/arango/models/helpers/vertexID.php"
         ]
     },
