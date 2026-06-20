@@ -616,6 +616,64 @@ Les conditions hiérarchiques se combinent comme les autres — tableau (AND par
 [{"key":"company.name","val":"Acme"},{"key":"employee[*].salary","op":"ge","val":50000}]
 ```
 
+### Quantificateurs sur edges/joins — clé `quant`
+
+Par défaut, un filtre de relation teste l'**existence** : « garde le document s'il existe **au moins un** lié (satisfaisant la feuille) » (`LENGTH(...) > 0`). La clé [`quant`](#quantificateurs-sur-tableaux--clé-quant) — le **même vocabulaire que sur les tableaux** — étend cette logique à la **cardinalité** de la relation :
+
+| `quant` | Sens | AQL généré |
+|---|---|---|
+| *(absent)* / `any` | au moins un lié | `LENGTH(FOR v IN … doc … [FILTER <feuille>] LIMIT 1 RETURN 1) > 0` |
+| `none` | aucun lié | `… LIMIT 1 RETURN 1) == 0` |
+| `n` (entier ≥ 1) | au moins n liés | `LENGTH(FOR v IN … doc … [FILTER <feuille>] RETURN 1) >= n` |
+| `all` | tous les liés satisfont | `LENGTH(FOR v IN … doc … FILTER !(<feuille>) LIMIT 1 RETURN 1) == 0` |
+
+**Rien à configurer en plus.** `quant` est une clé **purement URL** : la relation se déclare exactement comme dans [Edge](#edge-arête-de-graphe--filteredge--filteredges) / [Join](#join-référence-par-clé--filterjoin--filterjoins) ci-dessus — `quant` ne touche **pas** la déclaration DI. Rappel de la déclaration utilisée par les exemples qui suivent :
+
+```php
+AQL::FILTERS =>
+[
+    'members' =>
+    [
+        AQL::TYPE    => Filter::EDGES ,
+        AQL::FILTERS => [ 'active' => FilterType::BOOL ] ,
+    ] ,
+],
+AQL::EDGES =>
+[
+    'members' => [ AQL::MODEL => MemberEdge::class , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+],
+```
+
+```jsonc
+// organisations SANS aucun membre (absence pure — pas de feuille)
+{"key":"members[*]","quant":"none"}
+// LENGTH(FOR v IN OUTBOUND doc member_edges LIMIT 1 RETURN 1) == 0
+
+// organisations sans aucun membre actif
+{"key":"members[*].active","val":true,"quant":"none"}
+// LENGTH(FOR v IN OUTBOUND doc member_edges FILTER v.active == @v LIMIT 1 RETURN 1) == 0
+
+// organisations ayant au moins 3 membres actifs
+{"key":"members[*].active","val":true,"quant":3}
+// LENGTH(FOR v IN OUTBOUND doc member_edges FILTER v.active == @v RETURN 1) >= 3
+
+// organisations dont TOUS les membres sont actifs
+{"key":"members[*].active","val":true,"quant":"all"}
+// LENGTH(FOR v IN OUTBOUND doc member_edges FILTER !(v.active == @v) LIMIT 1 RETURN 1) == 0
+```
+
+> **`all` est vrai par défaut sans relation.** Une organisation **sans aucun** membre satisfait `all` (rien ne contredit « tous actifs ») — cohérent avec `[] ALL …` en AQL. Pour « tous actifs **et** au moins un membre », combine `all` + `any` : `[{"key":"members[*].active","val":true,"quant":"all"},{"key":"members[*]"}]`.
+
+**Sémantique & garde-fous :**
+
+- `any` / `none` / `all` gardent le court-circuit `LIMIT 1` ; `n` **compte** les liés (pas de `LIMIT`).
+- `n` signifie « **au moins** n » et doit être **≥ 1** — « au moins 0 » est toujours vrai ; pour « aucun », utilise `none`. Un `n < 1` est **rejeté** (`ValidationException`).
+- `all` exige une **condition de feuille** (sinon « tous satisfont *quoi* ? ») — sans feuille, il est **rejeté** (`ValidationException`).
+- Un `quant` inconnu est **rejeté**.
+- Côté **join**, la clé de jointure structurelle (`j._key == doc.x`) reste toujours positive ; seule la feuille est niée pour `all`.
+
+> Pour des **agrégats** sur une relation (« moyenne des reliés ≥ … », comptages d'UI), c'est le rôle de [`?facets=`](facets.md), pas de `quant`.
+
 ### `alt` sur les feuilles
 
 Les transformations [`alt`](#transformations-alt) s'appliquent normalement à la **feuille** comparée ; la **clé de jointure structurelle** (`j._key == doc.x`) reste, elle, **brute**.

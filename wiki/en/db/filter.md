@@ -616,6 +616,64 @@ Hierarchical conditions combine like any others — an array (AND by default) or
 [{"key":"company.name","val":"Acme"},{"key":"employee[*].salary","op":"ge","val":50000}]
 ```
 
+### Quantifiers on edges/joins — the `quant` key
+
+By default a relation filter is an **existence** check: "keep the document if there is **at least one** linked match (satisfying the leaf)" (`LENGTH(...) > 0`). The [`quant`](#array-quantifiers--the-quant-key) key — the **same vocabulary as on arrays** — extends this to the relation's **cardinality**:
+
+| `quant` | Meaning | Generated AQL |
+|---|---|---|
+| *(absent)* / `any` | at least one linked | `LENGTH(FOR v IN … doc … [FILTER <leaf>] LIMIT 1 RETURN 1) > 0` |
+| `none` | no linked | `… LIMIT 1 RETURN 1) == 0` |
+| `n` (integer ≥ 1) | at least n linked | `LENGTH(FOR v IN … doc … [FILTER <leaf>] RETURN 1) >= n` |
+| `all` | every linked satisfies | `LENGTH(FOR v IN … doc … FILTER !(<leaf>) LIMIT 1 RETURN 1) == 0` |
+
+**Nothing extra to configure.** `quant` is a **pure URL** key: the relation is declared exactly as in [Edge](#edge-graph-edge--filteredge--filteredges) / [Join](#join-key-reference--filterjoin--filterjoins) above — `quant` does **not** touch the DI declaration. Reminder of the declaration used by the examples below:
+
+```php
+AQL::FILTERS =>
+[
+    'members' =>
+    [
+        AQL::TYPE    => Filter::EDGES ,
+        AQL::FILTERS => [ 'active' => FilterType::BOOL ] ,
+    ] ,
+],
+AQL::EDGES =>
+[
+    'members' => [ AQL::MODEL => MemberEdge::class , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+],
+```
+
+```jsonc
+// organizations with NO member (pure absence — no leaf)
+{"key":"members[*]","quant":"none"}
+// LENGTH(FOR v IN OUTBOUND doc member_edges LIMIT 1 RETURN 1) == 0
+
+// organizations with no active member
+{"key":"members[*].active","val":true,"quant":"none"}
+// LENGTH(FOR v IN OUTBOUND doc member_edges FILTER v.active == @v LIMIT 1 RETURN 1) == 0
+
+// organizations with at least 3 active members
+{"key":"members[*].active","val":true,"quant":3}
+// LENGTH(FOR v IN OUTBOUND doc member_edges FILTER v.active == @v RETURN 1) >= 3
+
+// organizations whose members are ALL active
+{"key":"members[*].active","val":true,"quant":"all"}
+// LENGTH(FOR v IN OUTBOUND doc member_edges FILTER !(v.active == @v) LIMIT 1 RETURN 1) == 0
+```
+
+> **`all` is vacuously true with no relation.** An organization with **no** member satisfies `all` (nothing contradicts "all active") — consistent with `[] ALL …` in AQL. For "all active **and** at least one member", combine `all` + `any`: `[{"key":"members[*].active","val":true,"quant":"all"},{"key":"members[*]"}]`.
+
+**Semantics & guardrails:**
+
+- `any` / `none` / `all` keep the `LIMIT 1` short-circuit; `n` **counts** the linked matches (no `LIMIT`).
+- `n` means "**at least** n" and must be **≥ 1** — "at least 0" is always true; for "no linked match" use `none`. An `n < 1` is **rejected** (`ValidationException`).
+- `all` requires a **leaf condition** (otherwise "all satisfy *what*?") — without one it is **rejected** (`ValidationException`).
+- An unknown `quant` is **rejected**.
+- On a **join**, the structural key condition (`j._key == doc.x`) always stays positive; only the leaf is negated for `all`.
+
+> For **aggregate** comparisons over a relation ("average of linked ≥ …", UI counts), use [`?facets=`](facets.md), not `quant`.
+
 ### `alt` on leaves
 
 [`alt`](#alt-transformations) transformations apply normally to the compared **leaf**; the **structural join key** (`j._key == doc.x`) stays **raw**.

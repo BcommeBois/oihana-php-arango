@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Relation quantifiers — `quant` on edge & join filters.** The `?filter=` array quantifier (`any` / `all` / `none` / an integer `n`) now also applies to `Filter::EDGE(S)` / `Filter::JOIN(S)` hierarchical filters, so a relation filter can express more than the hardcoded existence `LENGTH(...) > 0`: `none` → « no linked match » (`LENGTH(...) == 0`), an integer `n` → « at least n linked » (`LENGTH(...) >= n`, counted without `LIMIT`), and `all` → « every linked vertex satisfies the leaf » i.e. no vertex violates it (`LENGTH(FOR … FILTER !(<leaf>) LIMIT 1 RETURN 1) == 0`, vacuously true with no relation — consistent with the array surface and AQL `ALL`; combine with `any` for « all and at least one »). The same vocabulary and the same `ValidationException` as the array surface are reused — no new term, no new filter type. Pure existence/absence on a relation key **with no leaf condition** (`members[*]` [+ `quant`]) is now supported too — single-segment relation keys, previously silently dropped, are routed to the hierarchical builder. On a join, the structural key condition (`j._key == doc.x`) always stays positive; only the leaf is negated for `all`. Guardrails: `all` without a leaf condition and `n < 1` are rejected (`ValidationException`; use `none` for « no match »). **Strictly backward-compatible**: an absent `quant` keeps the historical `LENGTH(...) > 0`. New `TraversalQuantifier` value object and `resolveTraversalQuantifier()` helper (relation counterpart of `resolveQuantifier`; `n` inlined as an int, injection-safe).
+  - **Tests:** unit (`HasHierarchicalFilterTest` — edge & join `none` / `n` / `all` / default `any` with and without a leaf, pure existence/absence, and the guardrails: `n=0`, unknown `quant`, `all` without a leaf rejected) + live (`FilterQuantRelationsIntegrationTest` — over a seeded organizations→members edge and a customers→companies join, each quantifier selects the right documents on a real server, including the vacuously-true `all` and dangling/absent references classified as absence).
+  - **Docs:** FR/EN `db/filter.md` (new "Quantifiers on edges/joins" subsection of "Filtering through relations": semantics table, URL + generated AQL, guardrails, and the cross-reference to the array `quant` section).
+
 ## [1.3.0] - 2026-06-20
 
 ### Added
