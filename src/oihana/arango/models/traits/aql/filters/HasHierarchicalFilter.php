@@ -32,6 +32,7 @@ use Psr\Log\LoggerAwareTrait;
 
 use function oihana\arango\db\binds\aqlBindCollection;
 use function oihana\arango\db\functions\length;
+use function oihana\arango\db\operators\logicalNot;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLimit;
@@ -435,6 +436,24 @@ trait HasHierarchicalFilter
             }
         }
 
+        // `all` → keep documents whose every linked vertex satisfies the leaf,
+        // i.e. none violates it: negate the leaf and require zero matches. A leaf
+        // condition is mandatory — there is nothing to satisfy otherwise.
+        if ( $quantifier->negate )
+        {
+            if ( $innerCondition === null )
+            {
+                $pathStr = implode( '.' , $segmentInfo->path ) ;
+                throw new ValidationException
+                (
+                    "The 'all' quantifier requires a condition to satisfy at path: $pathStr. " .
+                    "Use 'none' to match documents with no related match."
+                ) ;
+            }
+
+            $innerCondition = logicalNot( $innerCondition , true ) ;
+        }
+
         $filter = $innerCondition !== null ? aqlFilter( [ $innerCondition ] ) : '' ;
         $limit  = $quantifier->useLimit    ? aqlLimit ( limit : 1 )           : '' ;
 
@@ -563,6 +582,24 @@ trait HasHierarchicalFilter
             {
                 return null;
             }
+        }
+
+        // `all` → keep documents whose every joined match satisfies the leaf,
+        // i.e. none violates it: negate the leaf (the structural key condition
+        // stays positive). A leaf condition is mandatory.
+        if ( $quantifier->negate )
+        {
+            if ( $innerCondition === null )
+            {
+                $pathStr = implode( '.' , $segmentInfo->path ) ;
+                throw new ValidationException
+                (
+                    "The 'all' quantifier requires a condition to satisfy at path: $pathStr. " .
+                    "Use 'none' to match documents with no related match."
+                ) ;
+            }
+
+            $innerCondition = logicalNot( $innerCondition , true ) ;
         }
 
         $keyCondition = predicate( key( $joinKey , $joinDocRef ) , Comparator::EQUAL , $sourceKey ) ;

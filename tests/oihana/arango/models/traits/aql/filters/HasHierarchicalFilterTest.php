@@ -129,11 +129,15 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testNestedDocumentFilterWithOperator(): void
     {
@@ -167,11 +171,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testDeeplyNestedDocumentFilter(): void
     {
@@ -219,11 +227,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testArrayExpansionFilterSimple(): void
     {
@@ -256,11 +268,15 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testArrayExpansionFilterWithLikeOperator(): void
     {
@@ -290,11 +306,15 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testArrayExpansionFilterWithNotEquals(): void
     {
@@ -328,11 +348,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testArrayExpansionWithSimpleMatch(): void
     {
@@ -377,11 +401,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testHierarchicalFilterWithCustomDocRef(): void
     {
@@ -415,11 +443,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testHierarchicalFilterWithInvalidPath(): void
     {
@@ -450,11 +482,15 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testHierarchicalFilterWithMissingKey(): void
     {
@@ -488,11 +524,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testCombinedConditionsWithHierarchicalFilters(): void
     {
@@ -530,11 +570,15 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * @throws NotFoundException
-     * @throws ReflectionException
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws NotFoundException
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testOrConditionsWithHierarchicalFilters(): void
     {
@@ -575,14 +619,15 @@ class HasHierarchicalFilterTest extends TestCase
     // ========================================
 
     /**
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
-     * @throws BindException
      * @throws UnsupportedOperationException
-     * @throws ConstantException
+     * @throws ValidationException
      */
     public function testMixedFilterTypesInHierarchy(): void
     {
@@ -637,11 +682,15 @@ class HasHierarchicalFilterTest extends TestCase
      * ( $init , &$binds , $docRef ) — previously this crashed in FilterPath
      * because its constructor typed $type as string.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testNestedCustomCallableLeafIsInvoked(): void
     {
@@ -673,11 +722,15 @@ class HasHierarchicalFilterTest extends TestCase
      * An exception thrown by a custom leaf filter is caught and logged, and the
      * whole hierarchical filter resolves to null (rather than bubbling up).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testNestedLeafExceptionIsCaughtAndReturnsNull(): void
     {
@@ -711,11 +764,15 @@ class HasHierarchicalFilterTest extends TestCase
      * resolvable callable produces no handler: a warning is logged and the
      * filter resolves to null.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testNestedUnknownLeafTypeReturnsNull(): void
     {
@@ -749,11 +806,15 @@ class HasHierarchicalFilterTest extends TestCase
      * A JOIN segment expands to a correlated sub-query (LENGTH(FOR … FILTER
      * <joinKey> == <sourceKey> && <leaf> LIMIT 1 RETURN 1) > 0).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testJoinTraversalSingleLevel(): void
     {
@@ -799,11 +860,15 @@ class HasHierarchicalFilterTest extends TestCase
      * When the remaining path cannot resolve a leaf condition inside the join,
      * the whole join traversal resolves to null.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testJoinTraversalReturnsNullWhenInnerConditionUnresolved(): void
     {
@@ -842,11 +907,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * A JOIN whose configuration carries no model throws a RuntimeException.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testJoinTraversalThrowsWhenNoModelConfigured(): void
     {
@@ -880,11 +949,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * An OUTBOUND EDGES segment expands to a graph-traversal existence check.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeTraversalOutbound(): void
     {
@@ -921,11 +994,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * The traversal direction follows the edge configuration (INBOUND).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeTraversalInbound(): void
     {
@@ -958,11 +1035,15 @@ class HasHierarchicalFilterTest extends TestCase
      * An edge model reference that does not resolve to an Edges instance throws
      * a RuntimeException.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeTraversalThrowsOnInvalidEdgeModel(): void
     {
@@ -1000,11 +1081,15 @@ class HasHierarchicalFilterTest extends TestCase
      * When the inner condition behind the edge cannot be resolved, the edge
      * traversal resolves to null.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeTraversalReturnsNullWhenInnerConditionUnresolved(): void
     {
@@ -1065,11 +1150,15 @@ class HasHierarchicalFilterTest extends TestCase
      * A join whose model resolves to a Documents without a collection cannot be
      * traversed: the join traversal throws "Cannot resolve collection".
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testJoinTraversalThrowsWhenModelHasNoCollection(): void
     {
@@ -1111,8 +1200,12 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * Builds a model whose `members` edge is filterable, used by the quantifier tests.
      *
+     * @return Documents
+     * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
      */
     private function edgeQuantifierModel(): Documents
     {
@@ -1140,8 +1233,12 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * Builds a model whose `company` join is filterable, used by the quantifier tests.
      *
+     * @return Documents
+     * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
      */
     private function joinQuantifierModel(): Documents
     {
@@ -1176,11 +1273,15 @@ class HasHierarchicalFilterTest extends TestCase
      * Backward-compatibility: no `quant` keeps the historical existence form
      * (`LENGTH(...) > 0` with a `LIMIT 1` short-circuit).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeDefaultQuantifierIsUnchanged(): void
     {
@@ -1196,11 +1297,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * `quant:none` with a leaf condition → « no linked match » (`== 0`, LIMIT 1).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeNoneWithLeaf(): void
     {
@@ -1217,11 +1322,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * `quant:none` without a leaf → pure absence (no FILTER on the vertex).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeNonePureAbsence(): void
     {
@@ -1237,11 +1346,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * `members[*]` without `quant` → pure existence (`> 0`), previously dropped.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgePureExistence(): void
     {
@@ -1258,11 +1371,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * Integer `quant` → « at least n » (`>= n` inlined, no LIMIT).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeAtLeastN(): void
     {
@@ -1278,11 +1395,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * `quant:0` (or negative) is rejected — « at least 0 » is meaningless.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeAtLeastZeroIsRejected(): void
     {
@@ -1295,11 +1416,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * An unknown `quant` keyword is rejected.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testEdgeUnknownQuantifierIsRejected(): void
     {
@@ -1312,11 +1437,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * `quant:none` on a join → « no joined match » (`== 0`), key condition kept.
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testJoinNoneWithLeaf(): void
     {
@@ -1332,11 +1461,15 @@ class HasHierarchicalFilterTest extends TestCase
     /**
      * Integer `quant` on a join → « at least n » (`>= n`, no LIMIT).
      *
+     * @throws BindException
+     * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function testJoinAtLeastN(): void
     {
@@ -1346,5 +1479,98 @@ class HasHierarchicalFilterTest extends TestCase
         $this->assertStringContainsString( '._key == doc.company' , $result ) ;
         $this->assertStringContainsString( '>= 2' , $result ) ;
         $this->assertStringNotContainsString( 'LIMIT' , $result ) ;
+    }
+
+    /**
+     * `quant:all` on an edge → « every linked vertex satisfies the leaf », i.e.
+     * no vertex violates it: the leaf is negated and the count must be zero.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testEdgeAllNegatesTheLeaf(): void
+    {
+        $model  = $this->edgeQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'members[*].active' , 'val' => true , 'quant' => 'all' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'OUTBOUND doc' , $result ) ;
+        $this->assertStringContainsString( '!(' , $result ) ;
+        $this->assertStringContainsString( '.active == @' , $result ) ;
+        $this->assertStringContainsString( 'LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( '== 0' , $result ) ;
+    }
+
+    /**
+     * `quant:all` without a leaf condition is rejected — there is nothing to satisfy.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testEdgeAllWithoutLeafIsRejected(): void
+    {
+        $model = $this->edgeQuantifierModel() ;
+
+        $this->expectException( ValidationException::class ) ;
+        $model->prepareFilter( [ 'key' => 'members[*]' , 'quant' => 'all' ] , $this->binds ) ;
+    }
+
+    /**
+     * `quant:all` on a join → negated leaf, structural key condition kept positive.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testJoinAllNegatesTheLeafKeepingTheKey(): void
+    {
+        $model  = $this->joinQuantifierModel() ;
+        $result = $model->prepareFilter( [ 'key' => 'company.name' , 'val' => 'Acme' , 'quant' => 'all' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '._key == doc.company' , $result ) ;
+        $this->assertStringContainsString( '!(' , $result ) ;
+        $this->assertStringContainsString( '.name == @' , $result ) ;
+        $this->assertStringContainsString( 'LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( '== 0' , $result ) ;
+    }
+
+    /**
+     * `quant:all` without a leaf condition is rejected on a join too.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testJoinAllWithoutLeafIsRejected(): void
+    {
+        $model = $this->joinQuantifierModel() ;
+
+        $this->expectException( ValidationException::class ) ;
+        $model->prepareFilter( [ 'key' => 'company' , 'quant' => 'all' ] , $this->binds ) ;
     }
 }

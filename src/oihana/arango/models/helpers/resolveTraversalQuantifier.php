@@ -12,30 +12,33 @@ use oihana\exceptions\ValidationException;
  * decisions that shape its `LENGTH( FOR … RETURN 1 ) <cmp> <threshold>` check.
  *
  * This is the relation counterpart of {@see resolveQuantifier()} (which targets
- * the array surface). It shares the same vocabulary — `any` / `none` / an integer
- * `n` — but maps it to a count comparison rather than to an AQL quantifier
- * keyword:
+ * the array surface). It shares the same vocabulary — `any` / `all` / `none` / an
+ * integer `n` — but maps it to a count comparison rather than to an AQL
+ * quantifier keyword:
  * - `any` *(or absent)* → `LENGTH(...) > 0` with a `LIMIT 1` short-circuit
  *   (« at least one linked match ») — the historical, backward-compatible form;
  * - `none` → `LENGTH(...) == 0` with `LIMIT 1` (« no linked match »);
+ * - `all` → `LENGTH(...) == 0` with `LIMIT 1` over the **negated** leaf
+ *   (« no linked vertex violates the condition »); vacuously true with no
+ *   relation. The caller negates the leaf and requires one to be present;
  * - a bare integer `n` (or its numeric string) → `LENGTH(...) >= n`, **without**
  *   `LIMIT` (the rows must be counted). The threshold is cast to an int and
  *   inlined, which is injection-safe — and consistent with the array surface.
  *
  * `n` means « at least n » and must be `>= 1`: « at least 0 » is always true
- * (use `none` for « no linked match »). The named quantifier `all` is handled in
- * a later increment.
+ * (use `none` for « no linked match »).
  *
  * @example
  * ```php
  * use function oihana\arango\db\helpers\resolveTraversalQuantifier;
  *
- * resolveTraversalQuantifier( null )   ; // > 0,  LIMIT 1  (any, default)
+ * resolveTraversalQuantifier( null )   ; // > 0,  LIMIT 1            (any, default)
  * resolveTraversalQuantifier( 'none' ); // == 0, LIMIT 1
+ * resolveTraversalQuantifier( 'all' ) ; // == 0, LIMIT 1, negate leaf
  * resolveTraversalQuantifier( 3 )     ; // >= 3, no LIMIT
  * ```
  *
- * @param mixed $value The raw `quant` parameter (`any`, `none`, or an integer).
+ * @param mixed $value The raw `quant` parameter (`any`, `all`, `none`, or an integer).
  *
  * @return TraversalQuantifier The resolved predicate decisions.
  *
@@ -59,6 +62,16 @@ function resolveTraversalQuantifier( mixed $value ) : TraversalQuantifier
         return new TraversalQuantifier( Comparator::EQUAL , 0 , true , false ) ;
     }
 
+    // all → « every linked match satisfies the condition », i.e. no linked vertex
+    // violates it. The caller negates the leaf condition; the count of violators
+    // must then be zero. Vacuously true when there is no relation. A leaf
+    // condition is required (enforced by the caller — there is nothing to satisfy
+    // otherwise).
+    if ( $value === FilterQuantifier::ALL )
+    {
+        return new TraversalQuantifier( Comparator::EQUAL , 0 , true , true ) ;
+    }
+
     // Integer n (or its numeric string) → « at least n », counted (no LIMIT).
     if ( is_int( $value ) || ( is_string( $value ) && ctype_digit( $value ) ) )
     {
@@ -79,6 +92,6 @@ function resolveTraversalQuantifier( mixed $value ) : TraversalQuantifier
     throw new ValidationException
     (
         "Invalid traversal quantifier '" . ( is_scalar( $value ) ? (string) $value : gettype( $value ) ) .
-        "'. Expected one of: any, none, or an integer (at least n)."
+        "'. Expected one of: any, all, none, or an integer (at least n)."
     ) ;
 }
