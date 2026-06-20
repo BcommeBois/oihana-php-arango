@@ -43,7 +43,7 @@ So you can send all three in the same request — they stack (logical AND betwee
 | **Internal combination** | OR over (each term × each field) | AND/OR/NOT, nestable (`["and"/"or"/"not", …]`) | none — each facet is independent, all AND-ed |
 | **Model declaration** | `searchable` list | `AQL::FILTERS` → a `FilterType` per field | `Arango::FACETS` → a `Facet::TYPE` per facet |
 | **Whitelist** | fixed `searchable` fields | typed `FILTERS` fields | **undeclared key = ignored** |
-| **Relations (edge/join)** | no | only as the leaf of a path | **first-class** (existence, aggregates) |
+| **Relations (edge/join)** | no | **yes**, via a [relation path](filter.md#filtering-through-relations-edges--joins--nested-documents) (existence "has at least one linked match") | **first-class** (existence, aggregates, UI facets) |
 | **Specific to** | — | dates (`now`/`tz`), `between`, `AT LEAST (n)`, `pluck`/`coalesce` alters | `between` (FIELD), `*_AGGREGATE`, `LIST*` aliases, `Facet::PROPERTY` |
 
 ## The shared foundation
@@ -60,8 +60,8 @@ Beyond the surface differences, all three rest on **the same building blocks** �
 ## When to use which
 
 - **`?search`** — a single **search bar** "type a word" sweeping a few text fields (`name`, `firstName`, `email`…). Simple, broad, no per-request configuration.
-- **`?filter`** — an **advanced search**: boolean logic (AND/OR/NOT), date ranges with a timezone, fine comparators on a precise field.
-- **`?facets`** — **UI facets** (multi-value checkboxes) and anything involving **relations** ("linked to…", "has at least one…", "average of linked ≥ …").
+- **`?filter`** — an **advanced search**: boolean logic (AND/OR/NOT), date ranges with a timezone, fine comparators on a precise field — **including through a relation** (`location.name`, `employee[*].salary`: "has at least one linked match").
+- **`?facets`** — **UI facets** (multi-value checkboxes) and **aggregates** over relations ("average of linked ≥ …", counts); for a plain boolean condition on a linked document, prefer `?filter`.
 
 ### The same intent, expressed several ways
 
@@ -78,10 +78,16 @@ Beyond the surface differences, all three rest on **the same building blocks** �
 ?facets={"keywords":"cuisine,jardin"}
 # → TO_ARRAY([@k0,@k1]) ANY IN doc.keywords
 
-# "linked to org 1234" (relation)                     → ?facets only
+# "linked to org 1234" (UI facet, multi-value)        → ?facets
 ?facets={"location":1234}
 # → LENGTH(FOR v IN INBOUND doc orgs_places FILTER v._key==@v RETURN 1) > 0
+
+# "whose linked org is named "Acme"" (relation)       → ?filter (relation path)
+?filter={"key":"location.name","val":"Acme"}
+# → LENGTH(FOR v IN INBOUND doc orgs_places FILTER v.name==@v LIMIT 1 RETURN 1) > 0
 ```
+
+> `?filter=` **can also traverse relations** via a path (`location.name`, `employee[*].salary`) — see [Filtering through relations](filter.md#filtering-through-relations-edges--joins--nested-documents). Reserve `?facets=` for **UI facets** (multi-value checkboxes on a relation) and **aggregates**; use `?filter=` for a fine boolean condition on the linked document.
 
 ## Distance sorting (`?near=`)
 

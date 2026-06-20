@@ -478,6 +478,159 @@ AQL::FILTERS =>
 
 Convention: `AQL::FILTERS` is a subset of `AQL::FIELDS` — only fields actually exposed get filtered. An asymmetry (`FIELDS` without `FILTERS`) is legal: a returned but non-filterable field.
 
+## Filtering through relations (edges / joins / nested documents)
+
+`?filter=` is not limited to scalar fields of the root document. A **hierarchical key** (segments separated by `.`) lets you descend into a **nested sub-document**, or **traverse a relation** — a graph `edge` or a key-based `join` — to keep only the root documents for which **at least one** linked document satisfies the condition.
+
+> **Scope — read this first.** The filter applies to the **document at the far end of the relation** (the target *vertex* for an edge, the referenced document for a join), **never** to the **edge's own metadata**. You can filter on `employee[*].salary` (an attribute of the employee), but **not** on an attribute stored in the edge collection (`role`, `weight`, `since`…).
+
+### The mental model
+
+| Key shape | Declared type | Meaning | Generated AQL (simplified) |
+|---|---|---|---|
+| `address.city` | `Filter::DOCUMENT` | descends into a nested object | `doc.address.city == @v` |
+| `company.name` | `Filter::JOIN` | follows a key reference | `LENGTH(FOR j IN companies FILTER j._key == doc.company && j.name == @v LIMIT 1 RETURN 1) > 0` |
+| `employee[*].name` | `Filter::EDGES` | traverses a graph edge | `LENGTH(FOR v IN OUTBOUND doc employee_edges FILTER v.name == @v LIMIT 1 RETURN 1) > 0` |
+
+An edge/join is an **existence check**: "keep `doc` if there is at least one linked document that matches" (`LIMIT 1 … RETURN 1 … > 0`). A nested document, on the other hand, stays a plain condition on `doc`.
+
+### DI declaration
+
+Instead of a plain `FilterType`, a filterable key can take a **nested configuration**: `AQL::TYPE` says how to traverse, `AQL::FILTERS` **declares and whitelists** the filterable sub-fields at the next level. The model's relation maps (`AQL::EDGES` / `AQL::JOINS`) supply the target model and the direction (edge) or key (join).
+
+```php
+use oihana\arango\db\enums\Traversal ;
+use oihana\arango\enums\Filter ;
+use oihana\arango\models\enums\filters\FilterType ;
+use org\schema\constants\Schema ;
+```
+
+#### Nested document — `Filter::DOCUMENT`
+
+```php
+AQL::FILTERS =>
+[
+    'name'    => FilterType::STRING ,
+    'address' =>
+    [
+        AQL::TYPE    => Filter::DOCUMENT ,        // object nested in the same document
+        AQL::FILTERS =>
+        [
+            'city'       => FilterType::STRING ,
+            'postalCode' => FilterType::STRING ,
+        ],
+    ],
+]
+```
+
+```jsonc
+{"key":"address.city","val":"Paris"}
+// FILTER doc.address.city == @v
+
+// op and alt work normally on the leaf:
+{"key":"address.city","op":"like","val":"Paris%"}
+// FILTER doc.address.city LIKE @v
+```
+
+The descent is recursive — `company.headquarters.address.country` is valid as long as every level is declared as `Filter::DOCUMENT` with its `AQL::FILTERS`.
+
+#### Join (key reference) — `Filter::JOIN` / `Filter::JOINS`
+
+```php
+// "customers" model (each customer carries doc.company = _key of a company)
+AQL::FILTERS =>
+[
+    'company' =>
+    [
+        AQL::TYPE    => Filter::JOIN ,            // 1 reference  → no [*]
+        AQL::FILTERS => [ 'name' => FilterType::STRING ] ,
+    ],
+],
+AQL::JOINS =>
+[
+    'company' => [ AQL::MODEL => CompanyModel::class , AQL::KEY => Schema::_KEY ] ,
+],
+```
+
+```jsonc
+{"key":"company.name","val":"Acme"}
+// LENGTH(FOR j IN companies FILTER j._key == doc.company && j.name == @v LIMIT 1 RETURN 1) > 0
+```
+
+- `AQL::KEY` (default `_key`) = the field compared **in the target collection**; `doc.company` (= the segment name) = the field holding the reference **on the root document**.
+- `AQL::MODEL` is **required**: a missing model throws a `RuntimeException` (a configuration error, not a client input).
+- **N references** variant: `Filter::JOINS` + the `[*]` notation (see cardinality below).
+
+#### Edge (graph edge) — `Filter::EDGE` / `Filter::EDGES`
+
+```php
+// "companies" model linked to its employees through an edge collection
+AQL::FILTERS =>
+[
+    'employee' =>
+    [
+        AQL::TYPE    => Filter::EDGES ,           // N linked → [*] notation
+        AQL::FILTERS =>
+        [
+            'name'   => FilterType::STRING ,
+            'salary' => FilterType::NUMBER ,
+        ],
+    ],
+],
+AQL::EDGES =>
+[
+    'employee' => [ AQL::MODEL => EmployeeEdge::class , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+],
+```
+
+```jsonc
+{"key":"employee[*].salary","op":"ge","val":50000}
+// LENGTH(FOR v IN OUTBOUND doc employee_edges FILTER v.salary >= @v LIMIT 1 RETURN 1) > 0
+```
+
+- `AQL::DIRECTION` (default `Traversal::OUTBOUND`) picks the direction; `Traversal::INBOUND` traverses toward the source vertex (`from`) instead of the target vertex (`to`).
+- The condition applies to the traversed **vertex** (`v.salary`), not to the edge.
+
+### Cardinality & the `[*]` notation
+
+| Type | Cardinality | Key notation |
+|---|---|---|
+| `Filter::DOCUMENT` | 1 (nested object) | `address.city` — **without** `[*]` |
+| `Filter::JOIN` | 1 reference | `company.name` — **without** `[*]` |
+| `Filter::JOINS` | N references | `companies[*].name` — **with** `[*]` |
+| `Filter::EDGE` | 1 linked | `manager.name` — **without** `[*]` |
+| `Filter::EDGES` | N linked | `employee[*].name` — **with** `[*]` |
+
+> **Strict rule.** The presence of `[*]` must match the plural type (`EDGES`, `JOINS`, array expansion). A mismatch — `employee.name` for an `EDGES`, or `company[*].name` for a `JOIN` — causes the filter to be **silently ignored** (consistent with the rest of the API: no 400 error).
+
+### Multi-level
+
+The **relation maps** of target models are resolved automatically: if the target model declares its own `AQL::EDGES` / `AQL::JOINS`, you can chain traversals (`employee[*].department.name`). You only need to declare the **`AQL::FILTERS` tree** at each traversed level — the deeper `AQL::EDGES`/`AQL::JOINS` maps are inherited from the target model and **need not be re-declared**.
+
+### Combining with AND / OR
+
+Hierarchical conditions combine like any others — an array (AND by default) or the `logic` key (OR):
+
+```jsonc
+// customers at "Acme" HAVING at least one employee paid ≥ 50000
+[{"key":"company.name","val":"Acme"},{"key":"employee[*].salary","op":"ge","val":50000}]
+```
+
+### `alt` on leaves
+
+[`alt`](#alt-transformations) transformations apply normally to the compared **leaf**; the **structural join key** (`j._key == doc.x`) stays **raw**.
+
+```jsonc
+{"key":"company.name","val":"acme","alt":{"key":"lower","val":true}}
+// … FILTER j._key == doc.company && LOWER(j.name) == LOWER(@v) …
+```
+
+### Performance & leniency
+
+- Each edge/join generates a **sub-query per evaluated root document**. Reserve it for indexed relations (`_key` for a join, the edge index for an edge) and combine it with selective scalar filters **upstream** to shrink the scanned set.
+- Same safeguards as everywhere: a sub-field absent from the level's `AQL::FILTERS` is **ignored and logged** (`warning`); only **values** are bound.
+- Need **UI facets** on a relation (checkboxes "linked to X", aggregates "average of linked ≥ …")? That is the job of [`?facets=`](facets.md) — see [Search & filtering](search-and-filtering.md#when-to-use-which).
+
 ## Practical cases
 
 ### Case-insensitive search

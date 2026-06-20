@@ -171,6 +171,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`doctor` no longer reports the migrations tracking collection as an orphan.** No model declares the tracking collection (`migrationsCollection`, default `migrations`), yet both `migrate` and `doctor --apply` write their journal there — so after a single `migrate` or `doctor --apply`, every following `doctor` flagged it as an orphan (and offered it to `--prune`). `doctorOrphans()` now excludes it by its **configured name**, which also keeps it out of the `--prune` selection. Views orphan detection is unchanged.
 
+### Documentation
+
+- **`?filter=` relation traversal is now documented (edges / joins / nested documents).** Hierarchical filter keys (`address.city`, `company.name`, `employee[*].salary`) — already supported by `HasHierarchicalFilter` — were only mentioned in passing. A new "Filtering through relations" section in FR/EN `db/filter.md` covers the mental model, the DI declaration of the three flavours (`Filter::DOCUMENT`, `Filter::JOIN`/`JOINS`, `Filter::EDGE`/`EDGES` with their `AQL::JOINS`/`AQL::EDGES` maps), the generated AQL (existence check `LENGTH(… LIMIT 1 RETURN 1) > 0`), the cardinality ↔ `[*]` notation rule, multi-level traversal, AND/OR combination, `alt` on leaves, and performance/leniency — plus the key scope caveat (the filter targets the document **at the far end** of the relation, never the edge's own metadata).
+- **Corrected the misleading "relations → `?facets` only" guidance.** FR/EN `db/search-and-filtering.md` (comparison table, "when to use which" bullets, and the "same intent" examples) stated relation filtering was facets-only; it now reflects that `?filter=` can traverse relations via a path, reserving `?facets=` for UI facets and aggregates, with cross-links to the new filter section.
+
 ## [1.2.0] - 2026-06-14
 
 ### Added

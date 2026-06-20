@@ -478,6 +478,159 @@ AQL::FILTERS =>
 
 Convention : `AQL::FILTERS` est un sous-ensemble de `AQL::FIELDS` — on ne filtre que sur des champs réellement exposés. Une asymétrie (`FIELDS` sans `FILTERS`) est légale : un champ retourné mais non filtrable.
 
+## Filtrer à travers les relations (edges / joins / documents imbriqués)
+
+`?filter=` ne se limite pas aux champs scalaires du document racine. Une **clé hiérarchique** (segments séparés par des `.`) permet de descendre dans un **sous-document**, ou de **traverser une relation** — `edge` de graphe ou `join` par clé — pour ne garder que les documents racine dont **au moins un** document lié satisfait la condition.
+
+> **Portée — à lire avant tout.** Le filtre porte sur le **document au bout de la relation** (le *vertex* cible pour un edge, le document référencé pour un join), **jamais** sur les **métadonnées de l'arête** elle-même. On peut filtrer sur `employee[*].salary` (un attribut de l'employé), mais **pas** sur un attribut stocké dans la collection d'edges (`role`, `weight`, `since`…).
+
+### Le modèle mental
+
+| Forme de clé | Type déclaré | Sens | AQL généré (simplifié) |
+|---|---|---|---|
+| `address.city` | `Filter::DOCUMENT` | descend dans un objet imbriqué | `doc.address.city == @v` |
+| `company.name` | `Filter::JOIN` | suit une référence par clé | `LENGTH(FOR j IN companies FILTER j._key == doc.company && j.name == @v LIMIT 1 RETURN 1) > 0` |
+| `employee[*].name` | `Filter::EDGES` | traverse une arête de graphe | `LENGTH(FOR v IN OUTBOUND doc employee_edges FILTER v.name == @v LIMIT 1 RETURN 1) > 0` |
+
+Un edge/join est une **vérification d'existence** : « garde `doc` s'il existe au moins un lié qui matche » (`LIMIT 1 … RETURN 1 … > 0`). Un document imbriqué reste, lui, une simple condition plate sur `doc`.
+
+### Déclaration côté DI
+
+Au lieu d'un simple `FilterType`, une clé filtrable peut recevoir une **configuration imbriquée** : `AQL::TYPE` dit comment traverser, `AQL::FILTERS` **déclare et whiteliste** les sous-champs filtrables au niveau suivant. Les cartes de relations du modèle (`AQL::EDGES` / `AQL::JOINS`) fournissent, elles, le modèle cible et la direction (edge) ou la clé (join).
+
+```php
+use oihana\arango\db\enums\Traversal ;
+use oihana\arango\enums\Filter ;
+use oihana\arango\models\enums\filters\FilterType ;
+use org\schema\constants\Schema ;
+```
+
+#### Document imbriqué — `Filter::DOCUMENT`
+
+```php
+AQL::FILTERS =>
+[
+    'name'    => FilterType::STRING ,
+    'address' =>
+    [
+        AQL::TYPE    => Filter::DOCUMENT ,        // objet imbriqué dans le même document
+        AQL::FILTERS =>
+        [
+            'city'       => FilterType::STRING ,
+            'postalCode' => FilterType::STRING ,
+        ],
+    ],
+]
+```
+
+```jsonc
+{"key":"address.city","val":"Paris"}
+// FILTER doc.address.city == @v
+
+// op et alt fonctionnent normalement sur la feuille :
+{"key":"address.city","op":"like","val":"Paris%"}
+// FILTER doc.address.city LIKE @v
+```
+
+La descente est récursive — `company.headquarters.address.country` est valide tant que chaque niveau est déclaré en `Filter::DOCUMENT` avec ses `AQL::FILTERS`.
+
+#### Join (référence par clé) — `Filter::JOIN` / `Filter::JOINS`
+
+```php
+// Modèle « customers » (chaque customer porte doc.company = _key d'une société)
+AQL::FILTERS =>
+[
+    'company' =>
+    [
+        AQL::TYPE    => Filter::JOIN ,            // 1 référence  → pas de [*]
+        AQL::FILTERS => [ 'name' => FilterType::STRING ] ,
+    ],
+],
+AQL::JOINS =>
+[
+    'company' => [ AQL::MODEL => CompanyModel::class , AQL::KEY => Schema::_KEY ] ,
+],
+```
+
+```jsonc
+{"key":"company.name","val":"Acme"}
+// LENGTH(FOR j IN companies FILTER j._key == doc.company && j.name == @v LIMIT 1 RETURN 1) > 0
+```
+
+- `AQL::KEY` (défaut `_key`) = le champ comparé **dans la collection cible** ; `doc.company` (= le nom du segment) = le champ portant la référence **sur le document racine**.
+- `AQL::MODEL` est **obligatoire** : son absence lève une `RuntimeException` (erreur de configuration, pas une entrée client).
+- Variante **N références** : `Filter::JOINS` + notation `[*]` (voir la cardinalité ci-dessous).
+
+#### Edge (arête de graphe) — `Filter::EDGE` / `Filter::EDGES`
+
+```php
+// Modèle « companies » relié à ses employés par une collection d'edges
+AQL::FILTERS =>
+[
+    'employee' =>
+    [
+        AQL::TYPE    => Filter::EDGES ,           // N liés → notation [*]
+        AQL::FILTERS =>
+        [
+            'name'   => FilterType::STRING ,
+            'salary' => FilterType::NUMBER ,
+        ],
+    ],
+],
+AQL::EDGES =>
+[
+    'employee' => [ AQL::MODEL => EmployeeEdge::class , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+],
+```
+
+```jsonc
+{"key":"employee[*].salary","op":"ge","val":50000}
+// LENGTH(FOR v IN OUTBOUND doc employee_edges FILTER v.salary >= @v LIMIT 1 RETURN 1) > 0
+```
+
+- `AQL::DIRECTION` (défaut `Traversal::OUTBOUND`) choisit le sens ; `Traversal::INBOUND` traverse vers le sommet d'origine (`from`) au lieu du sommet d'arrivée (`to`).
+- La condition s'applique au **vertex** traversé (`v.salary`), pas à l'arête.
+
+### Cardinalité & notation `[*]`
+
+| Type | Cardinalité | Notation de clé |
+|---|---|---|
+| `Filter::DOCUMENT` | 1 (objet imbriqué) | `address.city` — **sans** `[*]` |
+| `Filter::JOIN` | 1 référence | `company.name` — **sans** `[*]` |
+| `Filter::JOINS` | N références | `companies[*].name` — **avec** `[*]` |
+| `Filter::EDGE` | 1 lié | `manager.name` — **sans** `[*]` |
+| `Filter::EDGES` | N liés | `employee[*].name` — **avec** `[*]` |
+
+> **Règle stricte.** La présence du `[*]` doit correspondre au type pluriel (`EDGES`, `JOINS`, expansion de tableau). Un décalage — `employee.name` pour un `EDGES`, ou `company[*].name` pour un `JOIN` — fait **silencieusement ignorer** le filtre (cohérent avec le reste de l'API : aucune erreur 400).
+
+### Multi-niveaux
+
+Les **cartes de relations** des modèles d'arrivée sont résolues automatiquement : si le modèle cible déclare lui-même ses `AQL::EDGES` / `AQL::JOINS`, on peut enchaîner les traversées (`employee[*].department.name`). Il suffit de déclarer l'**arbre des `AQL::FILTERS`** à chaque niveau traversé — les cartes `AQL::EDGES`/`AQL::JOINS` profondes, elles, sont héritées du modèle cible et **n'ont pas à être redéclarées**.
+
+### Combiner avec AND / OR
+
+Les conditions hiérarchiques se combinent comme les autres — tableau (AND par défaut) ou clé `logic` (OR) :
+
+```jsonc
+// customers chez « Acme » AYANT au moins un employé payé ≥ 50000
+[{"key":"company.name","val":"Acme"},{"key":"employee[*].salary","op":"ge","val":50000}]
+```
+
+### `alt` sur les feuilles
+
+Les transformations [`alt`](#transformations-alt) s'appliquent normalement à la **feuille** comparée ; la **clé de jointure structurelle** (`j._key == doc.x`) reste, elle, **brute**.
+
+```jsonc
+{"key":"company.name","val":"acme","alt":{"key":"lower","val":true}}
+// … FILTER j._key == doc.company && LOWER(j.name) == LOWER(@v) …
+```
+
+### Performance & tolérance
+
+- Chaque edge/join génère une **sous-requête par document racine évalué**. À réserver aux relations indexées (`_key` pour un join, l'index d'arête pour un edge) et à combiner avec des filtres scalaires sélectifs **en amont** pour réduire l'ensemble parcouru.
+- Mêmes garde-fous que partout : un sous-champ absent des `AQL::FILTERS` du niveau est **ignoré et journalisé** (`warning`) ; seules les **valeurs** sont bindées.
+- Besoin de **facettes d'UI** sur une relation (cases à cocher « lié à X », agrégats « moyenne des reliés ≥ … ») ? C'est le rôle de [`?facets=`](facets.md) — voir [Recherche & filtrage](search-and-filtering.md#quand-utiliser-quoi).
+
 ## Cas pratiques
 
 ### Recherche insensible à la casse

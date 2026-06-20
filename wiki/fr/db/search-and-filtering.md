@@ -43,7 +43,7 @@ On peut donc envoyer les trois dans la même requête — ils se cumulent (logiq
 | **Combinaison interne** | OR sur (chaque terme × chaque champ) | ET/OU/NON imbriquables (`["and"/"or"/"not", …]`) | aucune — chaque facette est indépendante, toutes ANDées |
 | **Déclaration modèle** | liste `searchable` | `AQL::FILTERS` → un `FilterType` par champ | `Arango::FACETS` → un `Facet::TYPE` par facette |
 | **Whitelist** | champs `searchable` fixés | champs `FILTERS` typés | **clé non déclarée = ignorée** |
-| **Relations (edge/join)** | non | seulement en feuille d'un chemin | **first-class** (existence, agrégats) |
+| **Relations (edge/join)** | non | **oui**, via un [chemin de relation](filter.md#filtrer-à-travers-les-relations-edges--joins--documents-imbriqués) (existence « a au moins un lié qui matche ») | **first-class** (existence, agrégats, facettes d'UI) |
 | **Spécifiques** | — | dates (`now`/`tz`), `between`, `AT LEAST (n)`, alters `pluck`/`coalesce` | `between` (FIELD), `*_AGGREGATE`, alias `LIST*`, `Facet::PROPERTY` |
 
 ## Le socle commun
@@ -60,8 +60,8 @@ Au-delà des différences de surface, les trois reposent sur **les mêmes brique
 ## Quand utiliser quoi
 
 - **`?search`** — une **barre de recherche** unique « tape un mot » qui balaie quelques champs textuels (`name`, `firstName`, `email`…). Simple, large, sans configuration par requête.
-- **`?filter`** — une **recherche avancée** : logique booléenne (ET/OU/NON), plages de dates avec fuseau, comparateurs fins sur un champ précis.
-- **`?facets`** — des **facettes d'UI** (cases à cocher multi-valeurs) et tout ce qui touche aux **relations** (« lié à… », « a au moins un… », « moyenne des reliés ≥ … »).
+- **`?filter`** — une **recherche avancée** : logique booléenne (ET/OU/NON), plages de dates avec fuseau, comparateurs fins sur un champ précis — **y compris à travers une relation** (`location.name`, `employee[*].salary` : « a au moins un lié qui matche »).
+- **`?facets`** — des **facettes d'UI** (cases à cocher multi-valeurs) et les **agrégats** sur relations (« moyenne des reliés ≥ … », comptages) ; pour une simple condition booléenne sur un document lié, préfère `?filter`.
 
 ### La même intention, exprimée de plusieurs façons
 
@@ -78,10 +78,16 @@ Au-delà des différences de surface, les trois reposent sur **les mêmes brique
 ?facets={"keywords":"cuisine,jardin"}
 # → TO_ARRAY([@k0,@k1]) ANY IN doc.keywords
 
-# « lié à l'org 1234 » (relation)                     → ?facets uniquement
+# « lié à l'org 1234 » (facette d'UI, multi-valeurs)  → ?facets
 ?facets={"location":1234}
 # → LENGTH(FOR v IN INBOUND doc orgs_places FILTER v._key==@v RETURN 1) > 0
+
+# « dont l'org liée s'appelle "Acme" » (relation)     → ?filter (chemin de relation)
+?filter={"key":"location.name","val":"Acme"}
+# → LENGTH(FOR v IN INBOUND doc orgs_places FILTER v.name==@v LIMIT 1 RETURN 1) > 0
 ```
+
+> `?filter=` **sait aussi traverser les relations** via un chemin (`location.name`, `employee[*].salary`) — voir [Filtrer à travers les relations](filter.md#filtrer-à-travers-les-relations-edges--joins--documents-imbriqués). Réserve `?facets=` aux **facettes d'UI** (cases à cocher multi-valeurs sur une relation) et aux **agrégats** ; emploie `?filter=` pour une condition booléenne fine sur le document lié.
 
 ## Tri par distance (`?near=`)
 
