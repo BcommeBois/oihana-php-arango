@@ -54,22 +54,6 @@ tooling are non-breaking and ship as **minor** releases.
 - **Next minor** — the next batch accumulated under `[Unreleased]` in the
   CHANGELOG, cut when Marc decides.
 
-## In progress / next
-
-- **Generalize array quantifiers (`quant`) to edges & joins** — *(design
-  validated, implementation in 4 checkpoints)* the `any` / `all` / `none` / `n`
-  quantifier today only works on arrays; extend it to `Filter::EDGE(S)` /
-  `Filter::JOIN(S)` traversals so a relation filter can express "no linked match"
-  (`none` → `LENGTH(…) == 0`), "at least n linked" (`>= n`, threshold inlined as
-  an int like the array surface) and "all linked match" (`all`, vacuously true on
-  zero relations — combine with `any` for "all and at least one"), instead of the
-  hardcoded existence `LENGTH(…) > 0`. Also enables pure existence/absence on a
-  relation key with no leaf condition (`members[*]` + `quant`), silently dropped
-  today. Guardrails: `all` without a leaf condition and `n < 1` are rejected
-  (`ValidationException`); for "none" use `none`. Strictly backward-compatible
-  (absent `quant` → current `> 0`); reuses the existing quantifier vocabulary
-  and `ValidationException`.
-
 ## Backlog (to be triaged)
 
 Forward-looking items not yet scheduled, roughly by theme.
