@@ -23,7 +23,7 @@ use oihana\commands\enums\ExitCode;
 use oihana\commands\traits\HelperTrait;
 use oihana\commands\traits\IOTrait;
 
-use oihana\date\traits\DateTrait;
+use oihana\traits\DateTrait;
 
 use PHPUnit\Framework\Attributes\Group;
 

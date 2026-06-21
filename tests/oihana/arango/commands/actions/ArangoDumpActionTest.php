@@ -21,7 +21,7 @@ use oihana\commands\enums\ExitCode;
 use oihana\commands\options\CommandOption;
 use oihana\commands\traits\IOTrait;
 
-use oihana\date\traits\DateTrait;
+use oihana\traits\DateTrait;
 
 use oihana\files\enums\CompressionType;
 

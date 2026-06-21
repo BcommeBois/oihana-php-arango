@@ -17,7 +17,7 @@ use oihana\commands\enums\ExitCode;
 use oihana\commands\exceptions\ExitException;
 use oihana\commands\traits\HelperTrait;
 
-use oihana\date\traits\DateTrait;
+use oihana\traits\DateTrait;
 
 use oihana\enums\Char;
 use oihana\files\enums\FileExtension;

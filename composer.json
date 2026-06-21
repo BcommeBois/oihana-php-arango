@@ -457,16 +457,21 @@
         "symfony/uid": "^8.0",
         "oihana/php-auth": "dev-main",
         "oihana/php-commands": "dev-main",
+        "oihana/php-controllers": "dev-main",
         "oihana/php-core": "dev-main",
         "oihana/php-enums": "dev-main",
         "oihana/php-exceptions": "dev-main",
         "oihana/php-files": "dev-main",
+        "oihana/php-init": "dev-main",
+        "oihana/php-logging": "dev-main",
         "oihana/php-masking": "dev-main",
+        "oihana/php-models": "dev-main",
         "oihana/php-reflect": "dev-main",
+        "oihana/php-routes": "dev-main",
         "oihana/php-schema": "dev-main",
         "oihana/php-signals": "dev-main",
         "oihana/php-standards": "dev-main",
-        "oihana/php-system": "dev-main"
+        "oihana/php-traits": "dev-main"
     },
     "require-dev": {
         "phpunit/phpunit": "^12",

@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A GitHub Actions workflow (`.github/workflows/docs.yml`) that builds the API documentation and deploys it to GitHub Pages on every push to `main`; the README now links to the published reference (https://bcommebois.github.io/oihana-php-arango).
 - The landing-page logo is referenced from `assets/images/` via its raw GitHub URL, so the generated `docs/` no longer duplicates the repository assets.
 
+### Changed
+
+- Dependencies: replaced `oihana/php-system` with the focused packages actually consumed — `oihana/php-controllers`, `oihana/php-routes`, `oihana/php-init`, `oihana/php-logging`, `oihana/php-models` and `oihana/php-traits` (namespaces `oihana\controllers`, `oihana\routes`, `oihana\init`, `oihana\logging`, `oihana\models`, `oihana\traits`). Drops the heavy Slim/Twig/Symfony stack that `php-system` pulled in. No code or public-API change.
+- Tests: the relocated `DateTrait` is now imported from `oihana\traits\DateTrait` instead of `oihana\date\traits\DateTrait` (moved out of `php-system` into `php-traits`) in `ArangoDumpActionTest`, `ArangoRestoreActionTest` and `DumpRestoreIntegrationTest`.
+
 ## [1.3.0] - 2026-06-20
 
 ### Added
