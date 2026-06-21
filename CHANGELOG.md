@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Tests:** unit (`HasHierarchicalFilterTest` — edge & join `none` / `n` / `all` / default `any` with and without a leaf, pure existence/absence, and the guardrails: `n=0`, unknown `quant`, `all` without a leaf rejected) + live (`FilterQuantRelationsIntegrationTest` — over a seeded organizations→members edge and a customers→companies join, each quantifier selects the right documents on a real server, including the vacuously-true `all` and dangling/absent references classified as absence).
   - **Docs:** FR/EN `db/filter.md` (new "Quantifiers on edges/joins" subsection of "Filtering through relations": semantics table, URL + generated AQL, guardrails, and the cross-reference to the array `quant` section).
 
+### Documentation
+
+- Custom phpDocumentor template (`.phpdoc/template/`) extending the default one with a README-based landing page (logo, badges, quick links) and the namespace table of contents moved to the bottom of the index.
+- A GitHub Actions workflow (`.github/workflows/docs.yml`) that builds the API documentation and deploys it to GitHub Pages on every push to `main`; the README now links to the published reference (https://bcommebois.github.io/oihana-php-arango).
+- The landing-page logo is referenced from `assets/images/` via its raw GitHub URL, so the generated `docs/` no longer duplicates the repository assets.
+
 ## [1.3.0] - 2026-06-20
 
 ### Added

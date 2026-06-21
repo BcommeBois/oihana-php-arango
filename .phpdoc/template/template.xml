@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<template>
+    <name>oihana php arango</name>
+    <author>Marc Alcaraz</author>
+    <email>marc@ooop.fr</email>
+    <version>1.0.0</version>
+    <extends>default</extends>
+</template>

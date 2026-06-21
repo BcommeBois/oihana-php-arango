@@ -10,7 +10,9 @@ Composable PHP toolkit for [ArangoDB](https://www.arangodb.com/). Part of the **
 
 ## 📚 Documentation
 
-User guides (FR + EN) live under [`wiki/`](wiki/) — start there. A full API reference can be generated locally with [phpDocumentor](https://phpdoc.org/) via `composer doc` (output under `./docs`).
+📖 **[API documentation](https://bcommebois.github.io/oihana-php-arango)** — the full phpDocumentor API reference (classes, methods, helpers).
+
+User guides (FR + EN) live under [`wiki/`](wiki/) — start there. The API reference can also be generated locally with [phpDocumentor](https://phpdoc.org/) via `composer doc` (output under `./docs`).
 
 A few entry points:
 

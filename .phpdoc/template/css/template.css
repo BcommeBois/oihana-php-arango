@@ -1,0 +1,15 @@
+.logo-img {
+    max-height: 50px;
+    width: auto;
+}
+
+.main-logo {
+    max-width: 200px;
+    height: auto;
+    margin-bottom: 20px;
+}
+
+.header-with-logo {
+    text-align: center;
+    margin-bottom: 30px;
+}

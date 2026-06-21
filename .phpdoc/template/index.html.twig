@@ -1,0 +1,93 @@
+{% extends 'base.html.twig' %}
+
+{% block content %}
+<section class="phpdocumentor-section">
+
+<a href="https://github.com/BcommeBois/oihana-php-arango" class="phpdocumentor-title__link">
+    <img src="https://raw.githubusercontent.com/BcommeBois/oihana-php-arango/main/assets/images/oihana-php-arango-logo-inline-512x160.png" alt="Oihana PHP Arango" style="width: 256px; height: 80px;"/>
+</a>
+
+<br/>
+
+<h2>oihana-php-arango</h2>
+<p>Composable PHP toolkit for <a href="https://www.arangodb.com/" target="_blank">ArangoDB</a>. Part of the <strong>Oihana PHP</strong> ecosystem, this package bundles a modern HTTP client, a high-level façade, document/edge models, controllers, helpers and CLI commands — everything you need to build an ArangoDB-backed application end-to-end.</p>
+
+<div class="badges">
+  <a href="https://packagist.org/packages/oihana/php-arango" target="_blank">
+    <img src="https://img.shields.io/packagist/v/oihana/php-arango.svg?style=flat-square" alt="Latest Version"/>
+  </a>
+  <a href="https://packagist.org/packages/oihana/php-arango" target="_blank">
+    <img src="https://img.shields.io/packagist/dt/oihana/php-arango.svg?style=flat-square" alt="Total Downloads"/>
+  </a>
+  <a href="https://github.com/BcommeBois/oihana-php-arango/blob/main/LICENSE" target="_blank">
+    <img src="https://img.shields.io/packagist/l/oihana/php-arango.svg?style=flat-square" alt="License"/>
+  </a>
+</div>
+
+<h3>📚 Documentation</h3>
+<p>This API reference is published at:</p>
+<p>
+    <a href="https://bcommebois.github.io/oihana-php-arango" target="_blank">https://bcommebois.github.io/oihana-php-arango</a>
+</p>
+<p>User guides are available in two languages:</p>
+<ul>
+    <li>🇬🇧 <a href="https://github.com/BcommeBois/oihana-php-arango/blob/main/wiki/en/README.md" target="_blank">English documentation</a></li>
+    <li>🇫🇷 <a href="https://github.com/BcommeBois/oihana-php-arango/blob/main/wiki/fr/README.md" target="_blank">Documentation française</a></li>
+</ul>
+
+<h3>🔗 Project on GitHub</h3>
+<p>View the full source code and contribute on GitHub:</p>
+<p>
+    <a href="https://github.com/BcommeBois/oihana-php-arango" target="_blank">
+        https://github.com/BcommeBois/oihana-php-arango
+    </a>
+</p>
+
+<h3>📦 Installation</h3>
+<p>Requires <a href="https://php.net/releases/" target="_blank">PHP 8.4+</a> and an <a href="https://www.arangodb.com/" target="_blank">ArangoDB 3.11+</a> server. Install via <a href="https://getcomposer.org/" target="_blank">Composer</a>:</p>
+<pre class="language-bash prettyprint">composer require oihana/php-arango</pre>
+
+<h3>✨ What you can do</h3>
+<ul>
+    <li><strong>Talk to ArangoDB</strong> through a modern, ready-to-use HTTP client built on Guzzle — Basic + JWT/Bearer authentication, automatic 401 refresh, cluster failover, retry on transient errors.</li>
+    <li><strong>Run AQL queries</strong> with safe placeholder binding (<code>aql()</code> helper), an <code>AqlBuilder</code> for fluent assembly, and a lazy <code>Cursor</code> supporting <code>map / forEach / reduce / flatMap</code>.</li>
+    <li><strong>Manage collections, documents, edges and indexes</strong> — full CRUD, batch operations, bulk JSON-Lines import, 7 typed index types.</li>
+    <li><strong>Use transactions, graphs, analyzers and views</strong> — streaming transactions with <code>withTransaction()</code> auto-commit/abort, gharial-based graphs, ArangoSearch analyzers and views.</li>
+    <li><strong>Compose document models</strong> via fine-grained traits (CRUD, AQL helpers, signals before/after CRUD).</li>
+    <li><strong>Plug controllers</strong> into any <a href="https://www.slimframework.com/" target="_blank">Slim</a>-compatible PSR-15 stack with <code>DocumentsController</code> + capability gating.</li>
+    <li><strong>Drive list queries from the URL</strong> — a declarative <code>?search=</code>, <code>?filter=</code> and <code>?facets=</code> DSL that compiles to safe, bound AQL.</li>
+</ul>
+
+<h3>✅ Running tests</h3>
+<p>Run all tests:</p>
+<pre class="language-bash prettyprint">composer test</pre>
+<p>Measure code coverage (requires Xdebug or PCOV):</p>
+<pre class="language-bash prettyprint">composer coverage       # text + Clover + HTML report under build/coverage/
+composer coverage:md    # readable Markdown summary at build/coverage/COVERAGE.md</pre>
+
+<h3>🗒️ Changelog</h3>
+<p>See <a href="https://github.com/BcommeBois/oihana-php-arango/blob/main/CHANGELOG.md" target="_blank">CHANGELOG.md</a> for notable changes.</p>
+
+<h3>📄 License</h3>
+<p>This project is licensed under the <strong><a href="https://www.mozilla.org/en-US/MPL/2.0/" target="_blank">Mozilla Public License 2.0 (MPL-2.0)</a></strong>.</p>
+
+<h3>👤 About the author</h3>
+<ul>
+    <li><strong>Author:</strong> Marc ALCARAZ (aka <em>eKameleon</em>)</li>
+    <li><strong>Website:</strong> <a href="http://www.ooop.fr" target="_blank">www.ooop.fr</a></li>
+    <li><strong>Email:</strong> <a href="mailto:marc@ooop.fr">marc@ooop.fr</a></li>
+</ul>
+
+{% set node = project.namespace %}
+
+{{ include('components/table-of-contents.html.twig', {
+    'node': project.namespace,
+    'namespaces': usesNamespaces or not usesPackages ? node.children : [],
+    'packages': usesPackages ? project.package.children : []
+}) }}
+
+{{ include('components/constants.html.twig', {'node': project.namespace}) }}
+{{ include('components/functions.html.twig', {'node': project.namespace}) }}
+
+</section>
+{% endblock %}
