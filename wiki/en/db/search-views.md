@@ -33,7 +33,7 @@ $places = new Documents( $container ,
 |---|---|---|
 | `Search::NAME` | `string` | **Required** — the View name. Without it the block is inert and `?search=` stays the `LIKE` sweep. |
 | `Search::ANALYZER` | `string` | Analyzer used to index **and** query the fields (default `identity` — declare a text Analyzer for linguistic search). Overridable per field — see below. |
-| `Search::FIELDS` | `array` | `field => boost` map (or `field => [ Search::BOOST => n, Search::FUZZY => d ]` to carry per-field options). Dotted paths supported. Falls back to `AQL::SEARCHABLE` (boost 1). |
+| `Search::FIELDS` | `array` | `field => boost` map (or `field => [ Search::BOOST => n, Search::FUZZY => d ]` to carry per-field options). Dotted paths supported, as well as **sub-fields of arrays of objects** via `[*]` ([see below](#object-array-fields-contactpointsemail)). Falls back to `AQL::SEARCHABLE` (boost 1). |
 | `Search::PHRASE` | `bool` | Adds an exact-phrase bonus: a `PHRASE()` match weighs `boost × 2`. |
 | `Search::FUZZY` | `int` | View-level typo tolerance: `LEVENSHTEIN_MATCH` with this maximum edit distance (valid value `0`–`4`, `0` = off). Overridable per field — see below. |
 
@@ -244,6 +244,58 @@ Key points:
 - **Fail-open without an authorizer** — if no `Arango::AUTHORIZER` is injected, the authorization layer is considered disabled and gated fields stay searchable (same behavior as the projection). In production the controller always injects the authorizer.
 - **`count()` and `facetCounts()`** apply the same filtering (they reuse the same `SEARCH` expression).
 - Backward-compatible: with no `REQUIRES` on any field, the AQL is unchanged.
+
+### Object-array fields (`contactPoints[*].email`)
+
+A document often carries an **array of objects** — a list of contact points, tags, members…:
+
+```json
+{
+  "name": "Marc",
+  "contactPoints":
+  [
+    { "email": "marc@acme.com",  "type": "work" },
+    { "email": "marc@gmail.com", "type": "home" }
+  ]
+}
+```
+
+You want `?search=gmail` to find this document because **one** of its `contactPoints` contains "gmail". Declare the sub-field with the `[*]` marker ("for each element of the array"), the same notation as on the [`?filter=`](filter.md) side:
+
+```php
+Search::FIELDS =>
+[
+    'name'                       => 5 ,
+    'contactPoints[*].email'     => [ Search::FUZZY => 0 , Search::PHRASE => false ] ,
+    'contactPoints[*].telephone' => [ Search::FUZZY => 0 , Search::PHRASE => false ] ,
+] ,
+```
+
+The `[*]` is a **developer-facing notation**: internally it is **stripped on both stages**.
+
+**Link created** (the `[*]` dropped — flat path): ArangoSearch (**Community** edition) descends into the array on its own and indexes the `email` of every element.
+
+```json
+{ "fields": { "name": { "analyzers": ["text_fr"] },
+              "contactPoints": { "fields": { "email":     { "analyzers": ["text_fr"] },
+                                             "telephone": { "analyzers": ["text_fr"] } } } } }
+```
+
+**Generated query** (the `[*]` dropped too) — the ArangoSearch `SEARCH` clause **rejects** the `[*]` expansion, and the flat path already matches any element of the array:
+
+```aql
+SEARCH ANALYZER(
+       doc.name                  IN TOKENS(@search_0, "text_fr")
+    OR doc.contactPoints.email     IN TOKENS(@search_0, "text_fr")
+    OR doc.contactPoints.telephone IN TOKENS(@search_0, "text_fr")
+, "text_fr")
+```
+
+Per-field options (`Search::ANALYZER`, `FUZZY`, `PHRASE`, `BOOST`, `LANG`, `REQUIRES`) work the same on a `[*]` field.
+
+**Multiple levels.** Every `[*]` is stripped, whatever the depth: `employees[*].contactPoints[*].email` indexes `employees` → `contactPoints` → `email` and is queried through `doc.employees.contactPoints.email IN TOKENS(...)`.
+
+> **Non-correlated search — Community, no Enterprise.** This finds "a document where *one* element contains the word X". It **cannot** require "the *same* element has X **and** Y" (e.g. the email contains `acme.com` **and** the type is `billing` on the **same** contact): the Community index flattens the array and loses the per-element boundary. That correlation would require ArangoSearch `nested` fields, **Enterprise**-only — out of scope here. If you need a correlated condition, express it through [`?filter=`](filter.md) (`contactPoints[*]` with `match`/`quant`), which re-tests element by element. `trackListPositions` is **not** enabled (the default suits a non-correlated search).
 
 **Provisioning is automatic**: like the collection and its `AQL::INDEXES`, the View is lazily created at model initialization when it does not exist (searched fields linked with the declared Analyzer). An existing View is **never altered automatically** — after changing the declaration, inspect and resynchronize explicitly: `$model->viewDiff()` detects the gap, `$model->viewSync()` repairs it through `updateProperties()` (the View stays queryable while re-indexing), and the [`views` action of the `arangodb` command](../commands/arangodb.md#views--arangosearch-view-management) does the same from the CLI (`--diff` / `--sync`), ready for deployment scripts:
 

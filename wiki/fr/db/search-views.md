@@ -33,7 +33,7 @@ $places = new Documents( $container ,
 |---|---|---|
 | `Search::NAME` | `string` | **Requis** — le nom de la View. Sans lui le bloc est inerte et `?search=` reste le balayage `LIKE`. |
 | `Search::ANALYZER` | `string` | Analyzer utilisé pour indexer **et** interroger les champs (défaut `identity` — déclarez un Analyzer texte pour la recherche linguistique). Surchargeable par champ — voir ci-dessous. |
-| `Search::FIELDS` | `array` | Map `champ => boost` (ou `champ => [ Search::BOOST => n, Search::FUZZY => d ]` pour des options par champ). Chemins pointés supportés. Fallback sur `AQL::SEARCHABLE` (boost 1). |
+| `Search::FIELDS` | `array` | Map `champ => boost` (ou `champ => [ Search::BOOST => n, Search::FUZZY => d ]` pour des options par champ). Chemins pointés supportés, ainsi que les **sous-champs de tableaux d'objets** via `[*]` ([voir ci-dessous](#champs-de-tableaux-dobjets-contactpointsemail)). Fallback sur `AQL::SEARCHABLE` (boost 1). |
 | `Search::PHRASE` | `bool` | Ajoute un bonus d'expression exacte : un match `PHRASE()` pèse `boost × 2`. |
 | `Search::FUZZY` | `int` | Tolérance aux fautes globale : `LEVENSHTEIN_MATCH` avec cette distance d'édition maximale (valeur valide `0`–`4`, `0` = off). Surchargeable par champ — voir ci-dessous. |
 
@@ -244,6 +244,58 @@ Points clés :
 - **Fail-open sans autorizer** — si aucun `Arango::AUTHORIZER` n'est injecté, la couche d'autorisation est considérée désactivée et les champs gardés restent cherchables (comportement identique à la projection). En production, le contrôleur injecte toujours l'autorizer.
 - **`count()` et `facetCounts()`** appliquent le même filtrage (ils réutilisent la même expression `SEARCH`).
 - Rétro-compatible : sans `REQUIRES` sur aucun champ, l'AQL est inchangé.
+
+### Champs de tableaux d'objets (`contactPoints[*].email`)
+
+Un document porte souvent un **tableau d'objets** — une liste de moyens de contact, d'étiquettes, de membres… :
+
+```json
+{
+  "name": "Marc",
+  "contactPoints":
+  [
+    { "email": "marc@acme.com",  "type": "work" },
+    { "email": "marc@gmail.com", "type": "home" }
+  ]
+}
+```
+
+On veut que `?search=gmail` retrouve ce document parce que **l'un** de ses `contactPoints` contient « gmail ». Déclarez le sous-champ avec le marqueur `[*]` (« pour chaque élément du tableau »), la même notation que côté [`?filter=`](filter.md) :
+
+```php
+Search::FIELDS =>
+[
+    'name'                       => 5 ,
+    'contactPoints[*].email'     => [ Search::FUZZY => 0 , Search::PHRASE => false ] ,
+    'contactPoints[*].telephone' => [ Search::FUZZY => 0 , Search::PHRASE => false ] ,
+] ,
+```
+
+Le `[*]` est une **notation côté développeur** : en interne il est **retiré sur les deux étages**.
+
+**Index créé** (le `[*]` retiré — chemin à plat) : ArangoSearch (édition **Community**) descend tout seul dans le tableau et indexe l'`email` de chaque élément.
+
+```json
+{ "fields": { "name": { "analyzers": ["text_fr"] },
+              "contactPoints": { "fields": { "email":     { "analyzers": ["text_fr"] },
+                                             "telephone": { "analyzers": ["text_fr"] } } } } }
+```
+
+**Requête générée** (le `[*]` retiré aussi) — la clause `SEARCH` d'ArangoSearch **refuse** l'expansion `[*]`, et le chemin à plat matche déjà n'importe quel élément du tableau :
+
+```aql
+SEARCH ANALYZER(
+       doc.name                  IN TOKENS(@search_0, "text_fr")
+    OR doc.contactPoints.email     IN TOKENS(@search_0, "text_fr")
+    OR doc.contactPoints.telephone IN TOKENS(@search_0, "text_fr")
+, "text_fr")
+```
+
+Les options par champ (`Search::ANALYZER`, `FUZZY`, `PHRASE`, `BOOST`, `LANG`, `REQUIRES`) fonctionnent à l'identique sur un champ `[*]`.
+
+**Plusieurs niveaux.** Tous les `[*]` sont retirés, quelle que soit la profondeur : `employees[*].contactPoints[*].email` indexe `employees` → `contactPoints` → `email` et se cherche via `doc.employees.contactPoints.email IN TOKENS(...)`.
+
+> **Recherche non corrélée — Community, sans Enterprise.** Ceci trouve « un document dont *un* élément contient le mot X ». Cela **ne** permet **pas** d'exiger « le *même* élément a X **et** Y » (par ex. l'email contient `acme.com` **et** le type est `billing` sur le **même** contact) : l'index Community aplatit le tableau et perd la frontière entre éléments. Cette corrélation exigerait les champs `nested` d'ArangoSearch, réservés à l'édition **Enterprise** — hors périmètre ici. Si vous avez besoin d'une condition corrélée, exprimez-la via [`?filter=`](filter.md) (`contactPoints[*]` avec `match`/`quant`), qui re-teste élément par élément. `trackListPositions` n'est **pas** activé (le défaut convient à une recherche non corrélée).
 
 **Le provisioning est automatique** : comme la collection et ses `AQL::INDEXES`, la View est créée paresseusement à l'initialisation du modèle quand elle n'existe pas (champs cherchés liés avec l'Analyzer déclaré). Une View existante n'est **jamais modifiée automatiquement** — après un changement de déclaration, inspectez et resynchronisez explicitement : `$model->viewDiff()` détecte l'écart, `$model->viewSync()` le répare via `updateProperties()` (la View reste interrogeable pendant la ré-indexation), et l'[action `views` de la commande `arangodb`](../commands/arangodb.md#views--gestion-des-views-arangosearch) fait la même chose en CLI (`--diff` / `--sync`), intégrable aux scripts de déploiement :
 
