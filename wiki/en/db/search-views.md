@@ -370,7 +370,9 @@ The JSON envelope is **identical** to a classic list (the standard `status` / `u
 
 **Autocomplete-ish prefix bias** — keep `Search::PHRASE => true`: while typing whole words, exact phrases rank on top.
 
-**Localized sub-field** — fields are paths: `Search::FIELDS => [ 'description.fr' => 1 ]` searches the French side of an i18n `{ "fr": …, "en": … }` attribute (per-field Analyzers and `?lang=`-driven selection are planned evolutions).
+**Localized sub-field** — fields are paths: `Search::FIELDS => [ 'description.fr' => 1 ]` searches the French side of an i18n `{ "fr": …, "en": … }` attribute. To go further, a [per-field Analyzer](#per-field-analyzer) (French/English) and a [`?lang=`-driven selection](#localized-search-lang) are available.
+
+**Object-array sub-field** — `Search::FIELDS => [ 'contactPoints[*].email' => 1 ]` makes the `email` of **every** element of the `contactPoints` array searchable — see [Object-array fields](#object-array-fields-contactpointsemail).
 
 **Forcing a classic order** — relevance is only the *default*: `?search=bois&sort=name` (or any `?sort=`) takes over entirely, exactly as before.
 

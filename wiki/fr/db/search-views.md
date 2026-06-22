@@ -370,7 +370,9 @@ L'enveloppe JSON est **identique** à une liste classique (l'enveloppe de succè
 
 **Biais préfixe façon autocomplete** — gardez `Search::PHRASE => true` : en tapant des mots entiers, les expressions exactes remontent en tête.
 
-**Sous-champ localisé** — les champs sont des chemins : `Search::FIELDS => [ 'description.fr' => 1 ]` cherche le côté français d'un attribut i18n `{ "fr": …, "en": … }` (Analyzers par champ et sélection pilotée par `?lang=` sont des évolutions prévues).
+**Sous-champ localisé** — les champs sont des chemins : `Search::FIELDS => [ 'description.fr' => 1 ]` cherche le côté français d'un attribut i18n `{ "fr": …, "en": … }`. Pour aller plus loin, un [Analyzer par champ](#analyzer-par-champ) (français/anglais) et une [sélection pilotée par `?lang=`](#recherche-localisée-lang) sont disponibles.
+
+**Sous-champ d'un tableau d'objets** — `Search::FIELDS => [ 'contactPoints[*].email' => 1 ]` rend cherchable l'`email` de **chaque** élément du tableau `contactPoints` — voir [Champs de tableaux d'objets](#champs-de-tableaux-dobjets-contactpointsemail).
 
 **Imposer un tri classique** — la pertinence n'est que le tri *par défaut* : `?search=bois&sort=name` (ou n'importe quel `?sort=`) reprend entièrement la main, exactement comme avant.
 
