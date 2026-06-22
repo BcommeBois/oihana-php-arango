@@ -11,8 +11,9 @@ The library is versioned through git tags (no `version` field in
 
 ## Where we are
 
-As of **1.3.0** (released 2026-06-20), the library covers the bulk of the AQL
-surface, a full operational toolchain, and a federated search engine:
+As of **1.4.0** (released 2026-06-21), with further additions accumulated under
+`[Unreleased]`, the library covers the bulk of the AQL surface, a full
+operational toolchain, and a federated search engine:
 
 - **All 22 high-level operations** (`FOR`, `FILTER`, `SORT`, `LIMIT`, `LET`,
   `COLLECT`, `WINDOW`, `RETURN`, `INSERT`, `UPDATE`, `REPLACE`, `UPSERT`,
@@ -21,8 +22,10 @@ surface, a full operational toolchain, and a federated search engine:
   dates, arrays, documents, bit and geo.
 - **ArangoSearch**: the View/Analyzer clients, the `SEARCH` / scored-search DSL,
   a model-level `AQL::VIEW` block (relevance-ranked search), and a **per-field
-  search DSL** (boost / fuzzy / analyzer / lang / phrase / permissions, per field
-  and View-level).
+  search DSL** (boost / fuzzy / analyzer / lang / phrase / permissions, **multiple
+  analyzers per field** for autocomplete, and **object-array sub-fields** via
+  `[*]`, e.g. `contactPoints[*].email` — per field and View-level). Buildable
+  analyzer types: `identity` / `norm` / `stem` / `text` / `ngram`.
 - **Federated multi-collection search**: `search-alias` views over one inverted
   index per collection, the standalone `FederatedSearch` engine (two-phase
   *find* → *rebuild*, per-collection permission gating), and a read-only HTTP
@@ -36,7 +39,9 @@ surface, a full operational toolchain, and a federated search engine:
   maintenance commands (`views`, `doctor`, `migrate`) and the custom-analyzer
   lifecycle (`analyzers`: diff / sync / fix / prune, with `doctor` integration).
 - **Transactions**, **18+ index types** (including a vector index), the full
-  filter / facet / group engine, masking extracted to
+  filter / facet / group engine (incl. array **and** relation `quant`
+  quantifiers — `any` / `all` / `none` / `n` — on edge & join filters), masking
+  extracted to
   [`oihana/php-masking`](https://github.com/BcommeBois/oihana-php-masking), and
   100% line/method test coverage.
 
@@ -51,8 +56,11 @@ tooling are non-breaking and ship as **minor** releases.
 - **`1.2.0`** — released 2026-06-14 (ArangoSearch DSL, dump/restore, maintenance commands).
 - **`1.3.0`** — released 2026-06-20 (per-field View search DSL, custom-analyzer
   lifecycle, field projection DSL, `search-alias` views, federated search).
-- **Next minor** — the next batch accumulated under `[Unreleased]` in the
-  CHANGELOG, cut when Marc decides.
+- **`1.4.0`** — released 2026-06-21 (relation `quant` quantifiers on edge & join
+  filters).
+- **Next minor** — accumulated under `[Unreleased]`: object-array search fields
+  (`[*]`), the `ngram` analyzer type, and multiple analyzers per field
+  (autocomplete). Cut when Marc decides.
 
 ## Backlog (to be triaged)
 
@@ -79,9 +87,18 @@ Forward-looking items not yet scheduled, roughly by theme.
   registry reconciliation (the A5 pattern) for the database-level
   `searchAliasViews` registry, so `doctor` reports/repairs missing or drifted
   search-alias views.
-- **Additional analyzer types** — `ngram`, `pipeline`, `aql`, `geo_*`,
-  `segmentation`, `delimiter`, `minhash`, … as dedicated `AnalyzerOptions`
-  classes (today only `identity` / `norm` / `stem` / `text` are exposed).
+- **Precise n-gram autocomplete (`NGRAM_MATCH` + similarity threshold)** — the
+  multi-analyzer autocomplete ships today via `IN TOKENS` (matches on *any*
+  shared fragment, intentionally loose; BM25 ranks). Expose ArangoDB's
+  `NGRAM_MATCH` with a per-field **similarity threshold** so the `SEARCH` itself
+  excludes weak matches. The `ngramMatch()` helper and the `SearchFunction::NGRAM_MATCH`
+  enum already exist; what's missing is a per-field DSL facet (proposed
+  `Search::NGRAM => [ 'analyzer' => …, 'threshold' => … ]`) wiring it into
+  `prepareViewSearch()`. Note: `NGRAM_MATCH` wants an `ngram` analyzer with
+  `min == max` / `preserveOriginal: false`.
+- **Additional analyzer types** — `pipeline`, `aql`, `geo_*`, `segmentation`,
+  `delimiter`, `minhash`, … as dedicated `AnalyzerOptions` classes (today
+  `identity` / `norm` / `stem` / `text` / `ngram` are exposed).
 
 ### Platform & operations
 
