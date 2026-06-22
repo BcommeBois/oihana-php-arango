@@ -39,12 +39,13 @@ class CollectIntegrationTest extends IntegrationTestCase
         $sales->create() ;
         // category A : 3 rows (100 + 200 + 30 = 330) ; category B : 2 rows (50 + 70 = 120)
         // tags counts : x → 3 (s1,s2,s5) ; y → 3 (s1,s3,s4) ; z → 1 (s4)
-        // offers[*].priceCurrency counts (per element) : EUR → 4 (s1,s2,s4,s5) ; USD → 2 (s1,s3) ; GBP → 1 (s4)
-        $sales->insert( [ '_key' => 's1' , 'category' => 'A' , 'amount' => 100 , 'tags' => [ 'x' , 'y' ] , 'offers' => [ [ 'priceCurrency' => 'EUR' ] , [ 'priceCurrency' => 'USD' ] ] ] ) ;
-        $sales->insert( [ '_key' => 's2' , 'category' => 'A' , 'amount' => 200 , 'tags' => [ 'x' ]       , 'offers' => [ [ 'priceCurrency' => 'EUR' ] ] ] ) ;
-        $sales->insert( [ '_key' => 's3' , 'category' => 'B' , 'amount' => 50  , 'tags' => [ 'y' ]       , 'offers' => [ [ 'priceCurrency' => 'USD' ] ] ] ) ;
-        $sales->insert( [ '_key' => 's4' , 'category' => 'B' , 'amount' => 70  , 'tags' => [ 'y' , 'z' ] , 'offers' => [ [ 'priceCurrency' => 'EUR' ] , [ 'priceCurrency' => 'GBP' ] ] ] ) ;
-        $sales->insert( [ '_key' => 's5' , 'category' => 'A' , 'amount' => 30  , 'tags' => [ 'x' ]       , 'offers' => [ [ 'priceCurrency' => 'EUR' ] ] ] ) ;
+        // offers[*].priceCurrency counts (per element)         : EUR → 4 (s1,s2,s4,s5) ; USD → 2 (s1,s3) ; GBP → 1 (s4)
+        // offers[*].prices[*].currency counts (per leaf, nested) : EUR → 3 ; USD → 3 ; GBP → 2 (s4's empty prices array adds nothing)
+        $sales->insert( [ '_key' => 's1' , 'category' => 'A' , 'amount' => 100 , 'tags' => [ 'x' , 'y' ] , 'offers' => [ [ 'priceCurrency' => 'EUR' , 'prices' => [ [ 'currency' => 'USD' ] , [ 'currency' => 'USD' ] ] ] , [ 'priceCurrency' => 'USD' , 'prices' => [ [ 'currency' => 'EUR' ] ] ] ] ] ) ;
+        $sales->insert( [ '_key' => 's2' , 'category' => 'A' , 'amount' => 200 , 'tags' => [ 'x' ]       , 'offers' => [ [ 'priceCurrency' => 'EUR' , 'prices' => [ [ 'currency' => 'EUR' ] ] ] ] ] ) ;
+        $sales->insert( [ '_key' => 's3' , 'category' => 'B' , 'amount' => 50  , 'tags' => [ 'y' ]       , 'offers' => [ [ 'priceCurrency' => 'USD' , 'prices' => [ [ 'currency' => 'GBP' ] ] ] ] ] ) ;
+        $sales->insert( [ '_key' => 's4' , 'category' => 'B' , 'amount' => 70  , 'tags' => [ 'y' , 'z' ] , 'offers' => [ [ 'priceCurrency' => 'EUR' , 'prices' => [ [ 'currency' => 'EUR' ] , [ 'currency' => 'GBP' ] ] ] , [ 'priceCurrency' => 'GBP' , 'prices' => [] ] ] ] ) ;
+        $sales->insert( [ '_key' => 's5' , 'category' => 'A' , 'amount' => 30  , 'tags' => [ 'x' ]       , 'offers' => [ [ 'priceCurrency' => 'EUR' , 'prices' => [ [ 'currency' => 'USD' ] ] ] ] ] ) ;
     }
 
     private function stub() :ListQueryTraitStub
@@ -223,5 +224,36 @@ class CollectIntegrationTest extends IntegrationTestCase
         foreach ( $row['currency'] as $bucket ) { $currency[ $bucket['value'] ] = $bucket['count'] ; }
         ksort( $currency ) ;
         $this->assertSame( [ 'EUR' => 4 , 'GBP' => 1 , 'USD' => 2 ] , $currency ) ;
+    }
+
+    public function testFacetCountsLiveCountsANestedObjectArraySubField() :void
+    {
+        // Count by a sub-field of a *nested* object array (`offers[*].prices[*].currency`):
+        // each `[*]` opens a FOR hop, so each innermost price is counted as its own
+        // bucket — proves the generated nested FOR/COLLECT parses AND groups per leaf
+        // on a real server (and that an empty inner array contributes nothing).
+        $stub = new class
+        {
+            use ListQueryTrait , FacetCountsQueryTrait ;
+
+            public function __construct()
+            {
+                $this->initializeQueryID( 'q' ) ;
+                $this->collection = 'sales' ;
+                $this->facets =
+                [
+                    'currency' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => 'offers[*].prices[*].currency' ] ,
+                ] ;
+            }
+        } ;
+
+        $binds = [] ;
+        $aql   = $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currency' ] , $binds ) ;
+        $row   = iterator_to_array( self::$db->query( $aql , $binds ) , false )[ 0 ] ;
+
+        $currency = [] ;
+        foreach ( $row['currency'] as $bucket ) { $currency[ $bucket['value'] ] = $bucket['count'] ; }
+        ksort( $currency ) ;
+        $this->assertSame( [ 'EUR' => 3 , 'GBP' => 2 , 'USD' => 3 ] , $currency ) ;
     }
 }

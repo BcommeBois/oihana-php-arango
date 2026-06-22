@@ -494,9 +494,19 @@ LET currency = (FOR doc IN @@products FILTER doc.category == @0
 ```
 
 - Le marqueur `[*]` est le signal : il **prime** sur le type `FIELD` / `IN` déclaré.
-- **Un seul** niveau de tableau est supporté ; les expansions plus profondes (`a[*].b[*].c`) sont ignorées.
+- **Chaque `[*]` est une boucle `FOR`**, donc les tableaux d'objets imbriqués sont comptés par feuille ; le chemin entre deux marqueurs descend à l'intérieur de l'élément (`a[*].b.c[*].d`).
 - Le conteneur et le sous-champ sont gardés par [`assertAttributeName`](helpers.md#garde-anti-injection--isattributename--assertattributename) : un chemin dangereux fait échouer la facette, sans jamais atteindre l'AQL.
 - `offers[*]` sans sous-champ compte l'élément lui-même (comme une facette `IN` simple).
+
+Les tableaux imbriqués se déplient d'un cran par marqueur — ex. `offers[*].prices[*].currency` :
+
+```aql
+LET currency = (FOR doc IN @@products FILTER <mêmes filtres>
+                FOR item  IN doc.offers
+                FOR item2 IN item.prices
+                COLLECT value = item2.currency WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+```
 
 > C'est le bon outil quand on veut **plusieurs ventilations indépendantes** dans une réponse. Pour transformer la liste elle-même en **une** agrégation, voir le [Regroupement `?groupBy=` / `?group=`](grouping.md).
 

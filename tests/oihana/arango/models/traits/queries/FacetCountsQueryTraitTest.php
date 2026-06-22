@@ -32,7 +32,8 @@ class FacetCountsQueryTraitStub
             'currency'      => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].priceCurrency' ] , // object-array sub-field
             'currencyField' => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => 'offers[*].priceCurrency' ] , // [*] overrides FIELD
             'tags'          => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'tags[*]' ] , // expansion marker, no sub-field
-            'deep'          => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b[*].c' ] , // multi-level → skipped
+            'deep'          => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b[*].c' ] , // multi-level → one FOR per hop
+            'deepMid'       => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b.c[*].d' ] , // intermediate path between hops
             'danger'        => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].x);y' ] , // dangerous sub-field → guarded
         ] ;
     }
@@ -170,11 +171,26 @@ class FacetCountsQueryTraitTest extends TestCase
         ) ;
     }
 
-    public function testMultiLevelExpansionIsSkipped() :void
+    public function testMultiLevelExpansionUnwindsNestedArrays() :void
     {
         $binds = [] ;
-        // `a[*].b[*].c` is a two-hop expansion → unsupported in v1 → skipped (D2).
-        $this->assertSame( '' , $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deep' ] , $binds ) ) ;
+        // `a[*].b[*].c` is a two-hop expansion → one FOR per hop, counted per leaf.
+        $this->assertSame
+        (
+            'LET deep = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b COLLECT value = item2.c WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {deep}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deep' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testIntermediatePathBetweenExpansions() :void
+    {
+        $binds = [] ;
+        // `a[*].b.c[*].d` → the path between two hops descends within the element.
+        $this->assertSame
+        (
+            'LET deepMid = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b.c COLLECT value = item2.d WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {deepMid}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deepMid' ] , $binds ) ,
+        ) ;
     }
 
     public function testDangerousSubFieldIsGuarded() :void

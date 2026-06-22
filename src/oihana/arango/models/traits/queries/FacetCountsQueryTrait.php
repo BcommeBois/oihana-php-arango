@@ -185,33 +185,44 @@ trait FacetCountsQueryTrait
         // flatten the path, a facet count must *unwind* the array with a FOR and
         // project the sub-field so each element is counted as its own bucket
         // (`FOR item IN doc.offers COLLECT value = item.priceCurrency …`). The
-        // marker is the signal — it overrides the declared FIELD / IN type. v1
-        // covers a single array hop; deeper expansions (`a[*].b[*]`) are skipped.
+        // marker is the signal — it overrides the declared FIELD / IN type. Each
+        // `[*]` is one FOR hop, so nested object arrays are counted per leaf
+        // element (`offers[*].prices[*].currency` → `FOR item IN doc.offers FOR
+        // item2 IN item.prices COLLECT value = item2.currency …`).
         if ( str_contains( $property , Operator::ARRAY_EXPANSION ) )
         {
-            if ( substr_count( $property , Operator::ARRAY_EXPANSION ) > 1 )
+            // Split on the marker: 'a[*].b.c[*].d' → ['a', '.b.c', '.d']. Every
+            // segment but the last opens a FOR hop (relative to the previous item
+            // reference); the last segment is the projected leaf (empty for a
+            // bare `tags[*]`, which counts the element itself).
+            $segments = explode( Operator::ARRAY_EXPANSION , $property ) ;
+            $last     = count( $segments ) - 1 ;
+
+            $reference = $docRef ;
+            $fors      = [] ;
+            for ( $i = 0 ; $i < $last ; $i++ )
             {
-                return null ; // multi-level expansion unsupported (v1)
+                $container = ltrim( $segments[ $i ] , Char::DOT ) ;
+                assertAttributeName( $container ) ; // defensive: config-trusted, but cheap to guard.
+
+                $itemRef = $i === 0 ? self::FACET_COUNT_ITEM : self::FACET_COUNT_ITEM . ( $i + 1 ) ;
+                $fors[]  = aqlFor( [ AQL::DOC_REF => $itemRef , AQL::IN => key( $container , $reference ) ] ) ;
+                $reference = $itemRef ;
             }
 
-            $position  = strpos( $property , Operator::ARRAY_EXPANSION ) ;
-            $container = substr( $property , 0 , $position ) ;
-            $subPath   = ltrim( substr( $property , $position + strlen( Operator::ARRAY_EXPANSION ) ) , Char::DOT ) ;
-
-            assertAttributeName( $container ) ; // defensive: config-trusted, but cheap to guard.
-
-            $value = self::FACET_COUNT_ITEM ;
-            if ( $subPath !== Char::EMPTY )
+            $leaf  = ltrim( $segments[ $last ] , Char::DOT ) ;
+            $value = $reference ;
+            if ( $leaf !== Char::EMPTY )
             {
-                assertAttributeName( $subPath ) ;
-                $value = key( $subPath , self::FACET_COUNT_ITEM ) ;
+                assertAttributeName( $leaf ) ;
+                $value = key( $leaf , $reference ) ;
             }
 
             return compile(
             [
                 $for ,
                 $filter ,
-                aqlFor( [ AQL::DOC_REF => self::FACET_COUNT_ITEM , AQL::IN => key( $container , $docRef ) ] ) ,
+                ...$fors ,
                 ...$this->facetCountCollect( $value , $sort ) ,
             ]) ;
         }

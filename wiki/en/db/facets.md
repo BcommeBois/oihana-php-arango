@@ -537,9 +537,19 @@ LET currency = (FOR doc IN @@products FILTER doc.category == @0
 ```
 
 - The `[*]` marker is the signal: it **overrides** the declared `FIELD` / `IN` type.
-- **One** array hop is supported; deeper expansions (`a[*].b[*].c`) are skipped.
+- **Each `[*]` is one `FOR` hop**, so nested object arrays are counted per leaf element; the path between two markers descends within the element (`a[*].b.c[*].d`).
 - The container and sub-field are guarded by [`assertAttributeName`](helpers.md#injection-guard--isattributename--assertattributename): a dangerous path fails the facet, never reaching the AQL.
 - `offers[*]` with no sub-field counts the element itself (like a plain `IN` facet).
+
+Nested arrays unwind one hop per marker — e.g. `offers[*].prices[*].currency`:
+
+```aql
+LET currency = (FOR doc IN @@products FILTER <same filters>
+                FOR item  IN doc.offers
+                FOR item2 IN item.prices
+                COLLECT value = item2.currency WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+```
 
 > This is the right tool for **several independent breakdowns** in one response.
 > To turn the list itself into **one** aggregation, see [Grouping `?groupBy=` / `?group=`](grouping.md).
