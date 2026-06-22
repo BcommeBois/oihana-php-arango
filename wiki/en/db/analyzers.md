@@ -23,7 +23,7 @@ words to their root, and so on. Because the **same** recipe applies at indexing
 ## Contents
 
 - [Built-in analyzers](#built-in-analyzers)
-- [The four types you can build](#the-four-types-you-can-build)
+- [The five types you can build](#the-five-types-you-can-build)
 - [Features — what they unlock](#features--what-they-unlock)
 - [Creating an analyzer the right way](#creating-an-analyzer-the-right-way)
 - [Lifecycle — the `arango:analyzers` command](#lifecycle--the-arangoanalyzers-command)
@@ -52,11 +52,11 @@ Search::ANALYZER => BuiltinAnalyzer::TEXT_FR ,   // 'text_fr'
 `identity` is the **default** analyzer: a field that declares nothing is indexed
 as-is. That is exactly what you want for a `code` field.
 
-## The four types you can build
+## The five types you can build
 
 When the built-ins are not enough (fine accent tuning, custom stopwords,
-prefix search…), you build your own analyzer. The library exposes four "recipe"
-classes — `readonly` value objects implementing
+prefix or substring search…), you build your own analyzer. The library exposes
+five "recipe" classes — `readonly` value objects implementing
 [`AnalyzerOptions`](../../../src/oihana/arango/clients/analyzer/AnalyzerOptions.php).
 This is the **complete set** of what is buildable today (see
 [Current limitations](#current-limitations)).
@@ -67,6 +67,7 @@ This is the **complete set** of what is buildable today (see
 | [`NormAnalyzer`](../../../src/oihana/arango/clients/analyzer/NormAnalyzer.php) | lower / upper case + accents — **without** tokenizing | `locale`, `case`, `accent` |
 | [`StemAnalyzer`](../../../src/oihana/arango/clients/analyzer/StemAnalyzer.php) | stemming (one word → its root); single-word input | `locale` |
 | [`TextAnalyzer`](../../../src/oihana/arango/clients/analyzer/TextAnalyzer.php) | the workhorse: tokenizes + lower-cases + accents + stemming + stopwords + prefix n-grams | `locale`, `case`, `accent`, `stemming`, `stopwords`, `stopwordsPath`, `edgeNgram` |
+| [`NgramAnalyzer`](../../../src/oihana/arango/clients/analyzer/NgramAnalyzer.php) | splits into substrings (n-grams) from `min` to `max` characters — the building block of **autocomplete** / substring search | `min`, `max`, `preserveOriginal`, `startMarker`, `endMarker`, `streamType` |
 
 `locale` is a BCP 47 / ICU tag (`'fr'`, `'en'`, `'fr.utf-8'`). `case` takes its
 values from the [`CaseFolding`](../../../src/oihana/arango/clients/analyzer/enums/CaseFolding.php)
@@ -150,6 +151,42 @@ Stopwords (`les`, `de`, `l'`) are dropped, the rest is lower-cased,
 accent-folded, stemmed, then the `edgeNgram` option emits the **prefixes** of
 each token (2 to 5 letters) — this is what enables type-as-you-go search (`scie`
 finds `scieri`). `preserveOriginal` also keeps the whole token.
+
+### `NgramAnalyzer` — autocomplete / substrings
+
+```php
+use oihana\arango\clients\analyzer\NgramAnalyzer ;
+use oihana\arango\clients\analyzer\enums\AnalyzerFeature ;
+
+$db->createAnalyzer
+(
+    'autocomplete' ,
+    new NgramAnalyzer
+    (
+        min              : 2 ,        // minimum fragment length
+        max              : 5 ,        // maximum length
+        preserveOriginal : true ,     // also keep the whole word
+        streamType       : 'utf8' ,   // 'utf8' (per character) or 'binary' (per byte, default)
+    ) ,
+    [ AnalyzerFeature::FREQUENCY , AnalyzerFeature::POSITION ] ,
+) ;
+```
+
+```
+"atelier"   -->   [ at , ate , atel , ateli , te , tel , teli , telie , ... , atelier ]
+```
+
+Unlike the `edgeNgram` option of `TextAnalyzer` — which only emits **prefixes** —
+the `ngram` analyzer emits substrings **at every position**. Typing `tel` then
+finds `a`**`tel`**`ier`, not only what starts with `tel`. It is the tool for
+autocomplete and partial search. You typically **combine** it with a `text`
+analyzer on the **same** field (multiple analyzers per field), so the field
+serves both whole-word search and autocomplete.
+
+> `ngram` does not lower-case or fold accents: for case-insensitive autocomplete,
+> index already-normalized data (or, later, compose with a `pipeline` analyzer).
+> The `startMarker` / `endMarker` markers let you tell a start/end-of-word
+> fragment apart.
 
 ## Features — what they unlock
 
@@ -279,11 +316,11 @@ inherits the View's analyzer (itself `identity` by default). The details
 
 ## Current limitations
 
-V1 exposes the four types above (`identity`, `norm`, `stem`, `text`). The other
-ArangoDB types — `ngram`, `pipeline`, `aql`, `geo_json` / `geo_point` /
+The library exposes the five types above (`identity`, `norm`, `stem`, `text`,
+`ngram`). The other ArangoDB types — `pipeline`, `aql`, `geo_json` / `geo_point` /
 `geo_s2`, `segmentation`, `collation`, `minhash`, `delimiter` /
 `multi_delimiter`, `stopwords`, `classification`, `nearest_neighbors` — are
-**not yet** exposed by a dedicated class (planned for V2). Until then, such an
+**not yet** exposed by a dedicated class (planned for later). Until then, such an
 analyzer is created outside the library (direct `/_api/analyzer` HTTP API or
 `arangosh`), then referenced by name in a View like any other.
 
