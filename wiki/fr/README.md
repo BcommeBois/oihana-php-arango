@@ -118,6 +118,7 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 ### Transverse
 
 - [Tips et pièges](tips.md) — règles d'or à respecter ; page enrichie au fil des incidents.
+- [Feuille de route](roadmap.md) — où en est la bibliothèque et ce qui est prévu/à l'étude.
 
 ## Code source
 

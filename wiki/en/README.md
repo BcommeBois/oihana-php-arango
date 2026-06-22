@@ -118,6 +118,7 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 ### Cross-cutting
 
 - [Tips and pitfalls](tips.md) — golden rules to follow; page grown over time from incidents.
+- [Roadmap](roadmap.md) — where the library stands and what is planned/under consideration.
 
 ## Source code
 
