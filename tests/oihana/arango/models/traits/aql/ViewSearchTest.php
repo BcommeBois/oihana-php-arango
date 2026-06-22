@@ -1099,6 +1099,124 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testNgramFacetMergesAnalyzerIntoTheLink() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name' =>
+                    [
+                        Search::ANALYZER => 'text_fr' ,
+                        Search::NGRAM    => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 0.6 ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+
+        // The ngram analyzer is merged into the field's indexed analyzers list.
+        $this->assertSame
+        (
+            [ 'fields' => [ 'name' => [ 'analyzers' => [ 'text_fr' , 'autocomplete' ] ] ] ] ,
+            $method->invoke( $model )->toArray()
+        ) ;
+    }
+
+    public function testPrepareViewSearchEmitsNgramMatchBranch() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name' =>
+                    [
+                        Search::ANALYZER => 'text_fr' ,
+                        Search::NGRAM    => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 0.6 ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        // The IN TOKENS branch (text_fr) and the NGRAM_MATCH branch (autocomplete,
+        // bound term, threshold inlined) sit in their own ANALYZER() groups.
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(NGRAM_MATCH(doc.name,@search_0,0.6,"autocomplete"),"autocomplete")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0' => 'bois' ] , $this->binds ) ;
+    }
+
+    public function testNgramShorthandOmitsThresholdForTheServerDefault() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'name' => [ Search::NGRAM => 'autocomplete' ] ] ,
+            ] ,
+        ]) ;
+
+        // Shorthand string → no threshold argument (server default 0.7 applies).
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(NGRAM_MATCH(doc.name,@search_0,"autocomplete"),"autocomplete")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testNgramBranchCarriesTheFieldBoost() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name' => [ Search::BOOST => 3 , Search::NGRAM => 'autocomplete' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(BOOST(doc.name IN TOKENS(@search_0,"text_fr"),3),"text_fr")'
+            . ' || ANALYZER(BOOST(NGRAM_MATCH(doc.name,@search_0,"autocomplete"),3),"autocomplete")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testNgramRejectsAThresholdOutOfRange() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS => [ 'name' => [ Search::NGRAM => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 1.5 ] ] ] ,
+            ] ,
+        ]) ;
+
+        $this->expectException( ValidationException::class ) ;
+        $model->prepareViewSearch( 'bois' , $this->binds ) ;
+    }
+
     public function testBuildViewLinkRejectsMalformedArrayField() :void
     {
         $model = $this->model(

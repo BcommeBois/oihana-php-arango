@@ -418,6 +418,29 @@ trait SearchTrait
                         $groups[ $name ][] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
                     }
                 }
+
+                // A Search::NGRAM analyzer is queried by similarity threshold
+                // (NGRAM_MATCH) rather than IN TOKENS — the precise autocomplete
+                // branch. The term stays bound; the threshold is inlined only
+                // when declared (else the server default applies).
+                if( isset( $spec[ Search::NGRAM ] ) )
+                {
+                    $ngramName = $spec[ Search::NGRAM ][ Search::ANALYZER ] ;
+                    $threshold = $spec[ Search::NGRAM ][ Search::THRESHOLD ] ;
+
+                    $groups[ $ngramName ] ??= [] ;
+
+                    $args = [ $path , $term ] ;
+                    if( $threshold !== null )
+                    {
+                        $args[] = $threshold ;
+                    }
+                    $args[] = json_encode( $ngramName ) ;
+
+                    $ngramMatch = func( SearchFunction::NGRAM_MATCH , $args ) ;
+
+                    $groups[ $ngramName ][] = $weight == 1 ? $ngramMatch : boost( $ngramMatch , $weight ) ;
+                }
             }
         }
 
@@ -488,6 +511,11 @@ trait SearchTrait
                 {
                     $analyzers[] = $name ;
                 }
+            }
+
+            if( isset( $spec[ Search::NGRAM ] ) )
+            {
+                $analyzers[] = $spec[ Search::NGRAM ][ Search::ANALYZER ] ;
             }
         }
         foreach( array_unique( $analyzers ) as $analyzer )
@@ -578,6 +606,18 @@ trait SearchTrait
             // one yields a one-element list, byte-for-byte the previous output.
             $declared  = $spec[ Search::ANALYZER ] ?? $analyzer ;
             $analyzers = is_array( $declared ) ? array_values( $declared ) : [ $declared ] ;
+
+            // An `ngram` Analyzer declared via Search::NGRAM (queried by
+            // NGRAM_MATCH) must be indexed on the field too — merge it into the
+            // link's analyzers list (deduplicated).
+            if( isset( $spec[ Search::NGRAM ] ) )
+            {
+                $ngramAnalyzer = $spec[ Search::NGRAM ][ Search::ANALYZER ] ;
+                if( !in_array( $ngramAnalyzer , $analyzers , true ) )
+                {
+                    $analyzers[] = $ngramAnalyzer ;
+                }
+            }
 
             $node = $analyzers === $linkDefault ? [] : [ ViewField::ANALYZERS => $analyzers ] ;
 
@@ -731,6 +771,33 @@ trait SearchTrait
                     if( array_key_exists( Search::REQUIRES , $options ) )
                     {
                         $spec[ Search::REQUIRES ] = $options[ Search::REQUIRES ] ;
+                    }
+
+                    if( array_key_exists( Search::NGRAM , $options ) )
+                    {
+                        // An `ngram` Analyzer queried via NGRAM_MATCH (a similarity
+                        // threshold), distinct from the IN TOKENS analyzers. Two
+                        // forms: the analyzer name alone (default threshold), or a
+                        // map carrying the analyzer and an explicit threshold.
+                        $ngram = $options[ Search::NGRAM ] ;
+
+                        if( is_array( $ngram ) )
+                        {
+                            $ngramAnalyzer = (string) ( $ngram[ Search::ANALYZER ] ?? Char::EMPTY ) ;
+                            $threshold     = array_key_exists( Search::THRESHOLD , $ngram ) ? (float) $ngram[ Search::THRESHOLD ] : null ;
+                        }
+                        else
+                        {
+                            $ngramAnalyzer = (string) $ngram ;
+                            $threshold     = null ;
+                        }
+
+                        if( $threshold !== null && ( $threshold < 0.0 || $threshold > 1.0 ) )
+                        {
+                            throw new ValidationException( sprintf( 'Search::THRESHOLD must be between 0.0 and 1.0, got %s' , $threshold ) ) ;
+                        }
+
+                        $spec[ Search::NGRAM ] = [ Search::ANALYZER => $ngramAnalyzer , Search::THRESHOLD => $threshold ] ;
                     }
 
                     return $spec ;

@@ -116,6 +116,29 @@ class Search
     public const string NAME = 'name' ;
 
     /**
+     * Declares, on a {@see FIELDS} entry, an `ngram` Analyzer queried through
+     * `NGRAM_MATCH` (a **similarity threshold**) rather than the loose
+     * `IN TOKENS` of {@see ANALYZER} — the precise way to power substring /
+     * autocomplete search. The field is indexed with this Analyzer (merged into
+     * the link) and the query emits its own `ANALYZER(NGRAM_MATCH(…))` branch.
+     *
+     * Two forms: the analyzer name alone (the threshold falls back to the server
+     * default `0.7`), or a map carrying the analyzer and an explicit threshold:
+     *
+     * ```php
+     * Search::NGRAM => 'autocomplete'                                       // default threshold
+     * Search::NGRAM => [ Search::ANALYZER => 'autocomplete', Search::THRESHOLD => 0.6 ]
+     * ```
+     *
+     * It is **disjoint** from {@see ANALYZER}: put the `text` recipes under
+     * `ANALYZER` (whole-word, `IN TOKENS`, BM25) and the `ngram` recipe here. The
+     * field's {@see BOOST} applies to the branch; {@see FUZZY} / {@see PHRASE} do
+     * not. `NGRAM_MATCH` wants an `ngram` Analyzer declared with `min == max` and
+     * `preserveOriginal: false`.
+     */
+    public const string NGRAM = 'ngram' ;
+
+    /**
      * Whether to add an exact-phrase bonus: when `true`, a `PHRASE()` match on
      * a field weighs twice the field boost, ranking exact phrases first.
      *
@@ -161,4 +184,12 @@ class Search
      * the `distance` key driven by `?near=`. Resolves to `BM25(doc)`.
      */
     public const string SCORE = 'score' ;
+
+    /**
+     * The `NGRAM_MATCH` similarity threshold, an inner key of a {@see NGRAM}
+     * map — a float in `[0.0, 1.0]` (the fraction of the query's n-grams that
+     * must be found). Higher = stricter. Absent / `null` falls back to the
+     * server default (`0.7`). Out-of-range values are rejected.
+     */
+    public const string THRESHOLD = 'threshold' ;
 }
