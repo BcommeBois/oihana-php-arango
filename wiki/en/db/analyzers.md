@@ -188,6 +188,11 @@ serves both whole-word search and autocomplete.
 > The `startMarker` / `endMarker` markers let you tell a start/end-of-word
 > fragment apart.
 
+Two ways to query a field indexed with `ngram`:
+
+- **via `IN TOKENS`** (`Search::ANALYZER`) — "shares ≥ 1 fragment": simple but **loose**. The config above (`min: 2, max: 5, preserveOriginal: true`) suits it.
+- **via `NGRAM_MATCH`** (`Search::NGRAM` + a similarity threshold) — **precise**: requires a fraction of the fragments. For this use, declare the analyzer with **`min == max`** (a single size, e.g. a trigram) and **`preserveOriginal: false`**, and enable the `position` + `frequency` features. See [Precise autocomplete](search/per-field-options.md#precise-autocomplete-ngram_match).
+
 ## Features — what they unlock
 
 **Features** are chosen per analyzer at creation time. They decide which

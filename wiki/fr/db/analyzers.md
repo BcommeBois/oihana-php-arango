@@ -192,6 +192,11 @@ entiers et l'autocomplétion.
 > compose, plus tard, avec un analyzer `pipeline`). Les marqueurs `startMarker` /
 > `endMarker` permettent de distinguer un fragment de début/fin de mot.
 
+Deux façons d'interroger un champ indexé en `ngram` :
+
+- **par `IN TOKENS`** (`Search::ANALYZER`) — « partage ≥ 1 fragment » : simple mais **lâche**. La config ci-dessus (`min: 2, max: 5, preserveOriginal: true`) lui convient.
+- **par `NGRAM_MATCH`** (`Search::NGRAM` + seuil de similarité) — **précis** : exige une fraction des fragments. Pour cet usage, déclare plutôt l'analyzer avec **`min == max`** (une seule taille, ex. trigramme) et **`preserveOriginal: false`**, et active les features `position` + `frequency`. Voir [Autocomplétion précise](search/per-field-options.md#autocomplétion-précise-ngram_match).
+
 ## Les features — ce qu'elles débloquent
 
 Les **features** sont choisies par analyzer à la création. Elles décident des

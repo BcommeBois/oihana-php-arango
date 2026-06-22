@@ -9,6 +9,7 @@ Au-delà du boost, chaque entrée de `Search::FIELDS` (du bloc `AQL::VIEW`, voir
 | [`Search::FUZZY`](#tolérance-aux-fautes-par-champ) | tolérer les fautes (texte) / rester exact (codes) | `?search=scirie` trouve « Scierie… » mais pas un code voisin |
 | [`Search::ANALYZER`](#analyzer-par-champ) | un Analyzer par champ (français, anglais, …) | `?search=workshops` matche via `text_en` (racine `workshop`) |
 | [`Search::ANALYZER` (liste)](#plusieurs-analyzers-par-champ-autocomplétion) | plusieurs Analyzers sur **un** champ (ex. `text` + `ngram`) | `?search=ate` retrouve « Atelier » (autocomplétion) |
+| [`Search::NGRAM`](#autocomplétion-précise-ngram_match) | autocomplétion **précise** (NGRAM_MATCH + seuil de similarité) | `?search=ate` trouve « Atelier » sans le bruit |
 | [`Search::LANG`](#recherche-localisée-lang) | recherche localisée pilotée par `?lang=` | `?search=menuiserie&lang=fr` cible le côté français |
 | [`Search::PHRASE`](#bonus-dexpression-exacte-par-champ) | bonus d'expression exacte là où c'est utile | `?search=cuir vintage` remonte l'expression adjacente |
 | [`Search::REQUIRES`](#permissions-de-recherche) | limiter un champ aux requêtes autorisées | un champ `secret` n'est cherché qu'avec la permission |
@@ -115,7 +116,38 @@ Le link indexe le champ avec **toute** la liste, et la requête émet **une bran
 
 Taper `ate` retrouve « **Ate**lier » par la branche `ngram` (que `text_fr` seul ne matcherait pas), tandis que les mots entiers passent par la branche `text_fr`. Les autres options du champ (`BOOST`, `FUZZY`, `PHRASE`) s'appliquent à **chaque** branche.
 
-> La recherche par fragments est **lâche** par nature : un mot entier passé par la branche `ngram` peut aussi ramener des fiches qui partagent seulement des fragments. C'est le rôle du `score` (`BM25`) de faire remonter les meilleures d'abord ; combine avec `BOOST` si besoin. **Précision** : aujourd'hui, montre le **top‑N** via `?limit` — les meilleures correspondances sont en tête. Pour un contrôle plus fin, la bonne primitive est un **seuil de similarité** (`NGRAM_MATCH`, qui ne matche qu'au‑delà d'un taux de fragments partagés) plutôt qu'« au moins un fragment commun » ; son exposition dans le DSL par champ est une évolution prévue. Le niveau **View** (`Search::ANALYZER` global) reste, lui, une seule valeur (le défaut hérité).
+> La recherche par fragments est **lâche** par nature : un mot entier passé par la branche `ngram` peut aussi ramener des fiches qui partagent seulement des fragments. C'est le rôle du `score` (`BM25`) de faire remonter les meilleures d'abord ; combine avec `BOOST` si besoin. **Précision** : aujourd'hui, montre le **top‑N** via `?limit` — les meilleures correspondances sont en tête. Pour un contrôle plus fin, interroge l'analyzer ngram par **seuil de similarité** (`NGRAM_MATCH`) plutôt qu'« au moins un fragment commun » : voir [Autocomplétion précise](#autocomplétion-précise-ngram_match). Le niveau **View** (`Search::ANALYZER` global) reste, lui, une seule valeur (le défaut hérité).
+
+## Autocomplétion précise (`NGRAM_MATCH`)
+
+L'approche `text` + `ngram` ci-dessus interroge l'analyzer ngram par `IN TOKENS` — « ≥ 1 fragment commun », donc **lâche** : un mot entier peut ramener des fiches qui ne partagent qu'un fragment (le `score` BM25 les classe derrière, mais elles restent dans l'ensemble). `Search::NGRAM` interroge l'analyzer ngram par **seuil de similarité** (`NGRAM_MATCH`) : il faut qu'une **fraction** des fragments corresponde, ce qui exclut le bruit **dans le `SEARCH`** lui-même.
+
+```php
+Search::FIELDS =>
+[
+    'name' =>
+    [
+        Search::ANALYZER => 'text_fr' ,                                          // mots entiers (IN TOKENS, BM25)
+        Search::NGRAM    => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 0.6 ] , // précis (NGRAM_MATCH)
+    ] ,
+] ,
+// sucre : Search::NGRAM => 'autocomplete'  (seuil = défaut serveur 0.7)
+```
+
+- `Search::NGRAM` est **disjoint** de `Search::ANALYZER` : les recettes `text` vont dans `ANALYZER` (interrogées par `IN TOKENS`), la recette `ngram` ici (interrogée par `NGRAM_MATCH`). L'analyzer ngram est tout de même **indexé** sur le champ.
+- `Search::THRESHOLD` : un flottant `0.0–1.0` (fraction des n-grams requis ; plus haut = plus strict). Absent → **défaut serveur `0.7`**. Hors borne → `ValidationException`.
+- Le `BOOST` du champ s'applique à la branche ; `FUZZY` / `PHRASE` ne s'y appliquent pas.
+
+AQL généré :
+
+```aql
+   ANALYZER(doc.name IN TOKENS(@search_0, "text_fr"), "text_fr")
+|| ANALYZER(NGRAM_MATCH(doc.name, @search_0, 0.6, "autocomplete"), "autocomplete")
+```
+
+**Le gain.** Avec un seuil, taper `ate` retrouve « Atelier » (similarité 1.0) **et** le mot entier « atelier » n'amène plus une fiche « ferronnerie » qui ne partage que des bouts (similarité sous le seuil) — la précision que l'approche `IN TOKENS` n'a pas.
+
+> ⚠️ `NGRAM_MATCH` veut un analyzer `ngram` déclaré avec **`min == max`** (une seule taille de fragment, ex. trigramme) et **`preserveOriginal: false`** — voir [Analyzers](../analyzers.md). Une requête plus courte que `min` ne produit aucun n-gram (donc aucun match) : c'est le compromis de la précision.
 
 ## Recherche localisée (`?lang=`)
 

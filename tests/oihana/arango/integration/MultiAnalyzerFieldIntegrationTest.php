@@ -195,4 +195,51 @@ final class MultiAnalyzerFieldIntegrationTest extends IntegrationTestCase
         // A term whose fragments appear in no document matches nothing.
         $this->assertSame( [] , $this->labels( $model->list( [ Arango::SEARCH => 'zzz' ] ) ) ) ;
     }
+
+    /**
+     * `Search::NGRAM` queries the ngram analyzer by **similarity threshold**
+     * (`NGRAM_MATCH`) instead of the loose `IN TOKENS`. The whole word `atelier`
+     * then matches **only** `atelier` (similarity 1.0) and excludes `ferronnerie`
+     * (similarity below the threshold) — the precision the loose combo lacks —
+     * while the partial `ate` still matches through the n-grams.
+     *
+     * @throws Throwable
+     */
+    public function testNgramThresholdExcludesLooseMatches() :void
+    {
+        $arango = $this->arango() ;
+
+        // NGRAM_MATCH wants a single-size ngram analyzer (min == max), original off.
+        $arango->analyzerSync( new AnalyzerDefinition
+        (
+            'it_trigram' ,
+            new NgramAnalyzer( min: 3 , max: 3 , preserveOriginal: false , streamType: 'utf8' ) ,
+            [ AnalyzerFeature::FREQUENCY , AnalyzerFeature::POSITION ] ,
+        ) ) ;
+
+        $model = $this->model(
+        [
+            Search::NAME     => 'mazThreshView' ,
+            Search::ANALYZER => 'text_en' ,
+            Search::FIELDS   =>
+            [
+                'name' =>
+                [
+                    Search::ANALYZER => 'text_en' ,                                            // whole-word branch
+                    Search::NGRAM    => [ Search::ANALYZER => 'it_trigram' , Search::THRESHOLD => 0.5 ] , // precise branch
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertTrue( $model->viewExists( 'mazThreshView' ) ) ;
+        $this->waitForIndexing( 2 , 'mazThreshView' ) ;
+
+        // Partial term still matches through NGRAM_MATCH (trigram 'ate' is in 'atelier').
+        $this->assertSame( [ 'A' ] , $this->labels( $model->list( [ Arango::SEARCH => 'ate' ] ) ) ) ;
+
+        // The whole word matches ONLY 'atelier' — 'ferronnerie' is below the
+        // threshold (the loose IN TOKENS combo would have brought it via shared
+        // fragments). This is the precision win.
+        $this->assertSame( [ 'A' ] , $this->labels( $model->list( [ Arango::SEARCH => 'atelier' ] ) ) ) ;
+    }
 }

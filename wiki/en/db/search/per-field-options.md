@@ -9,6 +9,7 @@ Beyond the boost, each `Search::FIELDS` entry (of the `AQL::VIEW` block, see [Ov
 | [`Search::FUZZY`](#per-field-typo-tolerance) | tolerate typos (text) / stay exact (codes) | `?search=scirie` finds « Scierie… » but not a near-miss code |
 | [`Search::ANALYZER`](#per-field-analyzer) | one Analyzer per field (French, English, …) | `?search=workshops` matches via `text_en` (stem `workshop`) |
 | [`Search::ANALYZER` (list)](#multiple-analyzers-per-field-autocomplete) | several Analyzers on **one** field (e.g. `text` + `ngram`) | `?search=ate` finds « Atelier » (autocomplete) |
+| [`Search::NGRAM`](#precise-autocomplete-ngram_match) | **precise** autocomplete (NGRAM_MATCH + similarity threshold) | `?search=ate` finds « Atelier » without the noise |
 | [`Search::LANG`](#localized-search-lang) | localized search driven by `?lang=` | `?search=menuiserie&lang=fr` targets the French side |
 | [`Search::PHRASE`](#per-field-exact-phrase-bonus) | exact-phrase bonus where it matters | `?search=cuir vintage` lifts the adjacent phrase |
 | [`Search::REQUIRES`](#search-permissions) | restrict a field to authorized requests | a `secret` field is searched only with the permission |
@@ -115,7 +116,38 @@ The link indexes the field with the **whole** list, and the query emits **one `A
 
 Typing `ate` finds « **Ate**lier » through the `ngram` branch (which `text_fr` alone would not match), while whole words go through the `text_fr` branch. The field's other options (`BOOST`, `FUZZY`, `PHRASE`) apply to **each** branch.
 
-> Fragment search is **loose** by nature: a whole word sent through the `ngram` branch may also bring back records that only share fragments. That is what the `score` (`BM25`) is for — surfacing the best ones first; combine with `BOOST` if needed. **Precision:** today, show the **top‑N** via `?limit` — the best matches rank first. For finer control, the right primitive is a **similarity threshold** (`NGRAM_MATCH`, which only matches above a chosen ratio of shared fragments) rather than "at least one shared fragment"; exposing it in the per-field DSL is a planned evolution. The **View-level** `Search::ANALYZER` stays a single value (the inherited default).
+> Fragment search is **loose** by nature: a whole word sent through the `ngram` branch may also bring back records that only share fragments. That is what the `score` (`BM25`) is for — surfacing the best ones first; combine with `BOOST` if needed. **Precision:** today, show the **top‑N** via `?limit` — the best matches rank first. For finer control, query the ngram analyzer by **similarity threshold** (`NGRAM_MATCH`) rather than "at least one shared fragment": see [Precise autocomplete](#precise-autocomplete-ngram_match). The **View-level** `Search::ANALYZER` stays a single value (the inherited default).
+
+## Precise autocomplete (`NGRAM_MATCH`)
+
+The `text` + `ngram` approach above queries the ngram analyzer through `IN TOKENS` — "≥ 1 shared fragment", hence **loose**: a whole word can bring back records that only share a fragment (BM25 ranks them lower, but they stay in the set). `Search::NGRAM` queries the ngram analyzer by **similarity threshold** (`NGRAM_MATCH`): a **fraction** of the fragments must match, which excludes the noise **inside the `SEARCH`** itself.
+
+```php
+Search::FIELDS =>
+[
+    'name' =>
+    [
+        Search::ANALYZER => 'text_fr' ,                                          // whole words (IN TOKENS, BM25)
+        Search::NGRAM    => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 0.6 ] , // precise (NGRAM_MATCH)
+    ] ,
+] ,
+// shorthand: Search::NGRAM => 'autocomplete'  (threshold = server default 0.7)
+```
+
+- `Search::NGRAM` is **disjoint** from `Search::ANALYZER`: the `text` recipes go under `ANALYZER` (queried by `IN TOKENS`), the `ngram` recipe goes here (queried by `NGRAM_MATCH`). The ngram analyzer is still **indexed** on the field.
+- `Search::THRESHOLD`: a float `0.0–1.0` (fraction of n-grams required; higher = stricter). Absent → **server default `0.7`**. Out of range → `ValidationException`.
+- The field's `BOOST` applies to the branch; `FUZZY` / `PHRASE` do not.
+
+Generated AQL:
+
+```aql
+   ANALYZER(doc.name IN TOKENS(@search_0, "text_fr"), "text_fr")
+|| ANALYZER(NGRAM_MATCH(doc.name, @search_0, 0.6, "autocomplete"), "autocomplete")
+```
+
+**The win.** With a threshold, typing `ate` finds « Atelier » (similarity 1.0) **and** the whole word « atelier » no longer brings back a « ferronnerie » record that only shares fragments (similarity below the threshold) — the precision the `IN TOKENS` approach lacks.
+
+> ⚠️ `NGRAM_MATCH` wants an `ngram` analyzer declared with **`min == max`** (a single fragment size, e.g. a trigram) and **`preserveOriginal: false`** — see [Analyzers](../analyzers.md). A query shorter than `min` produces no n-gram (hence no match): that is the precision trade-off.
 
 ## Localized search (`?lang=`)
 
