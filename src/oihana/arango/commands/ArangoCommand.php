@@ -52,20 +52,25 @@ class ArangoCommand extends Kernel
      */
     public function __construct( ?string $name , ?Container $container = null , array $init = [] )
     {
-        parent::__construct( $name , $container , $init );
-        $this->collectionIndexes     = $init[ ArangoCommandParam::COLLECTION_INDEXES    ] ?? $this->collectionIndexes ;
-        $this->dateFormat            = $init[ ArangoCommandParam::DATE_FORMAT           ] ?? $this->dateFormat ;
-        $this->migrationsCollection  = $init[ ArangoCommandParam::MIGRATIONS_COLLECTION ] ?? $this->migrationsCollection ;
-        $this->migrationsNamespace   = $init[ ArangoCommandParam::MIGRATIONS_NAMESPACE  ] ?? $this->migrationsNamespace ;
-        $this->migrationsPath        = $init[ ArangoCommandParam::MIGRATIONS_PATH       ] ?? $this->migrationsPath ;
-        $this->models                = $init[ ArangoCommandParam::MODELS                ] ?? $this->models ;
-        $this->timezone              = $init[ ArangoCommandParam::TIMEZONE              ] ?? $this->timezone ;
-        $this->initializeDirectory( $init );
-        $this->initializeArangoDB( $init );
-        $this->initializeArangoOptions( $init );
-        $this->initializeArangoProfiles( $init );
-        $this->initializeEncrypt( $init );
-        $this->initializePassphrase( $init );
+        parent::__construct( $name , $container , $init ) ;
+
+        $this->analyzers         = $init[ ArangoCommandParam::ANALYZERS           ] ?? $this->analyzers         ;
+        $this->collectionIndexes = $init[ ArangoCommandParam::COLLECTION_INDEXES  ] ?? $this->collectionIndexes ;
+        $this->dateFormat        = $init[ ArangoCommandParam::DATE_FORMAT         ] ?? $this->dateFormat        ;
+        $this->models            = $init[ ArangoCommandParam::MODELS              ] ?? $this->models            ;
+        $this->searchAliasViews  = $init[ ArangoCommandParam::SEARCH_ALIAS_VIEWS  ] ?? $this->searchAliasViews  ;
+
+        $this->migrationsCollection = $init[ ArangoCommandParam::MIGRATIONS_COLLECTION ] ?? $this->migrationsCollection ;
+        $this->migrationsNamespace  = $init[ ArangoCommandParam::MIGRATIONS_NAMESPACE  ] ?? $this->migrationsNamespace  ;
+        $this->migrationsPath       = $init[ ArangoCommandParam::MIGRATIONS_PATH       ] ?? $this->migrationsPath       ;
+        $this->timezone             = $init[ ArangoCommandParam::TIMEZONE              ] ?? $this->timezone             ;
+
+        $this->initializeDirectory      ( $init )
+             ->initializeArangoDB       ( $init )
+             ->initializeArangoOptions  ( $init )
+             ->initializeArangoProfiles ( $init )
+             ->initializeEncrypt        ( $init )
+             ->initializePassphrase     ( $init ) ;
     }
 
     use ArangoActions ;

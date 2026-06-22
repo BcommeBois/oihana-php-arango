@@ -7,10 +7,14 @@ use Throwable;
 
 use DI\Container;
 
+use oihana\arango\clients\analyzer\IdentityAnalyzer;
 use oihana\arango\commands\ArangoCommand;
 use oihana\arango\commands\enums\ArangoAction;
+use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoCommandOption;
 use oihana\arango\db\enums\ArangoConfig;
+use oihana\arango\db\options\analyzers\AnalyzerDefinition;
+use oihana\arango\db\options\views\SearchAliasView;
 
 use oihana\commands\enums\CommandArg;
 use oihana\commands\enums\ExitCode;
@@ -82,6 +86,86 @@ class ArangoCommandTest extends TestCase
         $this->assertTrue( $definition->hasOption( ArangoConfig::ENDPOINT ) ) ;
         $this->assertTrue( $definition->hasOption( ArangoConfig::PASSWORD ) ) ;
         $this->assertTrue( $definition->hasOption( ArangoConfig::USER ) ) ;
+    }
+
+    // -------------------------------------------------------------- init registries
+
+    private function analyzer( string $name ) :AnalyzerDefinition
+    {
+        return new AnalyzerDefinition( $name , new IdentityAnalyzer() ) ;
+    }
+
+    private function searchAliasView( string $name ) :SearchAliasView
+    {
+        return new SearchAliasView( $name , [ 'customers' => 'inv' ] ) ;
+    }
+
+    private function commandWithInit( array $init ) :ArangoCommand
+    {
+        return new ArangoCommand( ArangoCommand::NAME , new Container() , $init ) ;
+    }
+
+    public function testConstructWiresTheAnalyzersRegistryFromInit() :void
+    {
+        $command = $this->commandWithInit( [ ArangoCommandParam::ANALYZERS => [ $a = $this->analyzer( 'a' ) , $b = $this->analyzer( 'b' ) ] ] ) ;
+
+        $this->assertSame( [ $a , $b ] , $command->getAnalyzerDefinitions() ) ;
+    }
+
+    public function testConstructToleratesASingleAnalyzerDefinitionFromInit() :void
+    {
+        $command = $this->commandWithInit( [ ArangoCommandParam::ANALYZERS => $single = $this->analyzer( 'solo' ) ] ) ;
+
+        $this->assertSame( [ $single ] , $command->getAnalyzerDefinitions() ) ;
+    }
+
+    public function testConstructDefaultsTheAnalyzersRegistryToEmptyWithoutTheInitKey() :void
+    {
+        $this->assertSame( [] , $this->commandWithInit( [] )->getAnalyzerDefinitions() ) ;
+    }
+
+    public function testConstructDropsNonDefinitionAnalyzerEntriesFromInit() :void
+    {
+        $command = $this->commandWithInit( [ ArangoCommandParam::ANALYZERS => [ 'bogus' , $a = $this->analyzer( 'a' ) , null ] ] ) ;
+
+        $this->assertSame( [ $a ] , $command->getAnalyzerDefinitions() ) ;
+    }
+
+    public function testConstructWiresTheSearchAliasViewsRegistryFromInit() :void
+    {
+        $command = $this->commandWithInit( [ ArangoCommandParam::SEARCH_ALIAS_VIEWS => [ $a = $this->searchAliasView( 'a' ) , $b = $this->searchAliasView( 'b' ) ] ] ) ;
+
+        $this->assertSame( [ $a , $b ] , $command->getSearchAliasViews() ) ;
+    }
+
+    public function testConstructDefaultsTheSearchAliasViewsRegistryToEmptyWithoutTheInitKey() :void
+    {
+        $this->assertSame( [] , $this->commandWithInit( [] )->getSearchAliasViews() ) ;
+    }
+
+    /**
+     * Regression guard for the init-key wiring of the command's declarative
+     * registries: each registry is supplied via its own `ArangoCommandParam`
+     * key and must reach the command through the constructor. The bug this
+     * guards against is a registry whose trait, getter and consuming action all
+     * exist while the one constructor line pulling it from `$init` is forgotten
+     * (the `analyzers` and `searchAliasViews` keys were both silently dropped
+     * this way). A new registry added without its constructor line fails here.
+     */
+    public function testConstructWiresEveryDeclaredRegistryFromInit() :void
+    {
+        $command = $this->commandWithInit
+        ([
+            ArangoCommandParam::ANALYZERS          => [ $a = $this->analyzer( 'a' ) ] ,
+            ArangoCommandParam::COLLECTION_INDEXES => $indexes = [ 'customers' => [] ] ,
+            ArangoCommandParam::MODELS             => $models  = [ 'my.model.id' ] ,
+            ArangoCommandParam::SEARCH_ALIAS_VIEWS => [ $v = $this->searchAliasView( 'v' ) ] ,
+        ]) ;
+
+        $this->assertSame( [ $a ]   , $command->getAnalyzerDefinitions() ) ;
+        $this->assertSame( $indexes , $command->collectionIndexes ) ;
+        $this->assertSame( $models  , $command->models ) ;
+        $this->assertSame( [ $v ]   , $command->getSearchAliasViews() ) ;
     }
 
     // -------------------------------------------------------------- signals

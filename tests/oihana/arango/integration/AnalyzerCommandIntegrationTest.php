@@ -6,10 +6,13 @@ use Throwable;
 
 use Devium\Toml\TomlError;
 
+use DI\Container;
+
 use Psr\Log\NullLogger;
 
 use oihana\arango\clients\analyzer\enums\AnalyzerFeature;
 use oihana\arango\clients\analyzer\TextAnalyzer;
+use oihana\arango\commands\ArangoCommand;
 use oihana\arango\commands\actions\ArangoAnalyzersAction;
 use oihana\arango\commands\enums\ArangoCommandParam;
 use oihana\arango\commands\options\ArangoCommandOption;
@@ -25,8 +28,10 @@ use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Console\Helper\QuestionHelper;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\OutputInterface;
 
 use function oihana\init\initConfig;
 
@@ -79,6 +84,41 @@ final class AnalyzerCommandIntegrationTest extends IntegrationTestCase
             }
 
             public function run( $input , $output ) :int
+            {
+                return $this->analyzers( $input , $output ) ;
+            }
+        } ;
+    }
+
+    /**
+     * The **real** {@see ArangoCommand} wired to the disposable database with the
+     * given analyzer registry supplied through the `analyzers` **init key** —
+     * unlike {@see host()} (which sets `$analyzers` by hand on a bare action
+     * host), this drives the registry through the genuine command constructor,
+     * the path a host actually uses. The protected `analyzers` action is exposed
+     * via `runAnalyzers()`.
+     *
+     * @param array<int, AnalyzerDefinition>|AnalyzerDefinition $analyzers
+     *
+     * @throws TomlError
+     * @throws Throwable
+     */
+    private function commandFromInit( array|AnalyzerDefinition $analyzers ) :ArangoCommand
+    {
+        $configDir = dirname( __DIR__ , 4 ) . DIRECTORY_SEPARATOR . 'configs' ;
+        $config    = initConfig( basePath: $configDir ) ;
+        $arango    = is_array( $config[ 'arango' ] ?? null ) ? $config[ 'arango' ] : [] ;
+
+        $init =
+        [
+            ...$arango ,
+            ArangoConfig::DATABASE        => static::$database ,
+            ArangoCommandParam::ANALYZERS => $analyzers ,
+        ] ;
+
+        return new class( ArangoCommand::NAME , new Container() , $init ) extends ArangoCommand
+        {
+            public function runAnalyzers( InputInterface $input , OutputInterface $output ) :int
             {
                 return $this->analyzers( $input , $output ) ;
             }
@@ -230,5 +270,50 @@ final class AnalyzerCommandIntegrationTest extends IntegrationTestCase
             unlink( $file ) ;
         }
         rmdir( $dir ) ;
+    }
+
+    /**
+     * Regression — a host-declared analyzer registry passed through the
+     * `analyzers` **init key** of the real {@see ArangoCommand} reaches the
+     * action and is created on the server. Before the constructor wired the key,
+     * the registry was silently dropped (`getAnalyzerDefinitions()` stayed `[]`)
+     * and `--sync` reported « No analyzers configured » while creating nothing.
+     * A single {@see AnalyzerDefinition} (not wrapped in a list) is tolerated.
+     *
+     * @throws TomlError
+     * @throws Throwable
+     */
+    public function testInitKeyRegistryReachesTheCommandAndSyncs() :void
+    {
+        $arango = $this->arango() ;
+
+        // A single definition (not a list) — the constructor must tolerate it.
+        $definition = new AnalyzerDefinition
+        (
+            'cmd_init_az' ,
+            new TextAnalyzer( locale: 'en' , case: 'lower' , accent: false , stemming: true ) ,
+            [ AnalyzerFeature::FREQUENCY , AnalyzerFeature::POSITION ] ,
+        ) ;
+
+        $this->assertFalse( $arango->analyzerExists( 'cmd_init_az' ) , 'Pre-condition: the analyzer must not exist yet.' ) ;
+
+        // 1 — diff : the registry reached the command, the analyzer is missing.
+        $output = new BufferedOutput() ;
+        $this->commandFromInit( $definition )->runAnalyzers( $this->input( [ '--' . ArangoCommandOption::DIFF => true ] ) , $output ) ;
+        $text = $output->fetch() ;
+        $this->assertStringContainsString( 'cmd_init_az — missing on the server' , $text ) ;
+        $this->assertStringNotContainsString( 'No analyzers configured' , $text ) ;
+
+        // 2 — sync : it gets created on the real server.
+        $output = new BufferedOutput() ;
+        $code   = $this->commandFromInit( [ $definition ] )->runAnalyzers( $this->input( [ '--' . ArangoCommandOption::SYNC => null ] ) , $output ) ;
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'cmd_init_az — created' , $output->fetch() ) ;
+        $this->assertTrue( $arango->analyzerExists( 'cmd_init_az' ) , 'The analyzer declared via the init key must exist on the server.' ) ;
+
+        // 3 — diff again : now in sync.
+        $output = new BufferedOutput() ;
+        $this->commandFromInit( [ $definition ] )->runAnalyzers( $this->input( [ '--' . ArangoCommandOption::DIFF => true ] ) , $output ) ;
+        $this->assertStringContainsString( 'cmd_init_az — in sync' , $output->fetch() ) ;
     }
 }
