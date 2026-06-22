@@ -59,8 +59,9 @@ tooling are non-breaking and ship as **minor** releases.
 - **`1.4.0`** — released 2026-06-21 (relation `quant` quantifiers on edge & join
   filters).
 - **Next minor** — accumulated under `[Unreleased]`: object-array search fields
-  (`[*]`), the `ngram` analyzer type, and multiple analyzers per field
-  (autocomplete). Cut when Marc decides.
+  (`[*]`), the `ngram` analyzer type, multiple analyzers per field (autocomplete),
+  and precise n-gram search by similarity threshold (`Search::NGRAM` →
+  `NGRAM_MATCH`). Cut when Marc decides.
 
 ## Backlog (to be triaged)
 
@@ -87,18 +88,28 @@ Forward-looking items not yet scheduled, roughly by theme.
   registry reconciliation (the A5 pattern) for the database-level
   `searchAliasViews` registry, so `doctor` reports/repairs missing or drifted
   search-alias views.
-- **Precise n-gram autocomplete (`NGRAM_MATCH` + similarity threshold)** — the
-  multi-analyzer autocomplete ships today via `IN TOKENS` (matches on *any*
-  shared fragment, intentionally loose; BM25 ranks). Expose ArangoDB's
-  `NGRAM_MATCH` with a per-field **similarity threshold** so the `SEARCH` itself
-  excludes weak matches. The `ngramMatch()` helper and the `SearchFunction::NGRAM_MATCH`
-  enum already exist; what's missing is a per-field DSL facet (proposed
-  `Search::NGRAM => [ 'analyzer' => …, 'threshold' => … ]`) wiring it into
-  `prepareViewSearch()`. Note: `NGRAM_MATCH` wants an `ngram` analyzer with
-  `min == max` / `preserveOriginal: false`.
+- **Correlated search over object arrays (Enterprise `nested`)** — today's
+  object-array search (`contactPoints[*].email`) is **non-correlated**: it finds
+  a document where *one* element contains a token, but cannot require *the same*
+  element to satisfy two conditions. ArangoSearch `nested` fields enable that, but
+  are **Enterprise-only**. To triage: document-only, an opt-in `nested` link
+  facet for Enterprise users, or lean on `?filter=` (`contactPoints[*]` +
+  `match`/`quant`, which already correlates outside the index).
+- **`[*]` parity on facets** — array-expansion sub-fields are supported by
+  `?filter=` and by View search, but **not by facet counts**
+  (`FacetCountsQueryTrait` validates a plain attribute via `assertAttributeName`).
+  Extend with the same `Operator::ARRAY_EXPANSION` + `stripArrayExpansion()`
+  convention.
+- **Scoring & highlighting controls** — `Search::SCORE` is hardcoded to
+  `BM25(doc)`; expose `BM25` `k`/`b` (and `TFIDF`) tuning (the `bm25()` helper
+  already takes them), and `OFFSET_INFO` for result highlighting (enum declared,
+  helper missing).
 - **Additional analyzer types** — `pipeline`, `aql`, `geo_*`, `segmentation`,
   `delimiter`, `minhash`, … as dedicated `AnalyzerOptions` classes (today
   `identity` / `norm` / `stem` / `text` / `ngram` are exposed).
+- **Typed View-level options** — `primarySortCompression` / `optimizeTopK` (and
+  the link `cache`) are passed untyped today; model them as the rest of the View
+  options.
 
 ### Platform & operations
 
