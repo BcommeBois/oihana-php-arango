@@ -257,9 +257,11 @@ trait SearchTrait
      *
      * - the base match `doc.<field> IN TOKENS(@search_N, "<analyzer>")`
      *   (both sides analyzed), weighted by `BOOST(…, <boost>)` when the field
-     *   boost differs from `1`; a field reaching into an array of objects keeps
-     *   its `[*]` expansion marker here (`doc.contactPoints[*].email IN …`) —
-     *   the marker the link drops, see {@see buildViewLink()};
+     *   boost differs from `1`; a field reaching into an array of objects has
+     *   its `[*]` expansion marker stripped here (`doc.contactPoints.email IN …`,
+     *   not `doc.contactPoints[*].email`): the `SEARCH` grammar rejects array
+     *   expansion, and the flat path already matches any element of the indexed
+     *   array — see {@see buildViewLink()};
      * - with a per-field or View-level {@see Search::PHRASE}, an exact-phrase
      *   bonus `BOOST(PHRASE(doc.<field>, @search_N), <boost × 2>)`; a field may
      *   override the View-level flag (an explicit `false` opts that field out);
@@ -363,9 +365,9 @@ trait SearchTrait
 
         // Defensive: the field paths are developer-declared and interpolated as
         // `doc.<path>` accessors below, so guard each one against AQL injection.
-        // The `[*]` expansion marker is legitimate in the query — validate the
-        // stripped form, which is the plain dotted path. This runs even when the
-        // View already exists (buildViewLink() may never have validated it).
+        // Validate the stripped form (the plain dotted path), which is what is
+        // emitted. This runs even when the View already exists (buildViewLink()
+        // may never have validated it).
         foreach( array_keys( $fields ) as $field )
         {
             assertAttributeName( stripArrayExpansion( (string) $field ) ) ;
@@ -387,7 +389,13 @@ trait SearchTrait
 
                 $groups[ $name ] ??= [] ;
 
-                $path  = key( $field , $docRef ) ;
+                // An array sub-field is declared with the `[*]` expansion marker
+                // (e.g. `contactPoints[*].email`). The marker is stripped here :
+                // the ArangoSearch `SEARCH` grammar rejects array-expansion
+                // expressions, and the flat path `doc.contactPoints.email`
+                // already matches a token in any element of the indexed array
+                // (the field is linked flat by buildViewLink()).
+                $path  = key( stripArrayExpansion( (string) $field ) , $docRef ) ;
                 $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , json_encode( $name ) ) ;
 
                 $groups[ $name ][] = $weight == 1 ? $match : boost( $match , $weight ) ;
@@ -521,9 +529,10 @@ trait SearchTrait
      * here ({@see stripArrayExpansion()}) so the link declares the flat nested
      * path (`contactPoints` → `email`): ArangoSearch (Community) descends into
      * the array on its own — no Enterprise `nested` flag is needed for this
-     * (non-correlated) search. The matching query keeps the marker, see
-     * {@see prepareViewSearch()}. The stripped path is validated
-     * ({@see assertAttributeName()}) to reject a malformed declaration early.
+     * (non-correlated) search. The matching query strips the marker too — the
+     * `SEARCH` grammar rejects array expansion, see {@see prepareViewSearch()}.
+     * The stripped path is validated ({@see assertAttributeName()}) to reject a
+     * malformed declaration early.
      *
      * A field whose resolved Analyzer equals the link-level default is emitted
      * as an empty node (no `analyzers` key) rather than spelling the default
@@ -555,12 +564,13 @@ trait SearchTrait
             $node = $analyzers === $linkDefault ? [] : [ ViewField::ANALYZERS => $analyzers ] ;
 
             // An array-of-objects sub-field is declared with the `[*]` expansion
-            // marker (e.g. `contactPoints[*].email`). The marker belongs to the
-            // AQL query only — see prepareViewSearch() — never to the link, where
-            // ArangoSearch descends into the array on its own. Strip every marker
-            // here so the link declares the flat path (`contactPoints.email`),
-            // which is also the form compared by viewDiff() : the stored and the
-            // declared shapes match, so no permanent false drift is reported.
+            // marker (e.g. `contactPoints[*].email`) — a developer-facing notation
+            // (shared with the `?filter=` grammar) that is stripped internally on
+            // both surfaces : here for the link, and in prepareViewSearch() for
+            // the query. ArangoSearch descends into the array on its own, so the
+            // link declares the flat path (`contactPoints.email`), which is also
+            // the form compared by viewDiff() : the stored and the declared
+            // shapes match, so no permanent false drift is reported.
             $cleanPath = stripArrayExpansion( (string) $path ) ;
 
             // The path is developer-declared, but a malformed one (a typo, a

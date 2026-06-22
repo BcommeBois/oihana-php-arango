@@ -1035,7 +1035,7 @@ class ViewSearchTest extends TestCase
         $method->invoke( $model ) ;
     }
 
-    public function testPrepareViewSearchKeepsArrayExpansionMarkers() :void
+    public function testPrepareViewSearchStripsArrayExpansionMarkers() :void
     {
         $model = $this->model(
         [
@@ -1047,16 +1047,17 @@ class ViewSearchTest extends TestCase
             ] ,
         ]) ;
 
-        // The query keeps the `[*]` marker — the form the link drops.
+        // The `[*]` marker is stripped : the SEARCH grammar rejects array
+        // expansion, and the flat path already matches any array element.
         $this->assertSame
         (
-            'ANALYZER(doc.contactPoints[*].email IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            'ANALYZER(doc.contactPoints.email IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
             $model->prepareViewSearch( 'bois' , $this->binds )
         ) ;
         $this->assertSame( [ 'search_0' => 'bois' ] , $this->binds ) ;
     }
 
-    public function testPrepareViewSearchKeepsMultiLevelArrayExpansion() :void
+    public function testPrepareViewSearchStripsMultiLevelArrayExpansion() :void
     {
         $model = $this->model(
         [
@@ -1070,7 +1071,7 @@ class ViewSearchTest extends TestCase
 
         $this->assertSame
         (
-            'ANALYZER(doc.employee[*].contactPoint[*].email IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            'ANALYZER(doc.employee.contactPoint.email IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
             $model->prepareViewSearch( 'bois' , $this->binds )
         ) ;
     }
@@ -1090,12 +1091,12 @@ class ViewSearchTest extends TestCase
             ] ,
         ]) ;
 
-        // Per-field analyzer + fuzzy still apply on the expanded path.
+        // Per-field analyzer + fuzzy still apply on the stripped (flat) path.
         $this->assertSame
         (
             'ANALYZER('
-            . 'doc.contactPoints[*].email IN TOKENS(@search_0,"text_en")'
-            . ' || LEVENSHTEIN_MATCH(doc.contactPoints[*].email,@search_0,2)'
+            . 'doc.contactPoints.email IN TOKENS(@search_0,"text_en")'
+            . ' || LEVENSHTEIN_MATCH(doc.contactPoints.email,@search_0,2)'
             . ',"text_en")' ,
             $model->prepareViewSearch( 'bois' , $this->binds )
         ) ;
