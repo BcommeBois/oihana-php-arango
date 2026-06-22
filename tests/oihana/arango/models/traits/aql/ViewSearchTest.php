@@ -1018,6 +1018,87 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testBuildViewLinkEmitsMultipleAnalyzersPerField() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name'  => 1 ,                                                       // single, inherits text_fr
+                    'title' => [ Search::ANALYZER => [ 'text_fr' , 'autocomplete' ] ] ,  // list
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+        $link   = $method->invoke( $model ) ;
+
+        $this->assertSame
+        (
+            [
+                'fields' =>
+                [
+                    'name'  => [ 'analyzers' => [ 'text_fr' ] ] ,
+                    'title' => [ 'analyzers' => [ 'text_fr' , 'autocomplete' ] ] ,
+                ] ,
+            ] ,
+            $link->toArray()
+        ) ;
+    }
+
+    public function testPrepareViewSearchEmitsOneBranchPerAnalyzer() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'title' => [ Search::ANALYZER => [ 'text_fr' , 'autocomplete' ] ] ] ,
+            ] ,
+        ]) ;
+
+        // One ANALYZER(...) group per Analyzer, OR-ed together.
+        $this->assertSame
+        (
+            'ANALYZER(doc.title IN TOKENS(@search_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(doc.title IN TOKENS(@search_0,"autocomplete"),"autocomplete")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testMultiAnalyzerListOfOneIsIdenticalToSingle() :void
+    {
+        $single = $this->model(
+        [
+            AQL::VIEW => [ Search::NAME => 'v' , Search::ANALYZER => 'text_fr' , Search::FIELDS => [ 'name' => [ Search::ANALYZER => 'text_en' ] ] ] ,
+        ]) ;
+        $list = $this->model(
+        [
+            AQL::VIEW => [ Search::NAME => 'v' , Search::ANALYZER => 'text_fr' , Search::FIELDS => [ 'name' => [ Search::ANALYZER => [ 'text_en' ] ] ] ] ,
+        ]) ;
+
+        $buildViewLink = new ReflectionMethod( $single , 'buildViewLink' ) ;
+
+        // A one-element list is byte-for-byte identical to the single form.
+        $this->assertSame
+        (
+            $buildViewLink->invoke( $single )->toArray() ,
+            $buildViewLink->invoke( $list )->toArray()
+        ) ;
+
+        $bindsA = $bindsB = [] ;
+        $this->assertSame
+        (
+            $single->prepareViewSearch( 'bois' , $bindsA ) ,
+            $list->prepareViewSearch( 'bois' , $bindsB )
+        ) ;
+    }
+
     public function testBuildViewLinkRejectsMalformedArrayField() :void
     {
         $model = $this->model(

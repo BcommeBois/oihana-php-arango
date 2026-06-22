@@ -44,6 +44,13 @@ class Search
      * single View can index a `text_fr` body and a `text_en` body, each queried
      * through its own Analyzer. Since the Analyzer is fixed at indexing time,
      * a per-field override is reflected both in the View link and in the query.
+     *
+     * A per-field entry also accepts a **list** of Analyzers (`['text_fr',
+     * 'autocomplete']`): the field is then indexed through every one of them and
+     * the query matches under each (one `ANALYZER(...)` branch per Analyzer,
+     * `OR`-ed). This indexes the same field several ways at once — e.g. a `text`
+     * recipe for whole-word search plus an `ngram` recipe for autocomplete. The
+     * View-level value stays a single Analyzer (the inherited default).
      */
     public const string ANALYZER = 'analyzer' ;
 

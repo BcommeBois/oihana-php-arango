@@ -382,12 +382,15 @@ trait SearchTrait
 
             foreach( $fields as $field => $spec )
             {
-                $name   = $spec[ Search::ANALYZER ] ?? $modelAnalyzer ;
+                // A field may be queried through one Analyzer or several (e.g.
+                // `text` + `ngram` for whole-word search plus autocomplete). Each
+                // Analyzer gets its own branch, added to its own ANALYZER() group.
+                $declared  = $spec[ Search::ANALYZER ] ?? $modelAnalyzer ;
+                $analyzers = is_array( $declared ) ? array_values( $declared ) : [ $declared ] ;
+
                 $weight = $spec[ Search::BOOST ] ;
                 $fuzzy  = array_key_exists( Search::FUZZY  , $spec ) ? $spec[ Search::FUZZY  ] : $globalFuzzy ;
                 $phrase = array_key_exists( Search::PHRASE , $spec ) ? $spec[ Search::PHRASE ] : $globalPhrase ;
-
-                $groups[ $name ] ??= [] ;
 
                 // An array sub-field is declared with the `[*]` expansion marker
                 // (e.g. `contactPoints[*].email`). The marker is stripped here :
@@ -395,19 +398,25 @@ trait SearchTrait
                 // expressions, and the flat path `doc.contactPoints.email`
                 // already matches a token in any element of the indexed array
                 // (the field is linked flat by buildViewLink()).
-                $path  = key( stripArrayExpansion( (string) $field ) , $docRef ) ;
-                $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , json_encode( $name ) ) ;
+                $path = key( stripArrayExpansion( (string) $field ) , $docRef ) ;
 
-                $groups[ $name ][] = $weight == 1 ? $match : boost( $match , $weight ) ;
-
-                if( $phrase )
+                foreach( $analyzers as $name )
                 {
-                    $groups[ $name ][] = boost( func( SearchFunction::PHRASE , [ $path , $term ] ) , $weight * 2 ) ;
-                }
+                    $groups[ $name ] ??= [] ;
 
-                if( $fuzzy > 0 )
-                {
-                    $groups[ $name ][] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
+                    $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , json_encode( $name ) ) ;
+
+                    $groups[ $name ][] = $weight == 1 ? $match : boost( $match , $weight ) ;
+
+                    if( $phrase )
+                    {
+                        $groups[ $name ][] = boost( func( SearchFunction::PHRASE , [ $path , $term ] ) , $weight * 2 ) ;
+                    }
+
+                    if( $fuzzy > 0 )
+                    {
+                        $groups[ $name ][] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
+                    }
                 }
             }
         }
@@ -473,7 +482,12 @@ trait SearchTrait
         {
             if( isset( $spec[ Search::ANALYZER ] ) )
             {
-                $analyzers[] = $spec[ Search::ANALYZER ] ;
+                // A field may declare a single Analyzer or a list — flatten both.
+                $declared = $spec[ Search::ANALYZER ] ;
+                foreach( is_array( $declared ) ? $declared : [ $declared ] as $name )
+                {
+                    $analyzers[] = $name ;
+                }
             }
         }
         foreach( array_unique( $analyzers ) as $analyzer )
@@ -559,7 +573,11 @@ trait SearchTrait
 
         foreach( $this->getViewFieldSpecs() as $path => $spec )
         {
-            $analyzers = [ $spec[ Search::ANALYZER ] ?? $analyzer ] ;
+            // A field may declare one Analyzer (string) or several (list). The
+            // link stores the list of Analyzers indexing the field — a single
+            // one yields a one-element list, byte-for-byte the previous output.
+            $declared  = $spec[ Search::ANALYZER ] ?? $analyzer ;
+            $analyzers = is_array( $declared ) ? array_values( $declared ) : [ $declared ] ;
 
             $node = $analyzers === $linkDefault ? [] : [ ViewField::ANALYZERS => $analyzers ] ;
 
@@ -690,7 +708,14 @@ trait SearchTrait
 
                     if( array_key_exists( Search::ANALYZER , $options ) )
                     {
-                        $spec[ Search::ANALYZER ] = (string) $options[ Search::ANALYZER ] ;
+                        // A field may declare a single Analyzer (string) or a
+                        // list of Analyzers (indexing the same field through
+                        // several recipes, e.g. `text` + `ngram` for whole-word
+                        // search plus autocomplete). The list shape is preserved.
+                        $analyzer = $options[ Search::ANALYZER ] ;
+                        $spec[ Search::ANALYZER ] = is_array( $analyzer )
+                            ? array_values( array_map( 'strval' , $analyzer ) )
+                            : (string) $analyzer ;
                     }
 
                     if( array_key_exists( Search::LANG , $options ) )
