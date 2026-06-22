@@ -6,6 +6,7 @@ use DI\DependencyException;
 use DI\NotFoundException;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Operator;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\Group;
@@ -53,7 +54,10 @@ use function oihana\core\strings\key;
  *
  * v1 supports the scalar {@see Facet::FIELD} and the array-membership
  * {@see Facet::IN} family ({@see Facet::LIST}, {@see Facet::LIST_FIELD},
- * {@see Facet::LIST_FIELD_SORTED}); other facet types are skipped.
+ * {@see Facet::LIST_FIELD_SORTED}); other facet types are skipped. A
+ * `Facet::PROPERTY` carrying the `[*]` array-expansion marker (e.g.
+ * `offers[*].priceCurrency`) unwinds the object array and counts the sub-field
+ * per element — see {@see FacetCountsQueryTrait::buildFacetCountSubquery()}.
  *
  * @see FacetCountsQueryTrait::buildFacetCountsQuery() The entry point.
  */
@@ -174,9 +178,45 @@ trait FacetCountsQueryTrait
         $type     = $facet[ Facet::TYPE     ] ?? Facet::FIELD ;
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
 
-        assertAttributeName( $property ) ; // defensive: property is config-trusted, but cheap to guard.
-
         $sort = aqlSort( compile( [ Group::COUNT_NAME , Order::DESC ] ) ) ;
+
+        // An object-array sub-field is declared with the `[*]` expansion marker
+        // (e.g. `offers[*].priceCurrency`). Unlike `?filter=` / `?search`, which
+        // flatten the path, a facet count must *unwind* the array with a FOR and
+        // project the sub-field so each element is counted as its own bucket
+        // (`FOR item IN doc.offers COLLECT value = item.priceCurrency …`). The
+        // marker is the signal — it overrides the declared FIELD / IN type. v1
+        // covers a single array hop; deeper expansions (`a[*].b[*]`) are skipped.
+        if ( str_contains( $property , Operator::ARRAY_EXPANSION ) )
+        {
+            if ( substr_count( $property , Operator::ARRAY_EXPANSION ) > 1 )
+            {
+                return null ; // multi-level expansion unsupported (v1)
+            }
+
+            $position  = strpos( $property , Operator::ARRAY_EXPANSION ) ;
+            $container = substr( $property , 0 , $position ) ;
+            $subPath   = ltrim( substr( $property , $position + strlen( Operator::ARRAY_EXPANSION ) ) , Char::DOT ) ;
+
+            assertAttributeName( $container ) ; // defensive: config-trusted, but cheap to guard.
+
+            $value = self::FACET_COUNT_ITEM ;
+            if ( $subPath !== Char::EMPTY )
+            {
+                assertAttributeName( $subPath ) ;
+                $value = key( $subPath , self::FACET_COUNT_ITEM ) ;
+            }
+
+            return compile(
+            [
+                $for ,
+                $filter ,
+                aqlFor( [ AQL::DOC_REF => self::FACET_COUNT_ITEM , AQL::IN => key( $container , $docRef ) ] ) ,
+                ...$this->facetCountCollect( $value , $sort ) ,
+            ]) ;
+        }
+
+        assertAttributeName( $property ) ; // defensive: property is config-trusted, but cheap to guard.
 
         return match ( $type )
         {

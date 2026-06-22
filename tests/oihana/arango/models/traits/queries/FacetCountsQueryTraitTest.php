@@ -7,6 +7,8 @@ use oihana\arango\models\enums\Facet;
 use oihana\arango\models\traits\queries\FacetCountsQueryTrait;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
+use oihana\exceptions\ValidationException;
+
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,10 +25,15 @@ class FacetCountsQueryTraitStub
         $this->collection = 'articles' ;
         $this->facets =
         [
-            'category' => [ Facet::TYPE => Facet::FIELD ] ,
-            'status'   => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => 'state' ] ,
-            'keywords' => [ Facet::TYPE => Facet::IN ] ,
-            'author'   => [ Facet::TYPE => Facet::JOIN ] , // unsupported in v1
+            'category'      => [ Facet::TYPE => Facet::FIELD ] ,
+            'status'        => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => 'state' ] ,
+            'keywords'      => [ Facet::TYPE => Facet::IN ] ,
+            'author'        => [ Facet::TYPE => Facet::JOIN ] , // unsupported in v1
+            'currency'      => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].priceCurrency' ] , // object-array sub-field
+            'currencyField' => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => 'offers[*].priceCurrency' ] , // [*] overrides FIELD
+            'tags'          => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'tags[*]' ] , // expansion marker, no sub-field
+            'deep'          => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b[*].c' ] , // multi-level → skipped
+            'danger'        => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].x);y' ] , // dangerous sub-field → guarded
         ] ;
     }
 }
@@ -115,5 +122,66 @@ class FacetCountsQueryTraitTest extends TestCase
             'LET category = (FOR doc IN @@collection FILTER doc.active==1 COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {category}' ,
             $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' ] , $binds ) ,
         ) ;
+    }
+
+    public function testArraySubFieldUnwindsAndProjects() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LET currency = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {currency}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currency' ] , $binds ) ,
+        ) ;
+        $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
+    }
+
+    public function testArrayExpansionMarkerOverridesFieldType() :void
+    {
+        $binds = [] ;
+        // Declared FIELD, but the `[*]` marker forces the unwind (D1).
+        $this->assertSame
+        (
+            'LET currencyField = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {currencyField}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currencyField' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testArrayExpansionWithoutSubFieldProjectsItem() :void
+    {
+        $binds = [] ;
+        // `tags[*]` (no sub-field) projects the element itself (D4).
+        $this->assertSame
+        (
+            'LET tags = (FOR doc IN @@collection FOR item IN doc.tags COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {tags}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'tags' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testArraySubFieldInheritsListFilter() :void
+    {
+        $stub = $this->stub() ;
+        $stub->conditions = [ 'doc.active==1' ] ;
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LET currency = (FOR doc IN @@collection FILTER doc.active==1 FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {currency}' ,
+            $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currency' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testMultiLevelExpansionIsSkipped() :void
+    {
+        $binds = [] ;
+        // `a[*].b[*].c` is a two-hop expansion → unsupported in v1 → skipped (D2).
+        $this->assertSame( '' , $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deep' ] , $binds ) ) ;
+    }
+
+    public function testDangerousSubFieldIsGuarded() :void
+    {
+        // The sub-field is config-trusted but still guarded by assertAttributeName.
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'danger' ] , $binds ) ;
     }
 }
