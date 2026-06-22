@@ -383,6 +383,7 @@ The JSON envelope is **identical** to a classic list (the standard `status` / `u
 - **Eventual consistency** — a freshly inserted document becomes searchable in the View after ~1 s (`commitIntervalMsec`). Lists without `?search=` are not affected.
 - **Scoring requirements** — the `BM25` score needs the Analyzer `frequency` feature (built-in text Analyzers have it); `PHRASE` needs `position` + `frequency`.
 - **The search is bound** — terms travel as `@search_N` bind variables; field names come from the model declaration, never from the URL.
+- **Analyzers must exist first** — a View references its Analyzers by **name**; it does not create them. Built-ins (`text_fr`, `text_en`, `identity`…) are always present. A **custom** Analyzer must be declared in the `analyzers` registry and created on the server (`composer arango:analyzers -- --sync` or `composer arango:doctor -- --apply`) **before** the View — its definition (type, properties, features) cannot be inferred from the name alone. Otherwise the View is `INVALID` and lazy creation fails silently (the search then errors at runtime). Diagnose with `composer arango:views -- --diff` or `composer arango:doctor`. See [Analyzers](analyzers.md).
 
 ## See also
 

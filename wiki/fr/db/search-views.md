@@ -383,6 +383,7 @@ L'enveloppe JSON est **identique** à une liste classique (l'enveloppe de succè
 - **Consistance différée** — un document fraîchement inséré devient cherchable dans la View après ~1 s (`commitIntervalMsec`). Les listes sans `?search=` ne sont pas concernées.
 - **Exigences du scoring** — le score `BM25` exige la feature d'Analyzer `frequency` (les Analyzers texte built-in l'ont) ; `PHRASE` exige `position` + `frequency`.
 - **La recherche est bindée** — les termes voyagent en variables `@search_N` ; les noms de champs viennent de la déclaration du modèle, jamais de l'URL.
+- **Les Analyzers doivent exister d'abord** — une View référence ses Analyzers par leur **nom**, elle ne les crée pas. Les built-in (`text_fr`, `text_en`, `identity`…) sont toujours présents. Un Analyzer **maison** doit être déclaré dans le registre `analyzers` et créé en base (`composer arango:analyzers -- --sync` ou `composer arango:doctor -- --apply`) **avant** la View — sa définition (type, propriétés, features) n'est pas déductible du seul nom. Sinon la View est marquée `INVALID` et la création paresseuse échoue silencieusement (la recherche échouera ensuite au runtime). Diagnostiquez avec `composer arango:views -- --diff` ou `composer arango:doctor`. Voir [Analyzers](analyzers.md).
 
 ## Voir aussi
 
