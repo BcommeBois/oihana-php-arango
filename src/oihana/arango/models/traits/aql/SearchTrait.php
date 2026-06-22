@@ -16,12 +16,16 @@ use oihana\arango\models\enums\Search;
 use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 use oihana\traits\LazyTrait;
 
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
 use function oihana\arango\models\helpers\isAuthorized;
+
+use function oihana\arango\db\helpers\assertAttributeName;
+use function oihana\arango\db\helpers\stripArrayExpansion;
 
 use function oihana\arango\db\functions\search\analyzer;
 use function oihana\arango\db\functions\search\boost;
@@ -75,6 +79,7 @@ trait SearchTrait
      * empty map when the model has no collection.
      *
      * @return array<string, ArangoSearchLink>
+     * @throws ValidationException
      */
     public function getViewLinks() :array
     {
@@ -147,6 +152,7 @@ trait SearchTrait
      *
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
+     * @throws ValidationException
      */
     public function initializeView( array $init = [] ) :static
     {
@@ -251,7 +257,9 @@ trait SearchTrait
      *
      * - the base match `doc.<field> IN TOKENS(@search_N, "<analyzer>")`
      *   (both sides analyzed), weighted by `BOOST(…, <boost>)` when the field
-     *   boost differs from `1`;
+     *   boost differs from `1`; a field reaching into an array of objects keeps
+     *   its `[*]` expansion marker here (`doc.contactPoints[*].email IN …`) —
+     *   the marker the link drops, see {@see buildViewLink()};
      * - with a per-field or View-level {@see Search::PHRASE}, an exact-phrase
      *   bonus `BOOST(PHRASE(doc.<field>, @search_N), <boost × 2>)`; a field may
      *   override the View-level flag (an explicit `false` opts that field out);
@@ -281,12 +289,13 @@ trait SearchTrait
      * never emptied (within the permitted set).
      *
      * @param array|string|null $search The `$init` array (reads `Arango::SEARCH`) or the search term itself.
-     * @param ?array            $binds  Bind variables, populated by reference.
-     * @param string            $docRef The document variable the fields hang off.
+     * @param ?array $binds Bind variables, populated by reference.
+     * @param string $docRef The document variable the fields hang off.
      *
      * @return ?string The `SEARCH` expression, or `null` when the View search is inactive.
      *
      * @throws BindException
+     * @throws ValidationException
      */
     public function prepareViewSearch
     (
@@ -352,6 +361,16 @@ trait SearchTrait
             }
         }
 
+        // Defensive: the field paths are developer-declared and interpolated as
+        // `doc.<path>` accessors below, so guard each one against AQL injection.
+        // The `[*]` expansion marker is legitimate in the query — validate the
+        // stripped form, which is the plain dotted path. This runs even when the
+        // View already exists (buildViewLink() may never have validated it).
+        foreach( array_keys( $fields ) as $field )
+        {
+            assertAttributeName( stripArrayExpansion( (string) $field ) ) ;
+        }
+
         $groups = [] ; // analyzer name => list of expressions, in first-seen order
         $index  = 0 ;
 
@@ -408,6 +427,7 @@ trait SearchTrait
      * synchronized automatically.
      *
      * @return DiffReport
+     * @throws ValidationException
      */
     public function viewDiff() :DiffReport
     {
@@ -476,6 +496,7 @@ trait SearchTrait
      * or {@see DiffStatus::UNREACHABLE} reports untouched.
      *
      * @return DiffReport The {@see viewDiff()} report, with `$applied` set when the View has been created or updated.
+     * @throws ValidationException
      */
     public function viewSync() :DiffReport
     {
@@ -495,6 +516,15 @@ trait SearchTrait
      * is indexed with its resolved Analyzer — the per-field
      * {@see Search::ANALYZER} when declared, otherwise the View-level one.
      *
+     * A field may reach a sub-field of an array of objects with the `[*]`
+     * expansion marker (e.g. `contactPoints[*].email`). The marker is stripped
+     * here ({@see stripArrayExpansion()}) so the link declares the flat nested
+     * path (`contactPoints` → `email`): ArangoSearch (Community) descends into
+     * the array on its own — no Enterprise `nested` flag is needed for this
+     * (non-correlated) search. The matching query keeps the marker, see
+     * {@see prepareViewSearch()}. The stripped path is validated
+     * ({@see assertAttributeName()}) to reject a malformed declaration early.
+     *
      * A field whose resolved Analyzer equals the link-level default is emitted
      * as an empty node (no `analyzers` key) rather than spelling the default
      * out: the server normalizes a field whose analyzers equal the link default
@@ -506,6 +536,7 @@ trait SearchTrait
      * link-level analyzer is introduced later.
      *
      * @return ArangoSearchLink
+     * @throws ValidationException
      */
     protected function buildViewLink() :ArangoSearchLink
     {
@@ -523,7 +554,21 @@ trait SearchTrait
 
             $node = $analyzers === $linkDefault ? [] : [ ViewField::ANALYZERS => $analyzers ] ;
 
-            $segments = explode( Char::DOT , (string) $path ) ;
+            // An array-of-objects sub-field is declared with the `[*]` expansion
+            // marker (e.g. `contactPoints[*].email`). The marker belongs to the
+            // AQL query only — see prepareViewSearch() — never to the link, where
+            // ArangoSearch descends into the array on its own. Strip every marker
+            // here so the link declares the flat path (`contactPoints.email`),
+            // which is also the form compared by viewDiff() : the stored and the
+            // declared shapes match, so no permanent false drift is reported.
+            $cleanPath = stripArrayExpansion( (string) $path ) ;
+
+            // The path is developer-declared, but a malformed one (a typo, a
+            // hyphen, a doubled dot) would silently build a broken link that
+            // indexes nothing : turn that into a clear failure at build time.
+            assertAttributeName( $cleanPath ) ;
+
+            $segments = explode( Char::DOT , $cleanPath ) ;
             while( count( $segments ) > 1 )
             {
                 $segment = array_pop( $segments ) ;

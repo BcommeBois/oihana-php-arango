@@ -23,6 +23,7 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\Search;
+use oihana\exceptions\ValidationException;
 
 /**
  * Tests for the model-level View search (Lot S4a): the `AQL::VIEW` declaration,
@@ -902,6 +903,218 @@ class ViewSearchTest extends TestCase
             ] ,
             $link->toArray()
         ) ;
+    }
+
+    public function testBuildViewLinkStripsArrayExpansionMarkers() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name'                       => 1 ,
+                    'contactPoints[*].email'     => 1 ,
+                    'contactPoints[*].telephone' => 1 ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+        $link   = $method->invoke( $model ) ;
+
+        // The `[*]` markers are dropped : the array sub-fields are declared as a
+        // plain nested path so ArangoSearch descends into the array itself.
+        $this->assertSame
+        (
+            [
+                'fields' =>
+                [
+                    'name'          => [ 'analyzers' => [ 'text_fr' ] ] ,
+                    'contactPoints' =>
+                    [
+                        'fields' =>
+                        [
+                            'email'     => [ 'analyzers' => [ 'text_fr' ] ] ,
+                            'telephone' => [ 'analyzers' => [ 'text_fr' ] ] ,
+                        ] ,
+                    ] ,
+                ] ,
+            ] ,
+            $link->toArray()
+        ) ;
+    }
+
+    public function testBuildViewLinkStripsMultiLevelArrayExpansion() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'employee[*].contactPoint[*].email' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+        $link   = $method->invoke( $model ) ;
+
+        // Every marker is stripped, whatever the nesting depth.
+        $this->assertSame
+        (
+            [
+                'fields' =>
+                [
+                    'employee' =>
+                    [
+                        'fields' =>
+                        [
+                            'contactPoint' =>
+                            [
+                                'fields' => [ 'email' => [ 'analyzers' => [ 'text_fr' ] ] ] ,
+                            ] ,
+                        ] ,
+                    ] ,
+                ] ,
+            ] ,
+            $link->toArray()
+        ) ;
+    }
+
+    public function testBuildViewLinkKeepsPerFieldAnalyzerOnArrayExpansion() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'contactPoints[*].email' => [ Search::ANALYZER => 'text_en' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+        $link   = $method->invoke( $model ) ;
+
+        // The per-field analyzer override lands on the leaf of the stripped path.
+        $this->assertSame
+        (
+            [
+                'fields' =>
+                [
+                    'contactPoints' =>
+                    [
+                        'fields' => [ 'email' => [ 'analyzers' => [ 'text_en' ] ] ] ,
+                    ] ,
+                ] ,
+            ] ,
+            $link->toArray()
+        ) ;
+    }
+
+    public function testBuildViewLinkRejectsMalformedArrayField() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME   => 'v' ,
+                Search::FIELDS => [ 'contact-points[*].email' => 1 ] , // hyphen → invalid
+            ] ,
+        ]) ;
+
+        $method = new ReflectionMethod( $model , 'buildViewLink' ) ;
+
+        $this->expectException( ValidationException::class ) ;
+        $method->invoke( $model ) ;
+    }
+
+    public function testPrepareViewSearchKeepsArrayExpansionMarkers() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'contactPoints[*].email' => 1 ] ,
+            ] ,
+        ]) ;
+
+        // The query keeps the `[*]` marker — the form the link drops.
+        $this->assertSame
+        (
+            'ANALYZER(doc.contactPoints[*].email IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0' => 'bois' ] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchKeepsMultiLevelArrayExpansion() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'employee[*].contactPoint[*].email' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.employee[*].contactPoint[*].email IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchKeepsPerFieldOptionsOnArrayExpansion() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'contactPoints[*].email' => [ Search::ANALYZER => 'text_en' , Search::FUZZY => 2 ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        // Per-field analyzer + fuzzy still apply on the expanded path.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . 'doc.contactPoints[*].email IN TOKENS(@search_0,"text_en")'
+            . ' || LEVENSHTEIN_MATCH(doc.contactPoints[*].email,@search_0,2)'
+            . ',"text_en")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchRejectsMalformedArrayField() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'contact-points[*].email' => 1 ] , // hyphen → invalid
+            ] ,
+        ]) ;
+
+        $this->expectException( ValidationException::class ) ;
+        $model->prepareViewSearch( 'bois' , $this->binds ) ;
     }
 
     public function testGetViewSearchFieldsNormalizesEveryDeclarationShape() :void

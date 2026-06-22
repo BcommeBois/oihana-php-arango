@@ -327,6 +327,7 @@
             "src/oihana/arango/db/helpers/isAttributeName.php",
             "src/oihana/arango/db/helpers/matchesSkin.php",
             "src/oihana/arango/db/helpers/resolveSkinFields.php",
+            "src/oihana/arango/db/helpers/stripArrayExpansion.php",
             "src/oihana/arango/db/operations/aqlAsc.php",
             "src/oihana/arango/db/operations/aqlCollect.php",
             "src/oihana/arango/db/operations/aqlCollectReturn.php",
