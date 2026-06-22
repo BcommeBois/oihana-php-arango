@@ -45,6 +45,7 @@ Beyond the boost, each `Search::FIELDS` entry accepts options declared **per fie
 |---|---|---|
 | [`Search::FUZZY`](#per-field-typo-tolerance) | tolerate typos (text) / stay exact (codes) | `?search=scirie` finds « Scierie… » but not a near-miss code |
 | [`Search::ANALYZER`](#per-field-analyzer) | one Analyzer per field (French, English, …) | `?search=workshops` matches via `text_en` (stem `workshop`) |
+| [`Search::ANALYZER` (list)](#multiple-analyzers-per-field-autocomplete) | several Analyzers on **one** field (e.g. `text` + `ngram`) | `?search=ate` finds « Atelier » (autocomplete) |
 | [`Search::LANG`](#localized-search-lang) | localized search driven by `?lang=` | `?search=menuiserie&lang=fr` targets the French side |
 | [`Search::PHRASE`](#per-field-exact-phrase-bonus) | exact-phrase bonus where it matters | `?search=cuir vintage` lifts the adjacent phrase |
 | [`Search::REQUIRES`](#search-permissions) | restrict a field to authorized requests | a `secret` field is searched only with the permission |
@@ -126,6 +127,30 @@ The English plural « workshops » is reduced to its stem « workshop » by the 
 ```
 
 > **Drift** — changing a field's Analyzer alters the View link. Like any declaration change, it does not update an already-created View: resynchronize with `$model->viewSync()` or `arangodb views --sync`. An analyzer (View-level or per-field) unknown to the server is reported by `$model->viewDiff()` (status `INVALID`).
+
+### Multiple Analyzers per field (autocomplete)
+
+A per-field `Search::ANALYZER` also accepts a **list**: the field is then indexed **and** queried under **each** Analyzer. This indexes the same field several ways at once — typically a `text` recipe for whole-word search **plus** an [`ngram`](analyzers.md#ngramanalyzer--autocomplete--substrings) recipe for **autocomplete**:
+
+```php
+Search::FIELDS =>
+[
+    'name' => [ Search::ANALYZER => [ 'text_fr' , 'autocomplete' ] ] , // two recipes
+] ,
+```
+
+> ⚠️ The `autocomplete` analyzer (an `ngram`) is **not** a built-in: it must be declared in the `analyzers` registry and created **before** the View (see [Analyzers](analyzers.md)).
+
+The link indexes the field with the **whole** list, and the query emits **one `ANALYZER(…)` branch per Analyzer**, OR-ed:
+
+```aql
+   ANALYZER(doc.name IN TOKENS(@search_0, "text_fr"), "text_fr")
+|| ANALYZER(doc.name IN TOKENS(@search_0, "autocomplete"), "autocomplete")
+```
+
+Typing `ate` finds « **Ate**lier » through the `ngram` branch (which `text_fr` alone would not match), while whole words go through the `text_fr` branch. The field's other options (`BOOST`, `FUZZY`, `PHRASE`) apply to **each** branch.
+
+> Fragment search is **loose** by nature: a whole word sent through the `ngram` branch may also bring back records that only share fragments. That is what the `score` (`BM25`) is for — surfacing the best ones first; combine with `BOOST` if needed. The **View-level** `Search::ANALYZER` stays a single value (the inherited default).
 
 ### Localized search (`?lang=`)
 

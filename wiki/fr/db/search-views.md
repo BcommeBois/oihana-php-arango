@@ -45,6 +45,7 @@ Au-delà du boost, chaque entrée de `Search::FIELDS` accepte des options décla
 |---|---|---|
 | [`Search::FUZZY`](#tolérance-aux-fautes-par-champ) | tolérer les fautes (texte) / rester exact (codes) | `?search=scirie` trouve « Scierie… » mais pas un code voisin |
 | [`Search::ANALYZER`](#analyzer-par-champ) | un Analyzer par champ (français, anglais, …) | `?search=workshops` matche via `text_en` (racine `workshop`) |
+| [`Search::ANALYZER` (liste)](#plusieurs-analyzers-par-champ-autocomplétion) | plusieurs Analyzers sur **un** champ (ex. `text` + `ngram`) | `?search=ate` retrouve « Atelier » (autocomplétion) |
 | [`Search::LANG`](#recherche-localisée-lang) | recherche localisée pilotée par `?lang=` | `?search=menuiserie&lang=fr` cible le côté français |
 | [`Search::PHRASE`](#bonus-dexpression-exacte-par-champ) | bonus d'expression exacte là où c'est utile | `?search=cuir vintage` remonte l'expression adjacente |
 | [`Search::REQUIRES`](#permissions-de-recherche) | limiter un champ aux requêtes autorisées | un champ `secret` n'est cherché qu'avec la permission |
@@ -126,6 +127,30 @@ Le pluriel anglais « workshops » est ramené à sa racine « workshop » par l
 ```
 
 > **Drift** — changer l'Analyzer d'un champ modifie le link de la View. Comme tout changement de déclaration, il ne met pas à jour une View déjà créée : resynchronisez avec `$model->viewSync()` ou `arangodb views --sync`. Un analyzer (modèle ou par champ) inconnu du serveur est signalé par `$model->viewDiff()` (statut `INVALID`).
+
+### Plusieurs Analyzers par champ (autocomplétion)
+
+`Search::ANALYZER` par champ accepte aussi une **liste** : le champ est alors indexé **et** interrogé sous **chaque** Analyzer. On indexe ainsi le même champ de plusieurs façons à la fois — typiquement un `text` pour la recherche par mots entiers **et** un [`ngram`](analyzers.md#ngramanalyzer--lautocomplétion--les-sous-chaînes) pour l'**autocomplétion** :
+
+```php
+Search::FIELDS =>
+[
+    'name' => [ Search::ANALYZER => [ 'text_fr' , 'autocomplete' ] ] , // deux recettes
+] ,
+```
+
+> ⚠️ L'analyzer `autocomplete` (un `ngram`) n'est **pas** un built-in : il doit être déclaré dans le registre `analyzers` et créé **avant** la View (voir [Analyzers](analyzers.md)).
+
+Le link indexe le champ avec **toute** la liste, et la requête émet **une branche `ANALYZER(…)` par Analyzer**, OR-ées :
+
+```aql
+   ANALYZER(doc.name IN TOKENS(@search_0, "text_fr"), "text_fr")
+|| ANALYZER(doc.name IN TOKENS(@search_0, "autocomplete"), "autocomplete")
+```
+
+Taper `ate` retrouve « **Ate**lier » par la branche `ngram` (que `text_fr` seul ne matcherait pas), tandis que les mots entiers passent par la branche `text_fr`. Les autres options du champ (`BOOST`, `FUZZY`, `PHRASE`) s'appliquent à **chaque** branche.
+
+> La recherche par fragments est **lâche** par nature : un mot entier passé par la branche `ngram` peut aussi ramener des fiches qui partagent seulement des fragments. C'est le rôle du `score` (`BM25`) de faire remonter les meilleures d'abord ; combine avec `BOOST` si besoin. Le niveau **View** (`Search::ANALYZER` global) reste, lui, une seule valeur (le défaut hérité).
 
 ### Recherche localisée (`?lang=`)
 
