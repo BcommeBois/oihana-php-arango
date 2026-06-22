@@ -798,7 +798,7 @@ Raccourci composer : `composer arango:views` (drapeaux après `--`, ex. `compose
 
 ### Pourquoi
 
-Le provisioning des modèles ([recherche View](../db/search-views.md)) est *create-if-missing* : changer le bloc `AQL::VIEW` ne met **pas** à jour une View existante — un champ ajouté n'est silencieusement pas indexé, un Analyzer changé ne matche presque plus rien. `views --diff` détecte ce drift, `views --sync` le répare via `updateProperties()` : la View reste interrogeable pendant que l'index inversé se reconstruit en arrière-plan, les options de la View (`commitIntervalMsec`, …) et les links d'autres collections ne sont pas touchés.
+Le provisioning des modèles ([recherche View](../db/search/README.md)) est *create-if-missing* : changer le bloc `AQL::VIEW` ne met **pas** à jour une View existante — un champ ajouté n'est silencieusement pas indexé, un Analyzer changé ne matche presque plus rien. `views --diff` détecte ce drift, `views --sync` le répare via `updateProperties()` : la View reste interrogeable pendant que l'index inversé se reconstruit en arrière-plan, les options de la View (`commitIntervalMsec`, …) et les links d'autres collections ne sont pas touchés.
 
 ### Câbler `--diff` / `--sync` dans un projet hôte (notice)
 
@@ -806,7 +806,7 @@ Le provisioning des modèles ([recherche View](../db/search-views.md)) est *crea
 
 1. **Activer l'action** — ajouter `ArangoAction::VIEWS` au tableau `CommandParam::ACTIONS` de la définition DI de la commande (voir [Câblage DI](#câblage-di) plus haut).
 2. **Lister les modèles à inspecter** — `ArangoCommandParam::MODELS => [ Models::PLACES , Models::PRODUCTS ]` : les **ids de conteneur** des définitions `Documents`, exactement comme `Arango::MODEL` côté contrôleurs.
-3. **Déclarer la View au modèle** — chaque modèle inspecté porte son bloc `AQL::VIEW` (`Search::NAME` / `Search::ANALYZER` / `Search::FIELDS`, voir [Recherche View](../db/search-views.md)).
+3. **Déclarer la View au modèle** — chaque modèle inspecté porte son bloc `AQL::VIEW` (`Search::NAME` / `Search::ANALYZER` / `Search::FIELDS`, voir [Recherche View](../db/search/README.md)).
 
 Un modèle listé sans bloc `AQL::VIEW` est simplement signalé « no View declared » et ignoré. Chaque modèle est interrogé sur **sa** base (`AQL::DATABASE`).
 

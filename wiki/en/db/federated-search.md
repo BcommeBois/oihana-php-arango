@@ -217,5 +217,5 @@ use oihana\routes\Route ;
 ## See also
 
 - [`search-alias` views](../clients/arangosearch.md) — the substrate (one inverted index per collection, federatable).
-- [View search (ArangoSearch)](search-views.md) — the per-model scored search.
+- [View search (ArangoSearch)](search/README.md) — the per-model scored search.
 - [`aqlScoredSearch()`](../aql/aql-operations.md) — the scored-query builder reused by stage 1.

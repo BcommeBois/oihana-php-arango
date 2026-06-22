@@ -1,6 +1,6 @@
 # Understanding ArangoSearch
 
-ArangoSearch is ArangoDB's **built-in search engine** — the equivalent of a small Elasticsearch living inside your database, with no extra server. This page explains the concepts (Analyzer → View → `SEARCH` → scoring), what they make possible, and how every layer of this library maps onto them. It is the recommended starting point before the [recipe](../db/search-views.md) and [reference](../aql/aql-functions-search.md) pages.
+ArangoSearch is ArangoDB's **built-in search engine** — the equivalent of a small Elasticsearch living inside your database, with no extra server. This page explains the concepts (Analyzer → View → `SEARCH` → scoring), what they make possible, and how every layer of this library maps onto them. It is the recommended starting point before the [recipe](../db/search/README.md) and [reference](../aql/aql-functions-search.md) pages.
 
 ## Why — the four ceilings of `LIKE`
 
@@ -71,7 +71,7 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 
 | Need | Ingredients | In this library |
 |---|---|---|
-| Search bar with relevance | `TOKENS` match + `BM25` | [`AQL::VIEW` block](../db/search-views.md), automatic |
+| Search bar with relevance | `TOKENS` match + `BM25` | [`AQL::VIEW` block](../db/search/README.md), automatic |
 | Exact-phrase priority | `PHRASE` + `BOOST` | `Search::PHRASE => true` (global or per-field) |
 | Typo tolerance | `LEVENSHTEIN_MATCH` | `Search::FUZZY => 1` (global or per-field) |
 | Field weighting | `BOOST` | `Search::FIELDS => ['name' => 3]` |
@@ -95,7 +95,7 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 | Function helpers (`db/functions/search/`) | one PHP helper per ArangoSearch function (`phrase`, `boost`, `bm25`, …) | [ArangoSearch functions](../aql/aql-functions-search.md) |
 | `aqlSearch()` operation | the `SEARCH … OPTIONS { … }` clause with Analyzer wrap | [AQL operations](../aql/aql-operations.md) |
 | `aqlScoredSearch()` builder | the complete relevance-ranked query, standalone | [AQL operations](../aql/aql-operations.md) |
-| Model `AQL::VIEW` block | `?search=` switches to the View, auto-provisioning, `score` sort key, totals & facet counts in sync | [View search](../db/search-views.md) |
+| Model `AQL::VIEW` block | `?search=` switches to the View, auto-provisioning, `score` sort key, totals & facet counts in sync | [View search](../db/search/README.md) |
 | Views & Analyzers clients | create/update/drop Views, custom Analyzers | [ArangoSearch clients](../clients/arangosearch.md) |
 
 ## Good practices and pitfalls
@@ -107,16 +107,16 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 
 ## Planned evolutions
 
-- **Finer i18n search** beyond the already-available `?lang=` ([per-field Analyzer](../db/search-views.md#per-field-analyzer) and [localized search `?lang=`](../db/search-views.md#localized-search-lang)): for instance one field indexed with several Analyzers.
+- **Finer i18n search** beyond the already-available `?lang=` ([per-field Analyzer](../db/search/per-field-options.md#per-field-analyzer) and [localized search `?lang=`](../db/search/per-field-options.md#localized-search-lang)): for instance one field indexed with several Analyzers.
 - **Federated multi-collection search** — one View over several collections, exposed by a dedicated read-only model/controller/route triple.
 
-Permission-scoped search is now [available](../db/search-views.md#search-permissions).
+Permission-scoped search is now [available](../db/search/per-field-options.md#search-permissions).
 
 > The View management command, long listed here, has shipped: see the [`views` action of `command:arangodb`](../commands/arangodb.md#views--arangosearch-view-management) (list, `--diff`, `--sync`, `--drop`).
 
 ## See also
 
-- [View search (ArangoSearch)](../db/search-views.md) — the model recipe (`AQL::VIEW`, URLs, JSON responses).
+- [View search (ArangoSearch)](../db/search/README.md) — the model recipe (`AQL::VIEW`, URLs, JSON responses).
 - [ArangoSearch functions](../aql/aql-functions-search.md) — the helper reference.
 - [ArangoSearch clients](../clients/arangosearch.md) — Views and Analyzers management.
 - [Search `?search=`](../db/search.md) — the simple `LIKE` sweep, still the right tool for small models.

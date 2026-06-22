@@ -217,5 +217,5 @@ use oihana\routes\Route ;
 ## Voir aussi
 
 - [Vues `search-alias`](../clients/arangosearch.md) — le substrat (un index inversé par collection, fédérable).
-- [Recherche View (ArangoSearch)](search-views.md) — la recherche scorée par modèle.
+- [Recherche View (ArangoSearch)](search/README.md) — la recherche scorée par modèle.
 - [`aqlScoredSearch()`](../aql/aql-operations.md) — le builder de requête scorée réutilisé par le temps 1.

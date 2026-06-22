@@ -18,7 +18,7 @@ words to their root, and so on. Because the **same** recipe applies at indexing
 > **An Analyzer is fixed at indexing time.** Overriding it at query time alone is
 > pointless (you'd be searching English-stemmed tokens in a French-stemmed
 > index). What you change is the *field* being searched, and the right Analyzer
-> follows the field — see [Per-field Analyzer](search-views.md#per-field-analyzer).
+> follows the field — see [Per-field Analyzer](search/per-field-options.md#per-field-analyzer).
 
 ## Contents
 
@@ -312,7 +312,7 @@ AQL::VIEW =>
 Resolution rule: a field declaring `Search::ANALYZER` wins; otherwise it
 inherits the View's analyzer (itself `identity` by default). The details
 (resolution, generated AQL, localized `?lang=` search) are in
-[View search — Per-field Analyzer](search-views.md#per-field-analyzer).
+[View search — Per-field Analyzer](search/per-field-options.md#per-field-analyzer).
 
 ## Current limitations
 
@@ -326,7 +326,7 @@ analyzer is created outside the library (direct `/_api/analyzer` HTTP API or
 
 ## See also
 
-- [View search (ArangoSearch)](search-views.md) — declaring a View and relevance-ranked search; per-field Analyzer, `?lang=`.
+- [View search (ArangoSearch)](search/README.md) — declaring a View and relevance-ranked search; per-field Analyzer, `?lang=`.
 - [Understanding ArangoSearch](../getting-started/arangosearch.md) — the conceptual introduction (Analyzers, Views, `SEARCH`, scoring).
 - [ArangoSearch client](../clients/arangosearch.md) — the low-level client API (Views, links, lifecycle).
 - [AQL ArangoSearch functions](../aql/aql-functions-search.md) — `BM25()`, `PHRASE()`, `TOKENS()`, etc.

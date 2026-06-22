@@ -20,7 +20,7 @@ rencontrent toujours sur le même terrain.
 > **Un Analyzer est figé à l'indexation.** Le surcharger à la requête seule ne
 > sert à rien (tu chercherais des jetons racinisés à l'anglaise dans un index
 > racinisé à la française). Ce qu'on change, c'est le *champ* cherché, et le bon
-> Analyzer suit le champ — voir [Analyzer par champ](search-views.md#analyzer-par-champ).
+> Analyzer suit le champ — voir [Analyzer par champ](search/per-field-options.md#analyzer-par-champ).
 
 ## Sommaire
 
@@ -318,7 +318,7 @@ AQL::VIEW =>
 Règle de résolution : un champ qui déclare `Search::ANALYZER` l'emporte ; sinon
 il hérite de l'analyzer de la View (lui-même `identity` par défaut). Les détails
 (résolution, AQL généré, recherche localisée `?lang=`) sont dans
-[Recherche View — Analyzer par champ](search-views.md#analyzer-par-champ).
+[Recherche View — Analyzer par champ](search/per-field-options.md#analyzer-par-champ).
 
 ## Limites actuelles
 
@@ -332,7 +332,7 @@ puis se référence par son nom dans une View comme n'importe quel autre.
 
 ## Voir aussi
 
-- [Recherche View (ArangoSearch)](search-views.md) — déclarer une View et la recherche classée par pertinence ; Analyzer par champ, `?lang=`.
+- [Recherche View (ArangoSearch)](search/README.md) — déclarer une View et la recherche classée par pertinence ; Analyzer par champ, `?lang=`.
 - [Comprendre ArangoSearch](../getting-started/arangosearch.md) — l'introduction aux concepts (Analyzers, Views, `SEARCH`, scoring).
 - [Client ArangoSearch](../clients/arangosearch.md) — l'API bas-niveau du client (Views, links, cycle de vie).
 - [Fonctions ArangoSearch AQL](../aql/aql-functions-search.md) — `BM25()`, `PHRASE()`, `TOKENS()`, etc.

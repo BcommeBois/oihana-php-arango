@@ -64,7 +64,7 @@ AQL::SEARCHABLE =>
 ] ,
 ```
 
-The gated field is swept only when the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller, consulted by `isAuthorized()`) grants a subject — exactly like the [projection gating](edges-joins-projection.md) (`Field::REQUIRES`) and the [View search](search-views.md#search-permissions). With no authorizer the layer is disabled (fail-open). **If every searchable field is denied**, the search returns **nothing** (`FILTER false`) — it is never silently dropped (which would return everything).
+The gated field is swept only when the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller, consulted by `isAuthorized()`) grants a subject — exactly like the [projection gating](edges-joins-projection.md) (`Field::REQUIRES`) and the [View search](search/per-field-options.md#search-permissions). With no authorizer the layer is disabled (fail-open). **If every searchable field is denied**, the search returns **nothing** (`FILTER false`) — it is never silently dropped (which would return everything).
 
 ## Edge cases
 
@@ -93,7 +93,7 @@ See [Search & filtering](search-and-filtering.md) for the full comparison table.
 
 `?search` is a **multi-field `LIKE`**: no relevance/scoring, no tokenization, no stemming or accent-insensitivity, no index-optimized prefix search. This is deliberate — it is the "good enough" everyday search.
 
-For **real full-text** (analyzers, `BM25`/`TFIDF` scoring, tokenization, fuzzy), declare an **ArangoSearch View on the model** (the `AQL::VIEW` block): the same `?search=` parameter then switches to an index-accelerated, relevance-ranked search — see [View search (ArangoSearch)](search-views.md). The two are complementary: `?search` over `searchable` for a simple search bar, the View declaration for a full-blown search engine — with no URL change between them.
+For **real full-text** (analyzers, `BM25`/`TFIDF` scoring, tokenization, fuzzy), declare an **ArangoSearch View on the model** (the `AQL::VIEW` block): the same `?search=` parameter then switches to an index-accelerated, relevance-ranked search — see [View search (ArangoSearch)](search/README.md). The two are complementary: `?search` over `searchable` for a simple search bar, the View declaration for a full-blown search engine — with no URL change between them.
 
 ## See also
 

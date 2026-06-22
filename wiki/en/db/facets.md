@@ -467,7 +467,7 @@ GET /articles?facetCounts=category,keywords
 
 - Dimensions are keys of the already-declared `Arango::FACETS` (the filterable facets become the counted facets); an unknown key is ignored.
 - v1 supports `Facet::FIELD` (scalar field) and `Facet::IN` (array membership, unwound); other types are skipped.
-- Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list). With an active [View search](search-views.md), every counting sub-query iterates the View with the **same `SEARCH`** as the list, so the buckets reflect exactly the displayed set.
+- Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list). With an active [View search](search/README.md), every counting sub-query iterates the View with the **same `SEARCH`** as the list, so the buckets reflect exactly the displayed set.
 
 Buckets are returned under the `facets` key of the standard success envelope,
 next to `total`, **without changing** the document list:
