@@ -16,8 +16,9 @@ use oihana\reflect\traits\ConstantsTrait ;
  *   that frame every analyzer payload regardless of its type,
  * - **Type-specific properties** (`locale`, `case`, `accent`,
  *   `stemming`, `stopwords`, `stopwordsPath`, `edgeNgram`, `min`,
- *   `max`, `preserveOriginal`) that nest inside the `properties`
- *   wrapper for `text`, `norm` and `stem` analyzers.
+ *   `max`, `preserveOriginal`, `startMarker`, `endMarker`,
+ *   `streamType`) that nest inside the `properties` wrapper for
+ *   `text`, `norm`, `stem` and `ngram` analyzers.
  *
  * @see https://docs.arangodb.com/stable/develop/http-api/analyzers/
  *
@@ -48,20 +49,29 @@ class AnalyzerField
     public const string EDGE_NGRAM = 'edgeNgram' ;
 
     /**
+     * String appended to the end of the input before n-gram emission
+     * (`ngram` only), so end-of-token n-grams can be distinguished.
+     * Lives at the top level of the `ngram` `properties`.
+     */
+    public const string END_MARKER = 'endMarker' ;
+
+    /**
      * List of analyzer feature toggles — entries of {@see AnalyzerFeature}.
      * Top-level field on every analyzer payload.
      */
     public const string FEATURES = 'features' ;
 
     /**
-     * Upper bound of the edge n-gram window (inclusive). Lives under
-     * the {@see self::EDGE_NGRAM} wrapper.
+     * Upper bound of the n-gram window (inclusive). Lives under the
+     * {@see self::EDGE_NGRAM} wrapper for a `text` analyzer, or at the
+     * top level of the `properties` for an `ngram` analyzer.
      */
     public const string MAX = 'max' ;
 
     /**
-     * Lower bound of the edge n-gram window (inclusive). Lives under
-     * the {@see self::EDGE_NGRAM} wrapper.
+     * Lower bound of the n-gram window (inclusive). Lives under the
+     * {@see self::EDGE_NGRAM} wrapper for a `text` analyzer, or at the
+     * top level of the `properties` for an `ngram` analyzer.
      */
     public const string MIN = 'min' ;
 
@@ -79,9 +89,10 @@ class AnalyzerField
     public const string NAME = 'name' ;
 
     /**
-     * Whether the edge n-gram emitter should also keep the original
+     * Whether the n-gram emitter should also keep the original
      * (un-trimmed) token in the output stream. Lives under the
-     * {@see self::EDGE_NGRAM} wrapper.
+     * {@see self::EDGE_NGRAM} wrapper for a `text` analyzer, or at the
+     * top level of the `properties` for an `ngram` analyzer.
      */
     public const string PRESERVE_ORIGINAL = 'preserveOriginal' ;
 
@@ -91,6 +102,13 @@ class AnalyzerField
      * {@see AnalyzerType::IDENTITY} analyzer.
      */
     public const string PROPERTIES = 'properties' ;
+
+    /**
+     * String prepended to the start of the input before n-gram
+     * emission (`ngram` only), so start-of-token n-grams can be
+     * distinguished. Lives at the top level of the `ngram` `properties`.
+     */
+    public const string START_MARKER = 'startMarker' ;
 
     /**
      * List of stopwords to drop from the token stream (`text` only).
@@ -108,6 +126,13 @@ class AnalyzerField
      * stemming on the tokens it emits.
      */
     public const string STEMMING = 'stemming' ;
+
+    /**
+     * Input encoding the `ngram` analyzer operates on — `"binary"`
+     * (byte-wise, the server default) or `"utf8"` (codepoint-wise).
+     * Lives at the top level of the `ngram` `properties`.
+     */
+    public const string STREAM_TYPE = 'streamType' ;
 
     /**
      * Wrapper field carrying the list of analyzers in the response

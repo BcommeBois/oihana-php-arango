@@ -35,6 +35,9 @@ class AnalyzerFieldTest extends TestCase
         $this->assertSame( 'min'              , AnalyzerField::MIN               ) ;
         $this->assertSame( 'max'              , AnalyzerField::MAX               ) ;
         $this->assertSame( 'preserveOriginal' , AnalyzerField::PRESERVE_ORIGINAL ) ;
+        $this->assertSame( 'startMarker'      , AnalyzerField::START_MARKER      ) ;
+        $this->assertSame( 'endMarker'        , AnalyzerField::END_MARKER        ) ;
+        $this->assertSame( 'streamType'       , AnalyzerField::STREAM_TYPE       ) ;
     }
 
     public function testFieldsAreUnique() :void

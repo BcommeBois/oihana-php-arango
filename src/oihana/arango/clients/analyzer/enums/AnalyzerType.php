@@ -9,11 +9,12 @@ use oihana\reflect\traits\ConstantsTrait ;
  * of every payload sent to `POST /_api/analyzer` and returned by
  * `GET /_api/analyzer/{name}`.
  *
- * Only the V1 must-have set is exposed today — the additional types
- * shipped by arangojs (`ngram`, `pipeline`, `aql`, `classification`,
- * `nearest_neighbors`, `geo_json`, `geo_point`, `geo_s2`,
- * `segmentation`, `collation`, `minhash`, `delimiter`,
- * `multi_delimiter`, `stopwords`) are deferred to a V2 follow-up.
+ * The exposed set covers the V1 must-have analyzers plus `ngram`
+ * (substring / autocomplete indexing). The remaining types shipped by
+ * arangojs (`pipeline`, `aql`, `classification`, `nearest_neighbors`,
+ * `geo_json`, `geo_point`, `geo_s2`, `segmentation`, `collation`,
+ * `minhash`, `delimiter`, `multi_delimiter`, `stopwords`) are deferred
+ * to a later follow-up.
  *
  * @see https://docs.arangodb.com/stable/index-and-search/analyzers/#analyzer-types
  *
@@ -32,6 +33,15 @@ class AnalyzerType
      * normalisation.
      */
     public const string IDENTITY = 'identity' ;
+
+    /**
+     * N-gram analyzer — emits the substrings (n-grams) of its input
+     * between a `min` and `max` length. The building block of
+     * substring / "as-you-type" autocomplete search, typically paired
+     * with a `text` analyzer on the same field (see
+     * {@see \oihana\arango\clients\analyzer\NgramAnalyzer}).
+     */
+    public const string NGRAM = 'ngram' ;
 
     /**
      * Locale-aware normaliser. Lower-cases / upper-cases the input
