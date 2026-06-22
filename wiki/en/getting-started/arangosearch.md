@@ -55,7 +55,7 @@ Under the hood it is an **inverted index**: token → documents (the opposite of
 
 ### The scorers — relevance
 
-`BM25(doc)` (recommended) and `TFIDF(doc)` give every match a **score** (term frequency, rarity, text length, boosts). `SORT BM25(doc) DESC` puts the best matches first — the piece with **no equivalent** in a `LIKE` world.
+`BM25(doc)` (recommended) and `TFIDF(doc)` give every match a **score** (term frequency, rarity, text length, boosts). `SORT BM25(doc) DESC` puts the best matches first — the piece with **no equivalent** in a `LIKE` world. **BM25 is the modern standard**: it refines TF-IDF by *saturating* repetition (a word repeated 100 times is not worth 100×) and by correcting for text length. Keep it by default — `TFIDF` is exposed only for completeness.
 
 ```aql
 FOR doc IN placesView

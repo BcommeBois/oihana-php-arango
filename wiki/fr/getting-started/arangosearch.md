@@ -55,7 +55,7 @@ Sous le capot, c'est un **index inversé** : jeton → documents (l'inverse d'un
 
 ### Les scorers — la pertinence
 
-`BM25(doc)` (recommandé) et `TFIDF(doc)` donnent à chaque match un **score** (fréquence du terme, rareté, longueur du texte, boosts). `SORT BM25(doc) DESC` met les meilleurs résultats d'abord — la pièce **sans équivalent** dans un monde `LIKE`.
+`BM25(doc)` (recommandé) et `TFIDF(doc)` donnent à chaque match un **score** (fréquence du terme, rareté, longueur du texte, boosts). `SORT BM25(doc) DESC` met les meilleurs résultats d'abord — la pièce **sans équivalent** dans un monde `LIKE`. **BM25 est le standard moderne** : il affine TF-IDF en faisant *saturer* la répétition (un mot répété 100 fois ne vaut pas 100×) et en corrigeant la longueur du texte. Gardez-le par défaut — `TFIDF` n'est exposé que par complétude.
 
 ```aql
 FOR doc IN placesView
