@@ -418,14 +418,14 @@ Le contrat est strict : **seules les valeurs liées (`@bind`) sont sous contrôl
 
 ## Compteurs de facettes `?facetCounts=`
 
-Les facettes ci-dessus **filtrent** la liste. Pour afficher, à côté de la liste, le **nombre de documents par valeur** de chaque facette (la barre latérale « Catégorie : Cuisine (42), Voyage (17) »), on demande des **compteurs** :
+Les facettes ci-dessus **filtrent** la liste. Pour afficher, à côté de la liste, le **nombre de documents par valeur** de chaque facette (la barre latérale « Catégorie : Cuisine (42), Voyage (17) »), on demande des **compteurs**. Un compteur ne **restreint jamais** la liste — il dénombre sur ce que la liste affiche déjà, donc il n'entre jamais en conflit avec `?filter=` / `?facets=` (il en *hérite* les filtres) :
 
 ```
 GET /articles?facetCounts=category,keywords
 ```
 
 - Les dimensions sont des **clés de `Arango::FACETS`** déjà déclarées (les facettes filtrables deviennent les facettes comptées) ; une clé inconnue est ignorée.
-- v1 supporte les types `Facet::FIELD` (champ scalaire) et `Facet::IN` (appartenance à un tableau, dépliée) ; les autres types sont ignorés.
+- v1 supporte les types `Facet::FIELD` (champ scalaire) et `Facet::IN` (appartenance à un tableau, dépliée), plus les **sous-champs de tableaux d'objets via `[*]`** (ex. `offers[*].priceCurrency`, voir plus bas) ; les autres types sont ignorés.
 - Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste). Avec une [recherche View](search/README.md) active, chaque sous-requête de comptage itère la View avec le **même `SEARCH`** que la liste, donc les buckets reflètent exactement l'ensemble affiché.
 
 Les buckets sont renvoyés sous la clé `facets` de l'enveloppe de succès standard,
@@ -451,6 +451,52 @@ LET category = (FOR doc IN @@articles FILTER <mêmes filtres> COLLECT value = do
 LET keywords = (FOR doc IN @@articles FILTER <mêmes filtres> FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN { value, count })
 RETURN { category, keywords }
 ```
+
+### Compter un sous-champ d'un tableau d'objets (`[*]`)
+
+Le côté comptage atteint les **mêmes chemins** que les côtés [filtre](filter.md) et
+[recherche](search/README.md) acceptent déjà. Un `Facet::PROPERTY` portant le
+marqueur d'expansion `[*]` (ex. `offers[*].priceCurrency`) compte un **sous-champ
+d'un tableau d'objets embarqué** : le tableau est déplié et le sous-champ projeté,
+de sorte que **chaque élément compte pour son propre bucket**. C'est de la pure
+parité de notation — cela n'ajoute aucun pouvoir de restriction et ne **couple
+pas** les compteurs de facettes à `?filter=`.
+
+Soit un produit avec un tableau `offers` embarqué :
+
+```json
+{ "_key": "prod-1", "category": "outillage",
+  "offers": [ { "priceCurrency": "EUR" }, { "priceCurrency": "USD" } ] }
+```
+
+On déclare la facette comptable, pointant sur le sous-champ du tableau :
+
+```php
+Arango::FACETS => [
+    'currency' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => 'offers[*].priceCurrency' ] ,
+]
+```
+```
+GET /products?filter={"category":"outillage"}&facetCounts=currency
+```
+
+La sous-requête de comptage déplie le tableau et projette le sous-champ (et hérite
+toujours du filtre de la liste) :
+
+```aql
+LET currency = (FOR doc IN @@products FILTER doc.category == @0
+                FOR item IN doc.offers
+                COLLECT value = item.priceCurrency WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+```
+```json
+"facets": { "currency": [ {"value":"EUR","count":120}, {"value":"USD","count":45} ] }
+```
+
+- Le marqueur `[*]` est le signal : il **prime** sur le type `FIELD` / `IN` déclaré.
+- **Un seul** niveau de tableau est supporté ; les expansions plus profondes (`a[*].b[*].c`) sont ignorées.
+- Le conteneur et le sous-champ sont gardés par [`assertAttributeName`](helpers.md#garde-anti-injection--isattributename--assertattributename) : un chemin dangereux fait échouer la facette, sans jamais atteindre l'AQL.
+- `offers[*]` sans sous-champ compte l'élément lui-même (comme une facette `IN` simple).
 
 > C'est le bon outil quand on veut **plusieurs ventilations indépendantes** dans une réponse. Pour transformer la liste elle-même en **une** agrégation, voir le [Regroupement `?groupBy=` / `?group=`](grouping.md).
 

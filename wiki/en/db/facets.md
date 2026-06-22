@@ -459,14 +459,16 @@ The contract is strict: **only bound values (`@bind`) are under user control**.
 
 The facets above **filter** the list. To show, alongside the list, the **number
 of documents per value** of each facet (the sidebar "Category: Cooking (42),
-Travel (17)"), request **counts**:
+Travel (17)"), request **counts**. Counts **never restrict** the list — they
+tally over whatever the list already shows, so they never conflict with
+`?filter=` / `?facets=` (they *inherit* those filters):
 
 ```
 GET /articles?facetCounts=category,keywords
 ```
 
 - Dimensions are keys of the already-declared `Arango::FACETS` (the filterable facets become the counted facets); an unknown key is ignored.
-- v1 supports `Facet::FIELD` (scalar field) and `Facet::IN` (array membership, unwound); other types are skipped.
+- v1 supports `Facet::FIELD` (scalar field) and `Facet::IN` (array membership, unwound), plus **object-array sub-fields via `[*]`** (e.g. `offers[*].priceCurrency`, see below); other types are skipped.
 - Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list). With an active [View search](search/README.md), every counting sub-query iterates the View with the **same `SEARCH`** as the list, so the buckets reflect exactly the displayed set.
 
 Buckets are returned under the `facets` key of the standard success envelope,
@@ -492,6 +494,52 @@ LET category = (FOR doc IN @@articles FILTER <same filters> COLLECT value = doc.
 LET keywords = (FOR doc IN @@articles FILTER <same filters> FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN { value, count })
 RETURN { category, keywords }
 ```
+
+### Counting an object-array sub-field (`[*]`)
+
+The count side reaches the **same paths** the [filter](filter.md) and
+[search](search/README.md) sides already accept. A `Facet::PROPERTY` carrying the
+`[*]` array-expansion marker (e.g. `offers[*].priceCurrency`) counts a **sub-field
+of an embedded array of objects**: the array is unwound and the sub-field
+projected, so **each element is counted as its own bucket**. This is pure
+notation parity — it adds no new restricting power and does **not** couple facet
+counts to `?filter=`.
+
+Take a product with an embedded `offers` array:
+
+```json
+{ "_key": "prod-1", "category": "tools",
+  "offers": [ { "priceCurrency": "EUR" }, { "priceCurrency": "USD" } ] }
+```
+
+Declare the counted facet, pointing at the array sub-field:
+
+```php
+Arango::FACETS => [
+    'currency' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => 'offers[*].priceCurrency' ] ,
+]
+```
+```
+GET /products?filter={"category":"tools"}&facetCounts=currency
+```
+
+The count sub-query unwinds the array and projects the sub-field (and still
+inherits the list filter):
+
+```aql
+LET currency = (FOR doc IN @@products FILTER doc.category == @0
+                FOR item IN doc.offers
+                COLLECT value = item.priceCurrency WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+```
+```json
+"facets": { "currency": [ {"value":"EUR","count":120}, {"value":"USD","count":45} ] }
+```
+
+- The `[*]` marker is the signal: it **overrides** the declared `FIELD` / `IN` type.
+- **One** array hop is supported; deeper expansions (`a[*].b[*].c`) are skipped.
+- The container and sub-field are guarded by [`assertAttributeName`](helpers.md#injection-guard--isattributename--assertattributename): a dangerous path fails the facet, never reaching the AQL.
+- `offers[*]` with no sub-field counts the element itself (like a plain `IN` facet).
 
 > This is the right tool for **several independent breakdowns** in one response.
 > To turn the list itself into **one** aggregation, see [Grouping `?groupBy=` / `?group=`](grouping.md).
