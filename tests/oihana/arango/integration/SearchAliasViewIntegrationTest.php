@@ -14,9 +14,9 @@ use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\options\views\SearchAliasView;
 use oihana\arango\enums\Arango;
+use oihana\arango\db\enums\AQL;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Search;
-use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\search\FederatedSearch;
 use oihana\arango\search\enums\FederatedSearchParam;
 
@@ -339,16 +339,24 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
 
         $this->waitForFederatedSearch( $engine , 'org-shared' , 4 ) ;
 
-        // routing is observable through the keys each model was asked to rebuild :
-        // o1=Customer, o2=Provider, o3=Subsidiary, and o4=[Provider,Customer] which
-        // follows the map order (Customer first) → the customers model.
-        sort( $customers->requestedKeys ) ;
-        sort( $providers->requestedKeys ) ;
-        sort( $subsidiaries->requestedKeys ) ;
+        sort( $customers->requestedKeys )    ; sort( $customers->returnedKeys )    ;
+        sort( $providers->requestedKeys )    ; sort( $providers->returnedKeys )    ;
+        sort( $subsidiaries->requestedKeys ) ; sort( $subsidiaries->returnedKeys ) ;
 
+        // routing : each model was asked only for its type's keys — o1=Customer,
+        // o2=Provider, o3=Subsidiary, and o4=[Provider,Customer] which follows the
+        // map order (Customer first) → the customers model.
         $this->assertSame( [ 'o1' , 'o4' ] , $customers->requestedKeys ) ;
         $this->assertSame( [ 'o2' ] , $providers->requestedKeys ) ;
         $this->assertSame( [ 'o3' ] , $subsidiaries->requestedKeys ) ;
+
+        // restriction : list() returned ONLY the requested keys on a real server —
+        // the trusted internal condition applies even though `_key` is not a
+        // whitelisted public filter (before the fix, each model returned all 4).
+        $this->assertSame( $customers->requestedKeys , $customers->returnedKeys ) ;
+        $this->assertSame( $providers->requestedKeys , $providers->returnedKeys ) ;
+        $this->assertSame( $subsidiaries->requestedKeys , $subsidiaries->returnedKeys ) ;
+
         $this->assertSame( 4 , $engine->foundRows() ) ;
     }
 
@@ -429,14 +437,17 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
 
 /**
  * A real {@see Documents} model (it still queries the live database through its
- * parent) that records the `_key` set it was asked to rebuild, so a federated
- * search can assert which keys were routed to which model — the observable signal
- * of type routing, independent of how the model projects the documents.
+ * parent) that records both the `_key` set it was **asked** to rebuild (the
+ * routing signal) and the `_key` set it actually **returned** (the restriction
+ * signal — proving the trusted internal condition narrows the query).
  */
 final class KeyCapturingModel extends Documents
 {
-    /** @var array<int, string> The keys of the last `list()` filter. */
+    /** @var array<int, string> The keys requested by the last `list()` (the rebuild condition's bind). */
     public array $requestedKeys = [] ;
+
+    /** @var array<int, string> The keys the last `list()` actually returned. */
+    public array $returnedKeys = [] ;
 
     /**
      * @param array<string, mixed> $init
@@ -444,10 +455,14 @@ final class KeyCapturingModel extends Documents
      */
     public function list( array $init = [] ) : array
     {
-        $value = ( $init[ Arango::FILTER ] ?? [] )[ FilterParam::VAL ] ?? [] ;
+        $binds = $init[ AQL::BINDS ] ?? [] ;
 
-        $this->requestedKeys = is_array( $value ) ? $value : [] ;
+        $this->requestedKeys = $binds === [] ? [] : array_values( $binds )[ 0 ] ;
 
-        return parent::list( $init ) ;
+        $documents = parent::list( $init ) ;
+
+        $this->returnedKeys = array_map( static fn( $document ) => is_array( $document ) ? $document[ '_key' ] : $document->_key , $documents ) ;
+
+        return $documents ;
     }
 }

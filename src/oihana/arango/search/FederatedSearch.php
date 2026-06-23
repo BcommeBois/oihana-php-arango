@@ -17,8 +17,6 @@ use oihana\arango\enums\Arango ;
 use oihana\arango\enums\Field ;
 use oihana\arango\models\Documents ;
 use oihana\arango\models\enums\Search ;
-use oihana\arango\models\enums\filters\FilterComparator ;
-use oihana\arango\models\enums\filters\FilterParam ;
 use oihana\arango\search\enums\FederatedSearchParam ;
 
 use oihana\controllers\enums\Skin ;
@@ -382,10 +380,20 @@ class FederatedSearch
                     continue ;
                 }
 
+                // Restrict to the matched keys through a trusted internal condition
+                // (AQL::CONDITIONS), not the public ?filter= channel: the latter only
+                // applies to a model's whitelisted filterable fields, so a `_key`
+                // filter is silently dropped unless the model declares it — and the
+                // model would then rebuild its whole collection. The internal
+                // condition bypasses that whitelist and always restricts.
+                $listBinds = [] ;
+                $keysVar   = aqlBind( $modelKeys , $listBinds ) ;
+
                 $documents = $model->list
                 ([
-                    Arango::FILTER => [ FilterParam::KEY => Schema::_KEY , FilterParam::OP => FilterComparator::IN , FilterParam::VAL => $modelKeys ] ,
-                    Arango::SKIN   => $skin ,
+                    AQL::CONDITIONS => [ compile( [ key( Schema::_KEY , AQL::DOC ) , Comparator::IN , $keysVar ] ) ] ,
+                    AQL::BINDS      => $listBinds ,
+                    Arango::SKIN    => $skin ,
                 ]) ;
 
                 foreach ( $documents as $document )

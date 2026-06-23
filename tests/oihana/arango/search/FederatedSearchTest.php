@@ -7,6 +7,7 @@ use DI\Container ;
 use oihana\arango\clients\Database ;
 use oihana\arango\clients\cursor\Cursor ;
 use oihana\arango\db\ArangoDB ;
+use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Arango ;
 use oihana\arango\models\Documents ;
 use oihana\arango\models\enums\Search ;
@@ -316,8 +317,8 @@ final class FederatedSearchTest extends TestCase
         ] , $results ) ;
 
         // customers got o1 + o3 (o3 by map-order priority), providers got o2
-        $this->assertSame( [ 'o1' , 'o3' ] , $customers->captured[ Arango::FILTER ][ 'val' ] ) ;
-        $this->assertSame( [ 'o2' ] , $providers->captured[ Arango::FILTER ][ 'val' ] ) ;
+        $this->assertSame( [ 'o1' , 'o3' ] , $this->requestedKeys( $customers ) ) ;
+        $this->assertSame( [ 'o2' ] , $this->requestedKeys( $providers ) ) ;
 
         // the lightweight type lookup shape
         $this->assertStringContainsString( 'FOR doc IN @@' , $typeAql ) ;
@@ -350,7 +351,7 @@ final class FederatedSearchTest extends TestCase
         ]) ;
 
         $this->assertSame( [ 'o1' , 'o2' ] , array_map( static fn( $r ) => $r[ 'document' ][ '_key' ] , $results ) ) ;
-        $this->assertSame( [ 'o2' ] , $generic->captured[ Arango::FILTER ][ 'val' ] ) ; // routed to the fallback model
+        $this->assertSame( [ 'o2' ] , $this->requestedKeys( $generic ) ) ; // routed to the fallback model
     }
 
     public function testRebuildDropsAnUnmappedTypeWithoutAFallback() :void
@@ -396,7 +397,7 @@ final class FederatedSearchTest extends TestCase
         ]) ;
 
         $this->assertSame( [ 'o1' , 'o2' ] , array_map( static fn( $r ) => $r[ 'document' ][ '_key' ] , $results ) ) ;
-        $this->assertSame( [ 'o1' , 'o2' ] , $generic->captured[ Arango::FILTER ][ 'val' ] ) ;
+        $this->assertSame( [ 'o1' , 'o2' ] , $this->requestedKeys( $generic ) ) ;
     }
 
     public function testSearchableIgnoresANonArrayDeclaration() :void
@@ -469,6 +470,20 @@ final class FederatedSearchTest extends TestCase
         $container->method( 'has' )->willReturnCallback( static fn( $id ) => isset( $services[ $id ] ) ) ;
         $container->method( 'get' )->willReturnCallback( static fn( $id ) => $services[ $id ] ?? null ) ;
         return $container ;
+    }
+
+    /**
+     * The keys a model was asked to rebuild — read from the trusted internal
+     * condition's single `AQL::BINDS` value (the rebuild restricts through
+     * `AQL::CONDITIONS`, not the whitelisted `?filter=` channel).
+     *
+     * @return array<int, string>
+     */
+    private function requestedKeys( FakeFederatedModel $model ) :array
+    {
+        $binds = $model->captured[ AQL::BINDS ] ?? [] ;
+
+        return $binds === [] ? [] : array_values( $binds )[ 0 ] ;
     }
 
     public function testFindRunsAScoredSearchAndReturnsTheRows() :void
@@ -592,10 +607,10 @@ final class FederatedSearchTest extends TestCase
             [ 'collection' => 'customers' , 'score' => 5.2 , 'document' => [ '_key' => 'c2' , 'name' => 'Dupont & Fils' ] ] ,
         ] , $engine->rebuild( $matches ) ) ;
 
-        // one batched list() per collection : a `_key IN [...]` filter + the resolved skin
-        $this->assertSame( [ 'key' => '_key' , 'op' => 'in' , 'val' => [ 'c1' , 'c2' ] ] , $customers->captured[ Arango::FILTER ] ) ;
+        // one batched list() per collection : a `_key IN [...]` restriction + the resolved skin
+        $this->assertSame( [ 'c1' , 'c2' ] , $this->requestedKeys( $customers ) ) ;
         $this->assertSame( Skin::LIST , $customers->captured[ Arango::SKIN ] ) ;
-        $this->assertSame( [ 'p7' ] , $products->captured[ Arango::FILTER ][ 'val' ] ) ;
+        $this->assertSame( [ 'p7' ] , $this->requestedKeys( $products ) ) ;
     }
 
     public function testRebuildSkipsAnUnregisteredCollection() :void
