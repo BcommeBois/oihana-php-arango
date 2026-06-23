@@ -162,7 +162,7 @@ Search::FIELDS =>
 ] ,
 ```
 
-When the request carries an active language (the [`?lang=`](../search.md) parameter, already used for the `TRANSLATE()` projection in `RETURN`), the search aligns to it: only fields whose `Search::LANG` matches — **plus** the locale-agnostic fields (no `LANG`) — take part in the `SEARCH`. Without `?lang=`, every field is searched.
+When the request carries an active language (the [`?lang=`](README.md) parameter, already used for the `TRANSLATE()` projection in `RETURN`), the search aligns to it: only fields whose `Search::LANG` matches — **plus** the locale-agnostic fields (no `LANG`) — take part in the `SEARCH`. Without `?lang=`, every field is searched.
 
 - `?lang=fr` → searches `name` + `intro.fr` (the English side is dropped);
 - `?lang=en` → searches `name` + `intro.en`;

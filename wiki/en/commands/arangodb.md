@@ -789,7 +789,7 @@ Composer shortcut: `composer arango:views` (flags after `--`, e.g. `composer ara
 
 ### Why
 
-The model provisioning ([View search](../db/search/README.md)) is *create-if-missing*: changing the `AQL::VIEW` block does **not** update an existing View — an added field is silently not indexed, a changed Analyzer barely matches anything anymore. `views --diff` detects that drift, `views --sync` repairs it through `updateProperties()`: the View stays queryable while the inverted index rebuilds in the background, and neither the View options (`commitIntervalMsec`, …) nor the links of other collections are touched.
+The model provisioning ([View search](../db/search/overview.md)) is *create-if-missing*: changing the `AQL::VIEW` block does **not** update an existing View — an added field is silently not indexed, a changed Analyzer barely matches anything anymore. `views --diff` detects that drift, `views --sync` repairs it through `updateProperties()`: the View stays queryable while the inverted index rebuilds in the background, and neither the View options (`commitIntervalMsec`, …) nor the links of other collections are touched.
 
 ### Wiring `--diff` / `--sync` in a host project (notice)
 
@@ -797,7 +797,7 @@ The model provisioning ([View search](../db/search/README.md)) is *create-if-mis
 
 1. **Enable the action** — add `ArangoAction::VIEWS` to the `CommandParam::ACTIONS` array of the command's DI definition (see [DI wiring](#di-wiring) above).
 2. **List the models to inspect** — `ArangoCommandParam::MODELS => [ Models::PLACES , Models::PRODUCTS ]`: the **container ids** of the `Documents` definitions, exactly like `Arango::MODEL` on the controller side.
-3. **Declare the View on the model** — every inspected model carries its `AQL::VIEW` block (`Search::NAME` / `Search::ANALYZER` / `Search::FIELDS`, see [View search](../db/search/README.md)).
+3. **Declare the View on the model** — every inspected model carries its `AQL::VIEW` block (`Search::NAME` / `Search::ANALYZER` / `Search::FIELDS`, see [View search](../db/search/overview.md)).
 
 A listed model without an `AQL::VIEW` block is simply reported as "no View declared" and skipped. Each model is queried on **its own** database (`AQL::DATABASE`).
 

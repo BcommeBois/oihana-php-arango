@@ -1,6 +1,6 @@
 # Filtres HTTP `?filter=`
 
-> `?filter=` est l'un des trois leviers de filtrage d'un modèle. Pour la vue d'ensemble (différences et socle commun avec [`?search=`](search.md) et [`?facets=`](facets.md), « quand utiliser quoi »), voir [**Recherche & filtrage**](search-and-filtering.md).
+> `?filter=` est l'un des trois leviers de filtrage d'un modèle. Pour la vue d'ensemble (différences et socle commun avec [`?search=`](search/README.md) et [`?facets=`](facets.md), « quand utiliser quoi »), voir [**Recherche & filtrage**](search-and-filtering.md).
 
 Le framework expose un système de filtrage déclaratif sur les routes `GET` adossées à un modèle [`Documents`](../models.md). Le client envoie son intention sous forme de JSON dans le paramètre URL `?filter=`, le framework la convertit en une clause `FILTER` AQL avec *bind variables*, et l'exécute sur la collection cible.
 

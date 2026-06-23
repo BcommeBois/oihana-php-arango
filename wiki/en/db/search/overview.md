@@ -1,6 +1,6 @@
 # View search (ArangoSearch) — relevance-ranked `?search=`
 
-Declare an **ArangoSearch View** on a `Documents` model (the `AQL::VIEW` block) and the [`?search=`](../search.md) parameter switches, automatically and **without any URL change**, from the simple `LIKE` sweep to an **index-accelerated, relevance-ranked** search: linguistic matching (tokenization, stemming, accents), per-field boosts, exact-phrase bonus, typo tolerance, and a `BM25` score ordering the best matches first.
+Declare an **ArangoSearch View** on a `Documents` model (the `AQL::VIEW` block) and the [`?search=`](README.md) parameter switches, automatically and **without any URL change**, from the simple `LIKE` sweep to an **index-accelerated, relevance-ranked** search: linguistic matching (tokenization, stemming, accents), per-field boosts, exact-phrase bonus, typo tolerance, and a `BM25` score ordering the best matches first.
 
 > New to ArangoSearch (Analyzers, Views, scoring)? Start with the [Understanding ArangoSearch](../../getting-started/arangosearch.md) primer.
 
@@ -134,7 +134,7 @@ The JSON envelope is **identical** to a classic list (the standard `status` / `u
 - [Per-field options](per-field-options.md) — configure each field (boost, fuzzy, Analyzer, autocomplete, language, phrase, permissions).
 - [Object-array fields](array-fields.md) — `contactPoints[*].email`.
 - [Analyzers](../analyzers.md) — catalogue and creating a custom Analyzer.
-- [Search `?search=`](../search.md) — the `LIKE` sweep (models without a View).
+- [Search `?search=`](README.md) — the `LIKE` sweep (models without a View).
 - [Search & filtering](../search-and-filtering.md) — overview of the levers.
 - [ArangoSearch functions](../../aql/aql-functions-search.md) — the underlying `SEARCH` helpers.
 - [`aqlScoredSearch()`](../../aql/aql-operations.md) — the standalone scored-query builder.

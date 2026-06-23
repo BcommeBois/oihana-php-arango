@@ -8,7 +8,7 @@ Exemple : l'utilisateur tape « dupont » et voit, mélangés et triés du plus 
 
 Il y a **deux difficultés distinctes** :
 
-1. **Chercher dans plusieurs collections d'un coup** — c'est la mécanique, réglée par le substrat [`search-alias`](../clients/arangosearch.md) : une vue qui agrège **un index inversé par collection** et qu'on interroge en une seule requête.
+1. **Chercher dans plusieurs collections d'un coup** — c'est la mécanique, réglée par le substrat [`search-alias`](../../clients/arangosearch.md) : une vue qui agrège **un index inversé par collection** et qu'on interroge en une seule requête.
 2. **Reconstituer des résultats de formes différentes** — c'est le cœur du sujet. Un client, un produit, un lieu n'ont **pas les mêmes champs**, ni les mêmes données liées, ni les mêmes règles d'affichage ou de permission. On ne peut pas tous les afficher pareil : il faut **reconstruire chaque résultat avec la logique propre à son modèle**.
 
 L'approche, comme un **bibliothécaire** : il vous donne d'abord une **liste classée de cotes** (pas les livres), puis on va chercher chaque livre **à son emplacement**, avec sa fiche complète. En deux temps :
@@ -203,8 +203,8 @@ $authorizer = fn( string $s ) => in_array( $s , [ 'products:list' ] , true ) ;
 
 Le moteur s'utilise tel quel en PHP. Pour le brancher derrière **une URL**, la lib fournit un **triplet read-only** calqué sur celui des documents (`route → contrôleur → modèle`), mais où le contrôleur tient un `FederatedSearch` au lieu d'un modèle de collection unique :
 
-- [`FederatedSearchController`](../../../src/oihana/arango/controllers/FederatedSearchController.php) — la **prise HTTP** : il traduit la requête en `$init`, branche les permissions, appelle le moteur et renvoie le JSON. Une **seule action** read-only, `search()`.
-- [`SearchRoute`](../../../src/oihana/arango/routes/SearchRoute.php) — déclare la route `GET` liée à l'action `search`.
+- [`FederatedSearchController`](../../../../src/oihana/arango/controllers/FederatedSearchController.php) — la **prise HTTP** : il traduit la requête en `$init`, branche les permissions, appelle le moteur et renvoie le JSON. Une **seule action** read-only, `search()`.
+- [`SearchRoute`](../../../../src/oihana/arango/routes/SearchRoute.php) — déclare la route `GET` liée à l'action `search`.
 
 ### La requête
 
@@ -261,6 +261,6 @@ use oihana\routes\Route ;
 
 ## Voir aussi
 
-- [Vues `search-alias`](../clients/arangosearch.md) — le substrat (un index inversé par collection, fédérable).
-- [Recherche View (ArangoSearch)](search/README.md) — la recherche scorée par modèle.
-- [`aqlScoredSearch()`](../aql/aql-operations.md) — le builder de requête scorée réutilisé par le temps 1.
+- [Vues `search-alias`](../../clients/arangosearch.md) — le substrat (un index inversé par collection, fédérable).
+- [Recherche View (ArangoSearch)](overview.md) — la recherche scorée par modèle.
+- [`aqlScoredSearch()`](../../aql/aql-operations.md) — le builder de requête scorée réutilisé par le temps 1.

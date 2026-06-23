@@ -162,7 +162,7 @@ Search::FIELDS =>
 ] ,
 ```
 
-Quand la requête porte une langue active (le paramètre [`?lang=`](../search.md), déjà utilisé pour la projection `TRANSLATE()` au `RETURN`), la recherche s'y aligne : seuls les champs dont `Search::LANG` correspond — **plus** les champs non localisés (sans `LANG`) — participent au `SEARCH`. Sans `?lang=`, tous les champs sont cherchés.
+Quand la requête porte une langue active (le paramètre [`?lang=`](README.md), déjà utilisé pour la projection `TRANSLATE()` au `RETURN`), la recherche s'y aligne : seuls les champs dont `Search::LANG` correspond — **plus** les champs non localisés (sans `LANG`) — participent au `SEARCH`. Sans `?lang=`, tous les champs sont cherchés.
 
 - `?lang=fr` → cherche `name` + `intro.fr` (le côté anglais est écarté) ;
 - `?lang=en` → cherche `name` + `intro.en` ;

@@ -16,7 +16,7 @@ Cette page documente :
 
 ## Facettes vs filtres vs recherche
 
-Les facettes sont l'un des trois leviers de filtrage d'un modèle, aux côtés de [`?filter=`](filter.md) et [`?search=`](search.md). Le **tableau comparatif complet** (cible, syntaxe, déclaration, forces, socle commun, « quand utiliser quoi ») vit dans la page-pont [**Recherche & filtrage**](search-and-filtering.md).
+Les facettes sont l'un des trois leviers de filtrage d'un modèle, aux côtés de [`?filter=`](filter.md) et [`?search=`](search/README.md). Le **tableau comparatif complet** (cible, syntaxe, déclaration, forces, socle commun, « quand utiliser quoi ») vit dans la page-pont [**Recherche & filtrage**](search-and-filtering.md).
 
 En bref : `?facets=` brille pour la **multi-sélection compacte** et les **existentiels/agrégats sur relations** (edge/join) que les filtres n'expriment pas ; il **réutilise le même vocabulaire `op` et le même moteur `alt`** que les filtres. Les trois se combinent dans la même requête (chacun produit une portion du `FILTER`, jointes par `&&`).
 
@@ -426,7 +426,7 @@ GET /articles?facetCounts=category,keywords
 
 - Les dimensions sont des **clés de `Arango::FACETS`** déjà déclarées (les facettes filtrables deviennent les facettes comptées) ; une clé inconnue est ignorée.
 - v1 supporte les types `Facet::FIELD` (champ scalaire) et `Facet::IN` (appartenance à un tableau, dépliée), plus les **sous-champs de tableaux d'objets via `[*]`** (ex. `offers[*].priceCurrency`, voir plus bas) ; les autres types sont ignorés.
-- Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste). Avec une [recherche View](search/README.md) active, chaque sous-requête de comptage itère la View avec le **même `SEARCH`** que la liste, donc les buckets reflètent exactement l'ensemble affiché.
+- Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste). Avec une [recherche View](search/overview.md) active, chaque sous-requête de comptage itère la View avec le **même `SEARCH`** que la liste, donc les buckets reflètent exactement l'ensemble affiché.
 
 Les buckets sont renvoyés sous la clé `facets` de l'enveloppe de succès standard,
 à côté de `total`, **sans modifier** la liste de documents :
@@ -455,7 +455,7 @@ RETURN { category, keywords }
 ### Compter un sous-champ d'un tableau d'objets (`[*]`)
 
 Le côté comptage atteint les **mêmes chemins** que les côtés [filtre](filter.md) et
-[recherche](search/README.md) acceptent déjà. Un `Facet::PROPERTY` portant le
+[recherche](search/overview.md) acceptent déjà. Un `Facet::PROPERTY` portant le
 marqueur d'expansion `[*]` (ex. `offers[*].priceCurrency`) compte un **sous-champ
 d'un tableau d'objets embarqué** : le tableau est déplié et le sous-champ projeté,
 de sorte que **chaque élément compte pour son propre bucket**. C'est de la pure

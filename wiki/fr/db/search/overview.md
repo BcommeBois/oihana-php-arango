@@ -1,6 +1,6 @@
 # Recherche View (ArangoSearch) — `?search=` classé par pertinence
 
-Déclarez une **View ArangoSearch** sur un modèle `Documents` (le bloc `AQL::VIEW`) et le paramètre [`?search=`](../search.md) bascule, automatiquement et **sans aucun changement d'URL**, du simple balayage `LIKE` vers une recherche **accélérée par index et classée par pertinence** : matching linguistique (tokenisation, racinisation, accents), boosts par champ, bonus d'expression exacte, tolérance aux fautes, et un score `BM25` qui classe les meilleurs résultats d'abord.
+Déclarez une **View ArangoSearch** sur un modèle `Documents` (le bloc `AQL::VIEW`) et le paramètre [`?search=`](README.md) bascule, automatiquement et **sans aucun changement d'URL**, du simple balayage `LIKE` vers une recherche **accélérée par index et classée par pertinence** : matching linguistique (tokenisation, racinisation, accents), boosts par champ, bonus d'expression exacte, tolérance aux fautes, et un score `BM25` qui classe les meilleurs résultats d'abord.
 
 > ArangoSearch est nouveau pour vous (Analyzers, Views, scoring) ? Commencez par lire notre page dédiée [Comprendre ArangoSearch](../../getting-started/arangosearch.md).
 
@@ -134,7 +134,7 @@ L'enveloppe JSON est **identique** à une liste classique (l'enveloppe de succè
 - [Options par champ](per-field-options.md) — configurer chaque champ (boost, fuzzy, Analyzer, autocomplétion, langue, phrase, permissions).
 - [Champs de tableaux d'objets](array-fields.md) — `contactPoints[*].email`.
 - [Analyzers](../analyzers.md) — catalogue et création d'un Analyzer maison.
-- [Recherche `?search=`](../search.md) — le balayage `LIKE` (modèles sans View).
+- [Recherche `?search=`](README.md) — le balayage `LIKE` (modèles sans View).
 - [Recherche & filtrage](../search-and-filtering.md) — vue d'ensemble des leviers.
 - [Fonctions ArangoSearch](../../aql/aql-functions-search.md) — les helpers `SEARCH` sous-jacents.
 - [`aqlScoredSearch()`](../../aql/aql-operations.md) — le builder de requête scorée autonome.

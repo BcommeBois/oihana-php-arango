@@ -331,7 +331,7 @@ analyzer is created outside the library (direct `/_api/analyzer` HTTP API or
 
 ## See also
 
-- [View search (ArangoSearch)](search/README.md) — declaring a View and relevance-ranked search; per-field Analyzer, `?lang=`.
+- [View search (ArangoSearch)](search/overview.md) — declaring a View and relevance-ranked search; per-field Analyzer, `?lang=`.
 - [Understanding ArangoSearch](../getting-started/arangosearch.md) — the conceptual introduction (Analyzers, Views, `SEARCH`, scoring).
 - [ArangoSearch client](../clients/arangosearch.md) — the low-level client API (Views, links, lifecycle).
 - [AQL ArangoSearch functions](../aql/aql-functions-search.md) — `BM25()`, `PHRASE()`, `TOKENS()`, etc.

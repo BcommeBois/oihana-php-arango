@@ -1,10 +1,10 @@
 # Understanding ArangoSearch
 
-ArangoSearch is ArangoDB's **built-in search engine** — the equivalent of a small Elasticsearch living inside your database, with no extra server. This page explains the concepts (Analyzer → View → `SEARCH` → scoring), what they make possible, and how every layer of this library maps onto them. It is the recommended starting point before the [recipe](../db/search/README.md) and [reference](../aql/aql-functions-search.md) pages.
+ArangoSearch is ArangoDB's **built-in search engine** — the equivalent of a small Elasticsearch living inside your database, with no extra server. This page explains the concepts (Analyzer → View → `SEARCH` → scoring), what they make possible, and how every layer of this library maps onto them. It is the recommended starting point before the [recipe](../db/search/overview.md) and [reference](../aql/aql-functions-search.md) pages.
 
 ## Why — the four ceilings of `LIKE`
 
-The classic [`?search=`](../db/search.md) sweep (`LIKE '%term%'` over a few fields) is simple and healthy, but it hits four glass ceilings:
+The classic [`?search=`](../db/search/README.md) sweep (`LIKE '%term%'` over a few fields) is simple and healthy, but it hits four glass ceilings:
 
 1. **No relevance.** `LIKE` answers yes or no. If 200 documents contain *wood*, they come back sorted by name — not from best to worst match.
 2. **No tolerance.** `behuard` does not find *Béhuard* (accent), `Behuart` neither (typo).
@@ -71,7 +71,7 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 
 | Need | Ingredients | In this library |
 |---|---|---|
-| Search bar with relevance | `TOKENS` match + `BM25` | [`AQL::VIEW` block](../db/search/README.md), automatic |
+| Search bar with relevance | `TOKENS` match + `BM25` | [`AQL::VIEW` block](../db/search/overview.md), automatic |
 | Exact-phrase priority | `PHRASE` + `BOOST` | `Search::PHRASE => true` (global or per-field) |
 | Typo tolerance | `LEVENSHTEIN_MATCH` | `Search::FUZZY => 1` (global or per-field) |
 | Field weighting | `BOOST` | `Search::FIELDS => ['name' => 3]` |
@@ -95,7 +95,7 @@ One query: accent/case insensitivity, word-based matching, name weighing 3× the
 | Function helpers (`db/functions/search/`) | one PHP helper per ArangoSearch function (`phrase`, `boost`, `bm25`, …) | [ArangoSearch functions](../aql/aql-functions-search.md) |
 | `aqlSearch()` operation | the `SEARCH … OPTIONS { … }` clause with Analyzer wrap | [AQL operations](../aql/aql-operations.md) |
 | `aqlScoredSearch()` builder | the complete relevance-ranked query, standalone | [AQL operations](../aql/aql-operations.md) |
-| Model `AQL::VIEW` block | `?search=` switches to the View, auto-provisioning, `score` sort key, totals & facet counts in sync | [View search](../db/search/README.md) |
+| Model `AQL::VIEW` block | `?search=` switches to the View, auto-provisioning, `score` sort key, totals & facet counts in sync | [View search](../db/search/overview.md) |
 | Views & Analyzers clients | create/update/drop Views, custom Analyzers | [ArangoSearch clients](../clients/arangosearch.md) |
 
 ## Good practices and pitfalls
@@ -116,8 +116,8 @@ Permission-scoped search is now [available](../db/search/per-field-options.md#se
 
 ## See also
 
-- [View search (ArangoSearch)](../db/search/README.md) — the model recipe (`AQL::VIEW`, URLs, JSON responses).
+- [View search (ArangoSearch)](../db/search/overview.md) — the model recipe (`AQL::VIEW`, URLs, JSON responses).
 - [ArangoSearch functions](../aql/aql-functions-search.md) — the helper reference.
 - [ArangoSearch clients](../clients/arangosearch.md) — Views and Analyzers management.
-- [Search `?search=`](../db/search.md) — the simple `LIKE` sweep, still the right tool for small models.
+- [Search `?search=`](../db/search/README.md) — the simple `LIKE` sweep, still the right tool for small models.
 - [Official documentation — ArangoSearch](https://docs.arangodb.com/stable/index-and-search/arangosearch/).

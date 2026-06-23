@@ -337,7 +337,7 @@ puis se référence par son nom dans une View comme n'importe quel autre.
 
 ## Voir aussi
 
-- [Recherche View (ArangoSearch)](search/README.md) — déclarer une View et la recherche classée par pertinence ; Analyzer par champ, `?lang=`.
+- [Recherche View (ArangoSearch)](search/overview.md) — déclarer une View et la recherche classée par pertinence ; Analyzer par champ, `?lang=`.
 - [Comprendre ArangoSearch](../getting-started/arangosearch.md) — l'introduction aux concepts (Analyzers, Views, `SEARCH`, scoring).
 - [Client ArangoSearch](../clients/arangosearch.md) — l'API bas-niveau du client (Views, links, cycle de vie).
 - [Fonctions ArangoSearch AQL](../aql/aql-functions-search.md) — `BM25()`, `PHRASE()`, `TOKENS()`, etc.

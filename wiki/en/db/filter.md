@@ -1,6 +1,6 @@
 # HTTP filters `?filter=`
 
-> `?filter=` is one of a model's three filtering levers. For the overview (differences and shared foundation with [`?search=`](search.md) and [`?facets=`](facets.md), "when to use which"), see [**Search & filtering**](search-and-filtering.md).
+> `?filter=` is one of a model's three filtering levers. For the overview (differences and shared foundation with [`?search=`](search/README.md) and [`?facets=`](facets.md), "when to use which"), see [**Search & filtering**](search-and-filtering.md).
 
 The framework exposes a declarative filtering system on `GET` routes backed by a [`Documents`](../models.md) model. The client sends its intent as JSON in the `?filter=` URL parameter, the framework converts it into a `FILTER` AQL clause with *bind variables*, and executes it on the target collection.
 

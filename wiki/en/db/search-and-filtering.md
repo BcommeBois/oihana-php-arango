@@ -4,7 +4,7 @@ Three URL parameters **narrow** the list returned by a `Documents` model: `?sear
 
 | Parameter | What for | Page |
 |---|---|---|
-| [`?search=`](search.md) | Simple "full-text" search: one term `LIKE`-matched across several declared fields | [search.md](search.md) |
+| [`?search=`](search/README.md) | Simple "full-text" search: one term `LIKE`-matched across several declared fields | [search/README.md](search/README.md) |
 | [`?filter=`](filter.md) | **Precise** field interrogation: rich comparators, AND/OR/NOT | [filter.md](filter.md) |
 | [`?facets=`](facets.md) | Declared **facets**: compact multi-select, existence/aggregate over relations | [facets.md](facets.md) |
 
@@ -120,8 +120,8 @@ Typical combination — the 10 **nearest** museums within 5 km:
 
 ## See also
 
-- [Search `?search=`](search.md) — the multi-field `LIKE` search.
-- [View search (ArangoSearch)](search/README.md) — the relevance-ranked `?search=` (model-declared View).
+- [Search `?search=`](search/README.md) — the multi-field `LIKE` search.
+- [View search (ArangoSearch)](search/overview.md) — the relevance-ranked `?search=` (model-declared View).
 - [Filters `?filter=`](filter.md) — comparators, `alt`, AND/OR/NOT, dates, `between`, `AT LEAST`, `distance`.
 - [Facets `?facets=`](facets.md) — the type catalogue (FIELD/IN/EDGE/JOIN/complex/aggregate).
 - [Internal filtering `AQL::CONDITIONS`](filter-internal.md) — server-only conditions (never exposed to the URL).

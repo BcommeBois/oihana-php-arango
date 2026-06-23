@@ -8,7 +8,7 @@ Example: the user types "dupont" and sees, mixed and ranked from most to least r
 
 There are **two distinct difficulties**:
 
-1. **Searching several collections at once** — the mechanics, solved by the [`search-alias`](../clients/arangosearch.md) substrate: a view aggregating **one inverted index per collection**, queried in a single request.
+1. **Searching several collections at once** — the mechanics, solved by the [`search-alias`](../../clients/arangosearch.md) substrate: a view aggregating **one inverted index per collection**, queried in a single request.
 2. **Rebuilding results of different shapes** — the heart of it. A customer, a product and a place do **not** share the same fields, linked data, display rules or permissions. They cannot all be rendered the same way: each result must be **rebuilt with its own model's logic**.
 
 The approach is the **librarian** one: first you get a **ranked list of call numbers** (not the books), then each book is fetched **at its own shelf**, with its full record. In two stages:
@@ -200,8 +200,8 @@ $authorizer = fn( string $s ) => in_array( $s , [ 'products:list' ] , true ) ;
 
 The engine is usable as-is from PHP. To put it behind **a URL**, the library ships a **read-only triplet** mirroring the documents one (`route → controller → model`), except the controller holds a `FederatedSearch` instead of a single-collection model:
 
-- [`FederatedSearchController`](../../../src/oihana/arango/controllers/FederatedSearchController.php) — the **HTTP plug**: it turns the request into the engine `$init`, wires permissions, runs the engine and renders the JSON. A **single** read-only action, `search()`.
-- [`SearchRoute`](../../../src/oihana/arango/routes/SearchRoute.php) — declares the `GET` route bound to the `search` action.
+- [`FederatedSearchController`](../../../../src/oihana/arango/controllers/FederatedSearchController.php) — the **HTTP plug**: it turns the request into the engine `$init`, wires permissions, runs the engine and renders the JSON. A **single** read-only action, `search()`.
+- [`SearchRoute`](../../../../src/oihana/arango/routes/SearchRoute.php) — declares the `GET` route bound to the `search` action.
 
 ### The request
 
@@ -258,6 +258,6 @@ use oihana\routes\Route ;
 
 ## See also
 
-- [`search-alias` views](../clients/arangosearch.md) — the substrate (one inverted index per collection, federatable).
-- [View search (ArangoSearch)](search/README.md) — the per-model scored search.
-- [`aqlScoredSearch()`](../aql/aql-operations.md) — the scored-query builder reused by stage 1.
+- [`search-alias` views](../../clients/arangosearch.md) — the substrate (one inverted index per collection, federatable).
+- [View search (ArangoSearch)](overview.md) — the per-model scored search.
+- [`aqlScoredSearch()`](../../aql/aql-operations.md) — the scored-query builder reused by stage 1.

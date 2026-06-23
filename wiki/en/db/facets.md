@@ -23,7 +23,7 @@ This page documents:
 
 ## Facets vs filters vs search
 
-Facets are one of a model's three filtering levers, alongside [`?filter=`](filter.md) and [`?search=`](search.md). The **full comparison table** (target, syntax, declaration, strengths, shared foundation, "when to use which") lives in the bridge page [**Search & filtering**](search-and-filtering.md).
+Facets are one of a model's three filtering levers, alongside [`?filter=`](filter.md) and [`?search=`](search/README.md). The **full comparison table** (target, syntax, declaration, strengths, shared foundation, "when to use which") lives in the bridge page [**Search & filtering**](search-and-filtering.md).
 
 In short: `?facets=` shines for **compact multi-select** and for the **relation existentials/aggregates** (edge/join) that filters can't express; it **reuses the same `op` vocabulary and the same `alt` engine** as filters. All three combine in one request (each produces a slice of the `FILTER`, joined with `&&`).
 
@@ -469,7 +469,7 @@ GET /articles?facetCounts=category,keywords
 
 - Dimensions are keys of the already-declared `Arango::FACETS` (the filterable facets become the counted facets); an unknown key is ignored.
 - v1 supports `Facet::FIELD` (scalar field) and `Facet::IN` (array membership, unwound), plus **object-array sub-fields via `[*]`** (e.g. `offers[*].priceCurrency`, see below); other types are skipped.
-- Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list). With an active [View search](search/README.md), every counting sub-query iterates the View with the **same `SEARCH`** as the list, so the buckets reflect exactly the displayed set.
+- Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list). With an active [View search](search/overview.md), every counting sub-query iterates the View with the **same `SEARCH`** as the list, so the buckets reflect exactly the displayed set.
 
 Buckets are returned under the `facets` key of the standard success envelope,
 next to `total`, **without changing** the document list:
@@ -498,7 +498,7 @@ RETURN { category, keywords }
 ### Counting an object-array sub-field (`[*]`)
 
 The count side reaches the **same paths** the [filter](filter.md) and
-[search](search/README.md) sides already accept. A `Facet::PROPERTY` carrying the
+[search](search/overview.md) sides already accept. A `Facet::PROPERTY` carrying the
 `[*]` array-expansion marker (e.g. `offers[*].priceCurrency`) counts a **sub-field
 of an embedded array of objects**: the array is unwound and the sub-field
 projected, so **each element is counted as its own bucket**. This is pure

@@ -227,7 +227,7 @@ $hits = $db->query( aql(
 ## Aller plus loin
 
 - [Comprendre ArangoSearch](../getting-started/arangosearch.md) — l'introduction aux concepts (Analyzers, Views, `SEARCH`, scoring) et la carte étage-par-étage de la bibliothèque.
-- [Recherche View (ArangoSearch)](../db/search/README.md) — déclarer une View sur un modèle `Documents` : `?search=` classé par pertinence avec auto-provisioning.
+- [Recherche View (ArangoSearch)](../db/search/overview.md) — déclarer une View sur un modèle `Documents` : `?search=` classé par pertinence avec auto-provisioning.
 - [Fonctions ArangoSearch](../aql/aql-functions-search.md) — les helpers d'expressions `SEARCH` (`phrase`, `boost`, `bm25`, …).
 - [Requêtes AQL et Cursors](aql.md) — écrire les requêtes `SEARCH` qui consomment vos views.
 - [Indexes](indexes.md) — full-text mono-collection via `InvertedIndex`.

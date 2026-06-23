@@ -19,10 +19,10 @@ If you only need to **issue a query and read JSON**, use the client. If you want
 | 2 | [AQL helpers `db/helpers/`](helpers.md) | Compose AQL text fragments — `aqlValue`, `aqlExpression`, `aqlDocument`, field builders, skin projection helpers. |
 | 3 | [Bind variables `db/binds/`](binds.md) | Safe value injection — `aqlBind`, validation and formatting of placeholders. |
 | 4 | [Search & filtering](search-and-filtering.md) | **Overview** of the 3 levers (`?search` / `?filter` / `?facets`): mental model, comparison table, shared foundation (`op`, `alt`, binds, security), "when to use which". |
-| 5 | [HTTP search `?search=`](search.md) | Multi-field `LIKE` search (case-insensitive), `searchable` declaration, combining, limits (vs ArangoSearch). |
-| 5b | [View search (ArangoSearch)](search/README.md) | The `AQL::VIEW` declaration: `?search=` switches to an index-accelerated, **relevance-ranked** search (boosts, phrase bonus, fuzzy, `score` sort key, auto-provisioned View). |
+| 5 | [HTTP search `?search=`](search/README.md) | Multi-field `LIKE` search (case-insensitive), `searchable` declaration, combining, limits (vs ArangoSearch). |
+| 5b | [View search (ArangoSearch)](search/overview.md) | The `AQL::VIEW` declaration: `?search=` switches to an index-accelerated, **relevance-ranked** search (boosts, phrase bonus, fuzzy, `score` sort key, auto-provisioned View). |
 | 5c | [Analyzers](analyzers.md) | The **text-preparation recipe**: built-in analyzers (`identity`, `text_fr`, …), the 4 buildable types (`Identity`/`Norm`/`Stem`/`TextAnalyzer`), the features (`BM25`/`PHRASE`/highlight), and how to create a custom analyzer the right way. |
-| 5d | [Federated multi-collection search](federated-search.md) | A **single bar** over several collections (`FederatedSearch`): the "find then rebuild" approach, pagination + total, skin, and the **per-collection permission gate** (with examples). |
+| 5d | [Federated multi-collection search](search/federated.md) | A **single bar** over several collections (`FederatedSearch`): the "find then rebuild" approach, pagination + total, skin, and the **per-collection permission gate** (with examples). |
 | 6 | [HTTP filters `?filter=`](filter.md) | `?filter=` URL syntax, comparators, `alt` transformations, chaining, `FilterType::*`. |
 | 7 | [Internal filtering — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Server-only conditions, `FilterType::VIRTUAL`, URL vs internal decision rule. |
 | 8 | [HTTP facets `?facets=`](facets.md) | `?facets=` URL syntax, `Arango::FACETS` / `Facet::TYPE` declaration, type catalogue (FIELD, IN, EDGE, JOIN, *_COMPLEX, *_AGGREGATE), operators, negation, security, **facet counts `?facetCounts=`**. |
