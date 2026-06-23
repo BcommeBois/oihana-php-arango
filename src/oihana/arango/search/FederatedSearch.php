@@ -35,10 +35,15 @@ use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
 use function oihana\arango\db\binds\aqlBind ;
+use function oihana\arango\db\binds\aqlBindCollection ;
 use function oihana\arango\db\functions\documents\merge ;
 use function oihana\arango\db\functions\documents\parseIdentifier ;
 use function oihana\arango\db\functions\strings\tokens ;
 use function oihana\arango\db\helpers\aqlDocument ;
+use function oihana\arango\db\helpers\assertAttributeName ;
+use function oihana\arango\db\operations\aqlFilter ;
+use function oihana\arango\db\operations\aqlFor ;
+use function oihana\arango\db\operations\aqlReturn ;
 use function oihana\arango\db\operations\aqlScoredSearch ;
 use function oihana\arango\models\helpers\isAuthorized ;
 use function oihana\core\strings\compile ;
@@ -123,6 +128,12 @@ class FederatedSearch
      * The default page size of the federated SEARCH when none is supplied.
      */
     public const int DEFAULT_LIMIT = 25 ;
+
+    /**
+     * The RETURN alias under which the discriminator value is read back by the
+     * lightweight type lookup of a composite (polymorphic) collection.
+     */
+    private const string DISCRIMINATOR_ALIAS = 'discriminator' ;
 
     /**
      * The rebuilt-document key carried by each {@see search()} result row.
@@ -343,7 +354,10 @@ class FederatedSearch
             }
         }
 
-        // rebuild each collection through its model, index the documents by key
+        // rebuild each collection through its model(s), index the documents by key.
+        // A direct registry entry uses one model for the whole collection; a
+        // composite (polymorphic) entry routes each key to the model resolved from
+        // its discriminator value — read in one lightweight lookup (approach b).
         $hydrated = [] ;
 
         foreach ( $keysByCollection as $collection => $keys )
@@ -353,26 +367,35 @@ class FederatedSearch
                 continue ; // unregistered or unauthorized collection
             }
 
-            $model = $this->resolveModel( $collection ) ;
+            $spec = $this->models[ $collection ] ; // present : $allowed is a subset of the registry keys
 
-            if ( $model === null )
+            $keysByModelId = is_string( $spec )
+                ? [ $spec => $keys ]                                        // direct
+                : $this->bucketKeysByModel( $collection , $spec , $keys ) ; // composite
+
+            foreach ( $keysByModelId as $modelId => $modelKeys )
             {
-                continue ;
-            }
+                $model = $this->resolveModelInstance( $modelId ) ;
 
-            $documents = $model->list
-            ([
-                Arango::FILTER => [ FilterParam::KEY => Schema::_KEY , FilterParam::OP => FilterComparator::IN , FilterParam::VAL => $keys ] ,
-                Arango::SKIN   => $skin ,
-            ]) ;
-
-            foreach ( $documents as $document )
-            {
-                $documentKey = $this->documentKey( $document ) ;
-
-                if ( $documentKey !== null )
+                if ( $model === null )
                 {
-                    $hydrated[ $collection ][ $documentKey ] = $document ;
+                    continue ;
+                }
+
+                $documents = $model->list
+                ([
+                    Arango::FILTER => [ FilterParam::KEY => Schema::_KEY , FilterParam::OP => FilterComparator::IN , FilterParam::VAL => $modelKeys ] ,
+                    Arango::SKIN   => $skin ,
+                ]) ;
+
+                foreach ( $documents as $document )
+                {
+                    $documentKey = $this->documentKey( $document ) ;
+
+                    if ( $documentKey !== null )
+                    {
+                        $hydrated[ $collection ][ $documentKey ] = $document ;
+                    }
                 }
             }
         }
@@ -687,6 +710,44 @@ class FederatedSearch
     }
 
     /**
+     * Buckets a composite collection's keys by the model resolved from each key's
+     * discriminator value — read in one lightweight lookup
+     * ({@see readDiscriminators()}). A key whose type maps to no model (and no
+     * fallback) is dropped.
+     *
+     * @param string               $collection The polymorphic collection.
+     * @param array<string, mixed> $spec       The normalised composite spec.
+     * @param array<int, string>   $keys       The matched document keys.
+     *
+     * @return array<string, array<int, string>> A `model-service-id => keys` map.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    private function bucketKeysByModel( string $collection , array $spec , array $keys ) : array
+    {
+        $typesByKey = $this->readDiscriminators( $collection , $spec[ FederatedSearchParam::DISCRIMINATOR ] , $keys ) ;
+
+        $buckets = [] ;
+
+        foreach ( $keys as $key )
+        {
+            $modelId = $this->resolveModelId( $spec , $typesByKey[ $key ] ?? null ) ;
+
+            if ( $modelId !== null )
+            {
+                $buckets[ $modelId ][] = $key ;
+            }
+        }
+
+        return $buckets ;
+    }
+
+    /**
      * Normalises a composite (polymorphic) model spec, or null when it can never
      * resolve (no mapping and no fallback). The discriminator field defaults to
      * {@see FederatedSearchParam::DEFAULT_DISCRIMINATOR}; the `type => model-id`
@@ -734,23 +795,64 @@ class FederatedSearch
     }
 
     /**
-     * Resolves the {@see Documents} model that rebuilds a collection. A **direct**
-     * entry resolves to its single model. A **composite** (polymorphic) entry
-     * needs the document's discriminator value and is resolved per hit in
-     * {@see rebuild()}, so it yields null here (no single model without a type).
+     * Reads the discriminator value of each matched key in one lightweight lookup
+     * (`FOR d IN @@collection FILTER d._key IN @keys RETURN { _key, discriminator }`),
+     * keyed by `_key`. Returns an empty map when no database is configured, so the
+     * resolution falls back per the registry spec. The field name is config-trusted
+     * but still guarded by {@see assertAttributeName()} before interpolation.
      *
-     * @param string $collection
+     * @param string             $collection The polymorphic collection.
+     * @param string             $field      The discriminator field name.
+     * @param array<int, string> $keys       The matched document keys.
      *
-     * @return Documents|null
+     * @return array<string, mixed> A `_key => discriminator-value` map.
      *
-     * @throws DependencyException
-     * @throws NotFoundException
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
-    private function resolveModel( string $collection ) : ?Documents
+    private function readDiscriminators( string $collection , string $field , array $keys ) : array
     {
-        $spec = $this->models[ $collection ] ?? null ;
+        $database = $this->arangodb?->database() ;
 
-        return is_string( $spec ) ? $this->resolveModelInstance( $spec ) : null ;
+        if ( $database === null )
+        {
+            return [] ; // no database → no type known ; resolution falls back per spec
+        }
+
+        assertAttributeName( $field ) ; // config-trusted, but guard before interpolating
+
+        $binds   = [] ;
+        $collVar = aqlBindCollection( $collection , $binds ) ;
+        $keysVar = aqlBind( $keys , $binds ) ;
+        $keyPath = key( Schema::_KEY , AQL::DOC ) ;
+
+        $aql = compile(
+        [
+            aqlFor( [ AQL::DOC_REF => AQL::DOC , AQL::IN => $collVar ] ) ,
+            aqlFilter( [ compile( [ $keyPath , Comparator::IN , $keysVar ] ) ] ) ,
+            aqlReturn( aqlDocument(
+                [ Schema::_KEY => $keyPath , self::DISCRIMINATOR_ALIAS => key( $field , AQL::DOC ) ] ,
+                [ AQL::USE_SPACE => true , AQL::RAW_VALUES => [ Schema::_KEY , self::DISCRIMINATOR_ALIAS ] ]
+            ) ) ,
+        ]) ;
+
+        $typesByKey = [] ;
+
+        foreach ( $database->query( $aql , $binds )->all() as $row )
+        {
+            $documentKey = $row[ Schema::_KEY ] ?? null ;
+
+            if ( is_string( $documentKey ) )
+            {
+                $typesByKey[ $documentKey ] = $row[ self::DISCRIMINATOR_ALIAS ] ?? null ;
+            }
+        }
+
+        return $typesByKey ;
     }
 
     /**

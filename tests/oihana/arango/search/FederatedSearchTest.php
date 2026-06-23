@@ -250,6 +250,155 @@ final class FederatedSearchTest extends TestCase
         $this->assertNull( $this->resolveModelId( $this->make() , $spec , 'Unknown' ) ) ;
     }
 
+    /**
+     * A composite-registry engine: a container resolving each model-service-id to
+     * a {@see FakeFederatedModel}, and a database double whose `query()` returns
+     * `$typeRows` (the discriminator lookup) and captures the issued AQL.
+     *
+     * @param array<string, mixed>             $models
+     * @param array<int, array<string, mixed>> $typeRows
+     * @param array<string, Documents>         $services
+     * @param string|null                      $typeAql Captured by reference.
+     *
+     * @return FederatedSearch
+     */
+    private function compositeEngine( array $models , array $typeRows , array $services , ?string &$typeAql = null ) :FederatedSearch
+    {
+        $cursor = $this->createMock( Cursor::class ) ;
+        $cursor->method( 'all' )->willReturn( $typeRows ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'query' )->willReturnCallback( function( $aql , $binds = [] ) use ( &$typeAql , $cursor )
+        {
+            $typeAql = $aql ;
+            return $cursor ;
+        } ) ;
+
+        $arango = $this->createMock( ArangoDB::class ) ;
+        $arango->method( 'database' )->willReturn( $database ) ;
+
+        return new FederatedSearch( $this->containerWith( $services ) ,
+        [
+            FederatedSearchParam::MODELS => $models ,
+            Arango::DATABASE             => $arango ,
+        ]) ;
+    }
+
+    public function testRebuildRoutesAPolymorphicCollectionByType() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'o1' , 'name' => 'Acme' ] , [ '_key' => 'o3' , 'name' => 'Multi' ] ] ) ;
+        $providers = $this->modelReturning( [ [ '_key' => 'o2' , 'name' => 'Globex' ] ] ) ;
+
+        $engine = $this->compositeEngine(
+            [ 'organizations' => [ FederatedSearchParam::MAP => [ 'Customer' => 'model.customers' , 'Provider' => 'model.providers' ] ] ] ,
+            [
+                [ '_key' => 'o1' , 'discriminator' => 'Customer' ] ,
+                [ '_key' => 'o2' , 'discriminator' => 'Provider' ] ,
+                [ '_key' => 'o3' , 'discriminator' => [ 'Provider' , 'Customer' ] ] , // multi-typed → map order (Customer) wins
+            ] ,
+            [ 'model.customers' => $customers , 'model.providers' => $providers ] ,
+            $typeAql
+        ) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'organizations' , 'key' => 'o1' , 'score' => 9.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o2' , 'score' => 8.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o3' , 'score' => 7.0 ] ,
+        ]) ;
+
+        // each routed to its type's model, kept in find (score) order
+        $this->assertSame(
+        [
+            [ 'collection' => 'organizations' , 'score' => 9.0 , 'document' => [ '_key' => 'o1' , 'name' => 'Acme'   ] ] ,
+            [ 'collection' => 'organizations' , 'score' => 8.0 , 'document' => [ '_key' => 'o2' , 'name' => 'Globex' ] ] ,
+            [ 'collection' => 'organizations' , 'score' => 7.0 , 'document' => [ '_key' => 'o3' , 'name' => 'Multi'  ] ] ,
+        ] , $results ) ;
+
+        // customers got o1 + o3 (o3 by map-order priority), providers got o2
+        $this->assertSame( [ 'o1' , 'o3' ] , $customers->captured[ Arango::FILTER ][ 'val' ] ) ;
+        $this->assertSame( [ 'o2' ] , $providers->captured[ Arango::FILTER ][ 'val' ] ) ;
+
+        // the lightweight type lookup shape
+        $this->assertStringContainsString( 'FOR doc IN @@' , $typeAql ) ;
+        $this->assertStringContainsString( 'FILTER doc._key IN @' , $typeAql ) ;
+        $this->assertStringContainsString( 'doc.additionalType' , $typeAql ) ;
+    }
+
+    public function testRebuildUsesTheFallbackModelForAnUnmappedType() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'o1' , 'name' => 'Acme'  ] ] ) ;
+        $generic   = $this->modelReturning( [ [ '_key' => 'o2' , 'name' => 'Other' ] ] ) ;
+
+        $engine = $this->compositeEngine(
+            [ 'organizations' =>
+            [
+                FederatedSearchParam::MAP      => [ 'Customer' => 'model.customers' ] ,
+                FederatedSearchParam::FALLBACK => 'model.generic' ,
+            ] ] ,
+            [
+                [ '_key' => 'o1' , 'discriminator' => 'Customer' ] ,
+                [ '_key' => 'o2' , 'discriminator' => 'Unknown'  ] , // unmapped → fallback
+            ] ,
+            [ 'model.customers' => $customers , 'model.generic' => $generic ]
+        ) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'organizations' , 'key' => 'o1' , 'score' => 9.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o2' , 'score' => 8.0 ] ,
+        ]) ;
+
+        $this->assertSame( [ 'o1' , 'o2' ] , array_map( static fn( $r ) => $r[ 'document' ][ '_key' ] , $results ) ) ;
+        $this->assertSame( [ 'o2' ] , $generic->captured[ Arango::FILTER ][ 'val' ] ) ; // routed to the fallback model
+    }
+
+    public function testRebuildDropsAnUnmappedTypeWithoutAFallback() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'o1' , 'name' => 'Acme' ] ] ) ;
+
+        $engine = $this->compositeEngine(
+            [ 'organizations' => [ FederatedSearchParam::MAP => [ 'Customer' => 'model.customers' ] ] ] , // no fallback
+            [
+                [ '_key' => 'o1' , 'discriminator' => 'Customer' ] ,
+                [ '_key' => 'o2' , 'discriminator' => 'Unknown'  ] , // unmapped, no fallback → dropped
+            ] ,
+            [ 'model.customers' => $customers ]
+        ) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'organizations' , 'key' => 'o1' , 'score' => 9.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o2' , 'score' => 8.0 ] ,
+        ]) ;
+
+        $this->assertSame( [ 'o1' ] , array_map( static fn( $r ) => $r[ 'document' ][ '_key' ] , $results ) ) ;
+    }
+
+    public function testRebuildCompositeFallsBackWhenNoDatabaseIsConfigured() :void
+    {
+        // no Arango::DATABASE → the type lookup returns nothing → every key uses the fallback
+        $generic = $this->modelReturning( [ [ '_key' => 'o1' , 'name' => 'Acme' ] , [ '_key' => 'o2' , 'name' => 'Globex' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.generic' => $generic ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'organizations' =>
+            [
+                FederatedSearchParam::MAP      => [ 'Customer' => 'model.customers' ] ,
+                FederatedSearchParam::FALLBACK => 'model.generic' ,
+            ] ] ,
+        ]) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'organizations' , 'key' => 'o1' , 'score' => 9.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o2' , 'score' => 8.0 ] ,
+        ]) ;
+
+        $this->assertSame( [ 'o1' , 'o2' ] , array_map( static fn( $r ) => $r[ 'document' ][ '_key' ] , $results ) ) ;
+        $this->assertSame( [ 'o1' , 'o2' ] , $generic->captured[ Arango::FILTER ][ 'val' ] ) ;
+    }
+
     public function testSearchableIgnoresANonArrayDeclaration() :void
     {
         $this->assertSame( [] , $this->make( [ FederatedSearchParam::SEARCHABLE => 'not-an-array' ] )->searchable ) ;
