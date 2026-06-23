@@ -16,6 +16,7 @@ use oihana\arango\db\options\views\SearchAliasView;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Search;
+use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\search\FederatedSearch;
 use oihana\arango\search\enums\FederatedSearchParam;
 
@@ -43,6 +44,7 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
 
     private const string CUSTOMERS = 'it_sa_customers' ;
     private const string PRODUCTS  = 'it_sa_products' ;
+    private const string ORGS      = 'it_sa_orgs' ;
     private const string VIEW      = 'it_sa_global' ;
     private const string INDEX     = 'inv_search' ;
 
@@ -56,16 +58,26 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
     {
         $db->collection( self::CUSTOMERS )->create() ;
         $db->collection( self::PRODUCTS )->create() ;
+        $db->collection( self::ORGS )->create() ;
 
         $index = new InvertedIndex( fields: [ 'tag' ] , name: self::INDEX , analyzer: 'identity' ) ;
         $db->collection( self::CUSTOMERS )->createIndex( $index ) ;
         $db->collection( self::PRODUCTS )->createIndex( $index ) ;
+        $db->collection( self::ORGS )->createIndex( $index ) ;
 
         $db->collection( self::CUSTOMERS )->insert( [ '_key' => 'c1' , 'tag' => 'shared' ] ) ;
         $db->collection( self::CUSTOMERS )->insert( [ '_key' => 'c2' , 'tag' => 'other'  ] ) ;
         $db->collection( self::PRODUCTS  )->insert( [ '_key' => 'p1' , 'tag' => 'shared' ] ) ;
 
-        $view = new SearchAliasView( self::VIEW , [ self::CUSTOMERS => self::INDEX , self::PRODUCTS => self::INDEX ] ) ;
+        // a polymorphic collection : three additionalType values + one multi-typed
+        // document, all tagged `org-shared` (a distinct term, so it never collides
+        // with the `shared` tag of the other collections' tests).
+        $db->collection( self::ORGS )->insert( [ '_key' => 'o1' , 'tag' => 'org-shared' , 'additionalType' => 'Customer' ] ) ;
+        $db->collection( self::ORGS )->insert( [ '_key' => 'o2' , 'tag' => 'org-shared' , 'additionalType' => 'Provider' ] ) ;
+        $db->collection( self::ORGS )->insert( [ '_key' => 'o3' , 'tag' => 'org-shared' , 'additionalType' => 'Subsidiary' ] ) ;
+        $db->collection( self::ORGS )->insert( [ '_key' => 'o4' , 'tag' => 'org-shared' , 'additionalType' => [ 'Provider' , 'Customer' ] ] ) ;
+
+        $view = new SearchAliasView( self::VIEW , [ self::CUSTOMERS => self::INDEX , self::PRODUCTS => self::INDEX , self::ORGS => self::INDEX ] ) ;
         $db->view( self::VIEW )->createSearchAlias( $view->getIndexes() ) ;
     }
 
@@ -285,6 +297,62 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * Lot 7b — type-aware rebuild on a real server: a single polymorphic
+     * collection (`organizations`, three `additionalType` values + one multi-typed
+     * document) is searched once, then each match is routed to the model resolved
+     * from its `additionalType` — read live from the collection. Each model records
+     * which keys it was asked to rebuild, so the routing is observable; the
+     * multi-typed document follows the map order.
+     *
+     * @throws ArangoException
+     */
+    public function testFederatedSearchRoutesAPolymorphicCollectionByType() :void
+    {
+        $container = new Container() ;
+        $facade    = $this->facade() ;
+
+        $customers    = new KeyCapturingModel( $container , [ Arango::DATABASE => $facade , 'collection' => self::ORGS ] ) ;
+        $providers    = new KeyCapturingModel( $container , [ Arango::DATABASE => $facade , 'collection' => self::ORGS ] ) ;
+        $subsidiaries = new KeyCapturingModel( $container , [ Arango::DATABASE => $facade , 'collection' => self::ORGS ] ) ;
+        $container->set( 'model.customers'    , $customers    ) ;
+        $container->set( 'model.providers'    , $providers    ) ;
+        $container->set( 'model.subsidiaries' , $subsidiaries ) ;
+
+        $engine = new FederatedSearch( $container ,
+        [
+            FederatedSearchParam::VIEW       => self::VIEW ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'tag' ] , Search::ANALYZER => 'identity' ] ,
+            FederatedSearchParam::MODELS     =>
+            [
+                self::ORGS =>
+                [
+                    FederatedSearchParam::MAP =>
+                    [
+                        'Customer'   => 'model.customers' ,
+                        'Provider'   => 'model.providers' ,
+                        'Subsidiary' => 'model.subsidiaries' ,
+                    ] ,
+                ] ,
+            ] ,
+            Arango::DATABASE => $facade ,
+        ]) ;
+
+        $this->waitForFederatedSearch( $engine , 'org-shared' , 4 ) ;
+
+        // routing is observable through the keys each model was asked to rebuild :
+        // o1=Customer, o2=Provider, o3=Subsidiary, and o4=[Provider,Customer] which
+        // follows the map order (Customer first) → the customers model.
+        sort( $customers->requestedKeys ) ;
+        sort( $providers->requestedKeys ) ;
+        sort( $subsidiaries->requestedKeys ) ;
+
+        $this->assertSame( [ 'o1' , 'o4' ] , $customers->requestedKeys ) ;
+        $this->assertSame( [ 'o2' ] , $providers->requestedKeys ) ;
+        $this->assertSame( [ 'o3' ] , $subsidiaries->requestedKeys ) ;
+        $this->assertSame( 4 , $engine->foundRows() ) ;
+    }
+
+    /**
      * Polls the federated `search()` until it returns the expected number of
      * rebuilt documents (inverted-index eventual consistency).
      *
@@ -356,5 +424,30 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
         }
 
         return $ids ;
+    }
+}
+
+/**
+ * A real {@see Documents} model (it still queries the live database through its
+ * parent) that records the `_key` set it was asked to rebuild, so a federated
+ * search can assert which keys were routed to which model — the observable signal
+ * of type routing, independent of how the model projects the documents.
+ */
+final class KeyCapturingModel extends Documents
+{
+    /** @var array<int, string> The keys of the last `list()` filter. */
+    public array $requestedKeys = [] ;
+
+    /**
+     * @param array<string, mixed> $init
+     * @return array<int, mixed>
+     */
+    public function list( array $init = [] ) : array
+    {
+        $value = ( $init[ Arango::FILTER ] ?? [] )[ FilterParam::VAL ] ?? [] ;
+
+        $this->requestedKeys = is_array( $value ) ? $value : [] ;
+
+        return parent::list( $init ) ;
     }
 }

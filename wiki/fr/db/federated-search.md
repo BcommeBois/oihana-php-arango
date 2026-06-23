@@ -60,6 +60,51 @@ $engine = new FederatedSearch( $container ,
 ]) ;
 ```
 
+### Collections polymorphes — routage par `additionalType`
+
+Parfois une seule collection contient des documents de **plusieurs types**,
+chacun reconstruit par un modèle différent — ex. `organizations` servie par un
+modèle `Customer`, un `Provider` et un `Subsidiary`, sans modèle générique. Une
+valeur de `MODELS` peut alors être une spec **composite** au lieu d'un simple
+service-id, et router chaque résultat selon un champ discriminant (`additionalType`
+par défaut) :
+
+```php
+FederatedSearchParam::MODELS =>
+[
+    'products'      => 'model.products' , // direct : un seul modèle pour toute la collection
+
+    'organizations' =>                    // composite : routé par type
+    [
+        FederatedSearchParam::DISCRIMINATOR => 'additionalType' , // facultatif (c'est le défaut)
+        FederatedSearchParam::MAP =>
+        [
+            'https://schema.org/Customer'   => 'model.customers' ,
+            'https://schema.org/Provider'   => 'model.providers' ,
+            'https://schema.org/Subsidiary' => 'model.subsidiaries' ,
+        ] ,
+        FederatedSearchParam::FALLBACK => 'model.organizations' , // facultatif ; absent → un type non mappé est ignoré
+    ] ,
+]
+```
+
+À la reconstruction, le moteur lit le discriminateur de chaque clé matchée en
+**une requête légère** (`FOR d IN organizations FILTER d._key IN @keys RETURN { _key, additionalType }`)
+— sans `storedValues` d'index inversé, et sans rien changer à la recherche —
+range les clés par modèle résolu, puis reconstruit chaque paquet via son propre
+modèle, en préservant l'ordre de score et le total.
+
+- **Priorité** — un document peut porter **plusieurs** types (`additionalType` en
+  tableau) ; la table est parcourue dans son **ordre de déclaration**, donc le
+  premier type listé que le document possède gagne, de façon déterministe,
+  indépendamment de l'ordre du document.
+- **Repli (`FALLBACK`)** — un type non mappé utilise le repli s'il est présent,
+  sinon le résultat est ignoré (il n'atteint jamais un mauvais modèle).
+- **Rétro-compatible** — une entrée directe `collection => 'model.id'` est
+  inchangée.
+- **Permissions** : elles restent au niveau **collection** (un filtre par
+  `additionalType` n'est pas encore géré — voir § Permissions).
+
 ## Lancer une recherche
 
 ```php

@@ -60,6 +60,48 @@ $engine = new FederatedSearch( $container ,
 ]) ;
 ```
 
+### Polymorphic collections — routing by `additionalType`
+
+Sometimes a single collection holds documents of **several types**, each rebuilt
+by a different model — e.g. `organizations` served by a `Customer`, a `Provider`
+and a `Subsidiary` model, with no generic one. A `MODELS` value can then be a
+**composite** spec instead of a plain service-id, routing each match by a
+discriminator field (`additionalType` by default):
+
+```php
+FederatedSearchParam::MODELS =>
+[
+    'products'      => 'model.products' , // direct : one model for the whole collection
+
+    'organizations' =>                    // composite : routed by type
+    [
+        FederatedSearchParam::DISCRIMINATOR => 'additionalType' , // optional (this is the default)
+        FederatedSearchParam::MAP =>
+        [
+            'https://schema.org/Customer'   => 'model.customers' ,
+            'https://schema.org/Provider'   => 'model.providers' ,
+            'https://schema.org/Subsidiary' => 'model.subsidiaries' ,
+        ] ,
+        FederatedSearchParam::FALLBACK => 'model.organizations' , // optional ; omitted → an unmapped type is dropped
+    ] ,
+]
+```
+
+At rebuild time the engine reads each matched key's discriminator in **one
+lightweight lookup** (`FOR d IN organizations FILTER d._key IN @keys RETURN { _key, additionalType }`)
+— no inverted-index `storedValues`, and no change to the search itself — buckets
+the keys by resolved model, and rebuilds each bucket through its own model,
+preserving the score order and the total.
+
+- **Priority** — a document may carry **several** types (`additionalType` as an
+  array); the mapping is walked in **declaration order**, so the first listed type
+  the document has wins, deterministically, regardless of the document's own order.
+- **Fallback** — an unmapped type uses `FALLBACK` when present, otherwise the match
+  is dropped (it never reaches a wrong model).
+- **Backward-compatible** — a direct `collection => 'model.id'` entry is unchanged.
+- **Permissions** stay at the **collection** level (a per-`additionalType` gate is
+  not yet supported — see § Permissions).
+
 ## Running a search
 
 ```php
