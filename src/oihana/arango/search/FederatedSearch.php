@@ -152,10 +152,13 @@ class FederatedSearch
     private int $found = 0 ;
 
     /**
-     * The collection → model-service-id registry — the directory telling the
-     * engine which model rebuilds the documents of which collection.
+     * The collection → model registry — the directory telling the engine which
+     * model rebuilds the documents of which collection. A value is either a
+     * model-service-id string (direct), or, for a polymorphic collection, a
+     * normalised composite spec `[ DISCRIMINATOR => field, MAP => [type => id], FALLBACK => id|null ]`
+     * routing by a discriminator field (see {@see FederatedSearchParam::MODELS}).
      *
-     * @var array<string, string>
+     * @var array<string, string|array<string, mixed>>
      */
     public array $models = [] ;
 
@@ -451,8 +454,11 @@ class FederatedSearch
     }
 
     /**
-     * Normalises the collection → model registry: only the entries whose
-     * collection name and model-service-id are both non-empty strings are kept.
+     * Normalises the collection → model registry. A **direct** entry keeps its
+     * non-empty model-service-id string (`collection => 'model.x'`). A
+     * **composite** entry (a polymorphic collection routed by a discriminator
+     * field) is normalised to `[ DISCRIMINATOR => field, MAP => [type => id], FALLBACK => id|null ]`.
+     * Malformed entries are dropped (the registry is config-trusted).
      *
      * @param array<string, mixed> $init
      *
@@ -466,12 +472,32 @@ class FederatedSearch
 
         if ( is_array( $models ) )
         {
-            foreach ( $models as $collection => $modelId )
+            foreach ( $models as $collection => $spec )
             {
-                if ( is_string( $collection ) && $collection !== Char::EMPTY
-                  && is_string( $modelId )    && $modelId    !== Char::EMPTY )
+                if ( !is_string( $collection ) || $collection === Char::EMPTY )
                 {
-                    $registry[ $collection ] = $modelId ;
+                    continue ;
+                }
+
+                // Direct form: `collection => 'model.service-id'` (unchanged).
+                if ( is_string( $spec ) )
+                {
+                    if ( $spec !== Char::EMPTY )
+                    {
+                        $registry[ $collection ] = $spec ;
+                    }
+                    continue ;
+                }
+
+                // Composite form: a polymorphic collection routed by type.
+                if ( is_array( $spec ) )
+                {
+                    $composite = $this->normaliseCompositeModel( $spec ) ;
+
+                    if ( $composite !== null )
+                    {
+                        $registry[ $collection ] = $composite ;
+                    }
                 }
             }
         }
@@ -661,9 +687,57 @@ class FederatedSearch
     }
 
     /**
-     * Resolves the {@see Documents} model that rebuilds a collection through the
-     * registry + the container. Null when the collection is unregistered, the
-     * service is missing, or it is not a {@see Documents}.
+     * Normalises a composite (polymorphic) model spec, or null when it can never
+     * resolve (no mapping and no fallback). The discriminator field defaults to
+     * {@see FederatedSearchParam::DEFAULT_DISCRIMINATOR}; the `type => model-id`
+     * mapping keeps only non-empty string pairs (declaration order = priority).
+     *
+     * @param array<string, mixed> $spec
+     *
+     * @return array<string, mixed>|null
+     */
+    private function normaliseCompositeModel( array $spec ) : ?array
+    {
+        $rawMap = $spec[ FederatedSearchParam::MAP ] ?? null ;
+        $map    = [] ;
+
+        if ( is_array( $rawMap ) )
+        {
+            foreach ( $rawMap as $type => $modelId )
+            {
+                if ( is_string( $type )    && $type    !== Char::EMPTY
+                  && is_string( $modelId ) && $modelId !== Char::EMPTY )
+                {
+                    $map[ $type ] = $modelId ; // insertion order = resolution priority
+                }
+            }
+        }
+
+        $fallback = $spec[ FederatedSearchParam::FALLBACK ] ?? null ;
+        $fallback = ( is_string( $fallback ) && $fallback !== Char::EMPTY ) ? $fallback : null ;
+
+        // A composite entry with neither a mapping nor a fallback can never resolve.
+        if ( $map === [] && $fallback === null )
+        {
+            return null ;
+        }
+
+        $key = $spec[ FederatedSearchParam::DISCRIMINATOR ] ?? null ;
+        $key = ( is_string( $key ) && $key !== Char::EMPTY ) ? $key : FederatedSearchParam::DEFAULT_DISCRIMINATOR ;
+
+        return
+        [
+            FederatedSearchParam::DISCRIMINATOR => $key ,
+            FederatedSearchParam::MAP           => $map ,
+            FederatedSearchParam::FALLBACK      => $fallback ,
+        ] ;
+    }
+
+    /**
+     * Resolves the {@see Documents} model that rebuilds a collection. A **direct**
+     * entry resolves to its single model. A **composite** (polymorphic) entry
+     * needs the document's discriminator value and is resolved per hit in
+     * {@see rebuild()}, so it yields null here (no single model without a type).
      *
      * @param string $collection
      *
@@ -674,9 +748,57 @@ class FederatedSearch
      */
     private function resolveModel( string $collection ) : ?Documents
     {
-        $modelId = $this->models[ $collection ] ?? null ;
+        $spec = $this->models[ $collection ] ?? null ;
 
-        if ( $modelId === null || !$this->container->has( $modelId ) )
+        return is_string( $spec ) ? $this->resolveModelInstance( $spec ) : null ;
+    }
+
+    /**
+     * Resolves the model-service-id for a hit from its registry spec and its
+     * discriminator value. A direct (string) spec returns it verbatim. A
+     * composite spec walks its `type => model-id` map in declaration order
+     * (priority) — accepting a scalar type or an array of types — and falls back
+     * to its fallback model-id, or null (the hit is dropped).
+     *
+     * @param string|array<string, mixed> $spec The normalised registry spec.
+     * @param mixed                        $type The document discriminator value (string, array, or null).
+     *
+     * @return string|null
+     */
+    private function resolveModelId( string|array $spec , mixed $type ) : ?string
+    {
+        if ( is_string( $spec ) )
+        {
+            return $spec ; // direct
+        }
+
+        $candidates = is_array( $type ) ? $type : ( $type === null ? [] : [ $type ] ) ;
+
+        foreach ( $spec[ FederatedSearchParam::MAP ] as $declaredType => $modelId )
+        {
+            if ( in_array( $declaredType , $candidates , true ) )
+            {
+                return $modelId ; // map order = priority
+            }
+        }
+
+        return $spec[ FederatedSearchParam::FALLBACK ] ; // a model-id or null (drop)
+    }
+
+    /**
+     * Resolves a model-service-id to its {@see Documents} instance through the
+     * container. Null when the service is missing or is not a {@see Documents}.
+     *
+     * @param string $modelId
+     *
+     * @return Documents|null
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    private function resolveModelInstance( string $modelId ) : ?Documents
+    {
+        if ( !$this->container->has( $modelId ) )
         {
             return null ;
         }

@@ -101,6 +101,155 @@ final class FederatedSearchTest extends TestCase
         $this->assertSame( [] , $this->make( [ FederatedSearchParam::MODELS => 'not-an-array' ] )->models ) ;
     }
 
+    // ---- composite registry / type-aware resolution (Lot 7b) ----------------
+
+    public function testCompositeModelEntryIsNormalised() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::MODELS =>
+            [
+                'products'      => 'model.products' , // direct : kept verbatim
+                'organizations' =>
+                [
+                    FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+                    FederatedSearchParam::MAP           => [ 'Customer' => 'model.customers' , 'Provider' => 'model.providers' ] ,
+                    FederatedSearchParam::FALLBACK      => 'model.org' ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'products'      => 'model.products' ,
+            'organizations' =>
+            [
+                FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+                FederatedSearchParam::MAP           => [ 'Customer' => 'model.customers' , 'Provider' => 'model.providers' ] ,
+                FederatedSearchParam::FALLBACK      => 'model.org' ,
+            ] ,
+        ] , $engine->models ) ;
+    }
+
+    public function testCompositeModelDefaultsTheDiscriminatorAndNullsAnAbsentFallback() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::MODELS =>
+            [
+                'organizations' => // no 'key' → additionalType ; no 'default' → null fallback
+                [
+                    FederatedSearchParam::MAP => [ 'Customer' => 'model.customers' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'organizations' =>
+            [
+                FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+                FederatedSearchParam::MAP           => [ 'Customer' => 'model.customers' ] ,
+                FederatedSearchParam::FALLBACK      => null ,
+            ] ,
+        ] , $engine->models ) ;
+    }
+
+    public function testCompositeModelCleansItsMapAndDropsAnUnresolvableEntry() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::MODELS =>
+            [
+                'people' => // map cleaned to string => non-empty-string ; rescued by the fallback
+                [
+                    FederatedSearchParam::MAP      => [ 'Person' => 'model.people' , 'Bad' => '' , 5 => 'model.numeric' , 'Store' => 'model.stores' ] ,
+                    FederatedSearchParam::FALLBACK => 'model.default' ,
+                ] ,
+                'ghosts' => // no map and no fallback → can never resolve → dropped
+                [
+                    FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'people' =>
+            [
+                FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+                FederatedSearchParam::MAP           => [ 'Person' => 'model.people' , 'Store' => 'model.stores' ] ,
+                FederatedSearchParam::FALLBACK      => 'model.default' ,
+            ] ,
+        ] , $engine->models ) ;
+    }
+
+    /**
+     * Invokes the private {@see FederatedSearch::resolveModelId()} resolver (it is
+     * unit-tested in isolation here; rebuild() wires it in the next lot).
+     *
+     * @param string|array<string, mixed> $spec
+     */
+    private function resolveModelId( FederatedSearch $engine , string|array $spec , mixed $type ) :?string
+    {
+        return ( new \ReflectionMethod( FederatedSearch::class , 'resolveModelId' ) )->invoke( $engine , $spec , $type ) ;
+    }
+
+    public function testResolveModelIdReturnsADirectModel() :void
+    {
+        $this->assertSame( 'model.products' , $this->resolveModelId( $this->make() , 'model.products' , 'whatever' ) ) ;
+    }
+
+    public function testResolveModelIdMapsAScalarType() :void
+    {
+        $spec =
+        [
+            FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+            FederatedSearchParam::MAP           => [ 'Customer' => 'model.customers' , 'Provider' => 'model.providers' ] ,
+            FederatedSearchParam::FALLBACK      => 'model.org' ,
+        ] ;
+
+        $this->assertSame( 'model.providers' , $this->resolveModelId( $this->make() , $spec , 'Provider' ) ) ;
+    }
+
+    public function testResolveModelIdUsesMapOrderAsPriorityForAMultiTypedDocument() :void
+    {
+        // the map declares Customer first ; the document lists Provider first → Customer still wins
+        $spec =
+        [
+            FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+            FederatedSearchParam::MAP           => [ 'Customer' => 'model.customers' , 'Provider' => 'model.providers' ] ,
+            FederatedSearchParam::FALLBACK      => 'model.org' ,
+        ] ;
+
+        $this->assertSame( 'model.customers' , $this->resolveModelId( $this->make() , $spec , [ 'Provider' , 'Customer' ] ) ) ;
+    }
+
+    public function testResolveModelIdFallsBackToTheDefault() :void
+    {
+        $spec =
+        [
+            FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+            FederatedSearchParam::MAP           => [ 'Customer' => 'model.customers' ] ,
+            FederatedSearchParam::FALLBACK      => 'model.org' ,
+        ] ;
+
+        $this->assertSame( 'model.org' , $this->resolveModelId( $this->make() , $spec , 'Unknown' ) ) ; // unmapped type
+        $this->assertSame( 'model.org' , $this->resolveModelId( $this->make() , $spec , null ) ) ;       // null type
+    }
+
+    public function testResolveModelIdDropsWhenNoMatchAndNoFallback() :void
+    {
+        $spec =
+        [
+            FederatedSearchParam::DISCRIMINATOR => 'additionalType' ,
+            FederatedSearchParam::MAP           => [ 'Customer' => 'model.customers' ] ,
+            FederatedSearchParam::FALLBACK      => null ,
+        ] ;
+
+        $this->assertNull( $this->resolveModelId( $this->make() , $spec , 'Unknown' ) ) ;
+    }
+
     public function testSearchableIgnoresANonArrayDeclaration() :void
     {
         $this->assertSame( [] , $this->make( [ FederatedSearchParam::SEARCHABLE => 'not-an-array' ] )->searchable ) ;

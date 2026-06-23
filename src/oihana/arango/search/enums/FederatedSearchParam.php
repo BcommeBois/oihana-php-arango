@@ -17,9 +17,37 @@ class FederatedSearchParam
     use ConstantsTrait ;
 
     /**
-     * The collection → model-service-id registry: a map telling the engine
-     * which model rebuilds the documents of which collection
-     * (`[ 'customers' => 'model.customers', … ]`).
+     * The default discriminator field used by a composite {@see MODELS} entry
+     * when its {@see DISCRIMINATOR} sub-key is omitted — the schema.org
+     * `additionalType`.
+     */
+    public const string DEFAULT_DISCRIMINATOR = 'additionalType' ;
+
+    /**
+     * The composite {@see MODELS} sub-key naming the document field that
+     * discriminates a polymorphic collection (defaults to
+     * {@see DEFAULT_DISCRIMINATOR}).
+     */
+    public const string DISCRIMINATOR = 'key' ;
+
+    /**
+     * The composite {@see MODELS} sub-key holding the fallback model-service-id
+     * used when no mapped type matches; absent/null means the hit is dropped.
+     */
+    public const string FALLBACK = 'default' ;
+
+    /**
+     * The composite {@see MODELS} sub-key holding the `type => model-service-id`
+     * mapping. Declaration order is the resolution priority for a document that
+     * carries several types.
+     */
+    public const string MAP = 'map' ;
+
+    /**
+     * The collection → model registry. Each value is either a **model-service-id**
+     * string (`'customers' => 'model.customers'`) or, for a **polymorphic**
+     * collection, a composite spec routing by a discriminator field:
+     * `[ DISCRIMINATOR => 'additionalType', MAP => [ '<type>' => 'model.x', … ], FALLBACK => 'model.y' ]`.
      */
     public const string MODELS = 'models' ;
 
