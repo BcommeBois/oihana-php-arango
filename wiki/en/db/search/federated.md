@@ -102,6 +102,41 @@ preserving the score order and the total.
 - **Permissions** can be enforced at the **collection** level and, for a polymorphic
   collection, **per type** — see § Per-type permissions.
 
+### Configuration reference
+
+The engine `$init` keys:
+
+| Key | Role |
+|---|---|
+| `FederatedSearchParam::VIEW` | the `search-alias` view to query |
+| `FederatedSearchParam::SEARCHABLE` | what to search — `Search::FIELDS` (the fields) + `Search::ANALYZER` (defaults to `identity` when omitted) |
+| `FederatedSearchParam::MODELS` | collection → model: a service-id string, or a **composite** spec |
+| `FederatedSearchParam::REQUIRES` | collection → permission: a collection-level subject / OR-list, or a **structured** cascade |
+| `FederatedSearchParam::SKIN` | the default rebuild skin (defaults to `Skin::DEFAULT`) |
+| `Arango::DATABASE` | the `ArangoDB` instance, or its container id |
+
+A **composite `MODELS`** entry (a polymorphic collection) takes these sub-keys:
+
+| Sub-key | Role |
+|---|---|
+| `FederatedSearchParam::DISCRIMINATOR` | the **field** carrying the type — default `additionalType` (`DEFAULT_DISCRIMINATOR`). Declared **here only**, and **reused as-is** by `REQUIRES`. |
+| `FederatedSearchParam::MAP` | `type => model-service-id` (declaration order = priority) |
+| `FederatedSearchParam::FALLBACK` | the model for an unmapped type — omitted → the match is dropped |
+
+A **structured `REQUIRES`** entry (per-type permissions) takes these sub-keys:
+
+| Sub-key | Role |
+|---|---|
+| `FederatedSearchParam::COLLECTION` | the subject(s) to **enter** the collection (level 1) — absent → public |
+| `FederatedSearchParam::MAP` | `type => subject(s)` required (level 2) |
+| `FederatedSearchParam::FALLBACK` | the unlisted-types policy — absent = hidden, subject(s) = required, `true` = visible |
+
+> `DISCRIMINATOR` is declared **once**, in `MODELS`; `REQUIRES` reuses it without redeclaring.
+
+### Limitations
+
+The federated search matches each declared field **flatly** — `doc.<field> IN TOKENS(@term, "<analyzer>")` over `SEARCHABLE.FIELDS`, OR-combined, under a **single** analyzer. The richer per-field View-search DSL — `NGRAM_MATCH`, `FUZZY`, `BOOST`, `PHRASE`, per-field analyzers — is **not** available here. Reach for a single-collection model search when you need it; the federated bar trades that richness for one ranked list across collections.
+
 ## Running a search
 
 ```php
@@ -131,6 +166,8 @@ The documents have **different shapes** from one collection to another — by de
 ### Pagination and total
 
 **Pagination happens in stage 1**: the `LIMIT` is applied **once**, on the global ranking across all collections. Stage 2 therefore rebuilds **only the requested page** — never piles of results. The **total** (before the `LIMIT`) is computed at the same time (the `fullCount` option) and exposed by `foundRows()`.
+
+`foundRows()` counts the matches **found** (stage 1). Stage 2 may **drop** a few — a model that does not return a document (its own field rules), or an unmapped type with no `FALLBACK` — so the page can hold **fewer** documents than the slice, and the total can be **higher** than what is shown. This is intentional: each model stays authoritative over what it returns.
 
 ### Skin
 

@@ -105,6 +105,41 @@ modèle, en préservant l'ordre de score et le total.
 - **Permissions** : applicables au niveau **collection** et, pour une collection
   polymorphe, **par type** — voir § Permissions par type.
 
+### Référence des options
+
+Les clés de l'`$init` du moteur :
+
+| Clé | Rôle |
+|---|---|
+| `FederatedSearchParam::VIEW` | la vue `search-alias` à interroger |
+| `FederatedSearchParam::SEARCHABLE` | ce qu'on cherche — `Search::FIELDS` (les champs) + `Search::ANALYZER` (défaut `identity` si absent) |
+| `FederatedSearchParam::MODELS` | collection → modèle : un id de service, ou une spec **composite** |
+| `FederatedSearchParam::REQUIRES` | collection → permission : un subject / liste-OU au niveau collection, ou une cascade **structurée** |
+| `FederatedSearchParam::SKIN` | le skin de reconstruction par défaut (défaut `Skin::DEFAULT`) |
+| `Arango::DATABASE` | l'instance `ArangoDB`, ou son id dans le container |
+
+Une entrée **`MODELS` composite** (collection polymorphe) accepte ces sous-clés :
+
+| Sous-clé | Rôle |
+|---|---|
+| `FederatedSearchParam::DISCRIMINATOR` | le **champ** qui porte le type — défaut `additionalType` (`DEFAULT_DISCRIMINATOR`). Déclaré **ici seulement**, et **réutilisé tel quel** par `REQUIRES`. |
+| `FederatedSearchParam::MAP` | `type => id-de-service-modèle` (ordre de déclaration = priorité) |
+| `FederatedSearchParam::FALLBACK` | le modèle pour un type non mappé — absent → le résultat est ignoré |
+
+Une entrée **`REQUIRES` structurée** (permission par type) accepte ces sous-clés :
+
+| Sous-clé | Rôle |
+|---|---|
+| `FederatedSearchParam::COLLECTION` | le(s) subject(s) pour **entrer** dans la collection (niveau 1) — absent → public |
+| `FederatedSearchParam::MAP` | `type => subject(s)` exigé(s) (niveau 2) |
+| `FederatedSearchParam::FALLBACK` | la politique des types non listés — absent = caché, subject(s) = exigés, `true` = visible |
+
+> `DISCRIMINATOR` se déclare **une seule fois**, dans `MODELS` ; `REQUIRES` le réutilise sans le redéclarer.
+
+### Limites
+
+La recherche fédérée compare chaque champ déclaré **à plat** — `doc.<champ> IN TOKENS(@terme, "<analyzer>")` sur `SEARCHABLE.FIELDS`, combinés en OU, sous **un seul** analyzer. La richesse du DSL de recherche View mono-collection — `NGRAM_MATCH`, `FUZZY`, `BOOST`, `PHRASE`, analyzers par champ — n'est **pas** disponible ici. Passe par une recherche de modèle mono-collection quand tu en as besoin ; la barre fédérée échange cette richesse contre une liste unique classée à travers les collections.
+
 ## Lancer une recherche
 
 ```php
@@ -134,6 +169,8 @@ Les documents n'ont **pas la même forme** d'une collection à l'autre — c'est
 ### Pagination et total
 
 La **pagination est faite au temps 1** : le `LIMIT` s'applique **une fois**, au classement global de toutes les collections. Le temps 2 ne reconstruit donc **que la page** demandée — jamais des tas de résultats. Le **total** (avant le `LIMIT`) est calculé en même temps (option `fullCount`) et exposé par `foundRows()`.
+
+`foundRows()` compte les correspondances **trouvées** (temps 1). Le temps 2 peut en **écarter** quelques-unes — un modèle qui ne renvoie pas un document (ses propres règles de champ), ou un type non mappé sans `FALLBACK` — donc la page peut contenir **moins** de documents que la tranche, et le total peut être **supérieur** à l'affiché. C'est voulu : chaque modèle reste maître de ce qu'il renvoie.
 
 ### Skin
 
