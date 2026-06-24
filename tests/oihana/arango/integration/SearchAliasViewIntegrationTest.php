@@ -42,11 +42,14 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
 {
     protected static string $database = 'oihana_search_alias_it' ;
 
-    private const string CUSTOMERS = 'it_sa_customers' ;
-    private const string PRODUCTS  = 'it_sa_products' ;
-    private const string ORGS      = 'it_sa_orgs' ;
-    private const string VIEW      = 'it_sa_global' ;
-    private const string INDEX     = 'inv_search' ;
+    private const string CUSTOMERS  = 'it_sa_customers' ;
+    private const string PRODUCTS   = 'it_sa_products' ;
+    private const string ORGS       = 'it_sa_orgs' ;
+    private const string UNITS      = 'it_sa_units' ;
+    private const string VIEW       = 'it_sa_global' ;
+    private const string INDEX      = 'inv_search' ;
+    private const string ORG_INDEX  = 'inv_orgs' ;
+    private const string UNIT_INDEX = 'inv_units' ;
 
     /**
      * Seeds two collections, each with an `inverted` index on `tag` (identity
@@ -59,11 +62,25 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
         $db->collection( self::CUSTOMERS )->create() ;
         $db->collection( self::PRODUCTS )->create() ;
         $db->collection( self::ORGS )->create() ;
+        $db->collection( self::UNITS )->create() ;
 
         $index = new InvertedIndex( fields: [ 'tag' ] , name: self::INDEX , analyzer: 'identity' ) ;
         $db->collection( self::CUSTOMERS )->createIndex( $index ) ;
         $db->collection( self::PRODUCTS )->createIndex( $index ) ;
-        $db->collection( self::ORGS )->createIndex( $index ) ;
+
+        // The polymorphic collection ALSO indexes its discriminator so the per-type
+        // SEARCH gate can filter on it. `organizations` stores `additionalType` as an
+        // ARRAY → the index field carries the `[*]` array-expansion (`additionalType[*]`).
+        // The other collections do not index it — the field absence that scopes the
+        // gate to this collection alone.
+        $orgIndex = new InvertedIndex( fields: [ 'tag' , 'additionalType[*]' ] , name: self::ORG_INDEX , analyzer: 'identity' ) ;
+        $db->collection( self::ORGS )->createIndex( $orgIndex ) ;
+
+        // A second polymorphic collection whose `additionalType` is a plain STRING →
+        // the index field is `additionalType` (no `[*]`). Proves the same library gate
+        // works on both shapes, the only difference being the index declaration.
+        $unitIndex = new InvertedIndex( fields: [ 'tag' , 'additionalType' ] , name: self::UNIT_INDEX , analyzer: 'identity' ) ;
+        $db->collection( self::UNITS )->createIndex( $unitIndex ) ;
 
         $db->collection( self::CUSTOMERS )->insert( [ '_key' => 'c1' , 'tag' => 'shared' ] ) ;
         $db->collection( self::CUSTOMERS )->insert( [ '_key' => 'c2' , 'tag' => 'other'  ] ) ;
@@ -77,7 +94,25 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
         $db->collection( self::ORGS )->insert( [ '_key' => 'o3' , 'tag' => 'org-shared' , 'additionalType' => 'Subsidiary' ] ) ;
         $db->collection( self::ORGS )->insert( [ '_key' => 'o4' , 'tag' => 'org-shared' , 'additionalType' => [ 'Provider' , 'Customer' ] ] ) ;
 
-        $view = new SearchAliasView( self::VIEW , [ self::CUSTOMERS => self::INDEX , self::PRODUCTS => self::INDEX , self::ORGS => self::INDEX ] ) ;
+        // per-type permission fixtures (ARRAY shape), under a distinct `org-perm` tag :
+        // a Customer, a Provider, a multi-typed [Provider, Customer], and a typeless
+        // document (hidden in strict mode — fail-closed — on the [*] index).
+        $db->collection( self::ORGS )->insert( [ '_key' => 'op1' , 'tag' => 'org-perm' , 'additionalType' => [ 'Customer' ] ] ) ;
+        $db->collection( self::ORGS )->insert( [ '_key' => 'op2' , 'tag' => 'org-perm' , 'additionalType' => [ 'Provider' ] ] ) ;
+        $db->collection( self::ORGS )->insert( [ '_key' => 'op3' , 'tag' => 'org-perm' , 'additionalType' => [ 'Provider' , 'Customer' ] ] ) ;
+        $db->collection( self::ORGS )->insert( [ '_key' => 'op4' , 'tag' => 'org-perm' ] ) ; // typeless
+
+        // per-type permission fixtures (STRING shape) on the units collection.
+        $db->collection( self::UNITS )->insert( [ '_key' => 'us1' , 'tag' => 'unit-perm' , 'additionalType' => 'Customer' ] ) ;
+        $db->collection( self::UNITS )->insert( [ '_key' => 'us2' , 'tag' => 'unit-perm' , 'additionalType' => 'Provider' ] ) ;
+
+        $view = new SearchAliasView( self::VIEW ,
+        [
+            self::CUSTOMERS => self::INDEX ,
+            self::PRODUCTS  => self::INDEX ,
+            self::ORGS      => self::ORG_INDEX ,
+            self::UNITS     => self::UNIT_INDEX ,
+        ]) ;
         $db->view( self::VIEW )->createSearchAlias( $view->getIndexes() ) ;
     }
 
@@ -358,6 +393,168 @@ final class SearchAliasViewIntegrationTest extends IntegrationTestCase
         $this->assertSame( $subsidiaries->requestedKeys , $subsidiaries->returnedKeys ) ;
 
         $this->assertSame( 4 , $engine->foundRows() ) ;
+    }
+
+    /**
+     * Lot 2 (per-type permission) — **permissive** mode on a real server. With
+     * `FALLBACK => true` the unlisted types stay visible and only the denied type
+     * (Provider) is hidden, the predicate filtering inside the SEARCH so the total
+     * stays exact. A multi-typed document carrying a denied type is excluded (array
+     * semantics: a document matches `additionalType IN @denied` when **any** of its
+     * types is denied); a typeless document passes (field absence).
+     *
+     * @throws ArangoException
+     */
+    public function testFederatedSearchPermissiveTypeGateHidesOnlyDeniedTypes() :void
+    {
+        $engine = $this->permissionEngine( self::ORGS ,
+        [
+            self::ORGS =>
+            [
+                FederatedSearchParam::MAP      => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ,
+                FederatedSearchParam::FALLBACK => true , // unlisted types visible
+            ] ,
+        ]) ;
+
+        // a user granted cust:list but not prov:list
+        $init = [ Arango::SEARCH => 'org-perm' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'cust:list' ] ;
+
+        // op1 ([Customer]) kept ; op2 ([Provider]) hidden ; op3 ([Provider,Customer]) hidden
+        // (carries a denied type) ; op4 (typeless) kept → { op1, op4 }
+        $results = $this->waitForSearchResults( $engine , $init , 2 ) ;
+
+        $this->assertSame( [ 'op1' , 'op4' ] , $this->resultKeys( $results ) ) ;
+        $this->assertSame( 2 , $engine->foundRows() ) ; // total exact (filtered before the LIMIT)
+    }
+
+    /**
+     * Lot 2 (per-type permission) — **strict** mode on a real server (array shape).
+     * With no `FALLBACK` only the allowed types are visible; a multi-typed document
+     * carrying an allowed type **is** kept (array semantics: it matches
+     * `additionalType IN @allowed` when any of its types is allowed); a typeless
+     * document is **hidden** (fail-closed — on the `additionalType[*]` index `EXISTS`
+     * sees it as belonging to the collection).
+     *
+     * @throws ArangoException
+     */
+    public function testFederatedSearchStrictTypeGateKeepsAllowedTypesAndHidesTypeless() :void
+    {
+        $engine = $this->permissionEngine( self::ORGS ,
+        [
+            self::ORGS => [ FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ] , // no FALLBACK → strict
+        ]) ;
+
+        $init = [ Arango::SEARCH => 'org-perm' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'cust:list' ] ;
+
+        // op1 ([Customer]) kept ; op2 ([Provider]) hidden ; op3 ([Provider,Customer]) kept
+        // (carries Customer) ; op4 (typeless) hidden (fail-closed) → { op1, op3 }
+        $results = $this->waitForSearchResults( $engine , $init , 2 ) ;
+
+        $this->assertSame( [ 'op1' , 'op3' ] , $this->resultKeys( $results ) ) ;
+        $this->assertSame( 2 , $engine->foundRows() ) ;
+    }
+
+    /**
+     * Lot 2 (per-type permission) — the **string** shape on a real server: the same
+     * library gate filters a collection whose `additionalType` is a plain string,
+     * declared with a plain `additionalType` index (no `[*]`). Proves the engine is
+     * shape-agnostic — only the index declaration differs.
+     *
+     * @throws ArangoException
+     */
+    public function testFederatedSearchTypeGateWorksOnAStringDiscriminator() :void
+    {
+        $engine = $this->permissionEngine( self::UNITS ,
+        [
+            self::UNITS => [ FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ] , // strict
+        ]) ;
+
+        $init = [ Arango::SEARCH => 'unit-perm' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'cust:list' ] ;
+
+        // us1 ("Customer") kept ; us2 ("Provider") hidden → { us1 }
+        $results = $this->waitForSearchResults( $engine , $init , 1 ) ;
+
+        $this->assertSame( [ 'us1' ] , $this->resultKeys( $results ) ) ;
+        $this->assertSame( 1 , $engine->foundRows() ) ;
+    }
+
+    /**
+     * Builds a federated engine over one polymorphic collection with a composite
+     * model (a single fallback model rebuilding every type) and the given structured
+     * `requires`, for the per-type permission tests.
+     *
+     * @param string               $collection
+     * @param array<string, mixed> $requires
+     *
+     * @return FederatedSearch
+     */
+    private function permissionEngine( string $collection , array $requires ) :FederatedSearch
+    {
+        $container = new Container() ;
+        $facade    = $this->facade() ;
+
+        $container->set( 'model.poly' , new Documents( $container , [ Arango::DATABASE => $facade , 'collection' => $collection ] ) ) ;
+
+        return new FederatedSearch( $container ,
+        [
+            FederatedSearchParam::VIEW       => self::VIEW ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'tag' ] , Search::ANALYZER => 'identity' ] ,
+            FederatedSearchParam::MODELS     => [ $collection => [ FederatedSearchParam::FALLBACK => 'model.poly' ] ] , // composite : discriminator additionalType, one model
+            FederatedSearchParam::REQUIRES   => $requires ,
+            Arango::DATABASE                 => $facade ,
+        ]) ;
+    }
+
+    /**
+     * The sorted `_key`s of a federated `search()` result set.
+     *
+     * @param array<int, array<string, mixed>> $results
+     *
+     * @return array<int, string>
+     */
+    private function resultKeys( array $results ) :array
+    {
+        $keys = array_map( static function( array $row )
+        {
+            $document = $row[ FederatedSearch::DOCUMENT ] ;
+            return is_array( $document ) ? $document[ '_key' ] : $document->_key ;
+        } , $results ) ;
+
+        sort( $keys ) ;
+
+        return $keys ;
+    }
+
+    /**
+     * Polls the federated `search()` (with its request init, e.g. an authorizer)
+     * until it returns the expected number of rows (inverted-index eventual
+     * consistency).
+     *
+     * @param FederatedSearch      $engine
+     * @param array<string, mixed> $init
+     * @param int                  $expected
+     *
+     * @return array<int, array<string, mixed>>
+     *
+     * @throws ArangoException
+     */
+    private function waitForSearchResults( FederatedSearch $engine , array $init , int $expected ) :array
+    {
+        $results = [] ;
+
+        for ( $attempt = 0 ; $attempt < 150 ; $attempt++ )
+        {
+            $results = $engine->search( $init ) ;
+
+            if ( count( $results ) === $expected )
+            {
+                break ;
+            }
+
+            usleep( 100_000 ) ; // 100 ms
+        }
+
+        return $results ;
     }
 
     /**
