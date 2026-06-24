@@ -247,6 +247,25 @@ Les quatre états de `FALLBACK` — un type **non listé** est… :
 
 Le champ discriminant est **réutilisé** depuis l'entrée composite de `MODELS` (`additionalType` par défaut) — jamais redéclaré ici. La permission par type ne s'applique donc qu'à une collection déjà déclarée composite dans `MODELS`.
 
+#### Omettre `COLLECTION` — une collection publique, filtrée par type
+
+`COLLECTION` est **optionnel**. On l'omet quand tout le monde peut *chercher* dans la collection mais que chaque **type** à l'intérieur reste réservé — la porte de niveau 1 reste ouverte, seules les portes de niveau 2 (par type) filtrent les documents :
+
+```php
+'organizations' =>
+[
+    // pas de COLLECTION → entrer dans la collection est public (niveau 1 ouvert)
+    FederatedSearchParam::MAP =>
+    [
+        'Customer' => 'cust:list' ,
+        'Provider' => [ 'prov:list' , 'prov:admin' ] ,
+    ] ,
+    FederatedSearchParam::FALLBACK => 'org:list' ,  // les types non listés
+] ,
+```
+
+Tout le monde peut chercher dans `organizations`, mais ne voit un `Customer` qu'avec `cust:list`, un `Provider` qu'avec `prov:list` **ou** `prov:admin`, et tout autre type qu'avec `org:list`. Le seul cas interdit est une entrée structurée qui ne filtre **rien** (ni `COLLECTION`, ni `MAP`, ni `FALLBACK`) : elle équivaut à une collection entièrement publique et est **supprimée** à la construction — autant ne pas la déclarer. À noter : sans `COLLECTION`, le moteur ne peut plus écarter la collection entière en amont ; il pèse alors chaque type (sans danger, mais un cran moins efficace). Garde `COLLECTION` quand l'entrée dans la collection doit déjà exiger une permission.
+
 ### Pré-requis — indexer le discriminateur
 
 Le garde par type filtre sur le discriminateur **dans la recherche** : le champ doit donc être dans l'index inversé de la collection, avec l'analyzer `identity`. La seule subtilité est sa **forme** :

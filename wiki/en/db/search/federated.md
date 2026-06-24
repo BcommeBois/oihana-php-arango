@@ -244,6 +244,25 @@ Three slots:
 
 The discriminator field is **reused** from the collection's composite `MODELS` entry (`additionalType` by default) — never redeclared here. So per-type permissions only apply to a collection already declared composite in `MODELS`.
 
+#### Omitting `COLLECTION` — a public collection, gated per type
+
+`COLLECTION` is **optional**. Leave it out when anyone may *search* the collection but each **type** inside it is still restricted — the level-1 door stays open, only the level-2 (per-type) doors gate the documents:
+
+```php
+'organizations' =>
+[
+    // no COLLECTION → entering the collection is public (level 1 open)
+    FederatedSearchParam::MAP =>
+    [
+        'Customer' => 'cust:list' ,
+        'Provider' => [ 'prov:list' , 'prov:admin' ] ,
+    ] ,
+    FederatedSearchParam::FALLBACK => 'org:list' ,  // the unlisted types
+] ,
+```
+
+Everyone may search `organizations`, but sees a `Customer` only with `cust:list`, a `Provider` only with `prov:list` **or** `prov:admin`, and any other type only with `org:list`. The only forbidden case is a structured entry that gates **nothing** (no `COLLECTION`, no `MAP`, no `FALLBACK`): it is equivalent to a fully public collection and is **dropped** on construction — so just don't declare it. Note that without `COLLECTION` the engine can no longer exclude the whole collection up front; it weighs every type instead (harmless, but a notch less efficient). Keep `COLLECTION` when entering the collection should already require a permission.
+
 ### Prerequisite — index the discriminator
 
 The per-type gate filters on the discriminator **inside the search**, so the field must be in the collection's inverted index, with the `identity` analyzer. The only twist is its **shape**:
