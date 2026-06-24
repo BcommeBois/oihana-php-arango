@@ -263,7 +263,7 @@ final class FederatedSearchTest extends TestCase
      *
      * @return FederatedSearch
      */
-    private function compositeEngine( array $models , array $typeRows , array $services , ?string &$typeAql = null ) :FederatedSearch
+    private function compositeEngine( array $models , array $typeRows , array $services , ?string &$typeAql = null , array $requires = [] ) :FederatedSearch
     {
         $cursor = $this->createMock( Cursor::class ) ;
         $cursor->method( 'all' )->willReturn( $typeRows ) ;
@@ -280,8 +280,9 @@ final class FederatedSearchTest extends TestCase
 
         return new FederatedSearch( $this->containerWith( $services ) ,
         [
-            FederatedSearchParam::MODELS => $models ,
-            Arango::DATABASE             => $arango ,
+            FederatedSearchParam::MODELS   => $models ,
+            FederatedSearchParam::REQUIRES => $requires ,
+            Arango::DATABASE               => $arango ,
         ]) ;
     }
 
@@ -1054,6 +1055,232 @@ final class FederatedSearchTest extends TestCase
         $engine = new FederatedSearch( $container , [ FederatedSearchParam::MODELS => [ 'customers' => 'm.c' ] ] ) ;
 
         $this->assertSame( [] , $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' , 'score' => 9.1 ] ] ) ) ;
+    }
+
+    // ---- per-type gate at the SEARCH (Lot 2) --------------------------------
+
+    /**
+     * A db-backed engine over one polymorphic (composite) collection with a custom
+     * `models` + `requires`, capturing the find AQL + binds.
+     *
+     * @param array<string, mixed>      $models
+     * @param array<string, mixed>      $requires
+     * @param array<string, mixed>|null $captured Filled by reference with `[ aql, binds ]`.
+     *
+     * @return FederatedSearch
+     */
+    private function typeGateEngine( array $models , array $requires , ?array &$captured = null ) :FederatedSearch
+    {
+        $cursor = $this->createMock( Cursor::class ) ;
+        $cursor->method( 'all' )->willReturn( [] ) ;
+        $cursor->method( 'getFullCount' )->willReturn( 0 ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'query' )->willReturnCallback( function( $aql , $binds = [] , $options = [] ) use ( &$captured , $cursor )
+        {
+            $captured = [ 'aql' => $aql , 'binds' => $binds ] ;
+            return $cursor ;
+        } ) ;
+
+        $arango = $this->createMock( ArangoDB::class ) ;
+        $arango->method( 'database' )->willReturn( $database ) ;
+
+        return new FederatedSearch( $this->createMock( Container::class ) ,
+        [
+            FederatedSearchParam::VIEW       => 'global_search' ,
+            FederatedSearchParam::SEARCHABLE => [ Search::FIELDS => [ 'name' ] , Search::ANALYZER => 'text_fr' ] ,
+            FederatedSearchParam::MODELS     => $models ,
+            FederatedSearchParam::REQUIRES   => $requires ,
+            Arango::DATABASE                 => $arango ,
+        ]) ;
+    }
+
+    /** A composite `organizations` model routed by `additionalType`. */
+    private function orgComposite() :array
+    {
+        return [ 'organizations' => [ FederatedSearchParam::MAP => [ 'Customer' => 'm.cust' , 'Provider' => 'm.prov' ] ] ] ;
+    }
+
+    public function testFindAddsAPermissiveTypeGateHidingOnlyDeniedTypes() :void
+    {
+        // FALLBACK => true : unlisted types visible ; only the denied (Provider) is excluded
+        $engine = $this->typeGateEngine(
+            $this->orgComposite() ,
+            [ 'organizations' =>
+            [
+                FederatedSearchParam::COLLECTION => 'org:list' ,
+                FederatedSearchParam::MAP        => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ,
+                FederatedSearchParam::FALLBACK   => true ,
+            ] ] ,
+            $captured
+        ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn( string $s ) => in_array( $s , [ 'org:list' , 'cust:list' ] , true ) ] ) ;
+
+        $aql = $captured[ 'aql' ] ;
+        // the term keeps its own analyzer, the type predicate runs under identity
+        $this->assertStringContainsString( 'ANALYZER(doc.name IN TOKENS(@search,"text_fr"),"text_fr")' , $aql ) ;
+        $this->assertStringContainsString( '!ANALYZER(doc.additionalType IN @' , $aql ) ;
+        $this->assertStringContainsString( ',"identity")' , $aql ) ;
+        $this->assertStringNotContainsString( 'EXISTS' , $aql ) ; // permissive : no field-absence escape
+        // only the denied type is bound (Provider), never the allowed one
+        $this->assertContains( [ 'Provider' ] , array_values( $captured[ 'binds' ] ) ) ;
+        $this->assertNotContains( [ 'Customer' ] , array_values( $captured[ 'binds' ] ) ) ;
+    }
+
+    public function testFindAddsAStrictTypeGateKeepingAllowedTypesAndFieldAbsence() :void
+    {
+        // no FALLBACK : strict : only Customer visible, other collections pass via NOT EXISTS
+        $engine = $this->typeGateEngine(
+            $this->orgComposite() ,
+            [ 'organizations' =>
+            [
+                FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ,
+            ] ] ,
+            $captured
+        ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'cust:list' ] ) ;
+
+        $aql = $captured[ 'aql' ] ;
+        $this->assertStringContainsString( '( ANALYZER(doc.additionalType IN @' , $aql ) ;
+        $this->assertStringContainsString( '|| !EXISTS(doc.additionalType) )' , $aql ) ;
+        $this->assertContains( [ 'Customer' ] , array_values( $captured[ 'binds' ] ) ) ; // the allowed type is bound
+    }
+
+    public function testFindStrictWithNoAllowedTypeKeepsOnlyTypelessDocuments() :void
+    {
+        // strict + every mapped type denied → only documents with no discriminator pass
+        $engine = $this->typeGateEngine(
+            $this->orgComposite() ,
+            [ 'organizations' => [ FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ] ] ,
+            $captured
+        ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn() => false ] ) ;
+
+        $aql = $captured[ 'aql' ] ;
+        $this->assertStringContainsString( '!EXISTS(doc.additionalType)' , $aql ) ;
+        $this->assertStringNotContainsString( 'doc.additionalType IN @' , $aql ) ; // no allowed set to match
+    }
+
+    public function testFindAddsNoTypeGateWhenNothingIsDenied() :void
+    {
+        // permissive + every type allowed → no type predicate at all (normal search path)
+        $engine = $this->typeGateEngine(
+            $this->orgComposite() ,
+            [ 'organizations' =>
+            [
+                FederatedSearchParam::MAP      => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ,
+                FederatedSearchParam::FALLBACK => true ,
+            ] ] ,
+            $captured
+        ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn() => true ] ) ;
+
+        $aql = $captured[ 'aql' ] ;
+        $this->assertStringNotContainsString( 'additionalType' , $aql ) ; // nothing to restrict
+        $this->assertStringContainsString( 'TOKENS(@search,"text_fr")' , $aql ) ; // plain search unchanged
+    }
+
+    public function testFindCollectionGateExcludesTheWholeCollectionBeforeTheTypeGate() :void
+    {
+        // level 1 denies org:list → organizations excluded entirely ; products stays (public)
+        $engine = $this->typeGateEngine(
+            [ 'products' => 'm.prod' ] + $this->orgComposite() ,
+            [ 'organizations' =>
+            [
+                FederatedSearchParam::COLLECTION => 'org:list' ,
+                FederatedSearchParam::MAP        => [ 'Customer' => 'cust:list' ] ,
+            ] ] ,
+            $captured
+        ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn( string $s ) => $s === 'cust:list' ] ) ; // org:list denied
+
+        $aql = $captured[ 'aql' ] ;
+        $this->assertStringContainsString( '"products"' , $aql ) ;
+        $this->assertStringNotContainsString( 'organizations' , $aql ) ; // excluded at level 1
+        $this->assertStringNotContainsString( 'additionalType' , $aql ) ; // so no type gate either
+    }
+
+    public function testFindStructuredRequireOnANonCompositeModelAddsNoTypeGate() :void
+    {
+        // per-type needs a composite model to know the discriminator ; a direct model → skipped
+        $engine = $this->typeGateEngine(
+            [ 'organizations' => 'm.org' ] , // direct model : no discriminator
+            [ 'organizations' => [ FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' ] ] ] ,
+            $captured
+        ) ;
+
+        $engine->find( [ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => static fn() => false ] ) ;
+
+        $this->assertStringNotContainsString( 'additionalType' , $captured[ 'aql' ] ) ;
+        $this->assertStringNotContainsString( 'EXISTS' , $captured[ 'aql' ] ) ;
+    }
+
+    public function testRebuildDefensivelyDropsADeniedTypeEvenWithoutFind() :void
+    {
+        // rebuild called on its own : the strict per-type policy still drops Provider
+        $customers = $this->modelReturning( [ [ '_key' => 'o1' , 'name' => 'Acme' ] ] ) ;
+        $providers = $this->modelReturning( [ [ '_key' => 'o2' , 'name' => 'Globex' ] ] ) ;
+
+        $engine = $this->compositeEngine(
+            [ 'organizations' => [ FederatedSearchParam::MAP => [ 'Customer' => 'm.cust' , 'Provider' => 'm.prov' ] ] ] ,
+            [
+                [ '_key' => 'o1' , 'discriminator' => 'Customer' ] ,
+                [ '_key' => 'o2' , 'discriminator' => 'Provider' ] ,
+            ] ,
+            [ 'm.cust' => $customers , 'm.prov' => $providers ] ,
+            $unused ,
+            [ 'organizations' => [ FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ] ] // strict
+        ) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'organizations' , 'key' => 'o1' , 'score' => 9.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o2' , 'score' => 8.0 ] , // Provider → denied → dropped
+        ] , [ Arango::AUTHORIZER => static fn( string $s ) => $s === 'cust:list' ] ) ;
+
+        $this->assertSame( [ 'o1' ] , array_map( static fn( $r ) => $r[ 'document' ][ '_key' ] , $results ) ) ;
+        $this->assertSame( [ 'o1' ] , $this->requestedKeys( $customers ) ) ; // only the allowed type routed
+        $this->assertSame( [] , $this->requestedKeys( $providers ) ) ;       // denied type never reached its model
+    }
+
+    public function testRebuildPermissiveKeepsUnlistedTypes() :void
+    {
+        // FALLBACK => true : an unlisted type (Charity) is kept, the denied one (Provider) dropped
+        $generic = $this->modelReturning( [ [ '_key' => 'o1' , 'name' => 'Acme' ] , [ '_key' => 'o3' , 'name' => 'Asso' ] ] ) ;
+
+        $engine = $this->compositeEngine(
+            [ 'organizations' =>
+            [
+                FederatedSearchParam::MAP      => [ 'Customer' => 'm.gen' , 'Provider' => 'm.gen' ] ,
+                FederatedSearchParam::FALLBACK => 'm.gen' ,
+            ] ] ,
+            [
+                [ '_key' => 'o1' , 'discriminator' => 'Customer' ] ,
+                [ '_key' => 'o2' , 'discriminator' => 'Provider' ] , // denied
+                [ '_key' => 'o3' , 'discriminator' => 'Charity'  ] , // unlisted → fallback model, visible
+            ] ,
+            [ 'm.gen' => $generic ] ,
+            $unused ,
+            [ 'organizations' =>
+            [
+                FederatedSearchParam::MAP      => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ,
+                FederatedSearchParam::FALLBACK => true ,
+            ] ]
+        ) ;
+
+        $results = $engine->rebuild(
+        [
+            [ 'collection' => 'organizations' , 'key' => 'o1' , 'score' => 9.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o2' , 'score' => 8.0 ] ,
+            [ 'collection' => 'organizations' , 'key' => 'o3' , 'score' => 7.0 ] ,
+        ] , [ Arango::AUTHORIZER => static fn( string $s ) => $s === 'cust:list' ] ) ;
+
+        $this->assertSame( [ 'o1' , 'o3' ] , $this->requestedKeys( $generic ) ) ; // o2 (Provider) dropped, o3 (unlisted) kept
     }
 }
 

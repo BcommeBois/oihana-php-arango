@@ -36,6 +36,8 @@ use function oihana\arango\db\binds\aqlBind ;
 use function oihana\arango\db\binds\aqlBindCollection ;
 use function oihana\arango\db\functions\documents\merge ;
 use function oihana\arango\db\functions\documents\parseIdentifier ;
+use function oihana\arango\db\functions\search\analyzer ;
+use function oihana\arango\db\functions\search\exists ;
 use function oihana\arango\db\functions\strings\tokens ;
 use function oihana\arango\db\helpers\aqlDocument ;
 use function oihana\arango\db\helpers\assertAttributeName ;
@@ -252,9 +254,10 @@ class FederatedSearch
             return [] ;
         }
 
-        // Permission gate : restrict the SEARCH to the registered collections the
-        // request is authorized for (OPTIONS { collections }) — applied before the
-        // LIMIT, so the page and the fullCount only ever cover allowed collections.
+        // Permission gate — level 1 (collection) : restrict the SEARCH to the
+        // registered collections the request is authorized for (OPTIONS { collections }),
+        // applied before the LIMIT, so the page and the fullCount only ever cover
+        // allowed collections.
         $allowed = $this->allowedCollections( $init ) ;
 
         if ( $allowed === [] )
@@ -262,12 +265,30 @@ class FederatedSearch
             return [] ;
         }
 
+        // Permission gate — level 2 (per type) : for a polymorphic collection with a
+        // structured requirement, AND a discriminator predicate onto the search,
+        // also before the LIMIT (so the total stays exact). When present, the engine
+        // takes over the ANALYZER wrapping : the term keeps its own analyzer, the
+        // type predicate runs under "identity" (an exact value match).
+        $typeGate = $this->buildTypeGate( $allowed , $init , $binds ) ;
+
+        if ( $typeGate !== null )
+        {
+            $search   = analyzer( $expression , $this->analyzerName() ) . Char::SPACE . Logic::AND . Char::SPACE . $typeGate ;
+            $analyzer = null ;
+        }
+        else
+        {
+            $search   = $expression ;
+            $analyzer = $this->analyzerName() ;
+        }
+
         $aql = aqlScoredSearch
         (
             view     : $view ,
-            search   : $expression ,
+            search   : $search ,
             limit    : (int) ( $init[ Arango::LIMIT  ] ?? self::DEFAULT_LIMIT ) ,
-            analyzer : $this->analyzerName() ,
+            analyzer : $analyzer ,
             options  : [ self::COLLECTIONS_OPTION => $allowed ] ,
             offset   : (int) ( $init[ Arango::OFFSET ] ?? 0 ) ,
             scoreRef : self::SCORE ,
@@ -374,7 +395,7 @@ class FederatedSearch
 
             $keysByModelId = is_string( $spec )
                 ? [ $spec => $keys ]                                        // direct
-                : $this->bucketKeysByModel( $collection , $spec , $keys ) ; // composite
+                : $this->bucketKeysByModel( $collection , $spec , $keys , $init ) ; // composite
 
             foreach ( $keysByModelId as $modelId => $modelKeys )
             {
@@ -646,11 +667,15 @@ class FederatedSearch
     }
 
     /**
-     * Returns the registered collections the request is authorized to search:
-     * each collection of the registry whose declared {@see FederatedSearchParam::REQUIRES}
-     * subject(s) are granted by the request authorizer (`Arango::AUTHORIZER`),
-     * via {@see isAuthorized()}. A collection without a declared requirement is
-     * public; without an authorizer everything is allowed (fail-open).
+     * Returns the registered collections the request is authorized to search —
+     * the **level-1** (collection) gate. A collection passes when its declared
+     * collection-level requirement is granted by the request authorizer
+     * (`Arango::AUTHORIZER`), via {@see isAuthorized()}. The requirement is the
+     * value itself for a collection-level entry, or the {@see FederatedSearchParam::COLLECTION}
+     * sub-key of a structured (cascade) entry — read by {@see collectionLevelSubjects()}.
+     * A collection without a declared requirement is public; without an authorizer
+     * everything is allowed (fail-open). The **level-2** (per type) gate is applied
+     * separately by {@see buildTypeGate()} on the collections this returns.
      *
      * @param array<string, mixed> $init The request options (`Arango::AUTHORIZER`).
      *
@@ -662,13 +687,36 @@ class FederatedSearch
 
         foreach ( array_keys( $this->models ) as $collection )
         {
-            if ( isAuthorized( [ Field::REQUIRES => $this->requires[ $collection ] ?? null ] , $init ) )
+            if ( isAuthorized( [ Field::REQUIRES => $this->collectionLevelSubjects( $collection ) ] , $init ) )
             {
                 $allowed[] = $collection ;
             }
         }
 
         return $allowed ;
+    }
+
+    /**
+     * Returns the level-1 (collection) permission subject(s) declared for a
+     * collection: the requirement value itself for a collection-level entry (a
+     * subject string or an OR-list), or the {@see FederatedSearchParam::COLLECTION}
+     * sub-key for a structured (cascade) entry — null when the collection itself
+     * is public (absent, or a structured entry with no collection subject).
+     *
+     * @param string $collection
+     *
+     * @return string|array<int, string>|null
+     */
+    private function collectionLevelSubjects( string $collection ) : string|array|null
+    {
+        $structured = $this->structuredRequire( $collection ) ;
+
+        if ( $structured !== null )
+        {
+            return $structured[ FederatedSearchParam::COLLECTION ] ;
+        }
+
+        return $this->requires[ $collection ] ?? null ; // a subject string, an OR-list, or null (public)
     }
 
     /**
@@ -723,6 +771,79 @@ class FederatedSearch
     }
 
     /**
+     * Builds the **level-2** (per type) gate : the discriminator predicate ANDed
+     * onto the search for every authorized polymorphic collection that declares a
+     * structured requirement, or null when none applies (no structured/composite
+     * collection, or nothing to restrict). Each per-collection clause exploits
+     * **field absence** to scope itself — a non-polymorphic collection does not
+     * index the discriminator, so it is never touched — instead of the (removed)
+     * `IS_SAME_COLLECTION`. Two shapes, all kept **before the LIMIT** so the total
+     * stays exact, the type value matched under the `identity` analyzer :
+     * <ul>
+     *   <li><b>permissive</b> (unlisted types visible) — hide only the denied types:
+     *       `!ANALYZER(doc.<disc> IN @denied, "identity")` (omitted when nothing is denied);</li>
+     *   <li><b>strict</b> (unlisted types hidden) — keep only the allowed types,
+     *       plus any document with no discriminator (other collections, via field
+     *       absence): `( ANALYZER(doc.<disc> IN @allowed, "identity") || !EXISTS(doc.<disc>) )`
+     *       — collapsing to `!EXISTS(doc.<disc>)` when no type is allowed.</li>
+     * </ul>
+     *
+     * @param array<int, string>   $allowed The level-1 authorized collections.
+     * @param array<string, mixed> $init    The request options (`Arango::AUTHORIZER`).
+     * @param array<string, mixed> &$binds  The bind variables, filled by reference.
+     *
+     * @return string|null
+     *
+     * @throws BindException
+     */
+    private function buildTypeGate( array $allowed , array $init , array &$binds ) : ?string
+    {
+        $clauses = [] ;
+
+        foreach ( $allowed as $collection )
+        {
+            $structured = $this->structuredRequire( $collection ) ;
+            $field      = $this->discriminatorField( $collection ) ;
+
+            // Per-type only applies to a structured requirement on a composite
+            // (discriminator-bearing) collection; otherwise the collection-level
+            // gate already decided it.
+            if ( $structured === null || $field === null )
+            {
+                continue ;
+            }
+
+            [ $allowedTypes , $deniedTypes , $unlistedVisible ] = $this->partitionTypes( $structured , $init ) ;
+
+            assertAttributeName( $field ) ; // config-trusted, but guard before interpolating
+            $path = key( $field , AQL::DOC ) ;
+
+            if ( $unlistedVisible )
+            {
+                if ( $deniedTypes === [] )
+                {
+                    continue ; // nothing denied → nothing to restrict for this collection
+                }
+
+                $bind      = aqlBind( $deniedTypes , $binds ) ;
+                $clauses[] = Logic::NOT . analyzer( $path . Char::SPACE . Comparator::IN . Char::SPACE . $bind , AnalyzerType::IDENTITY ) ;
+            }
+            else if ( $allowedTypes === [] )
+            {
+                $clauses[] = Logic::NOT . exists( $path ) ; // only no-discriminator documents pass
+            }
+            else
+            {
+                $bind      = aqlBind( $allowedTypes , $binds ) ;
+                $in        = analyzer( $path . Char::SPACE . Comparator::IN . Char::SPACE . $bind , AnalyzerType::IDENTITY ) ;
+                $clauses[] = '( ' . $in . Char::SPACE . Logic::OR . Char::SPACE . Logic::NOT . exists( $path ) . ' )' ;
+            }
+        }
+
+        return $clauses === [] ? null : compile( $clauses , Char::SPACE . Logic::AND . Char::SPACE ) ;
+    }
+
+    /**
      * Returns the `_key` of a rebuilt document, reading it from an array or an
      * object shape (a model hydrates to either). Null when absent.
      *
@@ -746,14 +867,71 @@ class FederatedSearch
     }
 
     /**
+     * Returns the discriminator field of a collection — read from its composite
+     * {@see FederatedSearchParam::MODELS} entry (the single source of truth, never
+     * redeclared in {@see FederatedSearchParam::REQUIRES}) — or null when the
+     * collection is not composite (a direct, non-polymorphic model).
+     *
+     * @param string $collection
+     *
+     * @return string|null
+     */
+    private function discriminatorField( string $collection ) : ?string
+    {
+        $spec = $this->models[ $collection ] ?? null ;
+
+        return ( is_array( $spec ) && isset( $spec[ FederatedSearchParam::DISCRIMINATOR ] ) )
+            ? $spec[ FederatedSearchParam::DISCRIMINATOR ]
+            : null ;
+    }
+
+    /**
+     * Decides whether a document of the given discriminator value is visible to the
+     * request under a collection's structured (level-2) requirement — the rebuild
+     * counterpart of {@see buildTypeGate()}, kept in lock-step through the shared
+     * {@see partitionTypes()}. A scalar or an array of types is accepted (a
+     * multi-typed document is visible when **any** of its types is); a document
+     * with no discriminator value is always visible (it belongs to a
+     * non-polymorphic shape, matched by field absence in the SEARCH gate).
+     *
+     * @param array<string, mixed> $structured The normalised structured requirement.
+     * @param mixed                $type       The discriminator value (string, array, or null).
+     * @param array<string, mixed> $init       The request options (`Arango::AUTHORIZER`).
+     *
+     * @return bool
+     */
+    private function isTypeVisible( array $structured , mixed $type , array $init ) : bool
+    {
+        [ $allowedTypes , $deniedTypes , $unlistedVisible ] = $this->partitionTypes( $structured , $init ) ;
+
+        $candidates = is_array( $type ) ? $type : ( $type === null ? [] : [ $type ] ) ;
+
+        if ( $unlistedVisible ) // hide only the denied types
+        {
+            return !array_any( $candidates , static fn( $candidate ) => in_array( $candidate , $deniedTypes , true ) ) ;
+        }
+
+        // strict : a typeless document passes (field absence), else at least one allowed type
+        return $candidates === []
+            || array_any( $candidates , static fn( $candidate ) => in_array( $candidate , $allowedTypes , true ) ) ;
+    }
+
+    /**
      * Buckets a composite collection's keys by the model resolved from each key's
      * discriminator value — read in one lightweight lookup
      * ({@see readDiscriminators()}). A key whose type maps to no model (and no
      * fallback) is dropped.
      *
+     * A **defensive** per-type gate is also applied here : when the collection
+     * declares a structured requirement, a key whose discriminator value is not
+     * visible to the request (per the same level-2 policy as {@see buildTypeGate()})
+     * is dropped before bucketing, so a denied type never reaches a model even if
+     * the SEARCH gate was bypassed (e.g. {@see rebuild()} called on its own).
+     *
      * @param string               $collection The polymorphic collection.
      * @param array<string, mixed> $spec       The normalised composite spec.
      * @param array<int, string>   $keys       The matched document keys.
+     * @param array<string, mixed> $init       The request options (`Arango::AUTHORIZER`).
      *
      * @return array<string, array<int, string>> A `model-service-id => keys` map.
      *
@@ -764,15 +942,25 @@ class FederatedSearch
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function bucketKeysByModel( string $collection , array $spec , array $keys ) : array
+    private function bucketKeysByModel( string $collection , array $spec , array $keys , array $init ) : array
     {
         $typesByKey = $this->readDiscriminators( $collection , $spec[ FederatedSearchParam::DISCRIMINATOR ] , $keys ) ;
+
+        $structured = $this->structuredRequire( $collection ) ;
 
         $buckets = [] ;
 
         foreach ( $keys as $key )
         {
-            $modelId = $this->resolveModelId( $spec , $typesByKey[ $key ] ?? null ) ;
+            $type = $typesByKey[ $key ] ?? null ;
+
+            // defensive level-2 gate : drop a key the request may not see by type
+            if ( $structured !== null && !$this->isTypeVisible( $structured , $type , $init ) )
+            {
+                continue ;
+            }
+
+            $modelId = $this->resolveModelId( $spec , $type ) ;
 
             if ( $modelId !== null )
             {
@@ -912,6 +1100,43 @@ class FederatedSearch
     }
 
     /**
+     * Partitions a structured requirement's {@see FederatedSearchParam::MAP} into
+     * the type values the request **is** and **is not** authorized to see, and
+     * decides whether the **unlisted** types are visible (the
+     * {@see FederatedSearchParam::FALLBACK} is the literal `true`, or its subjects
+     * are granted). The single source of truth shared by the SEARCH gate
+     * ({@see buildTypeGate()}) and the rebuild gate ({@see isTypeVisible()}), so the
+     * two never diverge.
+     *
+     * @param array<string, mixed> $structured The normalised structured requirement.
+     * @param array<string, mixed> $init       The request options (`Arango::AUTHORIZER`).
+     *
+     * @return array{0: array<int, string>, 1: array<int, string>, 2: bool} `[ allowedTypes, deniedTypes, unlistedVisible ]`.
+     */
+    private function partitionTypes( array $structured , array $init ) : array
+    {
+        $allowedTypes = [] ;
+        $deniedTypes  = [] ;
+
+        foreach ( $structured[ FederatedSearchParam::MAP ] as $type => $subjects )
+        {
+            if ( isAuthorized( [ Field::REQUIRES => $subjects ] , $init ) )
+            {
+                $allowedTypes[] = $type ;
+            }
+            else
+            {
+                $deniedTypes[] = $type ;
+            }
+        }
+
+        $fallback        = $structured[ FederatedSearchParam::FALLBACK ] ;
+        $unlistedVisible = $fallback === true || ( $fallback !== null && isAuthorized( [ Field::REQUIRES => $fallback ] , $init ) ) ;
+
+        return [ $allowedTypes , $deniedTypes , $unlistedVisible ] ;
+    }
+
+    /**
      * Reads the discriminator value of each matched key in one lightweight lookup
      * (`FOR d IN @@collection FILTER d._key IN @keys RETURN { _key, discriminator }`),
      * keyed by `_key`. Returns an empty map when no database is configured, so the
@@ -1043,5 +1268,21 @@ class FederatedSearch
             parseIdentifier( key( Schema::_ID , AQL::DOC ) ) ,
             aqlDocument( [ self::SCORE => self::SCORE ] , [ AQL::USE_SPACE => true , AQL::RAW_VALUES => [ self::SCORE ] ] ) ,
         ]) ;
+    }
+
+    /**
+     * Returns a collection's **structured** (cascade) requirement — the normalised
+     * `[ COLLECTION, MAP, FALLBACK ]` array — or null when the collection has no
+     * requirement, or only a collection-level one (a subject string or an OR-list).
+     *
+     * @param string $collection
+     *
+     * @return array<string, mixed>|null
+     */
+    private function structuredRequire( string $collection ) : ?array
+    {
+        $requirement = $this->requires[ $collection ] ?? null ;
+
+        return ( is_array( $requirement ) && !array_is_list( $requirement ) ) ? $requirement : null ;
     }
 }
