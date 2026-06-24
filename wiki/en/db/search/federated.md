@@ -99,8 +99,8 @@ preserving the score order and the total.
 - **Fallback** — an unmapped type uses `FALLBACK` when present, otherwise the match
   is dropped (it never reaches a wrong model).
 - **Backward-compatible** — a direct `collection => 'model.id'` entry is unchanged.
-- **Permissions** stay at the **collection** level (a per-`additionalType` gate is
-  not yet supported — see § Permissions).
+- **Permissions** can be enforced at the **collection** level and, for a polymorphic
+  collection, **per type** — see § Per-type permissions.
 
 ## Running a search
 
@@ -195,6 +195,129 @@ $authorizer = fn( string $s ) => in_array( $s , [ 'products:list' ] , true ) ;
 - **A list of subjects** → **OR** semantics (one is enough).
 - **No collection allowed** → empty result, total 0.
 - **Field-level permissions** (a given field hidden from a given user) stay enforced **by each model** at rebuild time — this gate only handles the "whole collection" level.
+
+## Per-type permissions inside a polymorphic collection
+
+The gate above is all-or-nothing **per collection**. A [polymorphic collection](#polymorphic-collections--routing-by-additionaltype) — `organizations` holding `Customer`, `Provider`, `Subsidiary` — sometimes needs a finer rule: *this user sees the `Customer` records but **not** the `Provider` ones, inside the same `organizations` collection.*
+
+Picture **two doors**: the collection is the building's front door (level 1), each type is a floor door (level 2). To see a document you must pass **both** — first the collection, then its type. It is a **cascade (AND)**: the collection gate is the base everywhere, the per-type gate is an optional refinement on polymorphic collections.
+
+### Declaring it
+
+A `REQUIRES` value gains a third, **structured** form (the collection-level string and OR-list forms are unchanged):
+
+```php
+FederatedSearchParam::REQUIRES =>
+[
+    'customers'     => 'customers:list' ,                  // form 1 : a subject (collection level)
+    'users'         => [ 'users:list' , 'users:admin' ] ,  // form 2 : an OR-list (collection level)
+
+    'organizations' =>                                     // form 3 : the cascade gate
+    [
+        FederatedSearchParam::COLLECTION => 'org:list' ,   // level 1 : enter the collection
+        FederatedSearchParam::MAP =>                       // level 2 : per type
+        [
+            'Customer' => 'cust:list' ,
+            'Provider' => [ 'prov:list' , 'prov:admin' ] , // a subject or an OR-list
+        ] ,
+        FederatedSearchParam::FALLBACK => 'org:list' ,     // level 2 : the unlisted types
+    ] ,
+]
+```
+
+Three slots:
+
+| Slot | Level | Accepts | Meaning |
+|---|---|---|---|
+| `COLLECTION` | 1 | subject \| OR-list \| absent | the right to **enter** the collection. Absent → the collection itself is public (its types may still be gated). |
+| `MAP` | 2 | `type => (subject \| OR-list)` | the right required for each **listed** type. |
+| `FALLBACK` | 2 | absent \| subject \| OR-list \| `true` | governs the **unlisted** types. |
+
+`FALLBACK`'s four states — an **unlisted** type is…:
+
+| `FALLBACK` | Result |
+|---|---|
+| absent / `null` | **hidden** (fail-closed — the strict default) |
+| `'org:list'` | requires that subject |
+| `[ 'org:list' , 'org:admin' ]` | OR-list (one is enough) |
+| `true` | **visible** (the collection gate suffices — "permissive") |
+
+The discriminator field is **reused** from the collection's composite `MODELS` entry (`additionalType` by default) — never redeclared here. So per-type permissions only apply to a collection already declared composite in `MODELS`.
+
+### Prerequisite — index the discriminator
+
+The per-type gate filters on the discriminator **inside the search**, so the field must be in the collection's inverted index, with the `identity` analyzer. The only twist is its **shape**:
+
+```php
+// a collection whose additionalType is a STRING
+new InvertedIndex( fields: [ 'name', 'additionalType' ] , analyzer: 'identity' )
+
+// a collection whose additionalType is an ARRAY
+new InvertedIndex( fields: [ 'name', 'additionalType[*]' ] , analyzer: 'identity' )
+```
+
+A field is consistently one shape per collection, so you pick one. The library gate is **identical** either way (`doc.additionalType IN (…)`) — only the index declaration differs, and no `storeValues` is needed.
+
+> **Why the shape matters.** An inverted-index field over an array needs the `[*]` array-expansion; a field over a string does not (and `[*]` would not index a string). ArangoDB cannot index a "sometimes string, sometimes array" field — hence one shape per collection.
+
+### How it works, end to end
+
+Say the view holds these documents, the user searches `dupont`, and may see `Customer` but **not** `Provider`:
+
+| document | collection | `additionalType` |
+|---|---|---|
+| c1 | customers | *(none)* |
+| o1 | organizations | `["Customer"]` |
+| o2 | organizations | `["Provider"]` |
+| o3 | organizations | `["Provider","Customer"]` |
+
+Config + request:
+
+```php
+FederatedSearchParam::REQUIRES =>
+[
+    'organizations' =>
+    [
+        FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ,
+        // no FALLBACK → strict : unlisted types hidden
+    ] ,
+] ,
+
+$engine->search([ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => fn( $s ) => $s === 'cust:list' ]);
+```
+
+The engine ANDs a type predicate onto the search (**before the `LIMIT`**, so the total stays exact). The discriminator is matched under the `identity` analyzer; a non-`organizations` document has no `additionalType` indexed, so it passes untouched (field absence):
+
+```aql
+SEARCH ANALYZER(doc.name IN TOKENS(@search,"text_fr"),"text_fr")
+       && ( ANALYZER(doc.additionalType IN ["Customer"],"identity") || ! EXISTS(doc.additionalType) )
+```
+
+Result:
+
+| document | kept? | why |
+|---|---|---|
+| c1 (customers) | ✅ | other collection — no `additionalType` indexed |
+| o1 `["Customer"]` | ✅ | allowed type |
+| o2 `["Provider"]` | ❌ | denied type |
+| o3 `["Provider","Customer"]` | ✅ | carries an allowed type (`Customer`) |
+
+### The two modes
+
+The same registry drives two predicate shapes, picked per collection from the request's grants:
+
+- **permissive** — `FALLBACK => true` (or a granted fallback): unlisted types stay visible, only the denied ones are hidden — `! ANALYZER(doc.additionalType IN @denied,"identity")`.
+- **strict** — no `FALLBACK` (the default): only the allowed types are visible, plus documents with no discriminator — `( ANALYZER(doc.additionalType IN @allowed,"identity") || ! EXISTS(doc.additionalType) )`.
+
+A **multi-typed** document (an array carrying several types) is matched element by element: it is **visible in strict** as soon as it carries one allowed type, and **hidden in permissive** as soon as it carries one denied type.
+
+### Rules
+
+- **Cascade** — the `COLLECTION` gate decides whether the collection is searched at all; the type gate then refines. Both run **before the `LIMIT`**, so page and `foundRows()` stay exact.
+- **Typeless documents** (a polymorphic document with no `additionalType` at all) follow the index shape in strict mode: on an `additionalType[*]` index they are **hidden** (fail-closed); on a plain `additionalType` index they stay visible. A well-formed polymorphic collection always carries a type, so this is an edge case.
+- **Defense in depth** — the same level-2 policy is re-applied at rebuild, so a denied type never reaches a model even if `rebuild()` is called on its own.
+- **fail-open** — with no authorizer everything is allowed, as everywhere in the library.
+- **String discriminator** — everything above works identically when `additionalType` is a plain string; only the index is declared `additionalType` instead of `additionalType[*]`.
 
 ## Exposing it over HTTP
 

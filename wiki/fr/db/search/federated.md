@@ -102,8 +102,8 @@ modèle, en préservant l'ordre de score et le total.
   sinon le résultat est ignoré (il n'atteint jamais un mauvais modèle).
 - **Rétro-compatible** — une entrée directe `collection => 'model.id'` est
   inchangée.
-- **Permissions** : elles restent au niveau **collection** (un filtre par
-  `additionalType` n'est pas encore géré — voir § Permissions).
+- **Permissions** : applicables au niveau **collection** et, pour une collection
+  polymorphe, **par type** — voir § Permissions par type.
 
 ## Lancer une recherche
 
@@ -198,6 +198,129 @@ $authorizer = fn( string $s ) => in_array( $s , [ 'products:list' ] , true ) ;
 - **Liste de subjects** → sémantique **OR** (un seul suffit).
 - **Aucune collection autorisée** → résultat vide, total 0.
 - Les **permissions par champ** (tel champ caché à tel utilisateur) restent assurées **par chaque modèle** au moment de la reconstruction — ce filtre-ci ne gère que le niveau « collection entière ».
+
+## Permissions par type dans une collection polymorphe
+
+Le garde ci-dessus est tout-ou-rien **par collection**. Or une [collection polymorphe](#collections-polymorphes--routage-par-additionaltype) — `organizations` contenant des `Customer`, `Provider`, `Subsidiary` — demande parfois une règle plus fine : *cet utilisateur voit les `Customer` mais **pas** les `Provider`, à l'intérieur de la même collection `organizations`.*
+
+Imaginez **deux portes** : la collection est la porte de l'immeuble (niveau 1), chaque type est une porte d'étage (niveau 2). Pour voir un document, il faut passer **les deux** — d'abord la collection, puis son type. C'est une **cascade (ET)** : le garde collection est le socle partout, le garde par type est un raffinement **optionnel** sur les collections polymorphes.
+
+### Le déclarer
+
+Une valeur de `REQUIRES` accepte une troisième forme, **structurée** (les formes courtes — texte et liste-OU au niveau collection — sont inchangées) :
+
+```php
+FederatedSearchParam::REQUIRES =>
+[
+    'customers'     => 'customers:list' ,                  // forme 1 : un subject (niveau collection)
+    'users'         => [ 'users:list' , 'users:admin' ] ,  // forme 2 : une liste-OU (niveau collection)
+
+    'organizations' =>                                     // forme 3 : la cascade
+    [
+        FederatedSearchParam::COLLECTION => 'org:list' ,   // niveau 1 : entrer dans la collection
+        FederatedSearchParam::MAP =>                       // niveau 2 : par type
+        [
+            'Customer' => 'cust:list' ,
+            'Provider' => [ 'prov:list' , 'prov:admin' ] , // un subject ou une liste-OU
+        ] ,
+        FederatedSearchParam::FALLBACK => 'org:list' ,     // niveau 2 : les types non listés
+    ] ,
+]
+```
+
+Trois cases :
+
+| Case | Niveau | Accepte | Sens |
+|---|---|---|---|
+| `COLLECTION` | 1 | subject \| liste-OU \| absent | le droit d'**entrer** dans la collection. Absent → la collection elle-même est publique (ses types peuvent rester gardés). |
+| `MAP` | 2 | `type => (subject \| liste-OU)` | le droit exigé pour chaque type **listé**. |
+| `FALLBACK` | 2 | absent \| subject \| liste-OU \| `true` | gouverne les types **non listés**. |
+
+Les quatre états de `FALLBACK` — un type **non listé** est… :
+
+| `FALLBACK` | Résultat |
+|---|---|
+| absent / `null` | **caché** (*fail-closed* — le défaut strict) |
+| `'org:list'` | exige ce subject |
+| `[ 'org:list' , 'org:admin' ]` | liste-OU (un seul suffit) |
+| `true` | **visible** (la porte collection suffit — « permissif ») |
+
+Le champ discriminant est **réutilisé** depuis l'entrée composite de `MODELS` (`additionalType` par défaut) — jamais redéclaré ici. La permission par type ne s'applique donc qu'à une collection déjà déclarée composite dans `MODELS`.
+
+### Pré-requis — indexer le discriminateur
+
+Le garde par type filtre sur le discriminateur **dans la recherche** : le champ doit donc être dans l'index inversé de la collection, avec l'analyzer `identity`. La seule subtilité est sa **forme** :
+
+```php
+// une collection dont additionalType est un TEXTE
+new InvertedIndex( fields: [ 'name', 'additionalType' ] , analyzer: 'identity' )
+
+// une collection dont additionalType est un TABLEAU
+new InvertedIndex( fields: [ 'name', 'additionalType[*]' ] , analyzer: 'identity' )
+```
+
+Une collection est cohérente (une seule forme), donc on en choisit une. Le filtre de la bibliothèque est **identique** dans les deux cas (`doc.additionalType IN (…)`) — seule la déclaration de l'index change, et aucun `storeValues` n'est nécessaire.
+
+> **Pourquoi la forme compte.** Un champ d'index inversé sur un tableau exige l'expansion `[*]` ; sur un texte, non (et `[*]` n'indexerait pas un texte). ArangoDB ne peut pas indexer un champ « tantôt texte, tantôt tableau » — d'où une seule forme par collection.
+
+### Comment ça marche, de bout en bout
+
+Supposons que la vue contienne ces documents, que l'utilisateur cherche `dupont`, et qu'il puisse voir les `Customer` mais **pas** les `Provider` :
+
+| document | collection | `additionalType` |
+|---|---|---|
+| c1 | customers | *(aucun)* |
+| o1 | organizations | `["Customer"]` |
+| o2 | organizations | `["Provider"]` |
+| o3 | organizations | `["Provider","Customer"]` |
+
+Configuration + requête :
+
+```php
+FederatedSearchParam::REQUIRES =>
+[
+    'organizations' =>
+    [
+        FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' , 'Provider' => 'prov:list' ] ,
+        // pas de FALLBACK → strict : types non listés cachés
+    ] ,
+] ,
+
+$engine->search([ Arango::SEARCH => 'dupont' , Arango::AUTHORIZER => fn( $s ) => $s === 'cust:list' ]);
+```
+
+Le moteur ajoute (ET) un prédicat de type à la recherche (**avant le `LIMIT`**, donc le total reste exact). Le discriminateur est comparé sous l'analyzer `identity` ; un document d'une autre collection n'a pas `additionalType` indexé, il passe donc sans être touché (absence de champ) :
+
+```aql
+SEARCH ANALYZER(doc.name IN TOKENS(@search,"text_fr"),"text_fr")
+       && ( ANALYZER(doc.additionalType IN ["Customer"],"identity") || ! EXISTS(doc.additionalType) )
+```
+
+Résultat :
+
+| document | gardé ? | pourquoi |
+|---|---|---|
+| c1 (customers) | ✅ | autre collection — pas de `additionalType` indexé |
+| o1 `["Customer"]` | ✅ | type autorisé |
+| o2 `["Provider"]` | ❌ | type refusé |
+| o3 `["Provider","Customer"]` | ✅ | porte un type autorisé (`Customer`) |
+
+### Les deux modes
+
+Le même registre produit deux formes de prédicat, choisies par collection selon les droits de la requête :
+
+- **permissif** — `FALLBACK => true` (ou un fallback accordé) : les types non listés restent visibles, seuls les refusés sont cachés — `! ANALYZER(doc.additionalType IN @denied,"identity")`.
+- **strict** — pas de `FALLBACK` (le défaut) : seuls les types autorisés sont visibles, plus les documents sans discriminateur — `( ANALYZER(doc.additionalType IN @allowed,"identity") || ! EXISTS(doc.additionalType) )`.
+
+Un document **multi-type** (un tableau portant plusieurs types) est comparé élément par élément : il est **visible en strict** dès qu'il porte un type autorisé, et **caché en permissif** dès qu'il porte un type refusé.
+
+### Règles
+
+- **Cascade** — la porte `COLLECTION` décide si la collection est cherchée du tout ; le garde par type affine ensuite. Les deux s'appliquent **avant le `LIMIT`**, donc page et `foundRows()` restent exacts.
+- **Documents sans type** (un document polymorphe sans aucun `additionalType`) suivent la forme de l'index en mode strict : sur un index `additionalType[*]` ils sont **cachés** (*fail-closed*) ; sur un index `additionalType` simple ils restent visibles. Une collection polymorphe bien remplie porte toujours un type — c'est un cas limite.
+- **Défense en profondeur** — la même règle de niveau 2 est ré-appliquée à la reconstruction, donc un type refusé n'atteint jamais un modèle même si `rebuild()` est appelé seul.
+- **fail-open** — sans authorizer, tout est autorisé, comme partout dans la bibliothèque.
+- **Discriminateur texte** — tout ce qui précède marche à l'identique quand `additionalType` est un simple texte ; seul l'index se déclare `additionalType` au lieu de `additionalType[*]`.
 
 ## Exposer en HTTP
 
