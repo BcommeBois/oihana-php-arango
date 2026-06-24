@@ -23,7 +23,7 @@ words to their root, and so on. Because the **same** recipe applies at indexing
 ## Contents
 
 - [Built-in analyzers](#built-in-analyzers)
-- [The five types you can build](#the-five-types-you-can-build)
+- [The six types you can build](#the-six-types-you-can-build)
 - [Features — what they unlock](#features--what-they-unlock)
 - [Creating an analyzer the right way](#creating-an-analyzer-the-right-way)
 - [Lifecycle — the `arango:analyzers` command](#lifecycle--the-arangoanalyzers-command)
@@ -52,11 +52,11 @@ Search::ANALYZER => BuiltinAnalyzer::TEXT_FR ,   // 'text_fr'
 `identity` is the **default** analyzer: a field that declares nothing is indexed
 as-is. That is exactly what you want for a `code` field.
 
-## The five types you can build
+## The six types you can build
 
 When the built-ins are not enough (fine accent tuning, custom stopwords,
 prefix or substring search…), you build your own analyzer. The library exposes
-five "recipe" classes — `readonly` value objects implementing
+six "recipe" classes — `readonly` value objects implementing
 [`AnalyzerOptions`](../../../src/oihana/arango/clients/analyzer/AnalyzerOptions.php).
 This is the **complete set** of what is buildable today (see
 [Current limitations](#current-limitations)).
@@ -68,6 +68,7 @@ This is the **complete set** of what is buildable today (see
 | [`StemAnalyzer`](../../../src/oihana/arango/clients/analyzer/StemAnalyzer.php) | stemming (one word → its root); single-word input | `locale` |
 | [`TextAnalyzer`](../../../src/oihana/arango/clients/analyzer/TextAnalyzer.php) | the workhorse: tokenizes + lower-cases + accents + stemming + stopwords + prefix n-grams | `locale`, `case`, `accent`, `stemming`, `stopwords`, `stopwordsPath`, `edgeNgram` |
 | [`NgramAnalyzer`](../../../src/oihana/arango/clients/analyzer/NgramAnalyzer.php) | splits into substrings (n-grams) from `min` to `max` characters — the building block of **autocomplete** / substring search | `min`, `max`, `preserveOriginal`, `startMarker`, `endMarker`, `streamType` |
+| [`PipelineAnalyzer`](../../../src/oihana/arango/clients/analyzer/PipelineAnalyzer.php) | runs an **ordered chain** of sub-analyzers, each fed the previous one's output — the typed way to compose (e.g. `norm` → `ngram`) | `pipeline` (the ordered list of sub-analyzers) |
 
 `locale` is a BCP 47 / ICU tag (`'fr'`, `'en'`, `'fr.utf-8'`). `case` takes its
 values from the [`CaseFolding`](../../../src/oihana/arango/clients/analyzer/enums/CaseFolding.php)
@@ -184,14 +185,64 @@ analyzer on the **same** field (multiple analyzers per field), so the field
 serves both whole-word search and autocomplete.
 
 > `ngram` does not lower-case or fold accents: for case-insensitive autocomplete,
-> index already-normalized data (or, later, compose with a `pipeline` analyzer).
-> The `startMarker` / `endMarker` markers let you tell a start/end-of-word
-> fragment apart.
+> chain a `norm` **before** it with a [`PipelineAnalyzer`](#pipelineanalyzer--case-and-accent-insensitive-autocomplete)
+> (or index already-normalized data). The `startMarker` / `endMarker` markers let
+> you tell a start/end-of-word fragment apart.
 
 Two ways to query a field indexed with `ngram`:
 
 - **via `IN TOKENS`** (`Search::ANALYZER`) — "shares ≥ 1 fragment": simple but **loose**. The config above (`min: 2, max: 5, preserveOriginal: true`) suits it.
 - **via `NGRAM_MATCH`** (`Search::NGRAM` + a similarity threshold) — **precise**: requires a fraction of the fragments. For this use, declare the analyzer with **`min == max`** (a single size, e.g. a trigram) and **`preserveOriginal: false`**, and enable the `position` + `frequency` features. See [Precise autocomplete](search/per-field-options.md#precise-autocomplete-ngram_match).
+
+### `PipelineAnalyzer` — case and accent-insensitive autocomplete
+
+A standalone `ngram` analyzer normalizes **neither case nor accents**. When the
+indexed data is stored in upper case (city names like `"L'ABSIE"`, `"ANGLET"`),
+the n-grams are upper-cased while a user typing `l'ab` produces lower-cased
+n-grams — the two never meet, and the autocomplete silently matches **nothing**.
+ArangoDB offers no "normalize first" switch on `ngram`; the clean fix is a
+**pipeline** that runs a `norm` (lower-case + accent fold) **before** the
+`ngram`, so both the indexed values and the query are folded to the same form
+before the split. The order is significant: `norm` first, `ngram` second.
+
+```php
+use oihana\arango\clients\analyzer\NgramAnalyzer ;
+use oihana\arango\clients\analyzer\NormAnalyzer ;
+use oihana\arango\clients\analyzer\PipelineAnalyzer ;
+use oihana\arango\clients\analyzer\enums\AnalyzerFeature ;
+use oihana\arango\clients\analyzer\enums\CaseFolding ;
+
+$db->createAnalyzer
+(
+    'autocomplete' ,
+    new PipelineAnalyzer
+    ([
+        new NormAnalyzer ( locale: 'fr' , case: CaseFolding::LOWER , accent: false ) , // 1. fold case + accents
+        new NgramAnalyzer( min: 3 , max: 5 , preserveOriginal: true ) ,                 // 2. then split
+    ]) ,
+    [ AnalyzerFeature::FREQUENCY , AnalyzerFeature::POSITION ] ,
+) ;
+```
+
+```
+"L'ABSIE"   -->   norm -->   "l'absie"   -->   ngram -->   [ l'a , l'ab , 'ab , ... , l'absie ]
+```
+
+Now a query typed `l'ab` is folded the same way and finds the document. The
+constructor takes a single **ordered list** of other analyzer value objects and
+validates that it is non-empty and that every member is an `AnalyzerOptions`.
+
+> **The false-drift trap — do not declare the sub-analyzer defaults.** When the
+> server reads a pipeline back, it fills **every** default property of each
+> sub-analyzer (a `norm` declared with only `{ locale }` reads back
+> `{ locale, case, accent }`; an `ngram` reports its `startMarker` / `endMarker`
+> / `streamType` too). `analyzerDiff()` accounts for this: the pipeline chain is
+> compared **declaration-first** — member by member, in order, checking only the
+> properties you declared and ignoring the server defaults — so a pipeline
+> declared without those defaults reports `IN_SYNC`, not a permanent drift. The
+> chain **order** is part of the comparison: swapping `norm` and `ngram` *is* a
+> real drift. (A `RawAnalyzer( 'pipeline', … )` dumped from the server, with all
+> defaults present, round-trips just as cleanly.)
 
 ## Features — what they unlock
 
@@ -321,8 +372,8 @@ inherits the View's analyzer (itself `identity` by default). The details
 
 ## Current limitations
 
-The library exposes the five types above (`identity`, `norm`, `stem`, `text`,
-`ngram`). The other ArangoDB types — `pipeline`, `aql`, `geo_json` / `geo_point` /
+The library exposes the six types above (`identity`, `norm`, `stem`, `text`,
+`ngram`, `pipeline`). The other ArangoDB types — `aql`, `geo_json` / `geo_point` /
 `geo_s2`, `segmentation`, `collation`, `minhash`, `delimiter` /
 `multi_delimiter`, `stopwords`, `classification`, `nearest_neighbors` — are
 **not yet** exposed by a dedicated class (planned for later). Until then, such an
