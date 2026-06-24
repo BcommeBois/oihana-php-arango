@@ -124,6 +124,12 @@ trait AnalyzerManagementTrait
             {
                 $serverValue = $serverProps[ $key ] ?? null ;
 
+                if ( $key === AnalyzerField::PIPELINE )
+                {
+                    array_push( $changes , ...$this->comparePipeline( $name , $value , $serverValue ) ) ;
+                    continue ;
+                }
+
                 if ( $this->normalizeAnalyzerValue( $value ) !== $this->normalizeAnalyzerValue( $serverValue ) )
                 {
                     $changes[] = sprintf( '%s.properties.%s : server %s ≠ declared %s' , $name , $key , json_encode( $serverValue ) , json_encode( $value ) ) ;
@@ -271,6 +277,76 @@ trait AnalyzerManagementTrait
         }
 
         return false ;
+    }
+
+    /**
+     * Compares a declared `pipeline` sub-analyzer chain with the server one
+     * using declaration-oriented (subset) semantics — the same rule the
+     * top-level property loop gets for free by iterating only the declared
+     * keys.
+     *
+     * A `pipeline` analyzer nests its sub-analyzers inside a list, and the
+     * server reads each one back with **every** default property filled in (a
+     * declared `norm` carrying only `{ locale }` returns
+     * `{ locale, case, accent }`; an `ngram` returns its `startMarker` /
+     * `endMarker` / `streamType` defaults too). A plain deep-equality of the
+     * two lists would therefore flag a permanent **false** drift — the very
+     * bug the `identity` analyzer hit on View links. Instead each member is
+     * matched by **position** (the chain order is significant) and by type,
+     * and only the **declared** sub-properties are checked: server defaults
+     * the declaration omits are ignored. A {@see RawAnalyzer} dumped from the
+     * server (all defaults present) stays a valid round-trip.
+     *
+     * @param string $name     The analyzer name, for the change lines.
+     * @param mixed  $declared The declared `properties.pipeline` value.
+     * @param mixed  $server   The server `properties.pipeline` value.
+     *
+     * @return array<int, string> The change lines, empty when the chains are equivalent.
+     */
+    private function comparePipeline( string $name , mixed $declared , mixed $server ) : array
+    {
+        if ( !is_array( $declared ) || !is_array( $server ) || !array_is_list( $declared ) || !array_is_list( $server ) )
+        {
+            return $this->normalizeAnalyzerValue( $declared ) === $this->normalizeAnalyzerValue( $server )
+                 ? []
+                 : [ sprintf( '%s.properties.pipeline : server %s ≠ declared %s' , $name , json_encode( $server ) , json_encode( $declared ) ) ] ;
+        }
+
+        if ( count( $declared ) !== count( $server ) )
+        {
+            return [ sprintf( '%s.properties.pipeline : server %d sub-analyzer(s) ≠ declared %d' , $name , count( $server ) , count( $declared ) ) ] ;
+        }
+
+        $changes = [] ;
+
+        foreach ( $declared as $index => $member )
+        {
+            $serverMember = $server[ $index ] ;
+
+            $declaredType = is_array( $member       ) ? ( $member[ AnalyzerField::TYPE ]       ?? null ) : null ;
+            $serverType   = is_array( $serverMember ) ? ( $serverMember[ AnalyzerField::TYPE ] ?? null ) : null ;
+
+            if ( $declaredType !== $serverType )
+            {
+                $changes[] = sprintf( '%s.properties.pipeline[%d].type : server %s ≠ declared %s' , $name , $index , json_encode( $serverType ) , json_encode( $declaredType ) ) ;
+                continue ;
+            }
+
+            $declaredMemberProps = is_array( $member       ) && is_array( $member[ AnalyzerField::PROPERTIES ]       ?? null ) ? $member[ AnalyzerField::PROPERTIES ]       : [] ;
+            $serverMemberProps   = is_array( $serverMember ) && is_array( $serverMember[ AnalyzerField::PROPERTIES ] ?? null ) ? $serverMember[ AnalyzerField::PROPERTIES ] : [] ;
+
+            foreach ( $declaredMemberProps as $propKey => $propValue )
+            {
+                $serverProp = $serverMemberProps[ $propKey ] ?? null ;
+
+                if ( $this->normalizeAnalyzerValue( $propValue ) !== $this->normalizeAnalyzerValue( $serverProp ) )
+                {
+                    $changes[] = sprintf( '%s.properties.pipeline[%d].%s : server %s ≠ declared %s' , $name , $index , $propKey , json_encode( $serverProp ) , json_encode( $propValue ) ) ;
+                }
+            }
+        }
+
+        return $changes ;
     }
 
     /**

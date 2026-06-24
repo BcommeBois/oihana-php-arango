@@ -5,6 +5,9 @@ namespace tests\oihana\arango\db\traits;
 use oihana\arango\clients\analyzer\Analyzer;
 use oihana\arango\clients\analyzer\enums\AnalyzerFeature;
 use oihana\arango\clients\analyzer\IdentityAnalyzer;
+use oihana\arango\clients\analyzer\NgramAnalyzer;
+use oihana\arango\clients\analyzer\NormAnalyzer;
+use oihana\arango\clients\analyzer\PipelineAnalyzer;
 use oihana\arango\clients\analyzer\TextAnalyzer;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
@@ -188,6 +191,119 @@ class AnalyzerManagementTraitTest extends ArangoDBTestCase
 
         $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertContains( 'myz.features : server ["frequency"] ≠ declared ["frequency","position"]' , $report->changes ) ;
+    }
+
+    // ---- analyzerDiff : pipeline (sub-analyzer defaults) ------------------
+
+    /**
+     * The declared `norm` → `ngram` autocomplete pipeline (sub-analyzers
+     * carrying only the properties the declaration sets).
+     *
+     * @return AnalyzerDefinition
+     */
+    private function pipelineDefinition() :AnalyzerDefinition
+    {
+        return new AnalyzerDefinition
+        (
+            'auto' ,
+            new PipelineAnalyzer
+            ([
+                new NormAnalyzer ( locale: 'fr' , case: 'lower' , accent: false ) ,
+                new NgramAnalyzer( min: 3 , max: 5 , preserveOriginal: true ) ,
+            ]) ,
+        ) ;
+    }
+
+    /**
+     * A server `get()` payload for the pipeline, with each sub-analyzer read
+     * back the way the server returns it : **every** default property filled
+     * in (the `norm` carries no extra here beyond the declared three, the
+     * `ngram` also reports its `startMarker` / `endMarker` / `streamType`
+     * defaults the declaration never mentions).
+     *
+     * @param array<int, array<string, mixed>>|null $pipeline Override the chain.
+     *
+     * @return array<string, mixed>
+     */
+    private function serverPipeline( ?array $pipeline = null ) :array
+    {
+        return
+        [
+            'name'       => 'unit::auto' ,
+            'type'       => 'pipeline' ,
+            'properties' =>
+            [
+                'pipeline' => $pipeline ??
+                [
+                    [ 'type' => 'norm'  , 'properties' => [ 'locale' => 'fr' , 'case' => 'lower' , 'accent' => false ] ] ,
+                    [ 'type' => 'ngram' , 'properties' => [ 'min' => 3 , 'max' => 5 , 'preserveOriginal' => true , 'startMarker' => '' , 'endMarker' => '' , 'streamType' => 'binary' ] ] ,
+                ] ,
+            ] ,
+            'features'   => [] ,
+        ] ;
+    }
+
+    public function testDiffPipelineInSyncIgnoresSubAnalyzerDefaults() :void
+    {
+        $report = $this->newArangoDB( $this->databaseReturning( $this->analyzer( true , $this->serverPipeline() ) ) )->analyzerDiff( $this->pipelineDefinition() ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status , 'A declared pipeline must not drift on the server-default sub-analyzer properties it omits.' ) ;
+        $this->assertSame( [] , $report->changes ) ;
+    }
+
+    public function testDiffPipelineDriftsOnSubAnalyzerType() :void
+    {
+        $server = $this->serverPipeline(
+        [
+            [ 'type' => 'norm' , 'properties' => [ 'locale' => 'fr' , 'case' => 'lower' , 'accent' => false ] ] ,
+            [ 'type' => 'stem' , 'properties' => [ 'locale' => 'fr' ] ] , // second member is a stem, not an ngram
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->analyzer( true , $server ) ) )->analyzerDiff( $this->pipelineDefinition() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertContains( 'auto.properties.pipeline[1].type : server "stem" ≠ declared "ngram"' , $report->changes ) ;
+    }
+
+    public function testDiffPipelineDriftsOnOrder() :void
+    {
+        $server = $this->serverPipeline(
+        [
+            [ 'type' => 'ngram' , 'properties' => [ 'min' => 3 , 'max' => 5 , 'preserveOriginal' => true ] ] , // chain reversed
+            [ 'type' => 'norm'  , 'properties' => [ 'locale' => 'fr' , 'case' => 'lower' , 'accent' => false ] ] ,
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->analyzer( true , $server ) ) )->analyzerDiff( $this->pipelineDefinition() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertContains( 'auto.properties.pipeline[0].type : server "ngram" ≠ declared "norm"' , $report->changes ) ;
+    }
+
+    public function testDiffPipelineDriftsOnLength() :void
+    {
+        $server = $this->serverPipeline(
+        [
+            [ 'type' => 'norm' , 'properties' => [ 'locale' => 'fr' , 'case' => 'lower' , 'accent' => false ] ] , // single member
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->analyzer( true , $server ) ) )->analyzerDiff( $this->pipelineDefinition() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertContains( 'auto.properties.pipeline : server 1 sub-analyzer(s) ≠ declared 2' , $report->changes ) ;
+    }
+
+    public function testDiffPipelineDriftsOnSubAnalyzerProperty() :void
+    {
+        $server = $this->serverPipeline(
+        [
+            [ 'type' => 'norm'  , 'properties' => [ 'locale' => 'fr' , 'case' => 'lower' , 'accent' => false ] ] ,
+            [ 'type' => 'ngram' , 'properties' => [ 'min' => 2 , 'max' => 5 , 'preserveOriginal' => true ] ] , // min 2 ≠ declared 3
+        ]) ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->analyzer( true , $server ) ) )->analyzerDiff( $this->pipelineDefinition() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertContains( 'auto.properties.pipeline[1].min : server 2 ≠ declared 3' , $report->changes ) ;
     }
 
     public function testDiffListsDependentViews() :void
