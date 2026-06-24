@@ -172,11 +172,15 @@ class FederatedSearch
     public array $models = [] ;
 
     /**
-     * The collection → required permission subject(s) registry. A collection
-     * absent from this map is public; each value is a subject string or an
-     * OR-list, evaluated by {@see isAuthorized()} against the request authorizer.
+     * The collection → required permission registry. A collection absent from
+     * this map is public. Each value is either a **collection-level** requirement
+     * — a subject string or an OR-list, evaluated by {@see isAuthorized()} — or a
+     * normalised **structured** cascade gate for a polymorphic collection,
+     * `[ COLLECTION => subjects|null, MAP => [ type => subjects ], FALLBACK => bool|subjects|null ]`,
+     * gating the collection first (level 1) then each type (level 2). See
+     * {@see FederatedSearchParam::REQUIRES}.
      *
-     * @var array<string, string|array<int, string>>
+     * @var array<string, string|array<array-key, mixed>>
      */
     public array $requires = [] ;
 
@@ -226,6 +230,7 @@ class FederatedSearch
      * @throws ArangoException
      * @throws BindException
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
      */
     public function find( array $init = [] ) : array
     {
@@ -539,8 +544,13 @@ class FederatedSearch
     }
 
     /**
-     * Normalises the collection → required-permission registry: keeps the
-     * entries whose value is a subject string or an OR-list of subjects.
+     * Normalises the collection → required-permission registry. A
+     * **collection-level** entry — a subject string or an OR-list of subjects —
+     * is kept verbatim (unchanged). A **structured** entry (an associative array,
+     * the cascade gate of a polymorphic collection) is normalised to
+     * `[ COLLECTION => subjects|null, MAP => [ type => subjects ], FALLBACK => bool|subjects|null ]`
+     * by {@see normaliseCompositeRequire()}; a structured entry that gates nothing
+     * is dropped (the registry is config-trusted).
      *
      * @param array<string, mixed> $init
      *
@@ -556,9 +566,27 @@ class FederatedSearch
         {
             foreach ( $requires as $collection => $subjects )
             {
-                if ( is_string( $collection ) && $collection !== Char::EMPTY && ( is_string( $subjects ) || is_array( $subjects ) ) )
+                if ( !is_string( $collection ) || $collection === Char::EMPTY )
+                {
+                    continue ;
+                }
+
+                // Collection-level forms (unchanged): a subject string, or an OR-list.
+                if ( is_string( $subjects ) || ( is_array( $subjects ) && array_is_list( $subjects ) ) )
                 {
                     $registry[ $collection ] = $subjects ;
+                    continue ;
+                }
+
+                // Structured form: an associative array = the cascade gate (level 1 + per-type).
+                if ( is_array( $subjects ) )
+                {
+                    $composite = $this->normaliseCompositeRequire( $subjects ) ;
+
+                    if ( $composite !== null )
+                    {
+                        $registry[ $collection ] = $composite ;
+                    }
                 }
             }
         }
@@ -800,6 +828,87 @@ class FederatedSearch
             FederatedSearchParam::MAP           => $map ,
             FederatedSearchParam::FALLBACK      => $fallback ,
         ] ;
+    }
+
+    /**
+     * Normalises a **structured** require entry — the cascade gate of a
+     * polymorphic collection — or null when it gates nothing (no collection
+     * subject, no type map, no fallback : equivalent to a public collection).
+     * The {@see FederatedSearchParam::COLLECTION} level-1 subject(s) and each
+     * {@see FederatedSearchParam::MAP} `type => subjects` pair are cleaned (a
+     * string or an OR-list of non-empty strings, declaration order kept). The
+     * {@see FederatedSearchParam::FALLBACK} governing the **unlisted** types keeps
+     * the literal `true` (public), or its cleaned subject(s), or null (hidden).
+     * The discriminator field is reused from the collection's composite
+     * {@see FederatedSearchParam::MODELS} entry — it is never declared here.
+     *
+     * @param array<string, mixed> $spec
+     *
+     * @return array<string, mixed>|null
+     */
+    private function normaliseCompositeRequire( array $spec ) : ?array
+    {
+        $collection = $this->normaliseSubjects( $spec[ FederatedSearchParam::COLLECTION ] ?? null ) ;
+
+        $rawMap = $spec[ FederatedSearchParam::MAP ] ?? null ;
+        $map    = [] ;
+
+        if ( is_array( $rawMap ) )
+        {
+            foreach ( $rawMap as $type => $subjects )
+            {
+                if ( is_string( $type ) && $type !== Char::EMPTY )
+                {
+                    $cleaned = $this->normaliseSubjects( $subjects ) ;
+
+                    if ( $cleaned !== null )
+                    {
+                        $map[ $type ] = $cleaned ; // insertion order = resolution priority
+                    }
+                }
+            }
+        }
+
+        $rawFallback = $spec[ FederatedSearchParam::FALLBACK ] ?? null ;
+        $fallback    = $rawFallback === true ? true : $this->normaliseSubjects( $rawFallback ) ;
+
+        // A structured entry that gates nothing is equivalent to a public collection : drop it.
+        if ( $collection === null && $map === [] && $fallback === null )
+        {
+            return null ;
+        }
+
+        return
+        [
+            FederatedSearchParam::COLLECTION => $collection ,
+            FederatedSearchParam::MAP        => $map ,
+            FederatedSearchParam::FALLBACK   => $fallback ,
+        ] ;
+    }
+
+    /**
+     * Normalises a permission subject declaration to a non-empty subject string,
+     * a cleaned OR-list of non-empty subject strings, or null (nothing usable).
+     *
+     * @param mixed $subjects
+     *
+     * @return string|array<int, string>|null
+     */
+    private function normaliseSubjects( mixed $subjects ) : string|array|null
+    {
+        if ( is_string( $subjects ) )
+        {
+            return $subjects === Char::EMPTY ? null : $subjects ;
+        }
+
+        if ( is_array( $subjects ) )
+        {
+            $clean = array_values( array_filter( $subjects , static fn( $subject ) => is_string( $subject ) && $subject !== Char::EMPTY ) ) ;
+
+            return $clean === [] ? null : $clean ;
+        }
+
+        return null ;
     }
 
     /**

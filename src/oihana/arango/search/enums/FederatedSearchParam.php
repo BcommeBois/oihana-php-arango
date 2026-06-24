@@ -17,6 +17,14 @@ class FederatedSearchParam
     use ConstantsTrait ;
 
     /**
+     * The structured {@see REQUIRES} sub-key holding the permission subject(s)
+     * required to search the collection **at all** — level 1 of the cascade
+     * (a subject string or an OR-list). Absent means the collection itself is
+     * public; its types may still be gated by {@see MAP} / {@see FALLBACK}.
+     */
+    public const string COLLECTION = 'collection' ;
+
+    /**
      * The default discriminator field used by a composite {@see MODELS} entry
      * when its {@see DISCRIMINATOR} sub-key is omitted — the schema.org
      * `additionalType`.
@@ -52,12 +60,25 @@ class FederatedSearchParam
     public const string MODELS = 'models' ;
 
     /**
-     * The collection → required permission subject(s) registry: a map declaring
-     * which permission a collection demands to be searchable
-     * (`[ 'customers' => 'customers:list', 'users' => [ 'users:list', 'users:admin' ] ]`,
-     * a string or an OR-list, mirroring {@see \oihana\arango\enums\Field::REQUIRES}).
-     * A collection absent from this map is **public** (searchable by everyone);
-     * the gate is evaluated by {@see \oihana\arango\models\helpers\isAuthorized()}.
+     * The collection → required permission registry: a map declaring which
+     * permission a collection demands to be searchable. A collection absent from
+     * this map is **public** (searchable by everyone); the gate is evaluated by
+     * {@see \oihana\arango\models\helpers\isAuthorized()}.
+     *
+     * Each value takes one of two forms:
+     * <ul>
+     *   <li><b>Collection-level</b> (mirroring {@see \oihana\arango\enums\Field::REQUIRES}):
+     *       a subject string or an OR-list —
+     *       `'customers' => 'customers:list'`, `'users' => [ 'users:list', 'users:admin' ]`.</li>
+     *   <li><b>Structured cascade</b> for a polymorphic collection (one already
+     *       declared composite in {@see MODELS}): a level-1 collection gate plus a
+     *       per-type level-2 gate, reusing the {@see MAP} / {@see FALLBACK} vocabulary —
+     *       `'organizations' => [ COLLECTION => 'org:list', MAP => [ '<type>' => 'cust:list', … ], FALLBACK => 'org:list'|true ]`.
+     *       {@see COLLECTION} (string | OR-list | absent=public), {@see MAP}
+     *       (`type => subjects`), {@see FALLBACK} governing the **unlisted** types
+     *       (absent=hidden | subjects | `true`=public). The discriminator field is
+     *       reused from the collection's composite {@see MODELS} entry — never redeclared.</li>
+     * </ul>
      */
     public const string REQUIRES = 'requires' ;
 

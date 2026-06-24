@@ -875,6 +875,176 @@ final class FederatedSearchTest extends TestCase
         $this->assertSame( [] , $this->make( [ FederatedSearchParam::REQUIRES => 'not-an-array' ] )->requires ) ;
     }
 
+    // ---- structured (per-type cascade) requires (Lot 1) ---------------------
+
+    public function testRequiresAcceptsAStructuredCascadeEntry() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::REQUIRES =>
+            [
+                'customers'     => 'customers:list' , // collection-level form : kept verbatim
+                'organizations' =>                    // structured cascade : normalised
+                [
+                    FederatedSearchParam::COLLECTION => 'org:list' ,
+                    FederatedSearchParam::MAP        =>
+                    [
+                        'https://schema.org/Customer' => 'cust:list' ,
+                        'https://schema.org/Provider' => [ 'prov:list' , 'prov:admin' ] , // OR-list subjects
+                    ] ,
+                    FederatedSearchParam::FALLBACK   => 'org:list' ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'customers'     => 'customers:list' ,
+            'organizations' =>
+            [
+                FederatedSearchParam::COLLECTION => 'org:list' ,
+                FederatedSearchParam::MAP        =>
+                [
+                    'https://schema.org/Customer' => 'cust:list' ,
+                    'https://schema.org/Provider' => [ 'prov:list' , 'prov:admin' ] ,
+                ] ,
+                FederatedSearchParam::FALLBACK   => 'org:list' ,
+            ] ,
+        ] , $engine->requires ) ;
+    }
+
+    public function testRequiresStructuredDefaultsCollectionAndFallbackToNull() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::REQUIRES =>
+            [
+                'organizations' => // no COLLECTION → null ; no FALLBACK → null (unlisted types hidden)
+                [
+                    FederatedSearchParam::MAP => [ 'Customer' => 'cust:list' ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'organizations' =>
+            [
+                FederatedSearchParam::COLLECTION => null ,
+                FederatedSearchParam::MAP        => [ 'Customer' => 'cust:list' ] ,
+                FederatedSearchParam::FALLBACK   => null ,
+            ] ,
+        ] , $engine->requires ) ;
+    }
+
+    public function testRequiresStructuredCleansItsMapAndAcceptsAnOrListCollection() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::REQUIRES =>
+            [
+                'organizations' =>
+                [
+                    FederatedSearchParam::COLLECTION => [ 'org:list' , 'org:admin' , 123 ] , // OR-list cleaned of the int
+                    FederatedSearchParam::MAP        =>
+                    [
+                        'Customer' => 'cust:list' ,       // kept
+                        ''         => 'x:list' ,          // dropped : empty type
+                        'Bad'      => '' ,                // dropped : empty subjects
+                        7          => 'num:list' ,        // dropped : non-string type
+                        'Store'    => [ 's:list' , '' ] , // kept, cleaned to [ 's:list' ]
+                        'Empty'    => [] ,                // dropped : no usable subject
+                    ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'organizations' =>
+            [
+                FederatedSearchParam::COLLECTION => [ 'org:list' , 'org:admin' ] ,
+                FederatedSearchParam::MAP        => [ 'Customer' => 'cust:list' , 'Store' => [ 's:list' ] ] ,
+                FederatedSearchParam::FALLBACK   => null ,
+            ] ,
+        ] , $engine->requires ) ;
+    }
+
+    public function testRequiresStructuredFallbackTrueIsKeptAndMapMayBeAbsent() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::REQUIRES =>
+            [
+                'organizations' => // collection-public + unlisted types visible (lazy) ; no MAP
+                [
+                    FederatedSearchParam::FALLBACK => true ,
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'organizations' =>
+            [
+                FederatedSearchParam::COLLECTION => null ,
+                FederatedSearchParam::MAP        => [] ,
+                FederatedSearchParam::FALLBACK   => true ,
+            ] ,
+        ] , $engine->requires ) ;
+    }
+
+    public function testRequiresStructuredFallbackAcceptsAnOrListAndFalseBecomesNull() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::REQUIRES =>
+            [
+                'organizations' =>
+                [
+                    FederatedSearchParam::COLLECTION => 'org:list' ,
+                    FederatedSearchParam::FALLBACK   => [ 'org:list' , 'org:admin' ] , // OR-list fallback
+                ] ,
+                'subsidiaries' =>
+                [
+                    FederatedSearchParam::COLLECTION => 'sub:list' ,
+                    FederatedSearchParam::FALLBACK   => false , // not `true` → cleaned to null (unlisted hidden)
+                ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame(
+        [
+            'organizations' =>
+            [
+                FederatedSearchParam::COLLECTION => 'org:list' ,
+                FederatedSearchParam::MAP        => [] ,
+                FederatedSearchParam::FALLBACK   => [ 'org:list' , 'org:admin' ] ,
+            ] ,
+            'subsidiaries' =>
+            [
+                FederatedSearchParam::COLLECTION => 'sub:list' ,
+                FederatedSearchParam::MAP        => [] ,
+                FederatedSearchParam::FALLBACK   => null ,
+            ] ,
+        ] , $engine->requires ) ;
+    }
+
+    public function testRequiresStructuredDropsAnEntryThatGatesNothing() :void
+    {
+        $engine = $this->make(
+        [
+            FederatedSearchParam::REQUIRES =>
+            [
+                'customers' => 'customers:list' ,     // kept
+                'ghosts'    => [ 'unknown' => 'x' ] , // structured but no COLLECTION / MAP / FALLBACK → dropped
+                'voids'     => [ FederatedSearchParam::MAP => 'not-an-array' ] , // map ignored, gates nothing → dropped
+            ] ,
+        ]) ;
+
+        $this->assertSame( [ 'customers' => 'customers:list' ] , $engine->requires ) ;
+    }
+
     public function testRebuildSkipsACollectionWhoseModelServiceIsMissing() :void
     {
         // 'customers' is registered and authorized, but the container cannot resolve its service
