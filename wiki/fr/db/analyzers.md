@@ -72,10 +72,12 @@ C'est **l'ensemble complet** de ce qui est fabricable aujourd'hui (voir
 | [`NgramAnalyzer`](../../../src/oihana/arango/clients/analyzer/NgramAnalyzer.php) | découpe en sous-chaînes (n-grams) de `min` à `max` caractères — la brique de l'**autocomplétion** / recherche par sous-chaîne | `min`, `max`, `preserveOriginal`, `startMarker`, `endMarker`, `streamType` |
 | [`PipelineAnalyzer`](../../../src/oihana/arango/clients/analyzer/PipelineAnalyzer.php) | enchaîne **dans l'ordre** une suite de sous-analyzers, chacun recevant la sortie du précédent — la façon typée de composer (ex. `norm` → `ngram`) | `pipeline` (la liste ordonnée des sous-analyzers) |
 
-Le `locale` est un tag BCP 47 / ICU (`'fr'`, `'en'`, `'fr.utf-8'`). Le `case`
-prend ses valeurs dans l'enum [`CaseFolding`](../../../src/oihana/arango/clients/analyzer/enums/CaseFolding.php)
-(`lower` / `upper` / `none`). Un paramètre `null` (omis) laisse le serveur
-appliquer son défaut.
+Le `locale` est un tag BCP 47 / ICU (`'fr'`, `'en'`, `'fr.utf-8'`) — pour la partie
+langue tu peux réutiliser `org\iso\ISO639_1` (ex. `ISO639_1::FR`) de `oihana/php-standards`.
+Le `case` prend ses valeurs dans l'enum [`CaseFolding`](../../../src/oihana/arango/clients/analyzer/enums/CaseFolding.php)
+(`lower` / `upper` / `none`), et le `streamType` du `ngram` dans l'enum
+[`StreamType`](../../../src/oihana/arango/clients/analyzer/enums/StreamType.php)
+(`binary` / `utf8`). Un paramètre `null` (omis) laisse le serveur appliquer son défaut.
 
 ### `IdentityAnalyzer` — le casier exact
 
@@ -161,6 +163,7 @@ le jeton entier.
 ```php
 use oihana\arango\clients\analyzer\NgramAnalyzer ;
 use oihana\arango\clients\analyzer\enums\AnalyzerFeature ;
+use oihana\arango\clients\analyzer\enums\StreamType ;
 
 $db->createAnalyzer
 (
@@ -170,7 +173,7 @@ $db->createAnalyzer
         min              : 2 ,        // longueur mini d'un fragment
         max              : 5 ,        // longueur maxi
         preserveOriginal : true ,     // garde aussi le mot entier
-        streamType       : 'utf8' ,   // 'utf8' (par caractère) ou 'binary' (par octet, défaut)
+        streamType       : StreamType::UTF8 ,   // par caractère ; StreamType::BINARY (par octet) est le défaut
     ) ,
     [ AnalyzerFeature::FREQUENCY , AnalyzerFeature::POSITION ] ,
 ) ;

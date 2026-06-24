@@ -49,7 +49,7 @@ readonly class NgramAnalyzer implements AnalyzerOptions
      * @param bool        $preserveOriginal Whether to also keep the original (un-split) token in the output stream.
      * @param string|null $startMarker      String prepended to the input before n-gram emission, so start-of-token n-grams can be distinguished. Defaults to server's empty string.
      * @param string|null $endMarker        String appended to the input before n-gram emission, so end-of-token n-grams can be distinguished. Defaults to server's empty string.
-     * @param string|null $streamType       Input encoding: `"binary"` (byte-wise, server default) or `"utf8"` (codepoint-wise).
+     * @param string|null $streamType       Input encoding (see {@see \oihana\arango\clients\analyzer\enums\StreamType}): `"binary"` (byte-wise, server default) or `"utf8"` (codepoint-wise).
      */
     public function __construct
     (
