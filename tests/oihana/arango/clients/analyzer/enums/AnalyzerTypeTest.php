@@ -19,6 +19,7 @@ class AnalyzerTypeTest extends TestCase
         $this->assertSame( 'identity' , AnalyzerType::IDENTITY ) ;
         $this->assertSame( 'ngram'    , AnalyzerType::NGRAM    ) ;
         $this->assertSame( 'norm'     , AnalyzerType::NORM     ) ;
+        $this->assertSame( 'pipeline' , AnalyzerType::PIPELINE ) ;
         $this->assertSame( 'stem'     , AnalyzerType::STEM     ) ;
         $this->assertSame( 'text'     , AnalyzerType::TEXT     ) ;
     }
@@ -30,6 +31,7 @@ class AnalyzerTypeTest extends TestCase
         $this->assertContains( AnalyzerType::IDENTITY , $enums ) ;
         $this->assertContains( AnalyzerType::NGRAM    , $enums ) ;
         $this->assertContains( AnalyzerType::NORM     , $enums ) ;
+        $this->assertContains( AnalyzerType::PIPELINE , $enums ) ;
         $this->assertContains( AnalyzerType::STEM     , $enums ) ;
         $this->assertContains( AnalyzerType::TEXT     , $enums ) ;
     }
@@ -39,11 +41,11 @@ class AnalyzerTypeTest extends TestCase
         $this->assertTrue ( AnalyzerType::includes( 'identity' ) ) ;
         $this->assertTrue ( AnalyzerType::includes( 'ngram'    ) ) ;
         $this->assertTrue ( AnalyzerType::includes( 'norm'     ) ) ;
+        $this->assertTrue ( AnalyzerType::includes( 'pipeline' ) ) ;
         $this->assertTrue ( AnalyzerType::includes( 'stem'     ) ) ;
         $this->assertTrue ( AnalyzerType::includes( 'text'     ) ) ;
 
         // Types still deferred to a later follow-up.
-        $this->assertFalse( AnalyzerType::includes( 'pipeline' ) ) ;
         $this->assertFalse( AnalyzerType::includes( 'aql'      ) ) ;
     }
 }

@@ -38,6 +38,7 @@ class AnalyzerFieldTest extends TestCase
         $this->assertSame( 'startMarker'      , AnalyzerField::START_MARKER      ) ;
         $this->assertSame( 'endMarker'        , AnalyzerField::END_MARKER        ) ;
         $this->assertSame( 'streamType'       , AnalyzerField::STREAM_TYPE       ) ;
+        $this->assertSame( 'pipeline'         , AnalyzerField::PIPELINE          ) ;
     }
 
     public function testFieldsAreUnique() :void

@@ -17,8 +17,9 @@ use oihana\reflect\traits\ConstantsTrait ;
  * - **Type-specific properties** (`locale`, `case`, `accent`,
  *   `stemming`, `stopwords`, `stopwordsPath`, `edgeNgram`, `min`,
  *   `max`, `preserveOriginal`, `startMarker`, `endMarker`,
- *   `streamType`) that nest inside the `properties` wrapper for
- *   `text`, `norm`, `stem` and `ngram` analyzers.
+ *   `streamType`, `pipeline`) that nest inside the `properties`
+ *   wrapper for `text`, `norm`, `stem`, `ngram` and `pipeline`
+ *   analyzers.
  *
  * @see https://docs.arangodb.com/stable/develop/http-api/analyzers/
  *
@@ -87,6 +88,15 @@ class AnalyzerField
      * name when shared across databases (`mydb::myanalyzer`).
      */
     public const string NAME = 'name' ;
+
+    /**
+     * Ordered list of sub-analyzers run as a chain (`pipeline` only).
+     * Lives at the top level of the `pipeline` `properties`; each entry
+     * is itself a `{ type, properties }` analyzer fragment, fed the
+     * output of the previous one. See
+     * {@see \oihana\arango\clients\analyzer\PipelineAnalyzer}.
+     */
+    public const string PIPELINE = 'pipeline' ;
 
     /**
      * Whether the n-gram emitter should also keep the original

@@ -10,11 +10,13 @@ use oihana\reflect\traits\ConstantsTrait ;
  * `GET /_api/analyzer/{name}`.
  *
  * The exposed set covers the V1 must-have analyzers plus `ngram`
- * (substring / autocomplete indexing). The remaining types shipped by
- * arangojs (`pipeline`, `aql`, `classification`, `nearest_neighbors`,
- * `geo_json`, `geo_point`, `geo_s2`, `segmentation`, `collation`,
- * `minhash`, `delimiter`, `multi_delimiter`, `stopwords`) are deferred
- * to a later follow-up.
+ * (substring / autocomplete indexing) and `pipeline` (an ordered chain
+ * of sub-analyzers — typically `norm` → `ngram` for case- and
+ * accent-insensitive autocomplete). The remaining types shipped by
+ * arangojs (`aql`, `classification`, `nearest_neighbors`, `geo_json`,
+ * `geo_point`, `geo_s2`, `segmentation`, `collation`, `minhash`,
+ * `delimiter`, `multi_delimiter`, `stopwords`) are deferred to a later
+ * follow-up.
  *
  * @see https://docs.arangodb.com/stable/index-and-search/analyzers/#analyzer-types
  *
@@ -49,6 +51,18 @@ class AnalyzerType
      * {@see self::TEXT} for that.
      */
     public const string NORM = 'norm' ;
+
+    /**
+     * Pipeline analyzer — runs an ordered chain of sub-analyzers, each
+     * fed the output of the previous one. The typed way to compose
+     * analyzers the server otherwise only exposes individually — most
+     * notably `norm` → `ngram`, which normalises case and accents
+     * **before** the n-gram split so case-/accent-insensitive
+     * autocomplete actually matches (a standalone `ngram` normalises
+     * neither). See
+     * {@see \oihana\arango\clients\analyzer\PipelineAnalyzer}.
+     */
+    public const string PIPELINE = 'pipeline' ;
 
     /**
      * Locale-aware stemmer. Reduces inflected forms of a word to a
