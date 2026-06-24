@@ -244,6 +244,8 @@ Three slots:
 
 The discriminator field is **reused** from the collection's composite `MODELS` entry (`additionalType` by default) — never redeclared here. So per-type permissions only apply to a collection already declared composite in `MODELS`.
 
+> **The `MAP` keys are the actual `additionalType` values stored in your documents** — the very same keys as the composite `MODELS` map. Use whichever convention your data uses (short names like `Customer`, or full URIs like `https://schema.org/Customer`), but use it **consistently** across `MODELS` and `REQUIRES`: a key that does not exactly match a stored value is never recognised, so its documents fall to `FALLBACK` (or are hidden in strict mode). The examples below use short names for readability.
+
 #### Omitting `COLLECTION` — a public collection, gated per type
 
 `COLLECTION` is **optional**. Leave it out when anyone may *search* the collection but each **type** inside it is still restricted — the level-1 door stays open, only the level-2 (per-type) doors gate the documents:
@@ -278,6 +280,8 @@ new InvertedIndex( fields: [ 'name', 'additionalType[*]' ] , analyzer: 'identity
 A field is consistently one shape per collection, so you pick one. The library gate is **identical** either way (`doc.additionalType IN (…)`) — only the index declaration differs, and no `storeValues` is needed.
 
 > **Why the shape matters.** An inverted-index field over an array needs the `[*]` array-expansion; a field over a string does not (and `[*]` would not index a string). ArangoDB cannot index a "sometimes string, sometimes array" field — hence one shape per collection.
+
+> **⚠️ Index it, or the gate silently fails open.** If you declare a per-type `REQUIRES` but the polymorphic collection's inverted index does **not** index the discriminator (or indexes it in the wrong shape), the type predicate can match nothing for that collection — so **every type becomes visible** and the gate is bypassed, with **no error**. Verified on a real server: with `additionalType` left out of the index, a *denied* `Provider` document still appears in both strict and permissive mode. Whenever you gate per type, make sure the discriminator is indexed, in the right shape.
 
 ### How it works, end to end
 
@@ -397,6 +401,8 @@ use oihana\routes\Route ;
 ### What about permissions?
 
 **Nothing new to wire.** Exactly like `DocumentsController`, the controller resolves the enforcer (Casbin…) and the subject resolver from the container, builds a request-scoped authorizer `fn(string $subject): bool` and **poses it under `Arango::AUTHORIZER`** in the engine `$init`. The engine then applies its per-collection gate (see § Permissions) on its own. With no enforcer (tests, CLI, auth disabled) the authorizer is `null` and the gate falls open (*fail-open*) — behaviour unchanged. The query-param capability gating (right to search / to use a given skin) is reused verbatim from the documents controller foundation.
+
+The **per-type** gate (see § Per-type permissions) needs nothing extra over HTTP: it reads the **same** `Arango::AUTHORIZER`. Declaring a structured `REQUIRES` on the engine and indexing the discriminator is all it takes — the controller is untouched.
 
 ## See also
 

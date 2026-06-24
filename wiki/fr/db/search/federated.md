@@ -247,6 +247,8 @@ Les quatre états de `FALLBACK` — un type **non listé** est… :
 
 Le champ discriminant est **réutilisé** depuis l'entrée composite de `MODELS` (`additionalType` par défaut) — jamais redéclaré ici. La permission par type ne s'applique donc qu'à une collection déjà déclarée composite dans `MODELS`.
 
+> **Les clés de `MAP` sont les valeurs réellement stockées dans `additionalType`** — exactement les mêmes clés que la `MAP` de `MODELS`. Utilise la convention de ta donnée (noms courts comme `Customer`, ou URIs complètes comme `https://schema.org/Customer`), mais **de façon cohérente** entre `MODELS` et `REQUIRES` : une clé qui ne correspond pas exactement à une valeur stockée n'est jamais reconnue, et ses documents retombent sur `FALLBACK` (ou sont cachés en mode strict). Les exemples ci-dessous utilisent des noms courts par lisibilité.
+
 #### Omettre `COLLECTION` — une collection publique, filtrée par type
 
 `COLLECTION` est **optionnel**. On l'omet quand tout le monde peut *chercher* dans la collection mais que chaque **type** à l'intérieur reste réservé — la porte de niveau 1 reste ouverte, seules les portes de niveau 2 (par type) filtrent les documents :
@@ -281,6 +283,8 @@ new InvertedIndex( fields: [ 'name', 'additionalType[*]' ] , analyzer: 'identity
 Une collection est cohérente (une seule forme), donc on en choisit une. Le filtre de la bibliothèque est **identique** dans les deux cas (`doc.additionalType IN (…)`) — seule la déclaration de l'index change, et aucun `storeValues` n'est nécessaire.
 
 > **Pourquoi la forme compte.** Un champ d'index inversé sur un tableau exige l'expansion `[*]` ; sur un texte, non (et `[*]` n'indexerait pas un texte). ArangoDB ne peut pas indexer un champ « tantôt texte, tantôt tableau » — d'où une seule forme par collection.
+
+> **⚠️ Indexe-le, sinon le garde s'ouvre en silence.** Si tu déclares un `REQUIRES` par type mais que l'index inversé de la collection polymorphe **n'indexe pas** le discriminateur (ou l'indexe dans la mauvaise forme), le prédicat de type ne peut rien matcher pour cette collection — donc **tous les types deviennent visibles** et le garde est contourné, **sans aucune erreur**. Vérifié sur un vrai serveur : avec `additionalType` absent de l'index, un document `Provider` *refusé* apparaît quand même, en mode strict comme permissif. Dès que tu filtres par type, assure-toi que le discriminateur est indexé, dans la bonne forme.
 
 ### Comment ça marche, de bout en bout
 
@@ -400,6 +404,8 @@ use oihana\routes\Route ;
 ### Et les permissions ?
 
 **Rien de neuf à brancher.** Exactement comme `DocumentsController`, le contrôleur résout l'enforcer (Casbin…) et le résolveur de subjects depuis le container, construit à partir de la requête un authorizer `fn(string $subject): bool` et le **pose sous `Arango::AUTHORIZER`** dans l'`$init` du moteur. Le moteur applique alors son filtre par collection (voir § Permissions) tout seul. Sans enforcer (tests, CLI, auth désactivée) l'authorizer est `null` et le garde-barrière s'ouvre (*fail-open*) — comportement inchangé. Le contrôle d'accès par *query-param* (droit de chercher / d'utiliser tel skin) est réutilisé tel quel depuis le socle des contrôleurs documents.
+
+Le garde **par type** (voir § Permissions par type) ne demande **rien de plus** côté HTTP : il lit le **même** `Arango::AUTHORIZER`. Déclarer un `REQUIRES` structuré sur le moteur et indexer le discriminateur suffit — le contrôleur est inchangé.
 
 ## Voir aussi
 
