@@ -56,21 +56,21 @@ class DocumentsArrayTraitStub
         ]) ;
     }
 
-    public function getObject( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null ) :?object
+    public function getObject( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null , array $context = [] ) :?object
     {
         $this->lastQuery = $query ;
         $this->lastBinds = $bindVars ;
         return $this->objectResult ;
     }
 
-    public function getResult( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null ) :?array
+    public function getResult( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null , array $context = [] ) :?array
     {
         $this->lastQuery = $query ;
         $this->lastBinds = $bindVars ;
         return $this->resultRows ;
     }
 
-    public function getFirstResult( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null ) :mixed
+    public function getFirstResult( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null , array $context = [] ) :mixed
     {
         $this->lastQuery = $query ;
         $this->lastBinds = $bindVars ;

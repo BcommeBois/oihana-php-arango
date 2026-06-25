@@ -28,6 +28,7 @@ class ThrowingDocuments extends MockDocuments
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :array
     {
@@ -44,6 +45,7 @@ class ThrowingDocuments extends MockDocuments
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :mixed
     {
@@ -60,6 +62,7 @@ class ThrowingDocuments extends MockDocuments
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :?object
     {

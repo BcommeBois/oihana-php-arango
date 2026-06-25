@@ -55,4 +55,15 @@ final class DocumentsGetTraitTest extends TestCase
         $model->get( [ Arango::VALUE => 'k1' , Arango::PROFILE => true ] ) ;
         $this->assertSame( 2 , $model->lastOptions[ CursorField::PROFILE ] ) ;
     }
+
+    public function testGetForwardsTheInitAsAlterationContext() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $init  = [ Arango::VALUE => 'k1' , Arango::SKIN => 'full' ] ;
+
+        $model->get( $init ) ;
+
+        // get() hands the whole $init to getObject as the alteration context.
+        $this->assertSame( $init , $model->lastContext ) ;
+    }
 }

@@ -63,6 +63,7 @@ class MockEdges extends Edges
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :array
     {
@@ -89,6 +90,7 @@ class MockEdges extends Edges
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :mixed
     {
@@ -115,6 +117,7 @@ class MockEdges extends Edges
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :?object
     {

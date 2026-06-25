@@ -133,7 +133,8 @@ final class EdgesDeleteTraitTest extends TestCase
                 array                                 $bindVars = []    ,
                 array                                 $options  = []    ,
                 bool                                  $raw      = false ,
-                SchemaResolver|Closure|string|null    $schema   = null
+                SchemaResolver|Closure|string|null    $schema   = null  ,
+                array                                 $context  = []
             )
             :array
             {

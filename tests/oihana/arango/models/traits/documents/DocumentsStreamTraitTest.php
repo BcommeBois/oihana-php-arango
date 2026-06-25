@@ -38,4 +38,16 @@ final class DocumentsStreamTraitTest extends TestCase
 
         $this->assertSame( 'FOR doc IN @@collection LIMIT 5 RETURN doc' , $model->lastQuery ) ;
     }
+
+    public function testStreamForwardsTheInitAsAlterationContext() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->streamResult = [] ;
+        $init = [ Arango::SKIN => 'full' , Arango::LIMIT => 5 ] ;
+
+        // streamDocuments() is a generator: the context is captured only once iterated.
+        iterator_to_array( $model->stream( $init ) ) ;
+
+        $this->assertSame( $init , $model->lastContext ) ;
+    }
 }

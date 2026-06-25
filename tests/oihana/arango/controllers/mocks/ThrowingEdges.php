@@ -29,6 +29,7 @@ class ThrowingEdges extends MockEdges
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :array
     {
@@ -45,6 +46,7 @@ class ThrowingEdges extends MockEdges
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :mixed
     {
@@ -61,6 +63,7 @@ class ThrowingEdges extends MockEdges
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :?object
     {

@@ -272,6 +272,7 @@ trait ArangoTrait
      * @param array                              $options  Optional execution options
      * @param bool                               $raw      If true, returns the object raw (no schema or alter applied)
      * @param null|SchemaResolver|Closure|string $schema   The optional class name to map the document.
+     * @param array                              $context  Optional opaque context forwarded to {@see AlterDocumentTrait::alter()} and thus to the `Alter::MAP` callbacks (e.g. the originating `$init`, a skin, a locale…). Default `[]`.
      *
      * @return array
      * @throws ArangoException
@@ -288,12 +289,13 @@ trait ArangoTrait
         array                              $options  = [] ,
         bool                               $raw      = false  ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :array
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
         $docs = $this->arangodb->getDocuments($raw ? null : ( $schema ?? $this->schema ) );
-        return $raw ? $docs : $this->alter( $docs ) ;
+        return $raw ? $docs : $this->alter( $docs , context: $context ) ;
     }
 
     /**
@@ -304,6 +306,7 @@ trait ArangoTrait
      * @param array                              $options  Optional execution options
      * @param bool                               $raw      If true, returns the object raw (no schema or alter applied)
      * @param null|SchemaResolver|Closure|string $schema   The optional class name to map the document.
+     * @param array                              $context  Optional opaque context forwarded to {@see AlterDocumentTrait::alter()} and thus to the `Alter::MAP` callbacks (e.g. the originating `$init`, a skin, a locale…). Default `[]`.
      *
      * @return mixed
      *
@@ -321,12 +324,13 @@ trait ArangoTrait
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :mixed
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
         $result = $this->arangodb->getFirstResult($raw ? null : ( $schema ?? $this->schema ) ) ;
-        return $raw ? $result : $this->alter( $result ) ;
+        return $raw ? $result : $this->alter( $result , context: $context ) ;
     }
 
     /**
@@ -337,6 +341,7 @@ trait ArangoTrait
      * @param array                              $options  Optional execution options
      * @param bool                               $raw      If true, returns the object raw (no schema or alter applied)
      * @param null|SchemaResolver|Closure|string $schema   The optional class name to map the document.
+     * @param array                              $context  Optional opaque context forwarded to {@see AlterDocumentTrait::alter()} and thus to the `Alter::MAP` callbacks (e.g. the originating `$init`, a skin, a locale…). Default `[]`.
      *
      * @return object|null
      *
@@ -354,12 +359,13 @@ trait ArangoTrait
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :?object
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
         $obj = $this->arangodb->getObject($raw ? null : ( $schema ?? $this->schema ) ) ;
-        return $raw ? $obj : $this->alter( $obj );
+        return $raw ? $obj : $this->alter( $obj , context: $context );
     }
 
     /**
@@ -370,6 +376,7 @@ trait ArangoTrait
      * @param array                              $options  Optional execution options
      * @param bool                               $raw      If true, returns the object raw (no schema or alter applied)
      * @param null|SchemaResolver|Closure|string $schema   The optional class name to map the document.
+     * @param array                              $context  Optional opaque context forwarded to {@see AlterDocumentTrait::alter()} and thus to the `Alter::MAP` callbacks (e.g. the originating `$init`, a skin, a locale…). Default `[]`.
      *
      * @return object|null
      *
@@ -387,12 +394,13 @@ trait ArangoTrait
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :?array
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
         $res = $this->arangodb->getResult($raw ? null : ( $schema ?? $this->schema ) ) ;
-        return $raw ? $res : $this->alter( $res ) ;
+        return $raw ? $res : $this->alter( $res , context: $context ) ;
     }
 
     /**
@@ -470,7 +478,7 @@ trait ArangoTrait
      * normalizing a single {@see IndexOptions} value to a one-element list (a
      * raw array always stays the index list) — so every consumer sees a plain
      * `IndexOptions[]`: the {@see initializeCollection()} lazy provisioning and
-     * the {@see \oihana\arango\models\traits\DoctorTrait} diagnose/repair diffs.
+     * the {@see DoctorTrait} diagnose/repair diffs.
      *
      * @param array $init The init definition (reads the `Arango::INDEXES` key).
      *
@@ -559,6 +567,7 @@ trait ArangoTrait
      * @param array                              $options  Optional execution options
      * @param bool                               $raw      If true, returns the object raw (no schema or alter applied)
      * @param null|SchemaResolver|Closure|string $schema   The optional class name to map the document.
+     * @param array                              $context  Optional opaque context forwarded to {@see AlterDocumentTrait::alter()} and thus to the `Alter::MAP` callbacks (e.g. the originating `$init`, a skin, a locale…). Default `[]`.
      *
      * @return Generator<mixed> Generator yielding documents one by one
      *
@@ -576,6 +585,7 @@ trait ArangoTrait
         array                              $options  = [] ,
         bool                               $raw      = false  ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :Generator
     {
@@ -587,7 +597,7 @@ trait ArangoTrait
         {
             foreach ( $generator as $document )
             {
-                yield $this->alter( $document ) ;
+                yield $this->alter( $document , context: $context ) ;
             }
         }
         else

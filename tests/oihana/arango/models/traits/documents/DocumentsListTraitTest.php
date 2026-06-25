@@ -54,4 +54,16 @@ final class DocumentsListTraitTest extends TestCase
         $model->list( [ Arango::PROFILE => 1 ] ) ;
         $this->assertSame( 1 , $model->lastOptions[ CursorField::PROFILE ] ) ;
     }
+
+    public function testListForwardsTheInitAsAlterationContext() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $init  = [ Arango::SKIN => 'full' , Arango::LIMIT => 10 ] ;
+
+        $model->list( $init ) ;
+
+        // list() hands the whole $init to getDocuments as the alteration context,
+        // so an Alter::MAP callback can read $context[ Arango::SKIN ].
+        $this->assertSame( $init , $model->lastContext ) ;
+    }
 }

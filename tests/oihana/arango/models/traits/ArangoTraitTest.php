@@ -16,6 +16,8 @@ use oihana\arango\db\options\indexes\PersistentIndexOptions;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\ArangoTrait;
 
+use oihana\models\enums\Alter;
+
 /**
  * Bare host exposing {@see ArangoTrait} for isolated testing. The protected
  * `$arangodb` reference is injected through the constructor so each test can
@@ -186,6 +188,44 @@ class ArangoTraitTest extends TestCase
 
         $this->assertSame( [ [ 'a' => 1 ] , [ 'b' => 2 ] ] , $altered ) ;
         $this->assertSame( [ [ 'a' => 1 ] , [ 'b' => 2 ] ] , $raw ) ;
+    }
+
+    // ---------------------------------------------------------------- $context forwarded to alter()
+
+    /**
+     * Each fetch seam forwards its `$context` argument to the real `alter()`, which
+     * hands it to the `Alter::MAP` callbacks as their 6th argument.
+     */
+    public function testQuerySeamsForwardContextToMapCallbacks() :void
+    {
+        $seen    = [] ;
+        $capture = function( $document , $container , $key , $value , $params , $context = [] ) use ( &$seen )
+        {
+            $seen[] = $context ;
+            return $value ;
+        } ;
+        $alters = [ 'a' => [ Alter::MAP , $capture ] ] ;
+        $ctx    = [ Arango::SKIN => 'full' ] ;
+
+        $makeHost = function( array $stub ) use ( $alters ) :ArangoTraitHost
+        {
+            $host = new ArangoTraitHost( $this->makeArango( $stub ) ) ;
+            $host->container = new Container() ;
+            $host->alters    = $alters ;
+            return $host ;
+        } ;
+
+        $makeHost([ 'getDocuments'   => [ [ 'a' => 1 ] ] ] )->getDocuments  ( 'Q' , [] , [] , false , null , $ctx ) ;
+        $makeHost([ 'getObject'      => (object) [ 'a' => 1 ] ] )->getObject( 'Q' , [] , [] , false , null , $ctx ) ;
+        $makeHost([ 'getFirstResult' => [ 'a' => 1 ] ] )->getFirstResult    ( 'Q' , [] , [] , false , null , $ctx ) ;
+        $makeHost([ 'getResult'      => [ [ 'a' => 1 ] ] ] )->getResult      ( 'Q' , [] , [] , false , null , $ctx ) ;
+
+        // streamDocuments must return a Generator (single-use), not an array.
+        $gen = ( static function() { yield [ 'a' => 1 ] ; } )() ;
+        iterator_to_array( $makeHost([ 'streamDocuments' => $gen ] )->streamDocuments( 'Q' , [] , [] , false , null , $ctx ) ) ;
+
+        // 5 seams × 1 document each → 5 captured contexts, all equal to the passed $ctx.
+        $this->assertSame( [ $ctx , $ctx , $ctx , $ctx , $ctx ] , $seen ) ;
     }
 
     // ---------------------------------------------------------------- prepareAndExecute / registerProperty

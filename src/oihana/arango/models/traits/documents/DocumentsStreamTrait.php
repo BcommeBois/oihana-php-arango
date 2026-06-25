@@ -189,7 +189,8 @@ trait DocumentsStreamTrait
         (
             $query ,
             $bindVars ,
-            [ CursorField::FULL_COUNT => (bool) $limit ]
+            [ CursorField::FULL_COUNT => (bool) $limit ] ,
+            context: $init
         ) ;
     }
 }

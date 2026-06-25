@@ -43,6 +43,9 @@ class MockDocuments extends Documents
     /** The last cursor options passed to a fetch seam. */
     public array $lastOptions = [] ;
 
+    /** The last alteration context (the originating `$init`) passed to a fetch seam. */
+    public array $lastContext = [] ;
+
     /** Canned value returned by {@see getObject()}. */
     public ?object $objectResult = null ;
 
@@ -119,6 +122,7 @@ class MockDocuments extends Documents
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :mixed
     {
@@ -145,12 +149,14 @@ class MockDocuments extends Documents
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :?object
     {
         $this->lastQuery   = $query ;
         $this->lastBinds   = $bindVars ;
         $this->lastOptions = $options ;
+        $this->lastContext = $context ;
         return $this->objectResult ;
     }
 
@@ -172,12 +178,14 @@ class MockDocuments extends Documents
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :array
     {
         $this->lastQuery   = $query ;
         $this->lastBinds   = $bindVars ;
         $this->lastOptions = $options ;
+        $this->lastContext = $context ;
         return $this->documentsResult ;
     }
 
@@ -199,11 +207,13 @@ class MockDocuments extends Documents
         array                              $options  = [] ,
         bool                               $raw      = false ,
         null|SchemaResolver|Closure|string $schema   = null ,
+        array                              $context  = [] ,
     )
     :Generator
     {
-        $this->lastQuery = $query ;
-        $this->lastBinds = $bindVars ;
+        $this->lastQuery   = $query ;
+        $this->lastBinds   = $bindVars ;
+        $this->lastContext = $context ;
         yield from $this->streamResult ;
     }
 }
