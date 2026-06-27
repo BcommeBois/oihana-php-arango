@@ -128,7 +128,7 @@ Permission fine portée par une valeur de paramètre URL (par exemple `?skin=ful
 
 ### Cascade
 
-Propagation automatique d'une suppression aux *edges* liés à un document. Émise par `Documents::delete()` via un signal `afterDelete` que les traits `EdgesFromTrait` et `EdgesToTrait` interceptent. Voir aussi [Signal](#signal).
+Propagation automatique d'une suppression aux *edges* liés à un document. Émise par `Documents::delete()` via un signal `afterDelete` que les traits `EdgesFromTrait` et `EdgesToTrait` interceptent. La purge peut aussi viser les documents de l'autre bout (`Purge::INBOUND`/`OUTBOUND`/`BOTH`). Détails : [Signaux & cascade](../lifecycle-signals-cascade.md). Voir aussi [Signal](#signal).
 
 ### Composition de traits
 
@@ -168,7 +168,7 @@ Sélection des champs renvoyés par le framework pour un document donné, dépen
 
 ### Signal
 
-Événement applicatif émis par un modèle (par exemple `afterDelete`) et propagé via le bus `oihana/php-signals`. Permet le découplage entre l'action principale (supprimer un document) et ses effets de bord (purger les *edges*).
+Événement applicatif émis par un modèle (par exemple `afterDelete`) et propagé via le bus `oihana/php-signals`. Permet le découplage entre l'action principale (supprimer un document) et ses effets de bord (purger les *edges*). Les modèles exposent 6 paires `before*`/`after*` (insert, update, replace, upsert, delete, truncate) — voir [Signaux & cascade](../lifecycle-signals-cascade.md).
 
 ### Skin
 

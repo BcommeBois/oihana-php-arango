@@ -270,6 +270,8 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 
 `beforeModelCall`/`afterModelCall` hooks come from the `ModelCallTrait` controller-side trait (cf. [Slim controllers](controllers/README.md)). The `afterDelete` signal comes from the [`oihana/php-signals`](getting-started/dependencies.md#oihanaphp-signals) *bus*.
 
+> The table above only shows `afterDelete`; the models actually expose **6 signal pairs** (`before*`/`after*` for insert, update, replace, upsert, delete, truncate) and a **directional delete cascade** (edge purge + linked-document purge `Purge::INBOUND`/`OUTBOUND`/`BOTH`). All of it is detailed in [Signals & cascade](lifecycle-signals-cascade.md).
+
 ## See also
 
 - [Edge and join projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::SCOPE`.

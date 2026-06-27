@@ -93,6 +93,7 @@ Pour le détail (instanciation du client `ArangoDB`, options de requête, projec
 ### Couche métier
 
 - [Modèles `Documents` et `Edges`](models.md) — architecture des traits, catalogue des clés `AQL::*`, méthodes CRUD, hooks de cycle de vie, cascade via *signals*.
+- [Signaux & cascade](lifecycle-signals-cascade.md) — les 6 signaux du cycle de vie (`before*`/`after*`) et la cascade de suppression : purge automatique des arêtes + purge dirigée des documents liés (`Purge::INBOUND`/`OUTBOUND`/`BOTH`).
 - [Projection des edges et joins](edges-joins-projection.md) — `Field::SKINS`, `AQL::SKIN`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, pattern `CapabilityAuthorizerTrait`.
 - [Indexes et gestion des collections](indexes.md) — `CollectionManagementTrait`, types d'index (`Persistent`, `TTL`, `Geo`, `MDI`, `Vector`).
 

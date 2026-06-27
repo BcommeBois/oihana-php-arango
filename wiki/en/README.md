@@ -93,6 +93,7 @@ For details (instantiating the `ArangoDB` client, query options, projection, edg
 ### Business layer
 
 - [`Documents` and `Edges` models](models.md) — trait architecture, full `AQL::*` keys catalog, CRUD methods, lifecycle hooks, cascade via *signals*.
+- [Signals & cascade](lifecycle-signals-cascade.md) — the 6 lifecycle signals (`before*`/`after*`) and the delete cascade: automatic edge purge + directional purge of linked documents (`Purge::INBOUND`/`OUTBOUND`/`BOTH`).
 - [Edge and join projection](edges-joins-projection.md) — `Field::SKINS`, `AQL::SKIN`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `CapabilityAuthorizerTrait` pattern.
 - [Indexes and collection management](indexes.md) — `CollectionManagementTrait`, index types (`Persistent`, `TTL`, `Geo`, `MDI`, `Vector`).
 

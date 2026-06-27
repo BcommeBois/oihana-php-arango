@@ -270,6 +270,8 @@ Les opérations CRUD passent par des hooks de cycle de vie consommables par sous
 
 Les hooks `beforeModelCall`/`afterModelCall` viennent du trait `ModelCallTrait` côté contrôleur (cf. [Contrôleurs Slim](controllers/README.md)). Le signal `afterDelete` vient du *bus* [`oihana/php-signals`](getting-started/dependencies.md#oihanaphp-signals).
 
+> Le tableau ci-dessus ne montre que `afterDelete` ; les modèles exposent en réalité **6 paires** de signaux (`before*`/`after*` pour insert, update, replace, upsert, delete, truncate) et une **cascade de suppression dirigée** (purge des arêtes + purge des documents liés `Purge::INBOUND`/`OUTBOUND`/`BOTH`). Tout est détaillé dans [Signaux & cascade](lifecycle-signals-cascade.md).
+
 ## Voir aussi
 
 - [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::SCOPE`.
