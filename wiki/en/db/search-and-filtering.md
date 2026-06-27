@@ -30,7 +30,7 @@ FOR doc IN articles
 
 So you can send all three in the same request — they stack (logical AND between them). `?search` forms its own internal `OR` group, then is AND-ed to the rest.
 
-> **Beyond filtering.** A list query also has **sorting** (`?sort`), **pagination** (`?limit`/`?offset`) and output **projection** (skins, `Field::*`). These do not *filter* and are out of scope here — see [models.md](../models.md) and [Edges and joins projection](../edges-joins-projection.md).
+> **Beyond filtering.** A list query also has **sorting** ([`?sort`](../models.md#aqlsortable-notations)), **pagination** (`?limit`/`?offset`) and output **projection** (skins, `Field::*`). These do not *filter* and are out of scope here — see [models.md](../models.md) and [Edges and joins projection](../edges-joins-projection.md).
 
 ## Comparison table
 

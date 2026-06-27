@@ -58,7 +58,7 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::FIELDS` | `array` | Exposed fields and their [`Filter::*`](enums.md#types) (see [Field](getting-started/glossary.md#field)). |
 | `AQL::FILTERS` | `array` | Fields filterable from URL and their `FilterType::*` (see [filter.md](db/filter.md)). |
 | `AQL::SEARCHABLE` | `array` | Fields `?search=` operates on. |
-| `AQL::SORTABLE` | `array` | URL key → AQL field mapping for `?sort=`. |
+| `AQL::SORTABLE` | `array` | Sort whitelist for `?sort=` ([three notations](#aqlsortable-notations)). |
 | `AQL::SORT_DEFAULT` | `string` | Default sort in grammar format ([`sortKeys`](helpers.md)). |
 | `AQL::EDGES` | `array` | *Edge* definitions (see [edges-joins-projection.md](edges-joins-projection.md)). |
 | `AQL::JOINS` | `array` | *Join* definitions (same page). |
@@ -71,6 +71,27 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::INDEXES` | `array` | Indexes to create on first instantiation (lazy). |
 | `AQL::CONDITIONS` | `array` | Server-side injected AQL conditions (see [filter-internal.md](db/filter-internal.md)). |
 | `AQL::BINDS` | `array` | Server-side injected *bind variables*. |
+
+### `AQL::SORTABLE` notations
+
+The sort whitelist resolves each `?sort=` key (grammar: a comma-separated list, a leading `-` flips a key to descending) to an AQL field. Three interchangeable notations are accepted and **may be mixed in the same array**:
+
+```php
+// Indexed shorthand — the URL key equals the field (the common case):
+AQL::SORTABLE => [ Prop::_FROM , Prop::_TO , Prop::CREATED , Prop::MODIFIED ]
+
+// Indexed alias — the public key differs from the AQL field (?sort=name → doc.givenName):
+AQL::SORTABLE => [ [ Prop::NAME => Prop::GIVEN_NAME ] , Prop::CREATED ]
+
+// Associative (legacy) — still supported, unchanged:
+AQL::SORTABLE => [ Prop::CREATED => Prop::CREATED , Prop::NAME => Prop::GIVEN_NAME ]
+```
+
+- The pair direction is always `[ urlKey => fieldPath ]`, identical across the three forms.
+- A field value may be a multi-segment path (`[ 'address', 'city' ]` → `address.city`), in alias form too.
+- A `?sort=` key outside the whitelist is **silently dropped**; `null` (no whitelist) enables **open mode** (any attribute, validated against injection).
+
+Normalisation (`oihana\arango\models\helpers\normalizeSortable()`) folds any of the three forms into the canonical `urlKey => fieldPath` map, once at construction. It is **idempotent** and **backward-compatible**: an existing associative map is returned untouched.
 
 ### Main methods
 

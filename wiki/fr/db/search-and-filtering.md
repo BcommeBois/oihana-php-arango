@@ -30,7 +30,7 @@ FOR doc IN articles
 
 On peut donc envoyer les trois dans la même requête — ils se cumulent (logique ET entre eux). `?search` forme son propre groupe `OR` interne, puis est ANDé au reste.
 
-> **Au-delà du filtrage.** Une requête de liste comprend aussi le **tri** (`?sort`), la **pagination** (`?limit`/`?offset`) et la **projection** de sortie (skins, `Field::*`). Ils ne *filtrent* pas et ne sont pas couverts ici — voir [models.md](../models.md) et [Projection des edges et joins](../edges-joins-projection.md).
+> **Au-delà du filtrage.** Une requête de liste comprend aussi le **tri** ([`?sort`](../models.md#notations-de-aqlsortable)), la **pagination** (`?limit`/`?offset`) et la **projection** de sortie (skins, `Field::*`). Ils ne *filtrent* pas et ne sont pas couverts ici — voir [models.md](../models.md) et [Projection des edges et joins](../edges-joins-projection.md).
 
 ## Tableau comparatif
 
