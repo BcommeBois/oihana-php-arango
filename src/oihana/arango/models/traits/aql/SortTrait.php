@@ -18,6 +18,7 @@ use function oihana\arango\db\functions\geo\distance;
 use function oihana\arango\db\functions\search\bm25;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\resolveGeoPoint;
+use function oihana\arango\models\helpers\normalizeSortable;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
 
@@ -32,6 +33,20 @@ use function oihana\core\strings\key;
  * the model's `SORT_DEFAULT` applies.
  * ```
  * ?sort=name,-created   // SORT doc.name ASC, doc.created DESC
+ * ```
+ *
+ * ### `AQL::SORTABLE` notations
+ * The whitelist is normalised by {@see normalizeSortable()} into the canonical
+ * `urlKey => fieldPath` map; three forms are accepted and may be mixed:
+ * ```php
+ * // Indexed shorthand — token equals field (the common case, no redundant map):
+ * AQL::SORTABLE => [ Prop::_FROM , Prop::_TO , Prop::CREATED , Prop::MODIFIED ]
+ *
+ * // Indexed alias — public token differs from the AQL field (?sort=name → givenName):
+ * AQL::SORTABLE => [ [ Prop::NAME => Prop::GIVEN_NAME ] , Prop::CREATED ]
+ *
+ * // Associative (legacy) — still supported, returned untouched:
+ * AQL::SORTABLE => [ Prop::CREATED => Prop::CREATED , Prop::NAME => Prop::GIVEN_NAME ]
  * ```
  *
  * ### Distance ordering (`?near=`)
@@ -68,12 +83,20 @@ trait SortTrait
 
     /**
      * Initialize the sortable array definition.
+     *
+     * The raw definition (from the `AQL::SORTABLE` init key, or the property default)
+     * is normalised through {@see normalizeSortable()} into the canonical
+     * `urlKey => fieldPath` map. Three interchangeable notations are accepted and may
+     * be mixed: the legacy associative `urlKey => fieldPath`, the indexed shorthand
+     * `fieldName` (token equals field), and the indexed alias `[ urlKey => fieldPath ]`.
+     * `null` (open mode) is preserved. The normalisation is idempotent.
+     *
      * @param array $init
      * @return $this
      */
     public function initializeSortable( array $init = [] ):static
     {
-        $this->sortable = $init[ AQL::SORTABLE ] ?? $this->sortable ;
+        $this->sortable = normalizeSortable( $init[ AQL::SORTABLE ] ?? $this->sortable ) ;
         return $this ;
     }
 

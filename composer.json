@@ -429,6 +429,7 @@
             "src/oihana/arango/models/helpers/joins/buildJoinVariable.php",
             "src/oihana/arango/models/helpers/joins/buildJoinVariables.php",
             "src/oihana/arango/models/helpers/joins/sortJoinVariable.php",
+            "src/oihana/arango/models/helpers/normalizeSortable.php",
             "src/oihana/arango/models/helpers/parseFilterSegment.php",
             "src/oihana/arango/models/helpers/relations/updateEdgeRelation.php",
             "src/oihana/arango/models/helpers/relations/updateRelations.php",

@@ -108,4 +108,36 @@ class SortTraitTest extends TestCase
         $this->assertSame( [ 'title' => 'name' ] , $stub->sortable ) ;
         $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => 'title' ] ) ) ;
     }
+
+    public function testInitializeSortableNormalizesIndexedShorthand() :void
+    {
+        $stub = new SortTraitStub() ;
+        $stub->initializeSortable( [ AQL::SORTABLE => [ '_from' , '_to' , 'created' ] ] ) ;
+
+        // Indexed shorthand: the token resolves to the field of the same name.
+        $this->assertSame( [ '_from' => '_from' , '_to' => '_to' , 'created' => 'created' ] , $stub->sortable ) ;
+        $this->assertSame( 'doc._from ASC, doc.created DESC' , $stub->prepareSort( [ 'sort' => '_from,-created' ] ) ) ;
+        // A token outside the whitelist is still silently dropped.
+        $this->assertSame( '' , $stub->prepareSort( [ 'sort' => 'nope' ] ) ) ;
+    }
+
+    public function testInitializeSortableNormalizesHybridAlias() :void
+    {
+        $stub = new SortTraitStub() ;
+        $stub->initializeSortable( [ AQL::SORTABLE => [ [ 'name' => 'givenName' ] , '_to' , 'created' ] ] ) ;
+
+        $this->assertSame( [ 'name' => 'givenName' , '_to' => '_to' , 'created' => 'created' ] , $stub->sortable ) ;
+        // ?sort=name aliases to the givenName field; the shorthand neighbours resolve to themselves.
+        $this->assertSame( 'doc.givenName ASC, doc._to DESC' , $stub->prepareSort( [ 'sort' => 'name,-_to' ] ) ) ;
+    }
+
+    public function testInitializeSortableKeepsOpenModeWhenNull() :void
+    {
+        $stub = new SortTraitStub() ;
+        $stub->initializeSortable( [] ) ;
+
+        // No whitelist provided: open mode is preserved (null), not coerced to [].
+        $this->assertNull( $stub->sortable ) ;
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
 }
