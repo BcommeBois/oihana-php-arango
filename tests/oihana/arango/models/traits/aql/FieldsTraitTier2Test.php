@@ -154,6 +154,60 @@ final class FieldsTraitTier2Test extends TestCase
     }
 
     /**
+     * Regression: a `Filter::JOINS` (array join) projected through a vertex traversal
+     * correlates its FILTER on the outer loop variable (`vertex.<field>`), not on an
+     * unbound `doc_vertex` alias. The `returnFields()` fix covers joins, not only edges.
+     */
+    public function testJoinsProjectedThroughTraversalAnchorsOnOuterLoopVariable() :void
+    {
+        $variables = [] ;
+
+        $this->host()->returnFields
+        (
+            [
+                Arango::DOC_REF      => 'vertex' ,
+                Arango::QUERY_FIELDS => [ 'roles' => [ Field::FILTER => Filter::JOINS ] ] ,
+                Arango::JOINS        => [ 'roles' => [ Arango::MODEL => $this->documents( 'roles' ) ] ] ,
+            ] ,
+            $variables ,
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'vertex.roles' , $variables[ 0 ] ) ;
+        $this->assertStringNotContainsString( 'doc_vertex' , $variables[ 0 ] ) ;
+    }
+
+    /**
+     * Regression: a `Filter::MAP` sub-array projection through a vertex traversal sources
+     * its inner `FOR … IN vertex.<field>` from the outer loop variable, never `doc_vertex`.
+     * The MAP expression is inline in the RETURN projection (not a LET), so it is asserted
+     * on the returned string.
+     */
+    public function testMapProjectedThroughTraversalAnchorsOnOuterLoopVariable() :void
+    {
+        $variables = [] ;
+
+        $result = $this->host()->returnFields
+        (
+            [
+                Arango::DOC_REF      => 'vertex' ,
+                Arango::QUERY_FIELDS =>
+                [
+                    'addresses' =>
+                    [
+                        Field::FILTER => Filter::MAP ,
+                        Field::FIELDS => [ 'street' => Filter::DEFAULT ] ,
+                    ] ,
+                ] ,
+            ] ,
+            $variables ,
+        ) ;
+
+        $this->assertStringContainsString( 'vertex.addresses' , $result ) ;
+        $this->assertStringNotContainsString( 'doc_vertex' , $result ) ;
+    }
+
+    /**
      * Non-regression for the main query: with the default DOC_REF ('doc'), a
      * `Filter::EDGES_COUNT` still anchors its `LET` on `doc` exactly as before.
      */
