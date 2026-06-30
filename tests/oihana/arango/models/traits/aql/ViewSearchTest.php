@@ -1715,6 +1715,30 @@ class ViewSearchTest extends TestCase
         $this->assertContains( "analyzer 'text_en' not found on the server" , $report->changes ) ;
     }
 
+    public function testViewDiffIsInvalidWhenAnNgramAnalyzerIsUnknown() :void
+    {
+        $facade = $this->createMock( ArangoDB::class ) ;
+        $facade->method( 'analyzerExists'   )->willReturnCallback( fn( string $a ) => $a === 'text_fr' ) ;
+        $facade->method( 'collectionExists' )->willReturn( true ) ;
+        $facade->method( 'viewDiff'         )->willReturn( new DiffReport( 'placesView' , DiffStatus::IN_SYNC ) ) ;
+
+        $model = $this->facadeModel( $facade ,
+        [
+            Search::FIELDS =>
+            [
+                // The IN TOKENS analyzer is known, but the field's NGRAM_MATCH
+                // analyzer (queried by similarity threshold) is not — the diff
+                // must collect the ngram analyzer too and report it missing.
+                'name' => [ Search::ANALYZER => 'text_fr' , Search::NGRAM => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 0.6 ] ] ,
+            ] ,
+        ]) ;
+
+        $report = $model->viewDiff() ;
+
+        $this->assertSame( DiffStatus::INVALID , $report->status ) ;
+        $this->assertContains( "analyzer 'autocomplete' not found on the server" , $report->changes ) ;
+    }
+
     public function testViewDiffIsInvalidWhenTheCollectionIsUnknownAndKeepsTheDriftLines() :void
     {
         $facade = $this->createMock( ArangoDB::class ) ;
