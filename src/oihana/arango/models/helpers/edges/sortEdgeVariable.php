@@ -3,12 +3,9 @@
 namespace oihana\arango\models\helpers\edges;
 
 use oihana\arango\db\enums\AQL;
-use oihana\enums\Order;
 use org\schema\constants\Schema;
 
-use function oihana\arango\db\operations\aqlAsc;
-use function oihana\arango\db\operations\aqlDesc;
-use function oihana\arango\db\operations\aqlSort;
+use function oihana\arango\models\helpers\sortRelationVariable;
 
 /**
  * Generates the internal AQL 'SORT' clause for an edge variable subquery.
@@ -100,25 +97,6 @@ function sortEdgeVariable
 )
 :string
 {
-    $isArray = is_array( $definition ) ;
-    $order   = Order::ASC ;
-
-    if( $isArray )
-    {
-        $order      = ( $definition[ AQL::ORDER ] ?? null ) === Order::DESC ? Order::DESC : Order::ASC ;
-        $definition = $definition[ AQL::SORT ] ?? null ;
-    }
-
-    $sort = !is_string( $definition ) ? null : $definition ;
-
-    if( is_null( $sort ) )
-    {
-        return aqlSort( aqlDesc( $defaultProperty , $edgeRef ) ) ;
-    }
-
-    return match( $order )
-    {
-        Order::DESC => aqlSort( aqlDesc ( $sort , $vertexRef ) ) ,
-        default     => aqlSort( aqlAsc  ( $sort , $vertexRef ) )
-    };
+    // An explicit sort property targets the vertex; the default fallback targets the edge.
+    return sortRelationVariable( $definition , $vertexRef , $edgeRef , $defaultProperty ) ;
 }

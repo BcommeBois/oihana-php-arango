@@ -3,93 +3,49 @@
 namespace oihana\arango\models\helpers\joins;
 
 use oihana\arango\db\enums\AQL;
-use oihana\enums\Order;
 use org\schema\constants\Schema;
 
-use function oihana\arango\db\operations\aqlAsc;
-use function oihana\arango\db\operations\aqlDesc;
-use function oihana\arango\db\operations\aqlSort;
+use function oihana\arango\models\helpers\sortRelationVariable;
 
 /**
- * Generates the internal AQL 'SORT' clause for an edge variable subquery.
+ * Generates the internal AQL 'SORT' clause for a join variable subquery.
  *
- * This helper method interprets a flexible sort definition and constructs
- * the appropriate AQL 'SORT' expression.
+ * This helper interprets a flexible sort definition and constructs the appropriate
+ * AQL 'SORT' expression. Unlike an edge relation, a join has a single document
+ * variable (`$docRef`), so both the explicit sort property and the default fallback
+ * target that same reference.
  *
- * - If $definition is an array: Looks for `AQL::SORT` (property) and `AQL::ORDER` (ASC/DESC)
- * and sorts by the *vertex* property.
- * - If $definition is a string (legacy): Sorts by that string as the property on the *vertex* in ASC order.
- * - If $definition is null (or `AQL::SORT` is not set in the array):
- * Sorts by the $defaultProperty (e.g., 'created') on the *edge* in DESC order.
+ * - If $definition is an array: looks for `AQL::SORT` (property) and `AQL::ORDER` (ASC/DESC)
+ *   and sorts by that property on the join document.
+ * - If $definition is a string (legacy): sorts by that string as the property on the
+ *   join document in ASC order.
+ * - If $definition is null (or `AQL::SORT` is not set in the array): sorts by the
+ *   $defaultProperty (e.g. '_key') on the join document in DESC order.
  *
- * @param array|string|null $definition       The sort configuration. Typically the `$definition` array from getEdgeVariable.
- * @param string            $vertexRef        The internal AQL vertex variable reference.
- * @param string            $edgeRef          The internal AQL edge variable reference.
- * @param string            $defaultProperty  The fallback property to sort by (default: 'created').
+ * @param array|string|null $definition       The sort configuration. Typically the `$definition` array from buildJoinVariable.
+ * @param string            $docRef           The internal AQL join-document variable reference (default: 'doc_join').
+ * @param string            $defaultProperty  The fallback property to sort by (default: '_key').
  *
- * @return string The generated AQL 'SORT' clause (e.g., "SORT v_myVar_collectionName.name ASC").
+ * @return string The generated AQL 'SORT' clause.
  *
  * @example
- * Assume the following constant values for the examples:
- * - AQL::SORT = 'sort'
- * - AQL::ORDER = 'order'
- * - Order::DESC = 'DESC'
- * - Order::ASC = 'ASC'
- * - Schema::CREATED = 'created'
- * - AQL::EDGE_PREFIX = 'e_'
- * - AQL::VERTEX_PREFIX = 'v_'
- *
- * ### Case 1: Default sort (null definition)
- *
- * Sorts by 'created' on the *edge* (e_) in DESC order.
- *
  * ```php
- * echo sortEdgeVariable( null , 'friends_rel');
- * // Output: "SORT e_friends_rel.created DESC"
+ * // Case 1: default sort (null definition) — '_key' DESC on the join document.
+ * echo sortJoinVariable( null , 'doc_join' );
+ * // Output: "SORT doc_join._key DESC"
+ *
+ * // Case 2: legacy string sort — 'name' ASC on the join document.
+ * echo sortJoinVariable( 'name' , 'doc_join' );
+ * // Output: "SORT doc_join.name ASC"
+ *
+ * // Case 3: array definition (DESC).
+ * echo sortJoinVariable( [ AQL::SORT => 'age' , AQL::ORDER => Order::DESC ] , 'doc_join' );
+ * // Output: "SORT doc_join.age DESC"
+ *
+ * // Case 4: array definition without 'sort' key — falls back to default (Case 1).
+ * echo sortJoinVariable( [ AQL::ORDER => Order::DESC ] , 'doc_join' );
+ * // Output: "SORT doc_join._key DESC"
  * ```
- * ### Case 2: Legacy string sort (string definition)
- *
- * Sorts by 'name' on the *vertex* (v_) in ASC order.
- *
- * ```php
- * echo sortEdgeVariable( 'name' , 'friends_rel');
- * // Output: "SORT v_friends_rel.name ASC"
- * ```
- *
- * ### Case 3: Array definition (DESC)
- *
- * Sorts by 'age' on the *vertex* (v_) in DESC order.
- *
- * ```php
- * $definition =
- * [
- *     AQL::SORT  => 'age',
- *     AQL::ORDER => Order::DESC
- * ];
- * echo sortEdgeVariable( $definition, 'friends_rel' );
- * // Output: "SORT v_friends_rel.age DESC"
- * ```
- *
- * ### Case 4: Array definition (ASC)
- *
- * Sorts by 'lastName' on the *vertex* (v_) in ASC order.
- *
- * ```php
- * $definition = [ AQL::SORT => 'lastName' ]; // AQL::ORDER defaults to ASC
- * echo sortEdgeVariable( $definition , 'friends_rel');
- * // Output: "SORT v_friends_rel.lastName ASC"
- * ```
- *
- * ###  Case 5: Array definition missing 'sort' key ---
- *
- * Falls back to default sort (Case 1).
- *
- * ```php
- * $def5 = [ AQL::ORDER => Order::DESC ];
- * echo sortEdgeVariable($def5, 'friends_rel');
- * // Output: "SORT e_friends_rel.created DESC"
- * * ```
- *
  */
 function sortJoinVariable
 (
@@ -99,25 +55,6 @@ function sortJoinVariable
 )
 : string
 {
-    $isArray = is_array( $definition ) ;
-    $order   = Order::ASC;
-
-    if ( $isArray )
-    {
-        $order      = ( $definition[ AQL::ORDER ] ?? null ) === Order::DESC ? Order::DESC : Order::ASC ;
-        $definition = $definition[ AQL::SORT ] ?? null ;
-    }
-
-    $sort = !is_string( $definition ) ? null : $definition ;
-
-    if ( is_null( $sort ) )
-    {
-        return aqlSort( aqlDesc( $defaultProperty, $docRef ) );
-    }
-
-    return match ( $order )
-    {
-        Order::DESC => aqlSort( aqlDesc ( $sort , $docRef ) ) ,
-        default     => aqlSort( aqlAsc  ( $sort , $docRef ) ) ,
-    };
+    // A join has a single document reference, so the explicit sort and the default fallback share it.
+    return sortRelationVariable( $definition , $docRef , $docRef , $defaultProperty ) ;
 }
