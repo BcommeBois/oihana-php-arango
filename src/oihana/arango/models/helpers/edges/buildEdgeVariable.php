@@ -17,6 +17,10 @@ use oihana\arango\db\enums\options\TraversalUniqueVertices;
 use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 
+use org\schema\constants\Schema;
+
+use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\functions\documents\merge;
 use function oihana\arango\db\helpers\aqlFields;
 use function oihana\arango\db\helpers\resolveSkinFields;
 use function oihana\arango\db\operations\aqlLet;
@@ -25,7 +29,9 @@ use function oihana\arango\db\operations\aqlTraversal;
 use function oihana\arango\models\helpers\buildVariables;
 use function oihana\core\strings\betweenBraces;
 use function oihana\core\strings\betweenParentheses;
+use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
+use function oihana\core\strings\keyValue;
 use function oihana\core\strings\randomKey;
 
 /**
@@ -120,12 +126,31 @@ function buildEdgeVariable
         $minDepth = 1 ;
     }
 
+    $property = $definition[ Arango::PROPERTY ] ?? null ;
+
+    // Path metadata (hierarchy reconstruction): AQL::WITH_PATH opts in to a `path`
+    // traversal variable and injects, into the projected object, the immediate parent
+    // key (AQL::PATH_PARENT → `_parent`) and the traversal depth (AQL::PATH_DEPTH →
+    // `_depth`). buildTree() reconstructs a nested children[] tree from these. Off by
+    // default → no path variable emitted, AQL unchanged. A scalar PROPERTY projection
+    // carries no object, so it ignores AQL::WITH_PATH (and emits no path variable).
+    $withPath = ( $definition[ AQL::WITH_PATH ] ?? false ) === true && $property === null ;
+    $pathRef  = $withPath ? randomKey( AQL::PATH ) : null ;
+    $pathMeta = $withPath
+              ? compile(
+                [
+                    keyValue( AQL::PATH_PARENT , key( Schema::_KEY , key( 'vertices[-2]' , $pathRef ) ) ) ,
+                    keyValue( AQL::PATH_DEPTH  , length( key( 'edges' , $pathRef ) ) ) ,
+                ] , ', ' )
+              : null ;
+
     $subVariables = [] ;
 
     $for = aqlTraversal
     ([
         AQL::VERTEX_REF      => $vertexRef   ,
         AQL::EDGE_REF        => $edgeRef     ,
+        AQL::PATH_REF        => $pathRef     ,
         AQL::DIRECTION       => $direction   ,
         AQL::START_VERTEX    => $startVertex ,
         AQL::EDGE_COLLECTION => $edgeCollection  ,
@@ -140,10 +165,9 @@ function buildEdgeVariable
 
     $sort = sortEdgeVariable( $definition , $vertexRef , $edgeRef ) ;
 
-    $property = $definition[ Arango::PROPERTY ] ?? null ;
-
     if( $property !== null )
     {
+        // Scalar projection: no object to carry the path metadata → AQL::WITH_PATH ignored.
         $return = aqlReturn( key( $property , $vertexRef ) ) ;
     }
     else
@@ -157,11 +181,21 @@ function buildEdgeVariable
 
             buildVariables( $subVariables , $fields , $targetEdges , $targetJoins , $container , $vertexRef , $init ) ;
 
-            $return = aqlReturn( betweenBraces( aqlFields( $fields , $vertexRef , $container , $init , $edgeRef ) ) ) ;
+            $object = aqlFields( $fields , $vertexRef , $container , $init , $edgeRef ) ;
+            if( $pathMeta !== null )
+            {
+                $object = compile( [ $object , $pathMeta ] , ', ' ) ; // append _parent / _depth
+            }
+
+            $return = aqlReturn( betweenBraces( $object ) ) ;
         }
         else
         {
-            $return = aqlReturn( $vertexRef ) ;
+            // Whole vertex: graft the path metadata with MERGE so the projected
+            // document gains the _parent / _depth keys.
+            $return = $pathMeta !== null
+                    ? aqlReturn( merge( [ $vertexRef , betweenBraces( $pathMeta ) ] ) )
+                    : aqlReturn( $vertexRef ) ;
         }
     }
 

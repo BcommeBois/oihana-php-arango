@@ -168,6 +168,41 @@ La profondeur s'applique au sens déclaré dans `AQL::DIRECTION` :
 
 > **Homogène uniquement.** Une profondeur suppose le **même** type à chaque niveau (une arête auto-référente). Pour une chaîne hétérogène où chaque niveau est d'un type différent (`Type1 → Type2 → Type3`), n'utilisez **pas** de profondeur — déclarez plutôt un niveau d'edge imbriqué par type (chacun avec son `AQL::MODEL` / `AQL::FIELDS`), comme montré dans *Projection composée* ci-dessus.
 
+### Métadonnées de reconstruction — `AQL::WITH_PATH`
+
+La traversée en profondeur renvoie une **liste à plat**. Pour la retransformer en arbre imbriqué, il faut connaître, pour chaque nœud, **qui est son parent**. Deux situations :
+
+- **Le document stocke déjà son parent** (ex. un champ `broader` / `parentId`). Rien à faire — projetez ce champ et reconstruisez à partir de lui.
+- **Le lien parent vit uniquement dans les arêtes** (le document ne le stocke pas). Activez `AQL::WITH_PATH => true` sur la définition d'edge : la traversée expose alors la variable `path` et injecte deux clés calculées dans chaque élément projeté :
+  - `_parent` (`AQL::PATH_PARENT`) — le `_key` du parent immédiat (le nœud d'un cran plus proche du sommet de départ), soit `path.vertices[-2]._key`.
+  - `_depth` (`AQL::PATH_DEPTH`) — la profondeur de traversée, soit `LENGTH(path.edges)`.
+
+```php
+AQL::EDGES =>
+[
+    Prop::DESCENDANTS =>
+    [
+        AQL::MODEL     => 'concept_links' ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::MAX_DEPTH => 5 ,
+        AQL::WITH_PATH => true , // injecte _parent / _depth
+    ],
+],
+```
+
+```aql
+LET descendants = ( FOR vertex, edge, path IN 1..5 OUTBOUND doc concept_links OPTIONS { … }
+    RETURN { _key: vertex._key, name: vertex.name,
+             _parent: path.vertices[-2]._key, _depth: LENGTH(path.edges) } )
+```
+
+À noter :
+
+- **Désactivé par défaut → inchangé.** Sans `AQL::WITH_PATH`, aucune variable `path` n'est émise et l'AQL est identique.
+- **Projection du sommet entier.** Quand l'edge ne déclare pas de `AQL::FIELDS` (l'élément est le sommet nu), les métadonnées sont greffées via `MERGE(vertex, { _parent, _depth })`.
+- **Projection scalaire.** Une projection `Arango::PROPERTY` renvoie un scalaire : aucun objet ne peut porter les métadonnées, donc `AQL::WITH_PATH` y est **ignoré** (et aucune variable `path` n'est émise).
+- Un nœud à la profondeur 1 a un `_parent` égal à la clé du **sommet de départ** — la racine à partir de laquelle la liste à plat se reconstruit en arbre `children[]`.
+
 ## Projeter les propriétés de l'edge — `Field::SCOPE`
 
 Par défaut, les champs déclarés dans le `AQL::FIELDS` d'une définition d'edge sont projetés depuis le **vecteur cible** du traversal (l'autre bout de la relation). Mais un edge n'est pas qu'un connecteur : il porte souvent sa propre métadonnée (`created`, `weight`, `role`, `order`, …). Le marqueur `Field::SCOPE` permet de remonter ces propriétés **dans le même objet**, à côté des champs du vecteur.

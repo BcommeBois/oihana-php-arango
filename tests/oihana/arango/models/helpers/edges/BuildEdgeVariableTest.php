@@ -143,6 +143,75 @@ final class BuildEdgeVariableTest extends TestCase
         ] ) ;
     }
 
+    public function testWithPathInjectsParentAndDepthIntoTheProjection() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        $result = $this->normalize( buildEdgeVariable( 'descendants' ,
+        [
+            AQL::MODEL     => $edges ,
+            AQL::FIELDS    => [ 'name' ] ,
+            AQL::MAX_DEPTH => 5 ,
+            AQL::WITH_PATH => true ,
+        ] ) ) ;
+
+        // The traversal exposes the `path` variable, and the projected object gains
+        // the reconstruction metadata.
+        $this->assertStringContainsString( 'FOR vertex, edge, path IN 1..5 OUTBOUND doc user_has_roles' , $result ) ;
+        $this->assertStringContainsString( '_parent:path.vertices[-2]._key' , $result ) ;
+        $this->assertStringContainsString( '_depth:LENGTH(path.edges)' , $result ) ;
+    }
+
+    public function testWithPathGraftsMetadataOnTheWholeVertexWithMerge() :void
+    {
+        $edges = $this->wiredEdges() ; // no FIELDS → whole-vertex branch
+
+        $result = $this->normalize( buildEdgeVariable( 'descendants' ,
+        [
+            AQL::MODEL     => $edges ,
+            AQL::MAX_DEPTH => 5 ,
+            AQL::WITH_PATH => true ,
+        ] ) ) ;
+
+        $this->assertStringContainsString
+        (
+            'RETURN MERGE(vertex,{_parent:path.vertices[-2]._key, _depth:LENGTH(path.edges)})' ,
+            $result
+        ) ;
+    }
+
+    public function testWithPathIsIgnoredOnAScalarPropertyProjection() :void
+    {
+        $result = $this->normalize( buildEdgeVariable( 'd' ,
+        [
+            AQL::MODEL       => new MockEdges( 'concept_links' ) ,
+            AQL::MAX_DEPTH   => 5 ,
+            AQL::WITH_PATH   => true ,
+            Arango::PROPERTY => 'name' ,
+        ] ) ) ;
+
+        // No `path` variable is emitted and no metadata is grafted onto the scalar.
+        $this->assertStringNotContainsString( 'path' , $result ) ;
+        $this->assertStringNotContainsString( '_parent' , $result ) ;
+        $this->assertStringContainsString( 'RETURN vertex.name' , $result ) ;
+    }
+
+    public function testWithoutWithPathNoMetadataIsInjected() :void
+    {
+        $edges = $this->wiredEdges() ;
+
+        $result = $this->normalize( buildEdgeVariable( 'roles' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS => [ 'name' ] ,
+        ] ) ) ;
+
+        // Backward-compatible: no `path` variable, no `_parent` / `_depth` keys.
+        $this->assertStringContainsString( 'FOR vertex, edge IN OUTBOUND doc user_has_roles' , $result ) ;
+        $this->assertStringNotContainsString( 'path' , $result ) ;
+        $this->assertStringNotContainsString( '_parent' , $result ) ;
+    }
+
     public function testNoFieldsBranchReturnsTheWholeVertex() :void
     {
         $edges = $this->wiredEdges() ; // wired `to` model, no FIELDS → empty projection
@@ -575,6 +644,11 @@ final class BuildEdgeVariableTest extends TestCase
      */
     private function normalize( string $aql ) :string
     {
-        return preg_replace( [ '/vertex_\d+/' , '/edge_\d+/' ] , [ 'vertex' , 'edge' ] , $aql ) ;
+        return preg_replace
+        (
+            [ '/vertex_\d+/' , '/edge_\d+/' , '/path_\d+/' ] ,
+            [ 'vertex'       , 'edge'       , 'path'       ] ,
+            $aql
+        ) ;
     }
 }

@@ -72,6 +72,8 @@ class AQL
     public const string OPTIONS         = 'options' ;
     public const string ORDER           = 'order' ;
     public const string PATH            = 'path' ;
+    public const string PATH_DEPTH      = '_depth' ;
+    public const string PATH_PARENT     = '_parent' ;
     public const string PATH_REF        = 'pathRef' ;
     public const string PRECEDING       = 'preceding' ;
     public const string PREFIX          = 'prefix' ;
@@ -111,6 +113,7 @@ class AQL
     public const string VIEW            = 'view' ;
     public const string WITH            = 'with' ;
     public const string WITH_COUNT      = 'withCount' ;
+    public const string WITH_PATH       = 'withPath' ;
 
     // -------- binding
 

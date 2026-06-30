@@ -168,6 +168,41 @@ The depth applies to whichever `AQL::DIRECTION` you declare:
 
 > **Homogeneous only.** A depth range assumes the **same** type at every level (a self-referential edge). For a heterogeneous chain where each level is a different type (`Type1 → Type2 → Type3`), do **not** use a depth — declare one nested edge level per type instead (each with its own `AQL::MODEL` / `AQL::FIELDS`), as shown in *Composed projection* above.
 
+### Reconstruction metadata — `AQL::WITH_PATH`
+
+The depth traversal returns a **flat list**. To turn it back into a nested tree you need, for every node, **who its parent is**. Two situations:
+
+- **The document already stores its parent** (e.g. a `broader` / `parentId` field). Nothing to do — project that field and reconstruct from it.
+- **The parent link lives only in the edges** (the document does not store it). Opt in to `AQL::WITH_PATH => true` on the edge definition: the traversal then exposes the `path` variable and injects two computed keys into each projected element:
+  - `_parent` (`AQL::PATH_PARENT`) — the `_key` of the immediate parent (the node one step closer to the start vertex), i.e. `path.vertices[-2]._key`.
+  - `_depth` (`AQL::PATH_DEPTH`) — the traversal depth, i.e. `LENGTH(path.edges)`.
+
+```php
+AQL::EDGES =>
+[
+    Prop::DESCENDANTS =>
+    [
+        AQL::MODEL     => 'concept_links' ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::MAX_DEPTH => 5 ,
+        AQL::WITH_PATH => true , // inject _parent / _depth
+    ],
+],
+```
+
+```aql
+LET descendants = ( FOR vertex, edge, path IN 1..5 OUTBOUND doc concept_links OPTIONS { … }
+    RETURN { _key: vertex._key, name: vertex.name,
+             _parent: path.vertices[-2]._key, _depth: LENGTH(path.edges) } )
+```
+
+Notes:
+
+- **Off by default → unchanged.** Without `AQL::WITH_PATH` no `path` variable is emitted and the AQL is identical.
+- **Whole-vertex projection.** When the edge declares no `AQL::FIELDS` (the element is the bare vertex), the metadata is grafted with `MERGE(vertex, { _parent, _depth })`.
+- **Scalar projection.** A `Arango::PROPERTY` projection returns a scalar, so it has no object to carry the metadata: `AQL::WITH_PATH` is **ignored** there (and no `path` variable is emitted).
+- A node at depth 1 has `_parent` equal to the **start vertex** key — the root from which the flat list is reconstructed into a `children[]` tree.
+
 ## Projecting edge properties — `Field::SCOPE`
 
 By default, the fields declared in an edge definition's `AQL::FIELDS` are projected from the **target vertex** of the traversal (the other end of the relationship). But an edge is more than a connector: it often carries its own metadata (`created`, `weight`, `role`, `order`, …). The `Field::SCOPE` marker hoists those properties into the **same object**, next to the vertex fields.
