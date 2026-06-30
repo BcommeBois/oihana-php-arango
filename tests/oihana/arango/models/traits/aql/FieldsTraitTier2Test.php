@@ -96,4 +96,85 @@ final class FieldsTraitTier2Test extends TestCase
 
         $this->assertSame( 'RETURN {name:doc.name}' , $result ) ;
     }
+
+    /**
+     * Regression: projecting a `Filter::EDGES_COUNT` field through a vertex traversal
+     * (DOC_REF = 'vertex') must anchor the count `LET` sub-query on the outer loop
+     * variable (`vertex`), not on an unbound `doc_vertex` alias.
+     */
+    public function testEdgesCountProjectedThroughTraversalAnchorsOnOuterLoopVariable() :void
+    {
+        $variables = [] ;
+
+        $edge = new MockEdges( 'user_has_roles' ) ;
+        $edge->from = $this->documents( 'users' ) ;
+        $edge->to   = $this->documents( 'roles' ) ;
+
+        $this->host()->returnFields
+        (
+            [
+                Arango::DOC_REF      => 'vertex' ,
+                Arango::QUERY_FIELDS => [ 'rolesCount' => [ Field::FILTER => Filter::EDGES_COUNT ] ] ,
+                Arango::EDGES        => [ 'rolesCount' => [ Arango::MODEL => $edge ] ] ,
+            ] ,
+            $variables ,
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND vertex user_has_roles' , $variables[ 0 ] ) ;
+        $this->assertStringNotContainsString( 'doc_vertex' , $variables[ 0 ] ) ;
+    }
+
+    /**
+     * Regression: same anchoring guarantee for a `Filter::EDGES` sub-traversal projected
+     * through a vertex traversal — the inner `FOR … IN OUTBOUND vertex` starts from the
+     * outer loop variable, never an unbound `doc_vertex`.
+     */
+    public function testEdgesProjectedThroughTraversalAnchorsOnOuterLoopVariable() :void
+    {
+        $variables = [] ;
+
+        $edge = new MockEdges( 'permissions_edges' ) ;
+        $edge->from = $this->documents( 'users' ) ;
+        $edge->to   = $this->documents( 'permissions' ) ;
+
+        $this->host()->returnFields
+        (
+            [
+                Arango::DOC_REF      => 'vertex' ,
+                Arango::QUERY_FIELDS => [ 'permissions' => [ Field::FILTER => Filter::EDGES ] ] ,
+                Arango::EDGES        => [ 'permissions' => [ Arango::MODEL => $edge ] ] ,
+            ] ,
+            $variables ,
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'OUTBOUND vertex permissions_edges' , $variables[ 0 ] ) ;
+        $this->assertStringNotContainsString( 'doc_vertex' , $variables[ 0 ] ) ;
+    }
+
+    /**
+     * Non-regression for the main query: with the default DOC_REF ('doc'), a
+     * `Filter::EDGES_COUNT` still anchors its `LET` on `doc` exactly as before.
+     */
+    public function testEdgesCountInMainQueryStillAnchorsOnDoc() :void
+    {
+        $variables = [] ;
+
+        $edge = new MockEdges( 'user_has_roles' ) ;
+        $edge->from = $this->documents( 'users' ) ;
+        $edge->to   = $this->documents( 'roles' ) ;
+
+        $this->host()->returnFields
+        (
+            [
+                Arango::QUERY_FIELDS => [ 'rolesCount' => [ Field::FILTER => Filter::EDGES_COUNT ] ] ,
+                Arango::EDGES        => [ 'rolesCount' => [ Arango::MODEL => $edge ] ] ,
+            ] ,
+            $variables ,
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND doc user_has_roles' , $variables[ 0 ] ) ;
+    }
 }

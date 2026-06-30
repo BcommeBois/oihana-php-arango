@@ -330,8 +330,15 @@ trait FieldsTrait
         {
             if( $hasFields )
             {
-                $doc = $docRef == AQL::DOC ? $docRef : ( AQL::DOC_PREFIX . $docRef ) ;
-                buildVariables( $variables , $queryFields , $edges , $joins , $this->container ,  $doc , $init ) ;
+                // The relation LET sub-queries (built here) and the RETURN projection
+                // (aqlFields below) must anchor on the SAME document variable — the loop
+                // variable of the enclosing query. We pass $docRef verbatim: in a main
+                // query it is 'doc', in a vertex traversal it is the outer loop variable
+                // (e.g. 'vertex'). Prefixing it with 'doc_' here would emit a start vertex
+                // ('doc_vertex') that no FOR ever binds, unlike the facet helpers which
+                // open their own correlated FOR for that alias. This mirrors the '*' branch
+                // above, which already passes $docRef untouched.
+                buildVariables( $variables , $queryFields , $edges , $joins , $this->container , $docRef , $init ) ;
                 $document = aqlDocument( aqlFields( $queryFields , $docRef , $this->container , $init ) ) ;
             }
             else
