@@ -61,7 +61,14 @@ function buildEdgeCountVariable
     $direction = Traversal::get( $definition[ AQL::DIRECTION ] ?? null , Traversal::OUTBOUND ) ;
     $varName   = $definition[ AQL::UNIQUE ] ?? $name ;
 
-    // LET $name = LENGTH( FOR vertex IN OUTBOUND startVertex edgeCollection RETURN vertex )
+    // The inner count loop must NOT reuse the shared 'vertex' name: when this count
+    // is projected through a vertex traversal (Edges::getVertices()), the outer loop
+    // is already named 'vertex', which would trigger an "assigned multiple times" AQL
+    // error. We derive a unique inner variable from $varName (itself a randomKey in
+    // the live flow), keeping it deterministic so the $name of the LET never moves.
+    $innerVertex = ( $varName ?: AQL::VERTEX ) . '_v' ;
+
+    // LET $name = LENGTH( FOR <name>_v IN OUTBOUND startVertex edgeCollection RETURN <name>_v )
     $expression = length( compile(
     [
         aqlTraversal
@@ -69,8 +76,9 @@ function buildEdgeCountVariable
             AQL::DIRECTION       => $direction ,
             AQL::EDGE_COLLECTION => $edgeCollection ,
             AQL::START_VERTEX    => $startVertex ,
+            AQL::VERTEX_REF      => $innerVertex ,
         ]) ,
-        aqlReturn ( AQL::VERTEX  )
+        aqlReturn ( $innerVertex )
     ])) ;
 
     return aqlLet( $varName , $expression , useParentheses: true ) ;

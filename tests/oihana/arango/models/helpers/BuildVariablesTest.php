@@ -88,7 +88,7 @@ final class BuildVariablesTest extends TestCase
 
         $this->assertSame
         (
-            [ 'LET roles = (LENGTH(FOR vertex IN OUTBOUND doc user_has_roles RETURN vertex))' ] ,
+            [ 'LET roles = (LENGTH(FOR roles_v IN OUTBOUND doc user_has_roles RETURN roles_v))' ] ,
             $this->normalize( $variables )
         ) ;
     }
