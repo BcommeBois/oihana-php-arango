@@ -16,7 +16,6 @@ use oihana\arango\db\enums\options\TraversalOrder;
 use oihana\arango\db\enums\options\TraversalUniqueVertices;
 use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
-use oihana\arango\models\Edges;
 
 use function oihana\arango\db\helpers\aqlFields;
 use function oihana\arango\db\helpers\resolveSkinFields;
@@ -78,19 +77,8 @@ function buildEdgeVariable
         throw new UnexpectedValueException( __METHOD__ . ' failed, the name of the edge variable not must be null or empty.' ) ;
     }
 
-    $model = getEdges( $definition[ AQL::MODEL ] ?? null , $container ) ;
-    if( !( $model instanceof Edges ) )
-    {
-        throw new UnexpectedValueException( __METHOD__ . ' failed, the edges model reference must be an instance of Edges.' ) ;
-    }
+    [ $model , $edgeCollection , $direction ] = resolveEdgeContext( $definition , $container ) ;
 
-    $edgeCollection = $model->collection ;
-    if( empty( $edgeCollection ) )
-    {
-        throw new UnexpectedValueException( __METHOD__ . ' failed, the edge collection not must be null or empty.' ) ;
-    }
-
-    $direction = Traversal::get( $definition[ AQL::DIRECTION ] ?? null , Traversal::OUTBOUND ) ;
     $documents = $direction == Traversal::INBOUND ? $model->from : $model->to ;
 
     $edgeRef   = randomKey( AQL::EDGE   );

@@ -3,15 +3,12 @@
 namespace oihana\arango\models\helpers\edges;
 
 use ReflectionException;
-use UnexpectedValueException;
 
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\Traversal;
-use oihana\arango\models\Edges;
 use oihana\exceptions\BindException;
 use oihana\reflect\exceptions\ConstantException;
 
@@ -46,20 +43,9 @@ function buildEdgeCountVariable
 )
 :?string
 {
-    $edges = getEdges( $definition[ AQL::MODEL ] ?? null , $container ) ;
-    if( !( $edges instanceof Edges ) )
-    {
-        throw new UnexpectedValueException( __METHOD__ . ' failed, the edges model reference must be an instance of Edges.' ) ;
-    }
+    [ , $edgeCollection , $direction ] = resolveEdgeContext( $definition , $container ) ;
 
-    $edgeCollection = $edges->collection ;
-    if( empty( $edgeCollection ) )
-    {
-        throw new UnexpectedValueException( __METHOD__ . ' failed, the edge collection not must be null or empty.' ) ;
-    }
-
-    $direction = Traversal::get( $definition[ AQL::DIRECTION ] ?? null , Traversal::OUTBOUND ) ;
-    $varName   = $definition[ AQL::UNIQUE ] ?? $name ;
+    $varName = $definition[ AQL::UNIQUE ] ?? $name ;
 
     // The inner count loop must NOT reuse the shared 'vertex' name: when this count
     // is projected through a vertex traversal (Edges::getVertices()), the outer loop

@@ -418,6 +418,7 @@
             "src/oihana/arango/models/helpers/edges/buildEdgeVariable.php",
             "src/oihana/arango/models/helpers/edges/buildEdgeVariables.php",
             "src/oihana/arango/models/helpers/edges/getEdges.php",
+            "src/oihana/arango/models/helpers/edges/resolveEdgeContext.php",
             "src/oihana/arango/models/helpers/edges/resolveEdges.php",
             "src/oihana/arango/models/helpers/edges/sortEdgeVariable.php",
             "src/oihana/arango/models/helpers/extractFromIDs.php",
