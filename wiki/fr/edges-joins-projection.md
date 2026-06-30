@@ -5,16 +5,17 @@
 1. [Vue d'ensemble](#vue-densemble)
 2. [Le marqueur `Field::SKINS` au niveau document](#le-marqueur-fieldskins-au-niveau-document)
 3. [Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge](#projection-composée--aqlfields--aqledges-sur-la-définition-dedge)
-4. [Projeter les propriétés de l'edge — `Field::SCOPE`](#projeter-les-propriétés-de-ledge--fieldscope)
-5. [Envelopper la référence sous une clé — `Filter::WRAP`](#envelopper-la-référence-sous-une-clé--filterwrap)
-6. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
-7. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
-8. [Projection variable selon le skin de la requête — `Field::SKINS` sur les sous-champs](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs)
-9. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
-10. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
-11. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
-12. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
-13. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
+4. [Traversée hiérarchique — `AQL::MAX_DEPTH` / `AQL::MIN_DEPTH`](#traversée-hiérarchique--aqlmax_depth--aqlmin_depth)
+5. [Projeter les propriétés de l'edge — `Field::SCOPE`](#projeter-les-propriétés-de-ledge--fieldscope)
+6. [Envelopper la référence sous une clé — `Filter::WRAP`](#envelopper-la-référence-sous-une-clé--filterwrap)
+7. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
+8. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+9. [Projection variable selon le skin de la requête — `Field::SKINS` sur les sous-champs](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs)
+10. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
+11. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
+12. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
+13. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
+14. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
 
 ## Vue d'ensemble
 
@@ -117,6 +118,55 @@ Points importants :
 - `AQL::FIELDS` sur la définition d'edge **est lu** par `buildEdgeVariable`. C'est la projection effective utilisée pour hydrater le document cible.
 - `AQL::EDGES` sur la définition d'edge déclare les sous-edges référencées par les `Filter::EDGE` ou `Filter::EDGES` dans la projection.
 - `Field::FIELDS` posé **inline au niveau du champ parent** est ignoré pour `Filter::EDGES` (il n'est respecté que pour `Filter::DOCUMENT` et `Filter::MAP`). C'est un piège classique : déclarer la projection au bon niveau (sur la définition d'edge, pas sur le champ parent).
+
+## Traversée hiérarchique — `AQL::MAX_DEPTH` / `AQL::MIN_DEPTH`
+
+Par défaut, une projection `Filter::EDGES` suit la relation **sur un seul niveau** — les enfants (ou les parents) directs. Pour une relation **auto-référente** — un concept lié à d'autres concepts de la même collection, c'est-à-dire une hiérarchie (thésaurus, arbre de catégories, organigramme) — on peut suivre la relation sur **plusieurs niveaux en une seule traversée** en déclarant une profondeur sur la définition d'edge :
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\db\enums\Traversal ;
+
+AQL::FIELDS =>
+[
+    Prop::DESCENDANTS => Filter::EDGES , // le champ projeté
+],
+
+AQL::EDGES =>
+[
+    Prop::DESCENDANTS =>
+    [
+        AQL::MODEL     => 'concept_links' ,     // le modèle d'edge (auto-référent)
+        AQL::DIRECTION => Traversal::OUTBOUND ,  // OUTBOUND = descendre vers les enfants
+        AQL::MAX_DEPTH => 5 ,                    // suivre jusqu'à 5 niveaux
+    ],
+],
+```
+
+La sous-requête générée devient une traversée **bornée** :
+
+```aql
+LET descendants = ( FOR vertex, edge IN 1..5 OUTBOUND doc concept_links
+    OPTIONS { "order": "bfs", "uniqueVertices": "global" }
+    SORT edge.created DESC
+    RETURN { … } )
+```
+
+### Sens — descendre ou remonter
+
+La profondeur s'applique au sens déclaré dans `AQL::DIRECTION` :
+
+- `Traversal::OUTBOUND` — descendre la hiérarchie (un nœud → ses descendants).
+- `Traversal::INBOUND` — remonter la hiérarchie (un nœud → ses ancêtres, la chaîne jusqu'à la racine).
+
+### Règles et valeurs par défaut
+
+- **Aucune profondeur déclarée → inchangé.** Sans `AQL::MIN_DEPTH` / `AQL::MAX_DEPTH`, la traversée reste à la profondeur 1 et l'AQL généré est **strictement identique** à avant — totalement rétro-compatible.
+- **`AQL::MAX_DEPTH` seul** fixe la borne basse à `1` (`1..N`), la descente/remontée complète naturelle.
+- **`AQL::MIN_DEPTH` seul est refusé.** ArangoDB exige une plage bornée, et une traversée non bornée sur une arête auto-référente risquerait une boucle infinie : une projection bornée **doit** déclarer `AQL::MAX_DEPTH`, sinon `buildEdgeVariable` lève une `UnexpectedValueException`.
+- Le résultat est une **liste à plat** de tous les sommets rencontrés sur la plage de profondeur (pas un arbre imbriqué). Pour le retransformer en `children[]` imbriqué, on reconstruit l'arbre à partir de la liste à plat (cf. l'entrée de ROADMAP sur la reconstruction de hiérarchie).
+
+> **Homogène uniquement.** Une profondeur suppose le **même** type à chaque niveau (une arête auto-référente). Pour une chaîne hétérogène où chaque niveau est d'un type différent (`Type1 → Type2 → Type3`), n'utilisez **pas** de profondeur — déclarez plutôt un niveau d'edge imbriqué par type (chacun avec son `AQL::MODEL` / `AQL::FIELDS`), comme montré dans *Projection composée* ci-dessus.
 
 ## Projeter les propriétés de l'edge — `Field::SCOPE`
 

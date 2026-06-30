@@ -89,6 +89,19 @@ versions **mineures**.
   et l'appartenance par clé sur une relation ne sont **volontairement pas** dans
   ce périmètre — elles vivent déjà dans `?facets` (`EDGE_AGGREGATE` /
   `JOIN_AGGREGATE`, et la négation `"-key"`).
+- **Traversées hiérarchiques (profondeur variable) sur une projection de
+  relation** (effort **S→M**, *en cours*) — un champ `Filter::EDGES` ne projette
+  aujourd'hui que la profondeur 1. Trois lots : **(A)** lire `AQL::MIN_DEPTH` /
+  `AQL::MAX_DEPTH` sur une définition d'arête pour qu'une relation auto-référente
+  (ex. un thésaurus) projette une **liste à plat** des descendants/ancêtres
+  jusqu'à la profondeur N en une seule traversée (défaut inchangé → profondeur 1) ;
+  **(B)** métadonnées de chemin optionnelles, injectant `_parent` / `_depth`
+  depuis le chemin pour les nœuds qui ne stockent pas leur parent ; **(C)** un
+  helper `buildTree()` (plat → `children[]` imbriqué, source du parent
+  paramétrable) câblé via `Alter::MAP` pour livrer l'arbre de façon transparente.
+  **Homogène (auto-référent) uniquement** — l'hétérogène `Type1→Type2→Type3` est
+  déjà couvert par les arêtes imbriquées déclarées. Un champ « range » exige un
+  `MAX_DEPTH` borné (garde-fou cycle).
 
 ### Recherche fédérée & ArangoSearch
 

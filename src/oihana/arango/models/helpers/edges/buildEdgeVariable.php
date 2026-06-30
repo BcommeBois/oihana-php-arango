@@ -98,6 +98,28 @@ function buildEdgeVariable
     $fields          = resolveSkinFields( $definition , $skin ) ;
     $varName         = $definition[ Arango::UNIQUE ] ?? $name ;
 
+    // Depth range (hierarchies): a self-referential relation (e.g. a thesaurus)
+    // can project descendants/ancestors up to AQL::MAX_DEPTH in a single traversal.
+    // Absent → depth 1 (FOR v IN OUTBOUND …), strictly identical to the legacy AQL.
+    // AQL::MIN_DEPTH alone is rejected: ArangoDB requires a bounded range, and an
+    // unbounded traversal over a self-referential edge would risk a runaway cycle.
+    // AQL::MAX_DEPTH alone defaults the lower bound to 1 (the natural "1..N").
+    $minDepth = $definition[ AQL::MIN_DEPTH ] ?? null ;
+    $maxDepth = $definition[ AQL::MAX_DEPTH ] ?? null ;
+
+    if ( $minDepth !== null && $maxDepth === null )
+    {
+        throw new UnexpectedValueException
+        (
+            __METHOD__ . ' failed, a ranged edge projection requires AQL::MAX_DEPTH (an unbounded traversal is not allowed).'
+        ) ;
+    }
+
+    if ( $maxDepth !== null && $minDepth === null )
+    {
+        $minDepth = 1 ;
+    }
+
     $subVariables = [] ;
 
     $for = aqlTraversal
@@ -107,6 +129,8 @@ function buildEdgeVariable
         AQL::DIRECTION       => $direction   ,
         AQL::START_VERTEX    => $startVertex ,
         AQL::EDGE_COLLECTION => $edgeCollection  ,
+        AQL::MIN_DEPTH       => $minDepth ,
+        AQL::MAX_DEPTH       => $maxDepth ,
         AQL::OPTIONS         =>
         [
             TraversalOption::ORDER           => TraversalOrder::BFS ,

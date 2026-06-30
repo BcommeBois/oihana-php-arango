@@ -80,6 +80,18 @@ Forward-looking items not yet scheduled, roughly by theme.
   (sum/avg/min/max) and key membership over a relation are intentionally **not**
   in scope here — they already live in `?facets` (`EDGE_AGGREGATE` /
   `JOIN_AGGREGATE`, and the `"-key"` negation).
+- **Hierarchical traversals (variable depth) on a relation projection** (effort
+  **S→M**, *in progress*) — a `Filter::EDGES` field projects depth 1 only today.
+  Three lots: **(A)** read `AQL::MIN_DEPTH` / `AQL::MAX_DEPTH` on an edge
+  definition so a self-referential relation (e.g. a thesaurus) projects a **flat
+  list** of descendants/ancestors up to depth N in a single traversal (default
+  unchanged → depth 1); **(B)** opt-in path metadata, injecting `_parent` /
+  `_depth` from the traversal path for nodes that do not store their parent;
+  **(C)** a `buildTree()` helper (flat → nested `children[]`, parent source
+  configurable) wired through `Alter::MAP` to deliver the tree transparently.
+  **Homogeneous (self-referential) only** — heterogeneous `Type1→Type2→Type3` is
+  already covered by declared nested edges. Range fields require a bounded
+  `MAX_DEPTH` (cycle guard).
 
 ### Federated search & ArangoSearch
 

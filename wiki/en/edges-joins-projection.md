@@ -5,16 +5,17 @@
 1. [Overview](#overview)
 2. [The `Field::SKINS` marker at the document level](#the-fieldskins-marker-at-the-document-level)
 3. [Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition](#composed-projection--aqlfields--aqledges-on-the-edge-definition)
-4. [Projecting edge properties — `Field::SCOPE`](#projecting-edge-properties--fieldscope)
-5. [Wrapping the reference under a key — `Filter::WRAP`](#wrapping-the-reference-under-a-key--filterwrap)
-6. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
-7. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
-8. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
-9. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
-10. [Which mechanism to use?](#which-mechanism-to-use)
-11. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
-12. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
-13. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
+4. [Hierarchical traversal — `AQL::MAX_DEPTH` / `AQL::MIN_DEPTH`](#hierarchical-traversal--aqlmax_depth--aqlmin_depth)
+5. [Projecting edge properties — `Field::SCOPE`](#projecting-edge-properties--fieldscope)
+6. [Wrapping the reference under a key — `Filter::WRAP`](#wrapping-the-reference-under-a-key--filterwrap)
+7. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
+8. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
+9. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
+10. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
+11. [Which mechanism to use?](#which-mechanism-to-use)
+12. [Permission-gated edges and joins — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
+13. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
+14. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
 
 ## Overview
 
@@ -117,6 +118,55 @@ Important points:
 - `AQL::FIELDS` on the edge definition **is read** by `buildEdgeVariable`. This is the effective projection used to hydrate the target document.
 - `AQL::EDGES` on the edge definition declares the sub-edges referenced by `Filter::EDGE` or `Filter::EDGES` markers in the projection.
 - `Field::FIELDS` placed **inline at the parent field level** is ignored for `Filter::EDGES` (it's only honoured for `Filter::DOCUMENT` and `Filter::MAP`). A common pitfall: declare the projection at the right level (on the edge definition, not on the parent field).
+
+## Hierarchical traversal — `AQL::MAX_DEPTH` / `AQL::MIN_DEPTH`
+
+By default a `Filter::EDGES` projection follows the relation **one level deep** — the direct children (or parents). For a **self-referential** relation — a concept linked to other concepts of the same collection, i.e. a hierarchy (a thesaurus, a category tree, an org chart) — you can follow the relation across **several levels in a single traversal** by declaring a depth on the edge definition:
+
+```php
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\db\enums\Traversal ;
+
+AQL::FIELDS =>
+[
+    Prop::DESCENDANTS => Filter::EDGES , // the projected field
+],
+
+AQL::EDGES =>
+[
+    Prop::DESCENDANTS =>
+    [
+        AQL::MODEL     => 'concept_links' ,     // the (self-referential) edge model
+        AQL::DIRECTION => Traversal::OUTBOUND ,  // OUTBOUND = descend to children
+        AQL::MAX_DEPTH => 5 ,                    // follow up to 5 levels
+    ],
+],
+```
+
+The generated sub-query becomes a **ranged** traversal:
+
+```aql
+LET descendants = ( FOR vertex, edge IN 1..5 OUTBOUND doc concept_links
+    OPTIONS { "order": "bfs", "uniqueVertices": "global" }
+    SORT edge.created DESC
+    RETURN { … } )
+```
+
+### Direction — descend or ascend
+
+The depth applies to whichever `AQL::DIRECTION` you declare:
+
+- `Traversal::OUTBOUND` — descend the hierarchy (a node → its descendants).
+- `Traversal::INBOUND` — ascend the hierarchy (a node → its ancestors, the chain to the root).
+
+### Rules and defaults
+
+- **No depth declared → unchanged.** Without `AQL::MIN_DEPTH` / `AQL::MAX_DEPTH`, the traversal stays at depth 1 and the generated AQL is **strictly identical** to before — fully backward-compatible.
+- **`AQL::MAX_DEPTH` alone** defaults the lower bound to `1` (`1..N`), the natural full descent/ascent.
+- **`AQL::MIN_DEPTH` alone is rejected.** ArangoDB requires a bounded range, and an unbounded traversal over a self-referential edge would risk a runaway cycle, so a ranged projection **must** declare `AQL::MAX_DEPTH` — otherwise `buildEdgeVariable` throws an `UnexpectedValueException`.
+- The result is a **flat list** of all matched vertices across the depth range (not a nested tree). To turn it back into a nested `children[]` structure, reconstruct it from the flat list (see the roadmap entry on hierarchy reconstruction).
+
+> **Homogeneous only.** A depth range assumes the **same** type at every level (a self-referential edge). For a heterogeneous chain where each level is a different type (`Type1 → Type2 → Type3`), do **not** use a depth — declare one nested edge level per type instead (each with its own `AQL::MODEL` / `AQL::FIELDS`), as shown in *Composed projection* above.
 
 ## Projecting edge properties — `Field::SCOPE`
 

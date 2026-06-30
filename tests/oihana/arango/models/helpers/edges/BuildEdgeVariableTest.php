@@ -66,6 +66,83 @@ final class BuildEdgeVariableTest extends TestCase
         ) ;
     }
 
+    public function testMaxDepthProjectsARangeTraversalFromDepthOne() :void
+    {
+        $edges = new MockEdges( 'concept_links' ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'descendants' ,
+        [
+            AQL::MODEL     => $edges ,
+            AQL::MAX_DEPTH => 5 ,
+            Arango::PROPERTY => 'name' ,
+        ] ) ) ;
+
+        // MAX_DEPTH alone defaults the lower bound to 1 → "1..5".
+        $this->assertSame
+        (
+            'LET descendants = (FOR vertex, edge IN 1..5 OUTBOUND doc concept_links ' .
+            'OPTIONS {"order":"bfs","uniqueVertices":"global"} SORT edge.created DESC RETURN vertex.name)' ,
+            $result
+        ) ;
+    }
+
+    public function testMinAndMaxDepthProjectTheGivenRange() :void
+    {
+        $edges = new MockEdges( 'concept_links' ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'descendants' ,
+        [
+            AQL::MODEL     => $edges ,
+            AQL::MIN_DEPTH => 2 ,
+            AQL::MAX_DEPTH => 4 ,
+            Arango::PROPERTY => 'name' ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( 'IN 2..4 OUTBOUND doc concept_links' , $result ) ;
+    }
+
+    public function testInboundDepthRangeAscendsTheHierarchy() :void
+    {
+        $edges = new MockEdges( 'concept_links' ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'ancestors' ,
+        [
+            AQL::MODEL       => $edges ,
+            AQL::DIRECTION   => Traversal::INBOUND ,
+            AQL::MAX_DEPTH   => 3 ,
+            Arango::PROPERTY => 'name' ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( 'IN 1..3 INBOUND doc concept_links' , $result ) ;
+    }
+
+    public function testWithoutDepthNoRangeIsEmitted() :void
+    {
+        $edges = new MockEdges( 'concept_links' ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'children' ,
+        [
+            AQL::MODEL       => $edges ,
+            Arango::PROPERTY => 'name' ,
+        ] ) ) ;
+
+        // Backward-compatible: no MIN/MAX_DEPTH → plain depth-1 traversal, no range token.
+        $this->assertStringContainsString( 'IN OUTBOUND doc concept_links' , $result ) ;
+        $this->assertStringNotContainsString( '..' , $result ) ;
+    }
+
+    public function testMinDepthWithoutMaxDepthThrows() :void
+    {
+        $this->expectException( UnexpectedValueException::class ) ;
+
+        buildEdgeVariable( 'descendants' ,
+        [
+            AQL::MODEL       => new MockEdges( 'concept_links' ) ,
+            AQL::MIN_DEPTH   => 2 ,
+            Arango::PROPERTY => 'name' ,
+        ] ) ;
+    }
+
     public function testNoFieldsBranchReturnsTheWholeVertex() :void
     {
         $edges = $this->wiredEdges() ; // wired `to` model, no FIELDS → empty projection
