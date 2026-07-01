@@ -8,6 +8,8 @@ The [`src/oihana/arango/controllers/`](../../../src/oihana/arango/controllers/) 
 | `EdgesController` | CRUD on an edge collection. | Same verbs, edge semantics (validation `_from`/`_to`). |
 | `PropertyController` | Exposes a specific property of a document (GET / PATCH). | `GET /resource/{id}/{property}`, `PATCH /resource/{id}/{property}` |
 | `ArrayPropertyController` | Element-level operations of an [array-field](../db/arrays.md) property (add / remove / move / contains). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|GET /resource/{id}/{property}/{value}` |
+| `TraversalController` | Navigates a **self-referential** edge (a tree/graph): parent, children, ancestors, descendants. | `GET /resource/{id}/{parent\|children\|ancestors\|descendants}` |
+| `ConceptSchemeController` | Exposes a hierarchical thesaurus's **roots** as a SKOS `ConceptScheme`. | `GET /resource/scheme` |
 
 ## Detailed pages in this folder
 
@@ -348,6 +350,85 @@ Routes::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyRoute( $c ,
 Generates `POST /playlists/{id}/tracks` (addItem) and `DELETE|PATCH|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / hasItem).
 
 > `arrayPurgeRef` (remove a value from **every** document that references it) is **not** exposed over HTTP: it is a cascade operation, triggered application-side through an `afterUpdate`/`afterDelete` listener (see [Embedded array fields](../db/arrays.md#propagating-a-change-to-parent-documents)).
+
+## `TraversalController`
+
+Navigates a **self-referential** edge — a graph whose two ends target the same vertex collection (a category tree, an org chart, a comment thread) — and returns the traversed vertices, hydrated with the target collection's schema. A **single instance** exposes the four navigation methods; the edge is injected once through `TraversalController::EDGE`.
+
+| Method | Verb | Route | Direction | Transitive |
+|---|---|---|---|---|
+| `getParent()` | `GET` | `/resource/{id}/parent` | INBOUND | no (one, or `null`) |
+| `getChildren()` | `GET` | `/resource/{id}/children` | OUTBOUND | no (direct) |
+| `getAncestors()` | `GET` | `/resource/{id}/ancestors` | INBOUND | yes (up to the root) |
+| `getDescendants()` | `GET` | `/resource/{id}/descendants` | OUTBOUND | yes (full sub-tree) |
+
+The transitive methods accept a `?depth=N` query parameter, clamped to `TraversalController::DEFAULT_MAX_DEPTH` (default: the full sub-tree). Vertices hydrate through the edge's target model (`Edges::get*Vertices()`), so a **query-projected field survives the traversal**.
+
+### Full wiring (edge + controller + routes)
+
+The four sub-routes are declared in one entry with [`TraversalRoute`](../../../src/oihana/arango/routes/TraversalRoute.php), which maps each suffix to the matching controller method (via `Route::METHOD`, no magic strings) — the twin of `ArrayPropertyRoute`.
+
+```php
+use oihana\arango\controllers\TraversalController ;
+use oihana\arango\routes\TraversalRoute ;
+use oihana\routes\Route ;
+
+// 1. The self-referential edge model (both ends target the same collection).
+Models::CATEGORY_TREE => fn( Container $c ) => new Edges( $c ,
+[
+    AQL::COLLECTION => 'category_has_subcategory' ,
+    // … from = to = the categories collection …
+]) ,
+
+// 2. The controller, configured with that edge.
+Controllers::CATEGORIES_TRAVERSAL => fn( Container $c ) => new TraversalController( $c ,
+[
+    TraversalController::EDGE => Models::CATEGORY_TREE ,
+]) ,
+
+// 3. The four sub-routes, in a single entry. Register it BEFORE the generic
+//    document route so the literal suffixes are matched first.
+Routes::CATEGORIES_TREE => fn( Container $c ) => new TraversalRoute( $c ,
+[
+    Route::CONTROLLER_ID => Controllers::CATEGORIES_TRAVERSAL ,
+    Route::ROUTE         => '/categories' ,
+]) ,
+```
+
+Generates `GET /categories/{id:[0-9]+}/{parent|children|ancestors|descendants}`. The `{id}` placeholder is configurable via `Route::ROUTE_PLACEHOLDER`.
+
+## `ConceptSchemeController`
+
+Exposes a hierarchical thesaurus as a SKOS [`ConceptScheme`](https://www.w3.org/TR/skos-reference/#schemes): its `hasTopConcept` is the set of **roots** (the concepts that have no broader parent), assembled on the fly from the underlying `Documents` model. Read-only and generic — a single entry point, so a plain `GetRoute` is enough (no dedicated route class).
+
+| Init key | Role | Default |
+|---|---|---|
+| `MODEL` | the thesaurus `Documents` model | — |
+| `TITLE` | the scheme display name | `''` |
+| `RELATION` | the broader relation key whose **absence** marks a root | `Oihana::BROADER` |
+| `SKIN` | the skin used to project the roots | `Skin::FULL` |
+
+It honours `?sort` (e.g. `id`, `name`, `created`, `modified`) and `?search` on the roots — the model applies its own `SORTABLE` / `SEARCHABLE` whitelist. Nothing is persisted.
+
+```php
+use oihana\arango\controllers\ConceptSchemeController ;
+use oihana\routes\http\GetRoute ;
+use oihana\routes\Route ;
+
+Controllers::CATEGORIES_SCHEME => fn( Container $c ) => new ConceptSchemeController( $c ,
+[
+    ConceptSchemeController::MODEL => Models::CATEGORIES ,
+    ConceptSchemeController::TITLE => 'Product categories' ,
+]) ,
+
+Routes::CATEGORIES_SCHEME => fn( Container $c ) => new GetRoute( $c ,
+[
+    Route::CONTROLLER_ID => Controllers::CATEGORIES_SCHEME ,
+    Route::ROUTE         => '/categories/scheme' ,
+]) ,
+```
+
+Returns `{ "@type": "ConceptScheme", "name": "Product categories", "hasTopConcept": [ … roots … ] }`.
 
 ## `PayloadsTrait`
 
