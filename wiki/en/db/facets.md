@@ -554,6 +554,38 @@ LET currency = (FOR doc IN @@products FILTER <same filters>
 > This is the right tool for **several independent breakdowns** in one response.
 > To turn the list itself into **one** aggregation, see [Grouping `?groupBy=` / `?group=`](grouping.md).
 
+### Counts without the documents (`?facetsOnly=`)
+
+A faceted-search sidebar often needs **only the counts** — the documents are
+fetched by a separate, paginated call. Add `?facetsOnly=true` to **skip the
+document-fetch query entirely**: the `result` array comes back empty while the
+`facets` buckets, and an **exact `total`**, are still computed.
+
+```
+GET /products?facetCounts=category&facetsOnly=true
+```
+
+```json
+{
+  "status": "success",
+  "count": 0,
+  "total": 120,
+  "facets": {
+    "category": [ {"value":"tools","count":80}, {"value":"garden","count":40} ]
+  },
+  "result": []
+}
+```
+
+- **Why not `?limit=0`?** `limit=0` means **no limit** (return everything) — it is
+  *not* "zero results". `?facetsOnly=` is the dedicated, unambiguous signal.
+- The `total` is **exact** in every case (scalar *and* array facets): it comes from
+  a dedicated `count()` query that inherits the **same** `?filter=` / `?facets=` /
+  `?search=` as the counts, never from summing the (possibly multi-valued) buckets.
+- Accepts any boolean form: `true`, `1`, `yes`, `on`.
+- Used **alone** (no `?facetCounts=`), it still returns the exact `total` with an
+  empty `result` and no `facets` — a cheap "how many match?" probe.
+
 ## See also
 
 - [HTTP filters `?filter=`](filter.md) — comparators, `alt` transforms, compound conditions.

@@ -10,6 +10,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\controllers\traits\PrepareFacetCountsTrait;
+use oihana\arango\controllers\traits\PrepareFacetsOnlyTrait;
 use oihana\arango\controllers\traits\PrepareGroupTrait;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -30,6 +31,7 @@ trait DocumentsControllerListTrait
         ModelTrait ,
         OutputDocumentsTrait ,
         PrepareFacetCountsTrait ,
+        PrepareFacetsOnlyTrait ,
         PrepareGroupTrait ,
         PrepareParamTrait ,
         StatusTrait;
@@ -78,23 +80,37 @@ trait DocumentsControllerListTrait
                 Arango::SORT       => $this->prepareSort   ( $request , $init , $params ) ,
             ] ;
 
+            $facetsOnly  = $this->prepareFacetsOnly ( $request , $init , $params ) ;
             $facetCounts = $this->prepareFacetCounts( $request , $init , $params ) ;
 
-            $this->beforeModelCall( $request , $modelInit ) ;
-            $documents = $this->model->list( $modelInit ) ;
-            $this->afterModelCall( $request , $modelInit , $documents ) ;
+            $isDocuments = $this->model instanceof Documents && !$this->model->mock ;
 
-            $total = count( $documents ) ;
-
-            if( $limit > 0 && $this->model instanceof Documents && !$this->model->mock )
+            if( $facetsOnly )
             {
-                $total = $this->model->foundRows() ;
+                // Counts-only mode: the document-fetch query is skipped. The list
+                // returns an empty result set while `total` (exact, same filters,
+                // via count()) and the per-value facet counts are still computed.
+                $documents = [] ;
+                $total     = $isDocuments ? $this->model->count( $modelInit ) : 0 ;
+            }
+            else
+            {
+                $this->beforeModelCall( $request , $modelInit ) ;
+                $documents = $this->model->list( $modelInit ) ;
+                $this->afterModelCall( $request , $modelInit , $documents ) ;
+
+                $total = count( $documents ) ;
+
+                if( $limit > 0 && $isDocuments )
+                {
+                    $total = $this->model->foundRows() ;
+                }
             }
 
             $options = [ Output::TOTAL => $total ] ;
 
             // Per-value facet counts alongside the list (faceted-search sidebar).
-            if( !empty( $facetCounts ) && $this->model instanceof Documents && !$this->model->mock )
+            if( !empty( $facetCounts ) && $isDocuments )
             {
                 $options[ Arango::FACETS ] = $this->model->facetCounts( [ ...$modelInit , Arango::FACET_COUNTS => $facetCounts ] ) ;
             }

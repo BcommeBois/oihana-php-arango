@@ -175,6 +175,16 @@ class Arango
     public const string FACET_COUNTS = 'facetCounts' ;
 
     /**
+     * The 'facetsOnly' flag — when truthy (and `Arango::FACET_COUNTS` is
+     * requested), the document-fetch query is skipped: the list returns an empty
+     * result set while the per-value facet counts (and an exact `total` computed
+     * by {@see \oihana\arango\models\traits\documents\DocumentsCountTrait::count()})
+     * are still returned. Useful for a faceted-search sidebar that only needs the
+     * counts, not the documents.
+     */
+    public const string FACETS_ONLY = 'facetsOnly' ;
+
+    /**
      * The 'field' parameter.
      */
     public const string FIELD = 'field' ;

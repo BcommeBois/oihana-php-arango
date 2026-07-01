@@ -5,6 +5,7 @@ namespace tests\oihana\arango\controllers;
 use oihana\arango\controllers\DocumentsController;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
+use oihana\enums\Output;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
@@ -138,5 +139,72 @@ class DocumentsControllerReadTest extends ControllerTestCase
         $controller = $this->makeDocumentsController( new ThrowingDocuments( 'users' ) ) ;
 
         $this->assertNull( $controller->list( null , null , [] ) ) ;
+    }
+
+    // ---- facetsOnly (counts-only mode) ----------------------------------
+
+    public function testListFacetsOnlyReturnsCountsWithoutDocuments() :void
+    {
+        // count() is overridden so the counts-only total (42) is distinct from the
+        // canned facet buckets returned by facetCounts() through getFirstResult().
+        $model = new class( 'articles' ) extends MockDocuments
+        {
+            public array $countInit = [] ;
+            public function count( array $init = [] ) :int { $this->countInit = $init ; return 42 ; }
+        } ;
+        $model->facets          = [ 'category' => [ Facet::TYPE => Facet::FIELD ] ] ;
+        $model->documentsResult = [ (object) [ '_key' => 'x' ] ] ; // would leak if list() ran
+        $model->firstResult     = [ 'category' => [ [ 'value' => 'A' , 'count' => 3 ] ] ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        // ?facetsOnly=true&facetCounts=category → no documents, exact total + facets.
+        $request  = $this->makeRequest( [ Arango::FACETS_ONLY => 'true' , Arango::FACET_COUNTS => 'category' ] ) ;
+        $result   = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload  = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertSame( [] , $payload[ Output::RESULT ] ) ;                    // documents skipped
+        $this->assertSame( 42 , $payload[ Output::TOTAL ] ) ;                     // exact count(), not count(documents)
+        $this->assertArrayHasKey( 'category' , $payload[ Arango::FACETS ] ) ;     // facet counts still computed
+        $this->assertArrayHasKey( Arango::FACETS , $model->countInit ) ;          // count() ran over the same filters
+        $this->assertStringContainsString( 'LET category' , $model->lastQuery ) ; // facetCounts query executed
+    }
+
+    public function testListFacetsOnlyWithoutFacetCountsSkipsFacets() :void
+    {
+        $model = new class( 'users' ) extends MockDocuments
+        {
+            public function count( array $init = [] ) :int { return 7 ; }
+        } ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        $request  = $this->makeRequest( [ Arango::FACETS_ONLY => '1' ] ) ;
+        $result   = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload  = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertSame( [] , $payload[ Output::RESULT ] ) ;
+        $this->assertSame( 7 , $payload[ Output::TOTAL ] ) ;
+        $this->assertArrayNotHasKey( Arango::FACETS , $payload ) ;
+    }
+
+    public function testListFacetsOnlyWithMockModelReturnsZeroTotal() :void
+    {
+        // Mock model → the isDocuments guard is false: no count()/facetCounts() call,
+        // total falls back to 0 and no facets are attached.
+        $model = new MockDocuments( 'users' ) ;
+        $model->mock            = true ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        $request  = $this->makeRequest( [ Arango::FACETS_ONLY => 'true' , Arango::FACET_COUNTS => 'category' ] ) ;
+        $result   = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload  = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertSame( [] , $payload[ Output::RESULT ] ) ;
+        $this->assertSame( 0 , $payload[ Output::TOTAL ] ) ;
+        $this->assertArrayNotHasKey( Arango::FACETS , $payload ) ;
     }
 }

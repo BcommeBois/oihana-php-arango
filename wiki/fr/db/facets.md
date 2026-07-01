@@ -510,6 +510,42 @@ LET currency = (FOR doc IN @@products FILTER <mêmes filtres>
 
 > C'est le bon outil quand on veut **plusieurs ventilations indépendantes** dans une réponse. Pour transformer la liste elle-même en **une** agrégation, voir le [Regroupement `?groupBy=` / `?group=`](grouping.md).
 
+### Les comptes sans les documents (`?facetsOnly=`)
+
+Une barre latérale de recherche à facettes n'a souvent besoin **que des comptes**
+— les documents sont chargés par un appel paginé séparé. Ajoutez
+`?facetsOnly=true` pour **sauter entièrement la requête documents** : le tableau
+`result` revient vide, tandis que les buckets `facets` et un **`total` exact**
+sont quand même calculés.
+
+```
+GET /products?facetCounts=category&facetsOnly=true
+```
+
+```json
+{
+  "status": "success",
+  "count": 0,
+  "total": 120,
+  "facets": {
+    "category": [ {"value":"tools","count":80}, {"value":"garden","count":40} ]
+  },
+  "result": []
+}
+```
+
+- **Pourquoi pas `?limit=0` ?** `limit=0` veut dire **aucune limite** (tout
+  renvoyer) — ce n'est *pas* « zéro résultat ». `?facetsOnly=` est le signal dédié,
+  sans ambiguïté.
+- Le `total` est **exact** dans tous les cas (facettes scalaires *et* tableaux) :
+  il provient d'une requête `count()` dédiée qui hérite des **mêmes** `?filter=` /
+  `?facets=` / `?search=` que les comptes, jamais de la somme des buckets
+  (potentiellement multi-valués).
+- Accepte toute forme booléenne : `true`, `1`, `yes`, `on`.
+- Employé **seul** (sans `?facetCounts=`), il renvoie quand même le `total` exact
+  avec un `result` vide et sans `facets` — une sonde « combien y en a-t-il ? » peu
+  coûteuse.
+
 ## Voir aussi
 
 - [Filtres HTTP `?filter=`](filter.md) — comparateurs, transformations `alt`, conditions composées.
