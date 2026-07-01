@@ -174,8 +174,8 @@ La traversée en profondeur renvoie une **liste à plat**. Pour la retransformer
 
 - **Le document stocke déjà son parent** (ex. un champ `broader` / `parentId`). Rien à faire — projetez ce champ et reconstruisez à partir de lui.
 - **Le lien parent vit uniquement dans les arêtes** (le document ne le stocke pas). Activez `AQL::WITH_PATH => true` sur la définition d'edge : la traversée expose alors la variable `path` et injecte deux clés calculées dans chaque élément projeté :
-  - `_parent` (`AQL::PATH_PARENT`) — le `_key` du parent immédiat (le nœud d'un cran plus proche du sommet de départ), soit `path.vertices[-2]._key`.
-  - `_depth` (`AQL::PATH_DEPTH`) — la profondeur de traversée, soit `LENGTH(path.edges)`.
+  - `_parent` (`AQL::_PARENT`) — le `_key` du parent immédiat (le nœud d'un cran plus proche du sommet de départ), soit `path.vertices[-2]._key`.
+  - `_depth` (`AQL::_DEPTH`) — la profondeur de traversée, soit `LENGTH(path.edges)`.
 
 ```php
 AQL::EDGES =>
@@ -202,6 +202,52 @@ LET descendants = ( FOR vertex, edge, path IN 1..5 OUTBOUND doc concept_links OP
 - **Projection du sommet entier.** Quand l'edge ne déclare pas de `AQL::FIELDS` (l'élément est le sommet nu), les métadonnées sont greffées via `MERGE(vertex, { _parent, _depth })`.
 - **Projection scalaire.** Une projection `Arango::PROPERTY` renvoie un scalaire : aucun objet ne peut porter les métadonnées, donc `AQL::WITH_PATH` y est **ignoré** (et aucune variable `path` n'est émise).
 - Un nœud à la profondeur 1 a un `_parent` égal à la clé du **sommet de départ** — la racine à partir de laquelle la liste à plat se reconstruit en arbre `children[]`.
+
+### Reconstruire l'arbre — `buildTree()` / `buildTreeAlter()`
+
+La liste à plat est transformée en arbre imbriqué `children[]` par `buildTree()` — un helper pur en O(n) (aucune requête supplémentaire). Il regroupe les nœuds par parent et descend depuis la racine :
+
+```php
+use function oihana\arango\models\helpers\buildTree ;
+
+$tree = buildTree( $flat , rootKey: 'animals' ) ; // source du parent = '_parent' par défaut
+```
+
+`buildTree()` est **protégé contre les cycles** (un nœud déjà présent sur la branche courante n'est pas re-descendu) et prend en paramètres la source du parent, la clé des enfants et le champ d'identité — il fonctionne donc aussi bien depuis le `_parent` de `AQL::WITH_PATH` que depuis un champ parent stocké :
+
+```php
+$tree = buildTree( $flat , parentSource: 'broader' , rootKey: 'animals' ) ; // cas parent stocké
+```
+
+Pour que l'arbre soit livré **automatiquement** dans la réponse, câblez `buildTreeAlter()` en `Alter::MAP` sur le champ hiérarchique. L'altération s'exécute après la requête, lit la racine depuis le `_key` du document englobant et remplace la liste à plat par l'arbre imbriqué :
+
+```php
+use oihana\arango\models\enums\Alter ;
+use function oihana\arango\models\helpers\buildTreeAlter ;
+
+AQL::FIELDS =>
+[
+    Prop::DESCENDANTS =>
+    [
+        Field::FILTER => Filter::EDGES ,
+        Field::ALTERS => [ [ Alter::MAP , buildTreeAlter() ] ] , // plat → children[]
+    ],
+],
+AQL::EDGES =>
+[
+    Prop::DESCENDANTS =>
+    [
+        AQL::MODEL     => 'concept_links' ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::MAX_DEPTH => 5 ,       // Lot A — descendre jusqu'à 5 niveaux
+        AQL::WITH_PATH => true ,     // Lot B — injecte le _parent utilisé par buildTree
+    ],
+],
+```
+
+Le consommateur reçoit alors, sur chaque document, un champ `descendants` déjà imbriqué en `children[]` — une seule traversée plus un remodelage en mémoire, à n'importe quelle profondeur.
+
+> **Un seul parent par nœud.** `buildTree()` attend que chaque nœud référence **un** parent. Avec `AQL::WITH_PATH`, c'est garanti par l'unicité globale des sommets de la traversée. Une polyhiérarchie où un concept a plusieurs parents (un `broader` sous forme de tableau) est hors du périmètre du remodelage en arbre — la liste à plat (avec `?filter=` / `quant`) reste la bonne surface pour ce cas.
 
 ## Projeter les propriétés de l'edge — `Field::SCOPE`
 

@@ -130,7 +130,7 @@ function buildEdgeVariable
 
     // Path metadata (hierarchy reconstruction): AQL::WITH_PATH opts in to a `path`
     // traversal variable and injects, into the projected object, the immediate parent
-    // key (AQL::PATH_PARENT → `_parent`) and the traversal depth (AQL::PATH_DEPTH →
+    // key (AQL::_PARENT → `_parent`) and the traversal depth (AQL::_DEPTH →
     // `_depth`). buildTree() reconstructs a nested children[] tree from these. Off by
     // default → no path variable emitted, AQL unchanged. A scalar PROPERTY projection
     // carries no object, so it ignores AQL::WITH_PATH (and emits no path variable).
@@ -139,8 +139,8 @@ function buildEdgeVariable
     $pathMeta = $withPath
               ? compile(
                 [
-                    keyValue( AQL::PATH_PARENT , key( Schema::_KEY , key( 'vertices[-2]' , $pathRef ) ) ) ,
-                    keyValue( AQL::PATH_DEPTH  , length( key( 'edges' , $pathRef ) ) ) ,
+                    keyValue( AQL::_PARENT , key( Schema::_KEY , key( AQL::VERTICES . '[-2]' , $pathRef ) ) ) ,
+                    keyValue( AQL::_DEPTH  , length( key( AQL::EDGES , $pathRef ) ) ) ,
                 ] , ', ' )
               : null ;
 

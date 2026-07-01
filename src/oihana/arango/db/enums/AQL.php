@@ -10,6 +10,9 @@ class AQL
     use ConstantsTrait ,
         PaginationTrait ;
 
+    public const string _DEPTH          = '_depth' ;
+    public const string _PARENT         = '_parent' ;
+
     public const string AGGREGATE       = 'aggregate' ;
     public const string ALTERS          = 'alters' ;
     public const string ANALYZER        = 'analyzer' ;
@@ -19,6 +22,7 @@ class AQL
     public const string ASSIGN          = 'assign' ;
     public const string BINDS           = 'binds' ;
     public const string BOTH            = 'both' ;
+    public const string CHILDREN        = 'children' ;
     public const string COLLECTION      = 'collection' ;
     public const string CONDITIONS      = 'conditions' ;
     public const string CONTEXT         = 'context' ;
@@ -72,8 +76,6 @@ class AQL
     public const string OPTIONS         = 'options' ;
     public const string ORDER           = 'order' ;
     public const string PATH            = 'path' ;
-    public const string PATH_DEPTH      = '_depth' ;
-    public const string PATH_PARENT     = '_parent' ;
     public const string PATH_REF        = 'pathRef' ;
     public const string PRECEDING       = 'preceding' ;
     public const string PREFIX          = 'prefix' ;
@@ -110,6 +112,7 @@ class AQL
     public const string VALUES          = 'values' ;
     public const string VERTEX          = 'vertex' ;
     public const string VERTEX_REF      = 'vertexRef' ;
+    public const string VERTICES        = 'vertices' ;
     public const string VIEW            = 'view' ;
     public const string WITH            = 'with' ;
     public const string WITH_COUNT      = 'withCount' ;
