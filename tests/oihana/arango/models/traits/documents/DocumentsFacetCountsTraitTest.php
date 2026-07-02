@@ -90,4 +90,67 @@ class DocumentsFacetCountsTraitTest extends TestCase
 
         $this->assertSame( [] , $host->facetCounts( [ Arango::FACET_COUNTS => 'category' ] ) ) ;
     }
+
+    // ---------------------------------------------------------------- facetCount()
+
+    public function testFacetCountUnknownDimensionYieldsEmptyMap() :void
+    {
+        // 'brand' is not a declared facet → empty build → no DB call → [].
+        $this->assertSame( [] , $this->host()->facetCount( 'brand' ) ) ;
+    }
+
+    public function testFacetCountEmptyCursorYieldsEmptyMap() :void
+    {
+        $host = $this->host() ;
+        $host->canned = null ; // declared facet, but the cursor is empty.
+
+        $this->assertSame( [] , $host->facetCount( 'category' ) ) ;
+    }
+
+    public function testFacetCountFlattensObjectBucketsPreservingOrder() :void
+    {
+        $host = $this->host() ;
+        $host->canned = (object)
+        [
+            'category' =>
+            [
+                (object) [ 'value' => 'A' , 'count' => 3 ] ,
+                (object) [ 'value' => 'B' , 'count' => 2 ] ,
+            ] ,
+        ] ;
+
+        $this->assertSame( [ 'A' => 3 , 'B' => 2 ] , $host->facetCount( 'category' ) ) ;
+    }
+
+    public function testFacetCountFlattensArrayBuckets() :void
+    {
+        $host = $this->host() ;
+        $host->canned = [ 'category' => [ [ 'value' => 'A' , 'count' => 3 ] ] ] ;
+
+        $this->assertSame( [ 'A' => 3 ] , $host->facetCount( 'category' ) ) ;
+    }
+
+    public function testFacetCountReturnsEmptyWhenDimensionAbsentFromResult() :void
+    {
+        $host = $this->host() ;
+        $host->canned = [ 'other' => [ [ 'value' => 'A' , 'count' => 3 ] ] ] ;
+
+        $this->assertSame( [] , $host->facetCount( 'category' ) ) ;
+    }
+
+    public function testFacetCountSkipsMalformedRowsAndCastsCountToInt() :void
+    {
+        $host = $this->host() ;
+        $host->canned =
+        [
+            'category' =>
+            [
+                [ 'count' => 5 ] ,                          // array row missing 'value' → skipped
+                (object) [ 'count' => 9 ] ,                 // object row missing 'value' → skipped
+                (object) [ 'value' => 'A' , 'count' => '7' ] , // string count → cast to int
+            ] ,
+        ] ;
+
+        $this->assertSame( [ 'A' => 7 ] , $host->facetCount( 'category' ) ) ;
+    }
 }
