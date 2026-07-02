@@ -163,6 +163,58 @@ Arango::PAYLOAD =>
 
 En pratique : **toujours `[ HttpMethod::PATCH ]`** pour les contrôleurs CRUD standards. Une mise à jour partielle ne doit jamais écraser un champ absent du body.
 
+## `Arango::KEEP_NULL` par champ — effacer une valeur en PATCH
+
+`COMPRESS` strippe **tous** les `null`, ce qui est précisément ce qui garde un PATCH partiel — mais rend aussi un champ impossible à **effacer**. Comme un champ déclaré mais absent du body est de toute façon injecté à `null`, un `{ "field": null }` envoyé par le client est indistinguable de « champ non envoyé » et se fait stripper avec lui.
+
+Marquez le champ avec `Arango::KEEP_NULL => true` dans sa définition de payload, et rendez sa règle de validation tolérante au `null` avec `Rules::NULLABLE`. Extrait complet d'une définition de contrôleur (conteneur DI) — `color` sur un terme de thésaurus, posable ou effaçable, validée en `#RRGGBB` quand non-null :
+
+```php
+use function oihana\validations\rules\helpers\max   ;
+use function oihana\validations\rules\helpers\rules ;
+
+use oihana\validations\enums\Rules ;
+
+// ... à l'intérieur de la définition passée au DocumentsController ...
+
+Arango::PAYLOAD =>
+[
+    Arango::COMPRESS => [ HttpMethod::PATCH ] ,
+    HttpMethod::ALL  =>
+    [
+        // `color` peut être posée à une valeur ou effacée avec un null explicite.
+        Prop::COLOR => [ Arango::TYPE => AQLType::STRING , Arango::KEEP_NULL => true ] ,
+    ] ,
+] ,
+
+Arango::CUSTOM_RULES =>
+[
+    Prop::COLOR => CustomRules::COLOR ,   // validation '#RRGGBB' (ColorRule)
+] ,
+
+Arango::RULES =>
+[
+    HttpMethod::ALL =>
+    [
+        // `nullable` laisse passer un null explicite ; le `Prop::COLOR` final
+        // active CustomRules::COLOR pour toute valeur non-null.
+        Prop::COLOR => rules( Rules::NULLABLE , Rules::STRING , max( 7 ) , Prop::COLOR ) ,
+    ] ,
+] ,
+```
+
+L'exception s'applique **uniquement quand le client a réellement envoyé le champ** dans le body, si bien que les trois cas restent distincts :
+
+| Body | Résultat |
+|------|----------|
+| `{ "color": "#7B1E3A" }` | valeur posée |
+| `{ "color": null }` | valeur effacée (le `null` atteint l'update) |
+| `{ }` (champ absent) | no-op (toujours strippé — un PATCH nu ne l'écrase jamais) |
+
+Le test de présence dans le body respecte le nom de requête du champ, donc un `Arango::NAME` remappé est pris en compte. Sans `Rules::NULLABLE`, la règle de type/custom (ici `ColorRule`) rejette le `null` et l'effacement échoue en 422. Côté stockage, l'AQL `UPDATE` conserve le `null` par défaut (l'attribut est stocké à `null`) ; utilisez l'option d'écriture `keepNull: false` du modèle si vous voulez retirer physiquement l'attribut.
+
+**Pour aller plus loin** — la moitié « validation » de cet exemple est détaillée dans la page [Rules](rules.md) : voir *La clé `Arango::RULES`* pour la composition `nullable` et le *pattern « final tag »* qui branche la `ColorRule`.
+
 ## Validation i18n pré-extraction
 
 Les champs de type `AQLType::I18N` représentent un objet typé `{ fr: "...", en: "...", es: null, ... }`. Un client mal écrit peut envoyer une chaîne plate (`"description": "Bonjour"`) à la place — sans détection, cette chaîne se retrouve en base et casse toutes les requêtes de projection.

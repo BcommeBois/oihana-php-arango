@@ -163,6 +163,58 @@ Arango::PAYLOAD =>
 
 In practice: **always `[ HttpMethod::PATCH ]`** for standard CRUD controllers. A partial update must never wipe a field absent from the body.
 
+## Per-field `Arango::KEEP_NULL` — clearing a value on PATCH
+
+`COMPRESS` strips **every** `null`, which is exactly what keeps a PATCH partial — but it also makes a field impossible to **clear**. Since a declared field absent from the body is injected as `null` anyway, a client-sent `{ "field": null }` is indistinguishable from "field not sent" and gets stripped with it.
+
+Flag the field with `Arango::KEEP_NULL => true` in its payload definition, and make its validation rule tolerate the `null` with `Rules::NULLABLE`. A full controller DI definition excerpt — `color` on a thesaurus term, settable or clearable, validated as `#RRGGBB` when non-null:
+
+```php
+use function oihana\validations\rules\helpers\max   ;
+use function oihana\validations\rules\helpers\rules ;
+
+use oihana\validations\enums\Rules ;
+
+// ... inside the controller definition passed to DocumentsController ...
+
+Arango::PAYLOAD =>
+[
+    Arango::COMPRESS => [ HttpMethod::PATCH ] ,
+    HttpMethod::ALL  =>
+    [
+        // `color` can be set to a value or cleared with an explicit null.
+        Prop::COLOR => [ Arango::TYPE => AQLType::STRING , Arango::KEEP_NULL => true ] ,
+    ] ,
+] ,
+
+Arango::CUSTOM_RULES =>
+[
+    Prop::COLOR => CustomRules::COLOR ,   // '#RRGGBB' validation (ColorRule)
+] ,
+
+Arango::RULES =>
+[
+    HttpMethod::ALL =>
+    [
+        // `nullable` lets an explicit null through ; the trailing `Prop::COLOR`
+        // tag activates CustomRules::COLOR for any non-null value.
+        Prop::COLOR => rules( Rules::NULLABLE , Rules::STRING , max( 7 ) , Prop::COLOR ) ,
+    ] ,
+] ,
+```
+
+The exception applies **only when the client actually sent the field** in the request body, so the three cases stay distinct:
+
+| Body | Result |
+|------|--------|
+| `{ "color": "#7B1E3A" }` | value set |
+| `{ "color": null }` | value cleared (the `null` reaches the update) |
+| `{ }` (field absent) | no-op (still stripped — a bare PATCH never wipes it) |
+
+The body-presence check honours the field's request name, so a remapped `Arango::NAME` is respected. Without `Rules::NULLABLE`, the type/custom rule (here `ColorRule`) rejects the `null` and the clear fails with a 422. On the storage side the AQL `UPDATE` keeps the `null` by default (the attribute is stored as `null`); use the model's `keepNull: false` write option if you need the attribute physically removed.
+
+**Learn more** — the validation half of this example lives in the [Rules](rules.md) page: see *The `Arango::RULES` key* for the `nullable` composition and the *final-tag pattern* that wires the `ColorRule`.
+
 ## i18n pre-extraction validation
 
 `AQLType::I18N` fields represent a typed object `{ fr: "...", en: "...", es: null, ... }`. A misbehaved client may send a flat string (`"description": "Hello"`) instead — without detection, this string ends up in the database and breaks every projection query.
