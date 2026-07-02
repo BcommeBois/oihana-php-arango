@@ -234,6 +234,14 @@ class Arango
     public const string JOINS = 'joins' ;
 
     /**
+     * The 'keepNull' payload marker. When a payload field definition carries
+     * `Arango::KEEP_NULL => true`, an explicit null the client sent for that
+     * field survives the compress pass (see PayloadsTrait::preparePayload),
+     * so a PATCH can clear a value with `{ "field": null }`.
+     */
+    public const string KEEP_NULL = 'keepNull' ;
+
+    /**
      * The 'keyList' parameter.
      */
     public const string KEY_LIST = 'keyList' ;

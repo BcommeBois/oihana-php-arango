@@ -13,7 +13,7 @@ use oihana\arango\controllers\enums\AQLType;
 use oihana\arango\enums\Arango;
 use oihana\controllers\traits\LanguagesTrait;
 use oihana\controllers\traits\PathTrait;
-use oihana\core\arrays\CleanFlag;
+use oihana\core\options\CompressOption;
 use oihana\enums\Char;
 use oihana\enums\FilterOption;
 use oihana\enums\Output;
@@ -31,7 +31,7 @@ use function oihana\controllers\helpers\getParamI18n;
 use function oihana\controllers\helpers\getParamInt;
 use function oihana\controllers\helpers\getParamIntRange;
 use function oihana\controllers\helpers\getParamString;
-use function oihana\core\arrays\clean;
+use function oihana\core\arrays\compress;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\numbers\clip;
 use function oihana\core\strings\key;
@@ -195,7 +195,36 @@ trait PayloadsTrait
             $compress = in_array( $method , $compress , true ) ;
         }
 
-        return $compress ? clean( $payload , CleanFlag::NULLS ) : $payload ;
+        if ( !$compress )
+        {
+            return $payload ;
+        }
+
+        // Fields flagged Arango::KEEP_NULL keep an explicit null instead of
+        // being stripped by the compress pass — but only when the client
+        // actually sent them in the request body. generatePayload() injects a
+        // null for every declared field, so without this body check a bare
+        // request would wipe a flagged field; the check keeps "field absent"
+        // a no-op while "field: null" clears the value.
+        $body     = (array) ( $request?->getParsedBody() ?? [] ) ;
+        $excludes = [] ;
+
+        foreach ( $definitions as $key => $options )
+        {
+            if ( !is_array( $options ) || ( $options[ Arango::KEEP_NULL ] ?? false ) !== true )
+            {
+                continue ;
+            }
+
+            $name = $options[ Arango::NAME ] ?? $key ;
+
+            if ( array_key_exists( $name , $body ) )
+            {
+                $excludes[] = $key ;
+            }
+        }
+
+        return compress( $payload , [ CompressOption::EXCLUDES => $excludes ] ) ;
     }
 
     /**

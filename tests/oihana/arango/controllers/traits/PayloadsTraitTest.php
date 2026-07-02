@@ -365,6 +365,77 @@ class PayloadsTraitTest extends TestCase
         $this->assertSame(['a' => null, 'b' => 'ok'], $docPut, 'PUT should NOT compress');
     }
 
+    // -------------------- preparePayload : KEEP_NULL --------------------
+
+    private function keepNullInit( array $field = [ Arango::TYPE => AQLType::STRING, Arango::KEEP_NULL => true ] ): array
+    {
+        return [
+            Arango::PAYLOAD =>
+            [
+                Arango::COMPRESS => [ HttpMethod::PATCH ],
+                HttpMethod::ALL  => [ 'color' => $field ],
+            ],
+        ];
+    }
+
+    public function testPreparePayloadKeepNullPreservesExplicitNullWhenSent(): void
+    {
+        $subject   = new PayloadsTraitSub();
+        $request   = $this->stubRequest([ 'color' => null ]);
+        $relations = [];
+
+        $doc = $subject->preparePayload($request, HttpMethod::PATCH, $this->keepNullInit(), $relations);
+
+        $this->assertSame([ 'color' => null ], $doc, 'an explicit null on a KEEP_NULL field must survive compress');
+    }
+
+    public function testPreparePayloadKeepNullStripsWhenFieldAbsent(): void
+    {
+        $subject   = new PayloadsTraitSub();
+        $request   = $this->stubRequest([ 'other' => 'x' ]); // color absent from the body
+        $relations = [];
+
+        $doc = $subject->preparePayload($request, HttpMethod::PATCH, $this->keepNullInit(), $relations);
+
+        $this->assertSame([], $doc, 'a KEEP_NULL field absent from the body stays a no-op (not cleared)');
+    }
+
+    public function testPreparePayloadKeepNullPassesThroughProvidedValue(): void
+    {
+        $subject   = new PayloadsTraitSub();
+        $request   = $this->stubRequest([ 'color' => '#ffffff' ]);
+        $relations = [];
+
+        $doc = $subject->preparePayload($request, HttpMethod::PATCH, $this->keepNullInit(), $relations);
+
+        $this->assertSame([ 'color' => '#ffffff' ], $doc, 'a provided value passes through unchanged');
+    }
+
+    public function testPreparePayloadWithoutKeepNullStripsExplicitNull(): void
+    {
+        $subject   = new PayloadsTraitSub();
+        $request   = $this->stubRequest([ 'color' => null ]);
+        $relations = [];
+
+        // Same explicit null, but the field is NOT flagged KEEP_NULL.
+        $init = $this->keepNullInit([ Arango::TYPE => AQLType::STRING ]);
+        $doc  = $subject->preparePayload($request, HttpMethod::PATCH, $init, $relations);
+
+        $this->assertSame([], $doc, 'without the flag, an explicit null is still stripped by compress');
+    }
+
+    public function testPreparePayloadKeepNullHonoursNameRemap(): void
+    {
+        $subject   = new PayloadsTraitSub();
+        $request   = $this->stubRequest([ 'colour' => null ]); // request name differs from the payload key
+        $relations = [];
+
+        $init = $this->keepNullInit([ Arango::TYPE => AQLType::STRING, Arango::NAME => 'colour', Arango::KEEP_NULL => true ]);
+        $doc  = $subject->preparePayload($request, HttpMethod::PATCH, $init, $relations);
+
+        $this->assertSame([ 'color' => null ], $doc, 'the body presence check honours the Arango::NAME remap');
+    }
+
     // -------------------- generatePayload --------------------
 
     /**
