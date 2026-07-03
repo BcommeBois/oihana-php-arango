@@ -101,7 +101,7 @@ Deux clés permettent d'attacher un *skin* à un champ ou à une projection alte
 
 ### `Field::SKINS` — un champ visible dans certains *skins*
 
-Sur un champ individuel de `AQL::FIELDS`, le marqueur `Field::SKINS` déclare la **liste des *skins* qui activent le champ**. Un champ sans marqueur est visible dans tous les *skins*. Un champ marqué `Skin::FULL` n'apparaît que dans la projection `full`.
+Sur un champ individuel de `AQL::FIELDS`, le marqueur `Field::SKINS` déclare la **liste des *skins* qui activent le champ**. Un champ sans marqueur est visible dans tous les *skins*. Un champ marqué `Skin::FULL` n'apparaît que dans la projection `full`. Le marqueur est honoré à **toute profondeur** : il peut aussi être posé sur un sous-champ imbriqué d'un `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` — voir [`Field::SKINS` en profondeur](../edges-joins-projection.md#fieldskins-en-profondeur--sous-champs-imbriqués-filtermap--filterdocument--filterwrap).
 
 ```php
 use oihana\arango\enums\AQL    ;

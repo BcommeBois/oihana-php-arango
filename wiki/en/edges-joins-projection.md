@@ -518,6 +518,44 @@ Outcomes:
 
 The same definition covers both cases. Dedicated sub-endpoints (`/users/{id}/roles`, `/users/{id}/permissions/effective`) have their own DI and stay rich independently.
 
+### `Field::SKINS` in depth — nested sub-fields (`Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`)
+
+The `Field::SKINS` marker is honored at **every nesting level** of a projection: on the sub-fields of a `Filter::MAP`, a `Filter::DOCUMENT` or a `Filter::WRAP` — a MAP inside a MAP included. The request skin is propagated to the nested `Field::FIELDS`, with the same rules as on the first level:
+
+- a sub-field **without** a marker is visible in every skin;
+- when no skin is requested, everything passes;
+- a filtered sub-field disappears **entirely**: its key is absent from the response and, when it carries a relation marker (with its `Field::EDGES` / `Field::JOINS` entry at the same level), the matching `LET` is not emitted.
+
+Example: a product stores a price grid `offers[]`, each entry containing a nested `offers[]` sub-array (one price per customer type). Each price carries a sensitive `priceSpecification` breakdown that must only appear in dedicated skins — with a single declaration of the field:
+
+```php
+'offers' =>
+[
+    Field::FILTER => Filter::MAP ,
+    Field::FIELDS =>
+    [
+        'offers' =>
+        [
+            Field::FILTER => Filter::MAP ,
+            Field::FIELDS =>
+            [
+                'price'              => Filter::DEFAULT ,
+                'priceSpecification' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'offers.full' , 'full' ] ] ,
+            ] ,
+        ] ,
+    ] ,
+]
+```
+
+Outcomes:
+
+- `GET /products/{id}` (skin `default`): the grid comes out with `price`, without `priceSpecification`;
+- `GET /products/{id}?skin=full`: the `priceSpecification` breakdown appears on every price.
+
+**Emptied parent = dropped parent.** When the skin removes **all** the declared sub-fields of a MAP / DOCUMENT / WRAP parent, the parent itself disappears from the projection (key absent) — never a raw sub-document fallback, never an empty object, never an error. This is the natural skin semantics: a field outside the skin does not appear.
+
+**Cohabitation with `Field::REQUIRES`.** Both markers compose on the same sub-field: `Field::SKINS` decides the **view** (the requested skin), `Field::REQUIRES` the **security** (the permission). The sub-field only appears when the skin matches **and** the permission is granted.
+
 ## Alternative projection per skin — `AQL::SKIN_FIELDS`
 
 When the projection differs broadly between skins and putting `Field::SKINS` everywhere would hurt readability, declare distinct projections via `AQL::SKIN_FIELDS`.
@@ -561,6 +599,7 @@ If `AQL::SKIN_FIELDS` is absent or not an array, the resolution falls back direc
 |---|---|
 | A single projection regardless of the skin | `AQL::FIELDS` alone |
 | A few sub-fields vary between skins (count hidden on full, edge hidden on default…) | `Field::SKINS` on the sub-fields of `AQL::FIELDS` |
+| A **nested** sub-field (price grid, sub-object of a MAP/DOCUMENT/WRAP) must only appear in some skins | `Field::SKINS` on the nested sub-field — honored at every depth |
 | The projection differs broadly between skins (added fields, swapped joins…) | `AQL::SKIN_FIELDS` with one entry per skin |
 | INBOUND edge towards a document that may reference back to the source | `AQL::SKIN => Skin::MAIN` on the edge definition to break the cycle |
 | Restrict an edge or join projection to a user permission | `AQL::REQUIRES` on the definition + callable injection via `InjectAuthorizerTrait` |

@@ -101,7 +101,7 @@ Two keys attach a *skin* to a field or to an alternative projection:
 
 ### `Field::SKINS` — a field visible in some *skins*
 
-On an individual field of `AQL::FIELDS`, the `Field::SKINS` marker declares the **list of *skins* that activate the field**. A field without marker is visible in all *skins*. A field marked `Skin::FULL` only appears in the `full` projection.
+On an individual field of `AQL::FIELDS`, the `Field::SKINS` marker declares the **list of *skins* that activate the field**. A field without marker is visible in all *skins*. A field marked `Skin::FULL` only appears in the `full` projection. The marker is honored at **every depth**: it can also be placed on a nested sub-field of a `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` — see [`Field::SKINS` in depth](../edges-joins-projection.md#fieldskins-in-depth--nested-sub-fields-filtermap--filterdocument--filterwrap).
 
 ```php
 use oihana\arango\enums\AQL    ;

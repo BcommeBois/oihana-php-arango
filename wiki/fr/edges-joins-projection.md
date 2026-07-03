@@ -518,6 +518,44 @@ Résultats :
 
 La même définition couvre les deux cas. Pour les sous-endpoints dédiés (`/users/{id}/roles`, `/users/{id}/permissions/effective`) qui ont leur propre DI, la projection est indépendante et reste riche.
 
+### `Field::SKINS` en profondeur — sous-champs imbriqués (`Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`)
+
+Le marqueur `Field::SKINS` est honoré à **tous les niveaux d'imbrication** d'une projection : sur les sous-champs d'un `Filter::MAP`, d'un `Filter::DOCUMENT` ou d'un `Filter::WRAP` — y compris un MAP dans un MAP. Le skin de la requête est propagé aux `Field::FIELDS` imbriqués, avec les mêmes règles qu'au premier niveau :
+
+- un sous-champ **sans** marqueur est visible dans tous les skins ;
+- sans skin demandé, tout passe ;
+- un sous-champ retiré disparaît **complètement** : sa clé n'apparaît pas dans la réponse et, s'il porte un marqueur de relation (avec son entrée `Field::EDGES` / `Field::JOINS` au même niveau), le `LET` correspondant n'est pas émis.
+
+Exemple : un produit stocke une grille de prix `offers[]`, dont chaque entrée contient un sous-tableau `offers[]` (un prix par type de client). Chaque prix porte une décomposition sensible `priceSpecification` qu'on ne veut exposer que dans des skins dédiés — en une seule déclaration du champ :
+
+```php
+'offers' =>
+[
+    Field::FILTER => Filter::MAP ,
+    Field::FIELDS =>
+    [
+        'offers' =>
+        [
+            Field::FILTER => Filter::MAP ,
+            Field::FIELDS =>
+            [
+                'price'              => Filter::DEFAULT ,
+                'priceSpecification' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'offers.full' , 'full' ] ] ,
+            ] ,
+        ] ,
+    ] ,
+]
+```
+
+Résultats :
+
+- `GET /products/{id}` (skin `default`) : la grille sort avec `price`, sans `priceSpecification` ;
+- `GET /products/{id}?skin=full` : la décomposition `priceSpecification` apparaît à chaque prix.
+
+**Parent vidé = parent retiré.** Si le skin retire **tous** les sous-champs déclarés d'un parent MAP / DOCUMENT / WRAP, le parent lui-même disparaît de la projection (clé absente) — jamais de repli sur le sous-document brut, jamais d'objet vide, jamais d'erreur. C'est la sémantique naturelle des skins : un champ hors skin n'apparaît pas.
+
+**Cohabitation avec `Field::REQUIRES`.** Les deux marqueurs se cumulent sur un même sous-champ : `Field::SKINS` décide de la **vue** (le skin demandé), `Field::REQUIRES` de la **sécurité** (la permission). Le sous-champ n'apparaît que si le skin matche **et** que la permission est accordée.
+
 ## Projection alternative selon le skin — `AQL::SKIN_FIELDS`
 
 Quand la projection diffère largement entre skins, et que poser des `Field::SKINS` partout devient illisible, on peut déclarer plusieurs projections distinctes via `AQL::SKIN_FIELDS`.
@@ -561,6 +599,7 @@ Si `AQL::SKIN_FIELDS` est absent ou n'est pas un tableau, la résolution retombe
 |---|---|
 | Une seule projection, peu importe le skin | `AQL::FIELDS` seul |
 | Quelques sous-champs varient entre skins (count caché en full, edge caché en default…) | `Field::SKINS` posé sur les sous-champs de `AQL::FIELDS` |
+| Un sous-champ **imbriqué** (grille de prix, sous-objet d'un MAP/DOCUMENT/WRAP) ne doit sortir que dans certains skins | `Field::SKINS` posé sur le sous-champ imbriqué — honoré à toute profondeur |
 | La projection diffère largement entre skins (champs ajoutés, joins changés…) | `AQL::SKIN_FIELDS` avec une entrée par skin |
 | Edge INBOUND vers un document qui peut référencer en retour la source | `AQL::SKIN => Skin::MAIN` sur la définition d'edge pour couper le cycle |
 | Restreindre la projection d'un edge ou d'un join à une permission utilisateur | `AQL::REQUIRES` sur la définition + injection du callable via `InjectAuthorizerTrait` |
