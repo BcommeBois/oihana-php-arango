@@ -670,24 +670,129 @@ The mechanisms compose. A definition can combine `AQL::SKIN_FIELDS` for the main
 
 ## Permission-gated edges and joins — `AQL::REQUIRES`
 
-A definition can declare a required permission via `AQL::REQUIRES`. When the current user does not hold that permission, the edge or join is silently dropped from the projection (no `LET` is emitted, no leak, no error). The mechanism stays agnostic of the underlying authorization layer: the decision is delegated to a callable injected through `$init[Arango::AUTHORIZER]`.
+A relation can be permission-locked at **two composable levels**:
 
-### Declaration shape
+- `Field::REQUIRES` on **the field** of a projection: locks *that particular projection* of the relation;
+- `AQL::REQUIRES` on **the definition** of the edge or join: locks the relation *wherever the definition is used* — declared once, enforced everywhere.
+
+In both cases a denied relation is silently omitted: no `LET` is emitted, the key never appears in the response (no `null`, no empty array), no error. The mechanism stays agnostic of the underlying authorization layer: the decision is delegated to a callable injected through `$init[Arango::AUTHORIZER]` (see the wiring below).
+
+### The setting for the examples
+
+A company API. A `users` collection (the employee records), a `roles` collection (the application roles), linked by `user_has_roles` edges. Two people call **the same route** `GET /users/123`:
+
+- **Alice**, an administrator: she holds the `users.roles:list` permission;
+- **Bob**, a regular employee: he does not.
+
+Goal: Alice sees the roles on the record, Bob sees the same record **without** the roles — no error, no empty field, no second route.
+
+### Locking the relation on its definition
+
+**The situation.** To hide the roles from Bob with the field-level lock alone, you would have to declare `Field::REQUIRES` on the `roles` field of **every projection** that mentions it. If three models or three screens project this relation, that is three locks to remember — forgetting one is a leak. The definition-level lock is declared **once, on the definition of the relation itself**: no matter who projects it, where and how, it is protected.
 
 ```php
-Prop::ROLES =>
+Models::USERS => fn( Container $c ) => new Documents( $c ,
 [
-    AQL::MODEL    => EdgesDefinition::USER_HAS_ROLES ,
-    AQL::REQUIRES => 'users.roles:list' ,
-] ,
+    AQL::COLLECTION => 'users' ,
+    AQL::FIELDS =>
+    [
+        Prop::_KEY  => Filter::DEFAULT ,
+        Prop::NAME  => Filter::DEFAULT ,
+        Prop::ROLES => [ Field::FILTER => Filter::EDGES ] ,   // the relation is projected, no lock here
+    ] ,
+    AQL::EDGES =>
+    [
+        Prop::ROLES =>
+        [
+            AQL::MODEL    => EdgesDefinition::USER_HAS_ROLES ,
+            AQL::REQUIRES => 'users.roles:list' ,             // ← THE lock, declared once and for all
+        ] ,
+    ] ,
+])
 ```
 
-`AQL::REQUIRES` accepts two shapes:
+**What each of them receives** on `GET /users/123`:
+
+```jsonc
+// Alice (permission granted)                  // Bob (permission denied)
+{                                              {
+  "_key" : "123" ,                               "_key" : "123" ,
+  "name" : "Jeanne Martin" ,                     "name" : "Jeanne Martin"
+  "roles": [ { "name": "manager" } ]             // no "roles" key at all
+}                                              }
+```
+
+For Bob, the query sent to ArangoDB does not even contain the roles traversal any more: what will not be shown is not computed.
+
+### The "whole document" route
+
+**The situation.** Some routes define no field list at all: the framework then returns the complete document, enriched with every relation declared on the model. The definition-level lock applies on that path too: Bob receives the full document **minus** the relations he is not allowed to see. Nothing extra to declare — it is the same declaration as the previous example. (An **alias** entry of the registry — `'members' => 'roles'` — follows its target's authorization: if `roles` is denied, `members` disappears too.)
+
+### Two locks composing
+
+**The situation.** HR asks: "roles are only visible to managers (`users.roles:list`), and on the full HR screen you must **additionally** be HR-cleared (`rh:read`)". Two requirements at two different levels: one on the relation itself, one on a specific screen. Each is declared at its own level, and **both must be satisfied**:
+
+```php
+AQL::FIELDS =>
+[
+    Prop::ROLES =>
+    [
+        Field::FILTER   => Filter::EDGES ,
+        Field::REQUIRES => 'rh:read' ,            // lock of THIS projection (the HR screen)
+    ] ,
+] ,
+AQL::EDGES =>
+[
+    Prop::ROLES =>
+    [
+        AQL::MODEL    => EdgesDefinition::USER_HAS_ROLES ,
+        AQL::REQUIRES => 'users.roles:list' ,     // lock of the relation, everywhere
+    ] ,
+]
+```
+
+A manager without HR clearance does not see the roles on the HR screen; an HR-cleared user who is not a manager does not either. Conversely, **inside a single lock**, a list of permissions reads as an OR: `AQL::REQUIRES => [ 'users.roles:list' , 'users.roles:admin' ]` = "either one is enough".
+
+### A relation buried in a sub-array
+
+**The situation.** A product record carries an `offers` array (one entry per price offer). Each offer is linked to its sellers through an edge. The public browses the catalog and sees the prices; only the catalog managers (`offers.sellers:list`) see **who sells**. The relation is buried inside a sub-array here — the lock works exactly the same:
+
+```php
+'offers' =>
+[
+    Field::FILTER => Filter::MAP ,                    // iterate the offers array
+    Field::FIELDS =>
+    [
+        'price'   => Filter::DEFAULT ,
+        'sellers' => [ Field::FILTER => Filter::EDGES ] ,
+    ] ,
+    Field::EDGES =>
+    [
+        'sellers' => [ AQL::MODEL => OfferHasSellers::class , AQL::REQUIRES => 'offers.sellers:list' ] ,
+    ] ,
+]
+```
+
+The public receives `offers: [ { "price": 100 }, … ]`; the manager additionally receives `"sellers": [...]` inside each offer. The same holds when the relation is buried in a sub-object (`Filter::DOCUMENT`), a wrapped object (`Filter::WRAP`), or at the end of a cascade (the relation of a relation): the lock is checked **at every level**.
+
+### Accepted shapes
+
+`AQL::REQUIRES` (like `Field::REQUIRES`) accepts two shapes:
 
 - **A string** — a single required permission subject.
-- **An array of strings** — OR semantics: the projection is allowed as soon as **at least one** of the subjects is granted. Useful when several permissions can open the same edge (for instance `users.roles:list` or `users.roles:admin`).
+- **An array of strings** — OR semantics: the projection is allowed as soon as **at least one** of the subjects is granted.
 
-When `AQL::REQUIRES` is absent, no check is performed — default behaviour, no risk for existing definitions.
+When the key is absent, no check is performed — default behaviour, no risk for existing definitions.
+
+### Limits of the mechanism
+
+**Limit 1 — Code that builds AQL by hand checks by itself.** In normal use (the models, `list()`, `get()`, the controllers) the check is automatic. But the library also exposes the low-level functions that build an isolated query fragment — `buildEdgeVariable()` for instance. Called **directly** with a locked definition, they build the fragment without asking: at that level the caller is assumed to know what it is doing. As long as a project goes through the models, this limit does not concern it.
+
+**Limit 2 — Search has its own locks, separate and untouched.** Full-text search (`?search=`, the Views — `Search::REQUIRES` on the specs) and the federated multi-collection search each have their own permission system. An `AQL::REQUIRES` declared on an edge definition does not protect a search result: each layer has its own lock.
+
+**Limit 3 — The stored-array counter has no definition to lock.** `Filter::JOINS_COUNT` follows no relation — it counts the elements of an array **already stored in the document** (e.g. `doc.memberIds`). There is no definition behind it, hence nowhere to declare `AQL::REQUIRES`: to hide it, declare `Field::REQUIRES` on the field itself.
+
+**Limit 4 — Without an injected authorizer, everything is open.** If a route injects no authorizer (an admin script, an internal job, a test), no lock blocks anything: everything comes out. That is the existing contract (see "Behaviour when no authorizer is present" below) — the protection only exists where the controller provides the callable.
 
 ### Wiring on the controller side — recommended pattern
 
@@ -755,9 +860,9 @@ If `$init[Arango::AUTHORIZER]` is not set (the controller does not override `bef
 
 For strict gating, the `Authorized` middleware on the HTTP route (Casbin HTTP-permission level) must remain the primary envelope — `AQL::REQUIRES` is a **second layer** of access control inside the AQL projection, not a replacement.
 
-### Internal helper — `isAuthorized`
+### Internal helpers — `isAuthorized` and `authorizeRelationFields`
 
-`isAuthorized($definition, $init)` is used by `buildVariables` to decide whether to include each edge or join. Its signature and behaviour:
+`isAuthorized($definition, $init)` is the single judge for both lock levels: `buildVariables` calls it on the field entry **and** on the definition when deciding to emit each `LET`; `aqlFields` calls it on each field at projection time; `buildEdgesVariables`/`buildJoinVariables` call it on each definition of the whole-document route. Its signature and behaviour:
 
 ```php
 function isAuthorized( array $definition , array $init = [] ) : bool
@@ -768,6 +873,8 @@ function isAuthorized( array $definition , array $init = [] ) : bool
 - A string or array → `true` as soon as **at least one** subject is granted by the callable. Only strict `true` counts as a grant (a truthy `1`, `'yes'`, etc. does not allow the projection).
 
 The helper lives at `oihana\arango\models\helpers\isAuthorized`.
+
+Its companion `authorizeRelationFields($fields, $edges, $joins, $init)` (same namespace) keeps the definition-level lock **symmetric**: a relation is emitted by two parallel paths — the `LET` sub-query on one side, the projected key in the `RETURN` on the other. When a definition is denied, this helper removes the matching field from the projection, so the `RETURN` never references a variable that was not emitted. It is applied automatically wherever a projection meets its edges/joins registries — you never call it yourself.
 
 ## Transforming the projected value — `Field::ALTERS`
 

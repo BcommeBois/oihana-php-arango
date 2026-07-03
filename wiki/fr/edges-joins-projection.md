@@ -670,24 +670,129 @@ Les mécanismes se cumulent. Une définition peut combiner `AQL::SKIN_FIELDS` po
 
 ## Restreindre la projection d'un edge ou d'un join à une permission — `AQL::REQUIRES`
 
-Une définition peut déclarer une permission requise via `AQL::REQUIRES`. Si l'utilisateur courant n'a pas cette permission, l'edge ou le join est silencieusement omis de la projection (aucun `LET` AQL généré, aucune fuite, aucune erreur). Le mécanisme reste agnostique du système d'autorisation : la décision est déléguée à un callable injecté dans `$init[Arango::AUTHORIZER]`.
+Une relation peut être soumise à permission à **deux niveaux**, qui se cumulent :
 
-### Format de la déclaration
+- `Field::REQUIRES` sur **le champ** d'une projection : verrouille *cette projection-là* de la relation ;
+- `AQL::REQUIRES` sur **la définition** de l'edge ou du join : verrouille la relation *partout où la définition est utilisée* — posé une fois, appliqué partout.
+
+Dans les deux cas, une relation refusée est silencieusement omise : aucun `LET` généré, la clé n'apparaît pas dans la réponse (ni `null`, ni tableau vide), aucune erreur. Le mécanisme reste agnostique du système d'autorisation : la décision est déléguée à un callable injecté dans `$init[Arango::AUTHORIZER]` (voir le câblage plus bas).
+
+### Le décor des exemples
+
+Une API d'entreprise. Une collection `users` (les fiches des employés), une collection `roles` (les rôles applicatifs), reliées par des arêtes `user_has_roles`. Deux personnes appellent **la même route** `GET /users/123` :
+
+- **Alice**, administratrice : elle possède la permission `users.roles:list` ;
+- **Bob**, employé : il ne la possède pas.
+
+Objectif : Alice voit les rôles de la fiche, Bob voit la même fiche **sans** les rôles — sans erreur, sans champ vide, sans écrire deux routes.
+
+### Verrouiller la relation sur sa définition
+
+**La situation.** Pour cacher les rôles à Bob avec le seul verrou de champ, il faudrait poser `Field::REQUIRES` sur le champ `roles` de **chaque projection** qui le mentionne. Si trois modèles ou trois écrans projettent cette relation, il faut penser au verrou trois fois — en oublier un = fuite. Le verrou de définition se pose **une seule fois, sur la définition de la relation elle-même** : peu importe qui la projette, où et comment, elle est protégée.
 
 ```php
-Prop::ROLES =>
+Models::USERS => fn( Container $c ) => new Documents( $c ,
 [
-    AQL::MODEL    => EdgesDefinition::USER_HAS_ROLES ,
-    AQL::REQUIRES => 'users.roles:list' ,
-] ,
+    AQL::COLLECTION => 'users' ,
+    AQL::FIELDS =>
+    [
+        Prop::_KEY  => Filter::DEFAULT ,
+        Prop::NAME  => Filter::DEFAULT ,
+        Prop::ROLES => [ Field::FILTER => Filter::EDGES ] ,   // on projette la relation, sans verrou ici
+    ] ,
+    AQL::EDGES =>
+    [
+        Prop::ROLES =>
+        [
+            AQL::MODEL    => EdgesDefinition::USER_HAS_ROLES ,
+            AQL::REQUIRES => 'users.roles:list' ,             // ← LE verrou, posé une fois pour toutes
+        ] ,
+    ] ,
+])
 ```
 
-`AQL::REQUIRES` accepte deux formes :
+**Ce que chacun reçoit** sur `GET /users/123` :
+
+```jsonc
+// Alice (permission accordée)                 // Bob (permission refusée)
+{                                              {
+  "_key" : "123" ,                               "_key" : "123" ,
+  "name" : "Jeanne Martin" ,                     "name" : "Jeanne Martin"
+  "roles": [ { "name": "manager" } ]             // pas de clé "roles" du tout
+}                                              }
+```
+
+Pour Bob, la requête envoyée à ArangoDB ne contient même plus la traversée des rôles : on ne calcule pas ce qu'on ne montrera pas.
+
+### La route « document entier »
+
+**La situation.** Certaines routes ne définissent aucune liste de champs : le framework renvoie alors le document complet, enrichi de toutes les relations déclarées dans le modèle. Le verrou de définition s'applique aussi sur ce chemin : Bob reçoit le document complet, **moins** les relations auxquelles il n'a pas droit. Rien à déclarer en plus — c'est la même déclaration que l'exemple précédent. (Une entrée **alias** du registre — `'members' => 'roles'` — suit l'autorisation de sa cible : si `roles` est refusé, `members` disparaît aussi.)
+
+### Deux verrous qui se cumulent
+
+**La situation.** La direction RH demande : « les rôles ne sont visibles que des managers (`users.roles:list`), et dans l'écran RH complet, il faut **en plus** être habilité RH (`rh:read`) ». Deux exigences de niveaux différents : une sur la relation elle-même, une sur un écran précis. Chacune se déclare à son niveau, et **les deux doivent être satisfaites** :
+
+```php
+AQL::FIELDS =>
+[
+    Prop::ROLES =>
+    [
+        Field::FILTER   => Filter::EDGES ,
+        Field::REQUIRES => 'rh:read' ,            // verrou de CETTE projection (l'écran RH)
+    ] ,
+] ,
+AQL::EDGES =>
+[
+    Prop::ROLES =>
+    [
+        AQL::MODEL    => EdgesDefinition::USER_HAS_ROLES ,
+        AQL::REQUIRES => 'users.roles:list' ,     // verrou de la relation, partout
+    ] ,
+]
+```
+
+Un manager non habilité RH ne voit pas les rôles dans l'écran RH ; un habilité RH qui n'est pas manager non plus. À l'inverse, **dans un même verrou**, une liste de permissions se lit comme un OU : `AQL::REQUIRES => [ 'users.roles:list' , 'users.roles:admin' ]` = « l'une des deux suffit ».
+
+### Une relation enfouie dans un sous-tableau
+
+**La situation.** Une fiche produit contient un tableau `offers` (une entrée par offre de prix). Chaque offre est reliée à ses vendeurs par une arête. Le public consulte le catalogue et voit les prix ; seuls les gestionnaires du catalogue (`offers.sellers:list`) voient **qui vend**. La relation est ici enfouie dans un sous-tableau — le verrou fonctionne exactement pareil :
+
+```php
+'offers' =>
+[
+    Field::FILTER => Filter::MAP ,                    // on parcourt le tableau d'offres
+    Field::FIELDS =>
+    [
+        'price'   => Filter::DEFAULT ,
+        'sellers' => [ Field::FILTER => Filter::EDGES ] ,
+    ] ,
+    Field::EDGES =>
+    [
+        'sellers' => [ AQL::MODEL => OfferHasSellers::class , AQL::REQUIRES => 'offers.sellers:list' ] ,
+    ] ,
+]
+```
+
+Le public reçoit `offers: [ { "price": 100 }, … ]` ; le gestionnaire reçoit en plus `"sellers": [...]` dans chaque offre. Même chose si la relation est enfouie dans un sous-objet (`Filter::DOCUMENT`), un objet enveloppé (`Filter::WRAP`), ou au bout d'une cascade (la relation d'une relation) : le verrou est vérifié **à chaque étage**.
+
+### Les formes acceptées
+
+`AQL::REQUIRES` (comme `Field::REQUIRES`) accepte deux formes :
 
 - **Une chaîne** — un seul sujet de permission requis.
-- **Un tableau de chaînes** — sémantique OR : la projection est autorisée dès qu'**au moins un** des sujets est accordé. Pratique quand plusieurs permissions ouvrent l'accès au même edge (par exemple `users.roles:list` ou `users.roles:admin`).
+- **Un tableau de chaînes** — sémantique OU : la projection est autorisée dès qu'**au moins un** des sujets est accordé.
 
-Quand `AQL::REQUIRES` est absent, aucun contrôle n'est appliqué — comportement par défaut, aucun risque sur les définitions existantes.
+Quand la clé est absente, aucun contrôle n'est appliqué — comportement par défaut, aucun risque sur les définitions existantes.
+
+### Les limites du mécanisme
+
+**Limite 1 — Si votre code fabrique l'AQL à la main, c'est à lui de vérifier.** Dans l'usage normal (les modèles, `list()`, `get()`, les contrôleurs), la vérification est automatique. Mais la bibliothèque expose aussi les fonctions de bas niveau qui fabriquent un morceau de requête isolé — `buildEdgeVariable()` par exemple. Appelées **directement** avec une définition verrouillée, elles fabriquent le morceau sans poser de question : à ce niveau-là, l'appelant est supposé savoir ce qu'il fait. Tant qu'un projet passe par les modèles, cette limite ne le concerne pas.
+
+**Limite 2 — La recherche a ses propres verrous, séparés et intacts.** La recherche plein-texte (`?search=`, les Views — `Search::REQUIRES` sur les specs) et la recherche fédérée multi-collections ont chacune leur propre système de permission. Un `AQL::REQUIRES` posé sur une définition d'arête ne protège pas un résultat de recherche : chaque couche a son verrou.
+
+**Limite 3 — Le compteur de tableau stocké n'a pas de définition à verrouiller.** `Filter::JOINS_COUNT` ne suit aucune relation — il compte les éléments d'un tableau **déjà stocké dans le document** (ex. `doc.memberIds`). Pas de définition derrière, donc pas d'endroit où poser `AQL::REQUIRES` : pour le cacher, poser `Field::REQUIRES` sur le champ lui-même.
+
+**Limite 4 — Sans contrôleur d'accès injecté, tout est ouvert.** Si une route n'injecte aucun authorizer (script d'administration, traitement interne, test), aucun verrou ne bloque : tout sort. C'est le contrat existant (voir « Comportement quand l'authorizer est absent » ci-dessous) — la protection n'existe que là où le contrôleur fournit le callable.
 
 ### Câblage côté contrôleur — pattern recommandé
 
@@ -755,9 +860,9 @@ Si `$init[Arango::AUTHORIZER]` n'est pas posé (le contrôleur n'override pas `b
 
 Pour soumettre une projection à permission de manière stricte, le middleware `Authorized` sur la route HTTP (Casbin niveau permission HTTP) doit toujours être l'enveloppe principale — `AQL::REQUIRES` est une **deuxième couche** de contrôle d'accès à l'intérieur de la projection AQL, pas un remplacement.
 
-### Fonction interne — `isAuthorized`
+### Fonctions internes — `isAuthorized` et `authorizeRelationFields`
 
-`isAuthorized($definition, $init)` est utilisée par `buildVariables` au moment de décider d'inclure ou non chaque edge ou join. Sa signature et son comportement :
+`isAuthorized($definition, $init)` est le juge unique des deux niveaux de verrou : `buildVariables` l'appelle sur l'entrée de champ **et** sur la définition au moment de décider d'émettre chaque `LET` ; `aqlFields` l'appelle sur chaque champ au moment de la projection ; `buildEdgesVariables`/`buildJoinVariables` l'appellent sur chaque définition de la route « document entier ». Sa signature et son comportement :
 
 ```php
 function isAuthorized( array $definition , array $init = [] ) : bool
@@ -768,6 +873,8 @@ function isAuthorized( array $definition , array $init = [] ) : bool
 - Une chaîne ou un tableau → `true` dès qu'**au moins un** sujet est accordé par le callable. Seul `true` strict compte comme un grant (un truthy `1`, `'yes'` etc. n'autorise pas la projection).
 
 La fonction se trouve dans `oihana\arango\models\helpers\isAuthorized`.
+
+Sa compagne `authorizeRelationFields($fields, $edges, $joins, $init)` (même namespace) assure la **symétrie** du verrou de définition : une relation est émise par deux chemins parallèles — la sous-requête `LET` d'un côté, la clé projetée dans le `RETURN` de l'autre. Quand une définition est refusée, cette fonction retire le champ correspondant de la projection, pour que le `RETURN` ne référence jamais une variable qui n'a pas été émise. Elle est appliquée automatiquement partout où une projection rencontre ses registres d'edges/joins — vous n'avez jamais à l'appeler vous-même.
 
 ## Transformer la valeur projetée — `Field::ALTERS`
 
