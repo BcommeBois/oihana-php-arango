@@ -19,6 +19,7 @@ use function oihana\arango\db\helpers\aqlFields;
 use function oihana\arango\db\helpers\aqlSafeArray;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
+use function oihana\arango\models\helpers\authorizeRelationFields;
 use function oihana\arango\models\helpers\buildVariables;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\compile;
@@ -82,6 +83,11 @@ function aqlFieldMap
 
     $edges = $options[ Field::EDGES ] ?? [] ;
     $joins = $options[ Field::JOINS ] ?? [] ;
+
+    // Definition-level gating: purge the relation markers whose nested definition
+    // is denied BEFORE the `LET` walk (buildVariables) and the projection walk
+    // (aqlFields), which share this sub-fields array.
+    $subFields = authorizeRelationFields( $subFields , $edges , $joins , $init ) ?? [] ;
 
     $subVariables = [] ;
 

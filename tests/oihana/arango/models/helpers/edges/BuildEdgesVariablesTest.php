@@ -41,6 +41,20 @@ final class BuildEdgesVariablesTest extends TestCase
         $this->assertStringStartsWith( 'LET roles = (' , $result ) ;
     }
 
+    public function testSkipsADefinitionDeniedByItsRequires() :void
+    {
+        $edges = new MockEdges( 'user_has_roles' ) ;
+
+        $variables = [] ;
+        $result = buildEdgesVariables( $variables ,
+        [
+            'roles' => [ AQL::MODEL => $edges , AQL::REQUIRES => 'users.roles:list' , Arango::PROPERTY => 'name' ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertSame( '' , $result ) ;
+        $this->assertSame( [] , $variables ) ;
+    }
+
     public function testSkipsTheResolveMetaKey() :void
     {
         $edges = new MockEdges( 'user_has_roles' ) ;

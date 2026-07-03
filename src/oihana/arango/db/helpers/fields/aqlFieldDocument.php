@@ -11,6 +11,7 @@ use oihana\exceptions\UnsupportedOperationException;
 
 use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\helpers\aqlFields;
+use function oihana\arango\models\helpers\authorizeRelationFields;
 use function oihana\core\strings\key;
 use function oihana\core\strings\keyValue;
 
@@ -73,6 +74,17 @@ function aqlFieldDocument
 
     if ( is_array( $fields ) && count( $fields ) > 0 )
     {
+        // Definition-level gating: the `LET` walk (the DOCUMENT branch of buildVariables)
+        // and this projection walk both read the same normalized definition — the same
+        // purge applied on each side keeps them symmetric (the helper is idempotent).
+        $fields = authorizeRelationFields
+        (
+            $fields ,
+            $options[ Field::EDGES ] ?? [] ,
+            $options[ Field::JOINS ] ?? [] ,
+            $init
+        ) ;
+
         return keyValue
         (
             $key ,

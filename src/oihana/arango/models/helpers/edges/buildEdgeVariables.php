@@ -12,11 +12,16 @@ use Psr\Container\NotFoundExceptionInterface;
 use oihana\arango\db\enums\AQL;
 use oihana\enums\Char;
 
+use function oihana\arango\models\helpers\isAuthorized;
+
 /**
  * Generates a string of multiple AQL 'LET' statements for all defined edge variables.
  *
  * This is a convenience method that iterates over a list of definitions
  * and calls getEdgeVariable() for each one, concatenating the results.
+ *
+ * Definition-level gating: a definition declaring `AQL::REQUIRES` that the
+ * request-scoped authorizer denies is skipped — its `LET` is not emitted.
  *
  * @param array               $variables    The variables list reference to fill.
  * @param array               $definitions  An associative array of edge definitions [ $name => $definition ].
@@ -54,6 +59,16 @@ function buildEdgesVariables
                 continue ;
             }
         }
+
+        // Definition-level gating (`AQL::REQUIRES` on the edge definition):
+        // a denied definition emits no `LET`. The callers projecting the
+        // matching key (e.g. the whole-document branch of returnFields)
+        // apply the same check on their side, so nothing dangles.
+        if( !isAuthorized( $definition , $init ) )
+        {
+            continue ;
+        }
+
         $variables[] = buildEdgeVariable( $name , $definition , $startVertex , $container , $init ) ;
     }
     return count( $variables ) > 0 ? implode( Char::SPACE , $variables ) : Char::EMPTY ;

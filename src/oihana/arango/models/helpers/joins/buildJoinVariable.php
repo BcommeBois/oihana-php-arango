@@ -28,6 +28,7 @@ use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\in;
 use function oihana\arango\db\operators\ternary;
+use function oihana\arango\models\helpers\authorizeRelationFields;
 use function oihana\arango\models\helpers\buildVariables;
 use function oihana\arango\models\helpers\getDocuments;
 use function oihana\core\strings\betweenBraces;
@@ -196,6 +197,11 @@ function buildJoinVariable
     $fields = $documents->prepareQueryFields( $fields , $skin , $name ) ;
     if( is_array( $fields ) && count( $fields ) > 0 )
     {
+        // Definition-level gating: purge the relation markers whose nested
+        // definition is denied BEFORE the `LET` walk (buildVariables) and the
+        // projection walk (aqlFields), which share this fields array.
+        $fields = authorizeRelationFields( $fields , $edges , $joins , $init ) ;
+
         buildVariables
         (
             $subVariables ,

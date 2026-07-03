@@ -556,6 +556,42 @@ final class BuildEdgeVariableTest extends TestCase
     }
 
     /**
+     * Definition-level variant of the gating above : the marker declares no
+     * `Field::REQUIRES`, the denial comes from `AQL::REQUIRES` on the nested
+     * sub-edge DEFINITION — the relation is dropped from BOTH sides all the same.
+     */
+    public function testWrapSubEdgeDeniedByDefinitionLevelRequiresIsFullyDropped() :void
+    {
+        $edges = $this->wiredEdges() ;
+        $sub   = $this->wiredSubEdges( 'org_has_member' , 'organizations' , inbound: false ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'identities' ,
+        [
+            AQL::MODEL  => $edges ,
+            AQL::FIELDS =>
+            [
+                'subject' =>
+                [
+                    Field::FILTER => Filter::WRAP ,
+                    Field::FIELDS =>
+                    [
+                        'name'     => [] ,
+                        'worksFor' => [ Field::FILTER => Filter::EDGE ] , // no field-level gate
+                    ] ,
+                    Field::EDGES =>
+                    [
+                        'worksFor' => [ AQL::MODEL => $sub , AQL::REQUIRES => 'org.read' , AQL::FIELDS => [ 'name' => [] ] ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ) ;
+
+        $this->assertStringContainsString( 'subject:{name:vertex.name}' , $result ) ; // only the scalar survives
+        $this->assertStringNotContainsString( 'worksFor' , $result ) ;                // no projection key
+        $this->assertStringNotContainsString( 'org_has_member' , $result ) ;          // no LET traversal
+    }
+
+    /**
      * Retro-compatibility : a `Filter::WRAP` field that declares no relation
      * behaves exactly as before — only the scalar projection, no extra `LET`.
      */

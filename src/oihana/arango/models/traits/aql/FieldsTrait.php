@@ -26,8 +26,10 @@ use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\helpers\aqlFields;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
+use function oihana\arango\models\helpers\authorizeRelationFields;
 use function oihana\arango\models\helpers\buildVariables;
 use function oihana\arango\models\helpers\edges\buildEdgesVariables;
+use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\joins\buildJoinVariables;
 use function oihana\core\arrays\clean;
 use function oihana\core\arrays\toArray;
@@ -316,6 +318,31 @@ trait FieldsTrait
 
         if( $fields == Char::ASTERISK && !$hasFields ) // fields === '*' onb
         {
+            // Definition-level gating (`AQL::REQUIRES` on the edge/join definition):
+            // the whole-document branch emits the relation `LET`s (buildJoinVariables /
+            // buildEdgesVariables, which skip denied definitions) AND references them in
+            // the RETURN merge below — the registries are filtered upfront so both sides
+            // of the same relation stay symmetric (no unbound variable in the merge).
+            // A string entry is a one-hop alias: it follows its target's authorization.
+            $filterAuthorized = function ( array $definitions ) use ( $init ) :array
+            {
+                return array_filter
+                (
+                    $definitions ,
+                    function ( $definition ) use ( $definitions , $init ) :bool
+                    {
+                        if ( is_string( $definition ) )
+                        {
+                            $definition = $definitions[ $definition ] ?? null ;
+                        }
+                        return !is_array( $definition ) || isAuthorized( $definition , $init ) ;
+                    }
+                ) ;
+            } ;
+
+            $edges = $filterAuthorized( $edges ) ;
+            $joins = $filterAuthorized( $joins ) ;
+
             $relations = [] ;
             if( !empty( $joins ) )
             {
@@ -351,6 +378,12 @@ trait FieldsTrait
         {
             if( $hasFields )
             {
+                // Definition-level gating: a relation marker whose edge/join definition
+                // declares a denied `AQL::REQUIRES` is purged BEFORE the two walks below,
+                // so the `LET` (buildVariables) and the projected key (aqlFields) stay
+                // symmetric — the same fields array feeds both.
+                $queryFields = authorizeRelationFields( $queryFields , $edges , $joins , $init ) ;
+
                 // The relation LET sub-queries (built here) and the RETURN projection
                 // (aqlFields below) must anchor on the SAME document variable — the loop
                 // variable of the enclosing query. We pass $docRef verbatim: in a main

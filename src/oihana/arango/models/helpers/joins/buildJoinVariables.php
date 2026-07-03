@@ -11,8 +11,13 @@ use Psr\Container\ContainerInterface;
 use oihana\arango\db\enums\AQL;
 use ReflectionException;
 
+use function oihana\arango\models\helpers\isAuthorized;
+
 /**
  * Generates a string of multiple AQL 'LET' statements for all defined joins variables.
+ *
+ * Definition-level gating: a definition declaring `AQL::REQUIRES` that the
+ * request-scoped authorizer denies is skipped — its `LET` is not emitted.
  *
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
@@ -38,6 +43,14 @@ function buildJoinVariables
                 continue ;
             }
         }
+
+        // Definition-level gating (`AQL::REQUIRES` on the join definition):
+        // a denied definition emits no `LET` — see buildEdgesVariables().
+        if( !isAuthorized( $definition , $init ) )
+        {
+            continue ;
+        }
+
         $variables[] = buildJoinVariable( $name , $definition , $docRef , $container , $init ) ;
     }
     return count( $variables ) > 0 ? implode( Char::SPACE , $variables ) : Char::EMPTY ;

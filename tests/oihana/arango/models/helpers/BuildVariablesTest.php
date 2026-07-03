@@ -131,6 +131,81 @@ final class BuildVariablesTest extends TestCase
         $this->assertSame( [] , $variables ) ;
     }
 
+    // ---- definition-level gating (AQL::REQUIRES on the definition) ------
+
+    public function testEdgeDeniedByDefinitionLevelRequiresIsSkipped() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'roles' => [ Field::FILTER => Filter::EDGE ] ] , // no field-level gate
+            [ 'roles' => [ AQL::MODEL => $this->wiredEdges() , AQL::REQUIRES => 'users.roles:list' ] ] ,
+            [] ,
+            null ,
+            AQL::DOC ,
+            [ Arango::AUTHORIZER => fn() => false ]
+        ) ;
+
+        $this->assertSame( [] , $variables ) ;
+    }
+
+    public function testEdgeDefinitionLevelRequiresGrantedEmitsTheLet() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'roles' => [ Field::FILTER => Filter::EDGES ] ] ,
+            [ 'roles' => [ AQL::MODEL => $this->wiredEdges() , AQL::REQUIRES => 'users.roles:list' ] ] ,
+            [] ,
+            null ,
+            AQL::DOC ,
+            [ Arango::AUTHORIZER => fn() => true ]
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+    }
+
+    public function testEdgesCountDeniedByDefinitionLevelRequiresIsSkipped() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'roles' => [ Field::FILTER => Filter::EDGES_COUNT ] ] ,
+            [ 'roles' => [ AQL::MODEL => new MockEdges( 'user_has_roles' ) , AQL::REQUIRES => 'users.roles:list' ] ] ,
+            [] ,
+            null ,
+            AQL::DOC ,
+            [ Arango::AUTHORIZER => fn() => false ]
+        ) ;
+
+        $this->assertSame( [] , $variables ) ;
+    }
+
+    /**
+     * The two gates compose as a logical AND : the authorizer grants the
+     * field-level subject but denies the definition-level one — the relation
+     * is dropped anyway (either level can cut).
+     */
+    public function testFieldAndDefinitionLevelGatesCompose() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'roles' => [ Field::FILTER => Filter::EDGE , Field::REQUIRES => 'field.subject' ] ] ,
+            [ 'roles' => [ AQL::MODEL => $this->wiredEdges() , AQL::REQUIRES => 'definition.subject' ] ] ,
+            [] ,
+            null ,
+            AQL::DOC ,
+            [ Arango::AUTHORIZER => fn( string $subject ) :bool => $subject === 'field.subject' ]
+        ) ;
+
+        $this->assertSame( [] , $variables ) ;
+    }
+
     // ---- joins ----------------------------------------------------------
 
     public function testJoinFilterBuildsAScalarJoinVariable() :void
@@ -200,6 +275,23 @@ final class BuildVariablesTest extends TestCase
             [ 'role' => [ Field::FILTER => Filter::JOIN , Field::REQUIRES => 'x' ] ] ,
             [] ,
             [ 'role' => [ AQL::MODEL => new MockDocuments( 'roles' ) ] ] ,
+            null ,
+            AQL::DOC ,
+            [ Arango::AUTHORIZER => fn() => false ]
+        ) ;
+
+        $this->assertSame( [] , $variables ) ;
+    }
+
+    public function testJoinDeniedByDefinitionLevelRequiresIsSkipped() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'role' => [ Field::FILTER => Filter::JOIN ] ] , // no field-level gate
+            [] ,
+            [ 'role' => [ AQL::MODEL => new MockDocuments( 'roles' ) , AQL::REQUIRES => 'roles:read' ] ] ,
             null ,
             AQL::DOC ,
             [ Arango::AUTHORIZER => fn() => false ]

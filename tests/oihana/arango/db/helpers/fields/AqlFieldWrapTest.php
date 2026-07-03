@@ -4,6 +4,8 @@ namespace tests\oihana\arango\db\helpers\fields;
 
 use Exception;
 
+use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\exceptions\UnsupportedOperationException;
@@ -14,6 +16,38 @@ use function oihana\arango\db\helpers\fields\aqlFieldWrap;
 
 final class AqlFieldWrapTest extends TestCase
 {
+    /**
+     * Definition-level gating (`AQL::REQUIRES` on the nested sub-edge
+     * definition): the denied relation marker is purged from the wrapped
+     * projection — no dangling key referencing a never-emitted `LET`.
+     *
+     * @throws Exception
+     */
+    public function testWrapPurgesMarkersOfDeniedNestedDefinitions(): void
+    {
+        $options =
+        [
+            Field::FIELDS =>
+            [
+                'id'       => [ Field::FILTER => Filter::DEFAULT ] ,
+                'worksFor' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'wf' ] ,
+            ] ,
+            Field::EDGES =>
+            [
+                'worksFor' => [ AQL::MODEL => 'x' , AQL::REQUIRES => 'org.read' ] ,
+            ] ,
+        ];
+
+        $denied = aqlFieldWrap( 'subject' , 'v' , $options , null , [ Arango::AUTHORIZER => fn() => false ] );
+
+        $this->assertStringContainsString( 'id:v.id' , $denied );
+        $this->assertStringNotContainsString( 'worksFor' , $denied );
+
+        $granted = aqlFieldWrap( 'subject' , 'v' , $options , null , [ Arango::AUTHORIZER => fn() => true ] );
+
+        $this->assertStringContainsString( 'worksFor:' , $granted );
+    }
+
     /**
      * The sub-fields are projected against the reference itself (`v.id`),
      * not a sub-attribute (`v.subject.id`), and wrapped under the key.

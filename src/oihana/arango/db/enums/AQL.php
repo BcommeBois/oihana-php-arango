@@ -90,6 +90,7 @@ class AQL
     public const string RAW_VALUES      = 'rawValues' ;
     public const string RELATION        = 'relation' ;
     public const string REPLACE         = 'replace' ;
+    public const string REQUIRES        = 'requires' ;
     public const string RESULT          = 'result' ;
     public const string RETURN          = 'return' ;
     public const string SCHEMA          = 'schema' ;

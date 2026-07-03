@@ -3,6 +3,8 @@
 namespace tests\oihana\arango\db\helpers\fields;
 
 use Exception;
+use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use PHPUnit\Framework\TestCase;
@@ -10,6 +12,38 @@ use function oihana\arango\db\helpers\fields\aqlFieldDocument;
 
 final class AqlFieldDocumentTest extends TestCase
 {
+    /**
+     * Definition-level gating (`AQL::REQUIRES` on the nested join definition):
+     * the denied relation marker is purged from the nested projection — no
+     * dangling key referencing a never-emitted `LET`.
+     *
+     * @throws Exception
+     */
+    public function testDocumentPurgesMarkersOfDeniedNestedDefinitions(): void
+    {
+        $options =
+        [
+            Field::FIELDS =>
+            [
+                'street' => [ Field::FILTER => Filter::DEFAULT ] ,
+                'city'   => [ Field::FILTER => Filter::JOIN , Field::UNIQUE => 'c' ] ,
+            ] ,
+            Field::JOINS =>
+            [
+                'city' => [ AQL::MODEL => 'x' , AQL::REQUIRES => 'places:read' ] ,
+            ] ,
+        ];
+
+        $denied = aqlFieldDocument( 'address' , 'doc' , $options , null , [ Arango::AUTHORIZER => fn() => false ] );
+
+        $this->assertStringContainsString( 'street:doc.address.street' , $denied );
+        $this->assertStringNotContainsString( 'city' , $denied );
+
+        $granted = aqlFieldDocument( 'address' , 'doc' , $options , null , [ Arango::AUTHORIZER => fn() => true ] );
+
+        $this->assertStringContainsString( 'city:' , $granted );
+    }
+
     /**
      * @throws Exception
      */

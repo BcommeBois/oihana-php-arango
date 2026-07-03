@@ -22,17 +22,27 @@ use function oihana\core\strings\key;
 /**
  * Builds all fields variables definitions (edges, joins, etc.).
  *
- * Field-level gating: when a field declares `Field::REQUIRES` and the
- * request-scoped authorizer denies it, the matching `LET` variable is
- * **not** emitted. Combined with the symmetric drop in `aqlFields()`,
- * the field disappears from both the AQL projection and the response
- * — no key in the JSON, no orphan reference in the AQL.
+ * Permission gating happens at TWO composable levels — either one can
+ * drop the relation (logical AND across levels, logical OR inside a
+ * declared subjects list):
+ *
+ * - **Field-level** — the FIELDS entry (the relation marker) declares
+ *   `Field::REQUIRES`: gates this projection of the relation in this
+ *   parent. Combined with the symmetric drop in `aqlFields()`, the
+ *   field disappears from both the AQL projection and the response —
+ *   no key in the JSON, no orphan reference in the AQL.
+ * - **Definition-level** — the edge/join definition itself declares
+ *   `AQL::REQUIRES`: gates the relation wherever the definition is
+ *   used. The symmetric field-side drop is handled upstream by
+ *   {@see authorizeRelationFields()} at every point where a prepared
+ *   fields array meets its registries.
  *
  * The check is uniform: edges, joins, and edge-counts all share the
  * same gating contract. A `Filter::EDGES_COUNT` companion is gated
  * exactly the same way as the others — it is simply not gated by
  * default because no `Field::REQUIRES` is declared on it. To gate
- * the count, declare `Field::REQUIRES` on the count entry itself.
+ * the count, declare `Field::REQUIRES` on the count entry itself
+ * (or `AQL::REQUIRES` on the shared definition to gate every usage).
  *
  * @param array                   $variables
  * @param array                   $fields
@@ -140,17 +150,15 @@ function buildVariables
                     break ;
                 }
 
-                // Field-level gating: the check is driven by the field
-                // definition itself (the FIELDS entry we are iterating),
-                // not by the edge definition. This is uniform across
-                // edges, joins and counts — gating is opt-in via
-                // `Field::REQUIRES` on the field, regardless of the
-                // filter type. A `Filter::EDGES_COUNT` is therefore
-                // gated only when the count entry explicitly declares
-                // `Field::REQUIRES`; without it, the count is always
-                // visible (default behavior, since knowing the
+                // Two composable gates: `Field::REQUIRES` on the FIELDS entry
+                // (this projection of the relation) and `AQL::REQUIRES` on the
+                // edge definition itself (the relation wherever it is used).
+                // Either level can drop the `LET`. A `Filter::EDGES_COUNT` is
+                // therefore gated only when the count entry (or the shared
+                // definition) declares a requirement; without it, the count is
+                // always visible (default behavior, since knowing the
                 // cardinality is rarely a leak).
-                if( !isAuthorized( $field , $init ) )
+                if( !isAuthorized( $field , $init ) || !isAuthorized( $definition , $init ) )
                 {
                     break ;
                 }
@@ -186,13 +194,13 @@ function buildVariables
                     break ;
                 }
 
-                // Same gating contract as the edge branch above: the
-                // check reads `Field::REQUIRES` on the field definition,
-                // not on the join definition. A denied projection skips
-                // both the `LET` emission and the matching key in
-                // `aqlFields`, so the join is fully dropped from the
-                // response (key absent — not null, not empty array).
-                if( !isAuthorized( $field , $init ) )
+                // Same two composable gates as the edge branch above:
+                // `Field::REQUIRES` on the FIELDS entry and `AQL::REQUIRES`
+                // on the join definition. A denied projection skips both
+                // the `LET` emission and the matching key in `aqlFields`,
+                // so the join is fully dropped from the response (key
+                // absent — not null, not empty array).
+                if( !isAuthorized( $field , $init ) || !isAuthorized( $definition , $init ) )
                 {
                     break ;
                 }

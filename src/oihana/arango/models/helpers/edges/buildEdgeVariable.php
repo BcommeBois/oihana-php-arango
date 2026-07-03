@@ -26,6 +26,7 @@ use function oihana\arango\db\helpers\resolveSkinFields;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlTraversal;
+use function oihana\arango\models\helpers\authorizeRelationFields;
 use function oihana\arango\models\helpers\buildVariables;
 use function oihana\core\strings\betweenBraces;
 use function oihana\core\strings\betweenParentheses;
@@ -178,6 +179,11 @@ function buildEdgeVariable
         {
             $targetEdges = !empty( $definitionEdges ) ? $definitionEdges : ( $documents->edges ?? [] );
             $targetJoins = !empty( $definitionJoins ) ? $definitionJoins : ( $documents->joins ?? [] );
+
+            // Definition-level gating: purge the relation markers whose nested
+            // definition is denied BEFORE the `LET` walk (buildVariables) and the
+            // projection walk (aqlFields), which share this fields array.
+            $fields = authorizeRelationFields( $fields , $targetEdges , $targetJoins , $init ) ;
 
             buildVariables( $subVariables , $fields , $targetEdges , $targetJoins , $container , $vertexRef , $init ) ;
 

@@ -3,6 +3,7 @@
 namespace tests\oihana\arango\models\helpers\joins;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
 
 use PHPUnit\Framework\TestCase;
 
@@ -35,6 +36,18 @@ final class BuildJoinVariablesTest extends TestCase
         $this->assertCount( 1 , $variables ) ;
         $this->assertSame( $variables[ 0 ] , $result ) ;
         $this->assertStringStartsWith( 'LET role = (' , $result ) ;
+    }
+
+    public function testSkipsADefinitionDeniedByItsRequires() :void
+    {
+        $variables = [] ;
+        $result = buildJoinVariables( $variables ,
+        [
+            'role' => [ AQL::MODEL => new MockDocuments( 'roles' ) , AQL::REQUIRES => 'roles:read' ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertSame( '' , $result ) ;
+        $this->assertSame( [] , $variables ) ;
     }
 
     public function testResolvesStringAliasToAnotherDefinition() :void

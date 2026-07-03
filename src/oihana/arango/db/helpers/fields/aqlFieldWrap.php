@@ -12,6 +12,7 @@ use oihana\exceptions\UnsupportedOperationException;
 
 use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\helpers\aqlFields;
+use function oihana\arango\models\helpers\authorizeRelationFields;
 use function oihana\core\strings\keyValue;
 
 /**
@@ -132,6 +133,11 @@ function aqlFieldWrap
 
     if ( is_array( $fields ) && count( $fields ) > 0 )
     {
+        // Definition-level gating: the `LET` walk (the WRAP branch of buildVariables)
+        // and this projection walk both read the same normalized definition — the same
+        // purge applied on each side keeps them symmetric (the helper is idempotent).
+        $fields = authorizeRelationFields( $fields , $edges , $joins , $init ) ;
+
         // The wrapped sub-fields may include relation markers (Filter::EDGE / EDGES / EDGES_COUNT / JOIN / JOINS)
         // whose backing `LET` variables were emitted by buildVariables() with the wrapped reference as traversal root ;
         // aqlFields() projects them as `relation: <letVariable>` here, exactly as a top-level projection does.

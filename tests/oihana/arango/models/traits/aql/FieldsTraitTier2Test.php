@@ -369,6 +369,137 @@ final class FieldsTraitTier2Test extends TestCase
         $this->assertStringContainsString( 'street:doc.addr.street' , $denied ) ;
     }
 
+    // ---------------------------------------------------------------- definition-level AQL::REQUIRES
+
+    /**
+     * Whole-document branch (`*`): a join/edge definition declaring a denied
+     * `AQL::REQUIRES` is dropped from BOTH sides — no `LET` is emitted and the
+     * RETURN merge does not reference it (no unbound variable).
+     */
+    public function testStarBranchDropsDeniedDefinitionsFromBothSides() :void
+    {
+        $edge = new MockEdges( 'user_has_roles' ) ;
+        $edge->from = $this->documents( 'users' ) ;
+        $edge->to   = $this->documents( 'roles' ) ;
+
+        $init =
+        [
+            Arango::JOINS => [ 'team'  => [ Arango::MODEL => $this->documents( 'teams' ) ] ] ,
+            Arango::EDGES => [ 'roles' => [ Arango::MODEL => $edge , DbAQL::REQUIRES => 'users.roles:list' ] ] ,
+        ] ;
+
+        $variables = [] ;
+        $denied    = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => false ] , $variables ) ;
+
+        $this->assertStringNotContainsString( 'roles' , $denied ) ;             // not referenced in the merge
+        $this->assertStringContainsString( 'team' , $denied ) ;                 // ungated join untouched
+        $this->assertCount( 1 , $variables ) ;                                  // only the team LET
+        $this->assertStringNotContainsString( 'user_has_roles' , $variables[ 0 ] ) ;
+
+        $variables = [] ;
+        $granted   = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => true ] , $variables ) ;
+
+        $this->assertStringContainsString( 'roles' , $granted ) ;
+        $this->assertCount( 2 , $variables ) ;
+    }
+
+    /**
+     * Whole-document branch (`*`): a string alias entry follows its target's
+     * authorization — a denied target drops the alias too (both would otherwise
+     * emit a dangling reference in the RETURN merge).
+     */
+    public function testStarBranchAliasFollowsItsTargetAuthorization() :void
+    {
+        $init =
+        [
+            Arango::JOINS =>
+            [
+                'alias' => 'team' ,
+                'team'  => [ Arango::MODEL => $this->documents( 'teams' ) , DbAQL::REQUIRES => 'teams:read' ] ,
+            ] ,
+        ] ;
+
+        $variables = [] ;
+        $denied    = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => false ] , $variables ) ;
+
+        $this->assertSame( 'RETURN doc' , $denied ) ; // no relation survives
+        $this->assertSame( [] , $variables ) ;
+
+        $variables = [] ;
+        $granted   = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => true ] , $variables ) ;
+
+        $this->assertStringContainsString( 'alias' , $granted ) ;
+        $this->assertCount( 2 , $variables ) ; // the alias LET and the target LET
+    }
+
+    /**
+     * Prepared branch: a relation marker WITHOUT its own `Field::REQUIRES`,
+     * whose definition declares a denied `AQL::REQUIRES`, disappears from both
+     * the projection and the `LET` list — the definition-level gate documented
+     * in the wiki (permission-gated edges and joins).
+     */
+    public function testPreparedBranchDropsMarkersOfDeniedDefinitions() :void
+    {
+        $edge = new MockEdges( 'user_has_roles' ) ;
+        $edge->from = $this->documents( 'users' ) ;
+        $edge->to   = $this->documents( 'roles' ) ;
+
+        $init =
+        [
+            Arango::QUERY_FIELDS => [ 'name' => Filter::DEFAULT , 'roles' => [ Field::FILTER => Filter::EDGES ] ] ,
+            Arango::EDGES        => [ 'roles' => [ Arango::MODEL => $edge , DbAQL::REQUIRES => 'users.roles:list' ] ] ,
+        ] ;
+
+        $variables = [] ;
+        $denied    = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => false ] , $variables ) ;
+
+        $this->assertSame( 'RETURN {name:doc.name}' , $denied ) ;
+        $this->assertSame( [] , $variables ) ;
+
+        $variables = [] ;
+        $granted   = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => true ] , $variables ) ;
+
+        $this->assertStringContainsString( 'roles:' , $granted ) ;
+        $this->assertCount( 1 , $variables ) ;
+    }
+
+    /**
+     * Nested MAP: a sub-field edge marker whose nested definition declares a
+     * denied `AQL::REQUIRES` is dropped from the generated sub-query — no inner
+     * `LET`, no projected key, no trace of the edge collection.
+     */
+    public function testNestedMapDropsMarkersOfDeniedDefinitions() :void
+    {
+        $edge = new MockEdges( 'offer_has_sellers' ) ;
+        $edge->from = $this->documents( 'offers' ) ;
+        $edge->to   = $this->documents( 'sellers' ) ;
+
+        $init =
+        [
+            Arango::QUERY_FIELDS =>
+            [
+                'offers' =>
+                [
+                    Field::FILTER => Filter::MAP ,
+                    Field::FIELDS => [ 'price' => Filter::DEFAULT , 'sellers' => [ Field::FILTER => Filter::EDGES ] ] ,
+                    Field::EDGES  => [ 'sellers' => [ Arango::MODEL => $edge , DbAQL::REQUIRES => 'offers.sellers:list' ] ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $variables = [] ;
+        $denied    = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => false ] , $variables ) ;
+
+        $this->assertStringNotContainsString( 'sellers' , $denied ) ;
+        $this->assertStringNotContainsString( 'offer_has_sellers' , $denied ) ;
+        $this->assertStringContainsString( 'price' , $denied ) ;
+
+        $variables = [] ;
+        $granted   = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => true ] , $variables ) ;
+
+        $this->assertStringContainsString( 'offer_has_sellers' , $granted ) ;
+    }
+
     /**
      * Non-regression for the main query: with the default DOC_REF ('doc'), a
      * `Filter::EDGES_COUNT` still anchors its `LET` on `doc` exactly as before.
