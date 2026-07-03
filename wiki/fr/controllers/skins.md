@@ -174,7 +174,7 @@ AQL::SKIN_FIELDS =>
 ] ,
 ```
 
-Le pattern est utile sur les *edges* qui doivent projeter différemment selon le *skin* du parent (par exemple, un `Role` qui expose ses `permissions[]` uniquement dans la fiche utilisateur en `full`). Voir [Projection des edges et joins — `AQL::SKIN_FIELDS`](../edges-joins-projection.md#projection-alternative-selon-le-skin--aqlskin_fields) pour la sémantique complète et les règles de résolution.
+La table est acceptée à **trois niveaux** : sur une définition d'*edge*/*join* (par exemple, un `Role` qui expose ses `permissions[]` uniquement dans la fiche utilisateur en `full`), à la **racine du modèle** (la liste légère vs la fiche complète, sans marqueurs champ par champ), et sur un **sous-champ structurel** `MAP`/`DOCUMENT`/`WRAP` (deux formes pour la même clé imbriquée). Voir [Projection des edges et joins — `AQL::SKIN_FIELDS`](../edges-joins-projection.md#projection-alternative-selon-le-skin--aqlskin_fields) pour la sémantique complète et les règles de résolution.
 
 ### Le contrat parallèle modèle ↔ contrôleur
 
@@ -183,7 +183,7 @@ Les deux couches travaillent en **paire stricte** :
 | Couche | Responsabilité | Clé(s) DI |
 |---|---|---|
 | **Contrôleur** | Quels *skins* sont **acceptés** par l'URL et lequel par défaut par verbe. | `Arango::SKINS`, `Arango::SKIN_DEFAULT`, `Arango::SKIN_METHODS` |
-| **Modèle** | Quels **champs et relations** apparaissent dans chaque *skin*. | `Field::SKINS` sur `AQL::FIELDS`, `AQL::SKIN_FIELDS` sur les *edges* / *joins* |
+| **Modèle** | Quels **champs et relations** apparaissent dans chaque *skin*. | `Field::SKINS` sur `AQL::FIELDS`, `AQL::SKIN_FIELDS` sur les *edges* / *joins*, la racine du modèle ou un sous-champ structurel |
 
 Sans l'une des deux couches, le système ne fait rien : un contrôleur qui accepte `?skin=full` sans modèle qui change sa projection retourne toujours les mêmes champs ; un modèle riche en `Field::SKINS` sans contrôleur qui propage la valeur retourne toujours le *skin* par défaut.
 

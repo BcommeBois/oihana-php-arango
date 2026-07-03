@@ -648,11 +648,75 @@ AQL::SKIN_FIELDS =>
 
 This helper belongs to the **host project** — it does not exist in the library; it is a configuration convention, not an API. It pays off as soon as several buckets (or several edge/join definitions targeting the same model) share the same field base.
 
+### At the model level — one projection per skin for the root
+
+**The situation.** The `GET /products` list must stay light (two fields are enough for a grid display); the `GET /products/{id}?skin=full` record must return everything. With `Field::SKINS` markers alone, every field would need its own annotation — unreadable as soon as the two projections really diverge. The same `skin => projection` table is accepted **at the model root**, beside (or instead of) `AQL::FIELDS`:
+
+```php
+Models::PRODUCTS => fn( Container $c ) => new Documents( $c ,
+[
+    AQL::COLLECTION  => 'products' ,
+    AQL::SKIN_FIELDS =>
+    [
+        // The list: two fields, nothing else
+        Skin::DEFAULT =>
+        [
+            Prop::_KEY => Filter::DEFAULT ,
+            Prop::NAME => Filter::DEFAULT ,
+        ] ,
+
+        // The record: the same + the description and the price grid
+        Skin::FULL =>
+        [
+            Prop::_KEY        => Filter::DEFAULT ,
+            Prop::NAME        => Filter::DEFAULT ,
+            Prop::DESCRIPTION => Filter::TRANSLATE ,
+            'offers'          => [ Field::FILTER => Filter::MAP , Field::FIELDS => [ 'price' => Filter::DEFAULT ] ] ,
+        ] ,
+    ] ,
+    // AQL::FIELDS is still possible beside it: single projection, used when no bucket matches
+])
+```
+
+`GET /products` returns `{ _key, name }` per product; `GET /products/{id}?skin=full` returns the full record. The resolution order is **the same as for edges/joins**: `[$skin]` → `['*']` → `AQL::FIELDS` → nothing. Two behaviors worth knowing:
+
+- **an empty bucket** (`Skin::X => []`) reads "no projection for this skin" → the **whole** document is returned, exactly like an edge target without a projection;
+- **without a registry**, nothing changes: `AQL::FIELDS` alone behaves as before, byte for byte.
+
+**Inheritance through the relations.** An edge or join that declares **no** projection of its own prepares the target model's fields with the request skin — so it automatically inherits the model's buckets. Concretely: if the `roles` model declares its two projections in its own `AQL::SKIN_FIELDS`, every `user_has_roles` edge pointing at it returns the current skin's version **without declaring anything** on the edge definition. One declaration, on the model side, radiates everywhere.
+
+### On a structural sub-field — two shapes for the same key
+
+**The situation.** Back to the price grid. The nested [`Field::SKINS` marker](#fieldskins-in-depth--nested-sub-fields-filtermap--filterdocument--filterwrap) can **show or hide** a sub-field per skin — but it cannot give **two different shapes to the same key** (a key is unique in a map, you cannot declare two `offers`). The per-skin table can, declared on the `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` sub-field itself:
+
+```php
+'offers' =>
+[
+    Field::FILTER    => Filter::MAP ,
+    AQL::SKIN_FIELDS =>
+    [
+        // Public shape: the price, nothing else
+        Skin::DEFAULT => [ 'price' => Filter::DEFAULT ] ,
+
+        // Manager shape: the price + its breakdown
+        Skin::FULL    =>
+        [
+            'price'              => Filter::DEFAULT ,
+            'priceSpecification' => [ Field::FILTER => Filter::DOCUMENT , Field::FIELDS => [ 'basePrice' => Filter::DEFAULT , 'taxes' => Filter::DEFAULT ] ] ,
+        ] ,
+    ] ,
+]
+```
+
+The public receives `offers: [ { "price": 100 }, … ]`; the `full` skin additionally receives the breakdown, **structured differently** — the same `offers` key, two shapes. Everything composes in the usual order: the bucket is picked by the skin, then the `Field::SKINS` markers filter *inside* the bucket, then the `REQUIRES` locks apply on what remains.
+
+**The "nothing for this skin" rule.** When the declared table resolves to nothing for the requested skin — no bucket under its name, no `'*'`, no `Field::FIELDS` beside it, or an explicitly empty bucket — the sub-field **disappears** from the projection (key absent). The declaration reads "nothing is planned for this skin". Never a raw sub-document fallback (which would leak precisely what was meant to be hidden), never an exception. Example: the table above without its `Skin::DEFAULT` bucket → on the `default` skin, the `offers` key simply does not appear.
+
 ### Scope of `AQL::SKIN_FIELDS`
 
-Two limits worth knowing:
+Two points worth knowing:
 
-- `AQL::SKIN_FIELDS` is an **edge or join definition key** — that is the only place where it is read (and it is re-resolved at every relation nesting level, the request skin being propagated). Placed on a model field (root `AQL::FIELDS`) or on a sub-field of a `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`, it is **silently ignored**. To vary a field or a sub-field with the skin, the mechanism is [`Field::SKINS`](#per-request-projection--fieldskins-on-sub-fields), honored at every depth.
+- The key is read at **three levels**: the edge/join definitions (re-resolved at every relation nesting level), the **model root**, and the **structural sub-fields** (`Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`). Placed anywhere else — on a scalar field for instance — it is silently ignored; to show/hide a field per skin, the mechanism remains [`Field::SKINS`](#per-request-projection--fieldskins-on-sub-fields).
 - A skin pinned via `AQL::SKIN` only applies to the definition carrying it: its nested relations (nested `AQL::EDGES` / `AQL::JOINS`) fall back on the request skin, unless explicitly pinned on their own definition.
 
 ## Which mechanism to use?
@@ -662,7 +726,8 @@ Two limits worth knowing:
 | A single projection regardless of the skin | `AQL::FIELDS` alone |
 | A few sub-fields vary between skins (count hidden on full, edge hidden on default…) | `Field::SKINS` on the sub-fields of `AQL::FIELDS` |
 | A **nested** sub-field (price grid, sub-object of a MAP/DOCUMENT/WRAP) must only appear in some skins | `Field::SKINS` on the nested sub-field — honored at every depth |
-| The projection differs broadly between skins (added fields, swapped joins…) | `AQL::SKIN_FIELDS` with one entry per skin |
+| The projection differs broadly between skins (added fields, swapped joins…) | `AQL::SKIN_FIELDS` with one entry per skin — on the edge/join definition, the model root, or a MAP/DOCUMENT/WRAP sub-field |
+| The same nested key needs **two shapes** per skin (minimal grid vs broken-down) | `AQL::SKIN_FIELDS` on the structural sub-field |
 | INBOUND edge towards a document that may reference back to the source | `AQL::SKIN => Skin::MAIN` on the edge definition to break the cycle |
 | Restrict an edge or join projection to a user permission | `AQL::REQUIRES` on the definition + callable injection via `InjectAuthorizerTrait` |
 

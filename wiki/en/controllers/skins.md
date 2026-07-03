@@ -174,7 +174,7 @@ AQL::SKIN_FIELDS =>
 ] ,
 ```
 
-The pattern is useful on *edges* that must project differently depending on the parent's *skin* (e.g. a `Role` that exposes its `permissions[]` only on the user detail page in `full`). See [Edge and join projection — `AQL::SKIN_FIELDS`](../edges-joins-projection.md#alternative-projection-by-skin--aqlskin_fields) for the full semantics and resolution rules.
+The table is accepted at **three levels**: on an *edge*/*join* definition (e.g. a `Role` that exposes its `permissions[]` only on the user detail page in `full`), at the **model root** (the light list vs the full record, without per-field markers), and on a **structural sub-field** `MAP`/`DOCUMENT`/`WRAP` (two shapes for the same nested key). See [Edge and join projection — `AQL::SKIN_FIELDS`](../edges-joins-projection.md#alternative-projection-per-skin--aqlskin_fields) for the full semantics and resolution rules.
 
 ### The parallel model ↔ controller contract
 
@@ -183,7 +183,7 @@ Both layers work as a **strict pair**:
 | Layer | Responsibility | DI key(s) |
 |---|---|---|
 | **Controller** | Which *skins* are **accepted** by the URL and which one is the default per verb. | `Arango::SKINS`, `Arango::SKIN_DEFAULT`, `Arango::SKIN_METHODS` |
-| **Model** | Which **fields and relations** appear in each *skin*. | `Field::SKINS` on `AQL::FIELDS`, `AQL::SKIN_FIELDS` on *edges* / *joins* |
+| **Model** | Which **fields and relations** appear in each *skin*. | `Field::SKINS` on `AQL::FIELDS`, `AQL::SKIN_FIELDS` on *edges* / *joins*, the model root or a structural sub-field |
 
 Without one of the two layers, the system does nothing: a controller that accepts `?skin=full` without a model that changes its projection always returns the same fields; a model rich in `Field::SKINS` without a controller propagating the value always returns the default *skin*.
 

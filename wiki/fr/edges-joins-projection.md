@@ -648,11 +648,75 @@ AQL::SKIN_FIELDS =>
 
 Ce helper appartient au **projet hôte** — il n'existe pas dans la lib, c'est une convention de configuration, pas une API. Il vaut le coup dès que plusieurs buckets (ou plusieurs définitions d'edges/joins visant le même modèle) partagent la même base de champs.
 
+### Au niveau du modèle — une projection par skin pour la racine
+
+**La situation.** La liste `GET /products` doit rester légère (deux champs suffisent pour l'affichage en grille) ; la fiche `GET /products/{id}?skin=full` doit tout sortir. Avec les seuls marqueurs `Field::SKINS`, il faudrait annoter chaque champ un par un — illisible dès que les deux projections divergent vraiment. La même table `skin => projection` est acceptée **à la racine du modèle**, à côté (ou à la place) de `AQL::FIELDS` :
+
+```php
+Models::PRODUCTS => fn( Container $c ) => new Documents( $c ,
+[
+    AQL::COLLECTION  => 'products' ,
+    AQL::SKIN_FIELDS =>
+    [
+        // La liste : deux champs, rien d'autre
+        Skin::DEFAULT =>
+        [
+            Prop::_KEY => Filter::DEFAULT ,
+            Prop::NAME => Filter::DEFAULT ,
+        ] ,
+
+        // La fiche : les mêmes + la description et la grille de prix
+        Skin::FULL =>
+        [
+            Prop::_KEY        => Filter::DEFAULT ,
+            Prop::NAME        => Filter::DEFAULT ,
+            Prop::DESCRIPTION => Filter::TRANSLATE ,
+            'offers'          => [ Field::FILTER => Filter::MAP , Field::FIELDS => [ 'price' => Filter::DEFAULT ] ] ,
+        ] ,
+    ] ,
+    // AQL::FIELDS reste possible à côté : projection unique, utilisée quand aucun bucket ne correspond
+])
+```
+
+`GET /products` renvoie `{ _key, name }` par produit ; `GET /products/{id}?skin=full` renvoie la fiche complète. L'ordre de résolution est **le même que pour les edges/joins** : `[$skin]` → `['*']` → `AQL::FIELDS` → rien. Deux comportements à connaître :
+
+- **un bucket vide** (`Skin::X => []`) se lit « aucune projection pour ce skin » → le document **entier** est renvoyé, exactement comme une cible d'edge sans projection ;
+- **sans registre**, rien ne change : `AQL::FIELDS` seul se comporte comme avant, au byte près.
+
+**L'héritage par les relations.** Une edge ou un join qui ne déclare **aucune** projection prépare les champs du modèle cible avec le skin de la requête — il hérite donc automatiquement des buckets du modèle. Concrètement : si le modèle `roles` déclare ses deux projections dans son propre `AQL::SKIN_FIELDS`, chaque edge `user_has_roles` qui pointe vers lui sort la version du skin courant **sans rien déclarer** sur la définition d'edge. Une seule déclaration, côté modèle, rayonne partout.
+
+### Sur un sous-champ structurel — deux formes pour la même clé
+
+**La situation.** Reprenons la grille de prix. Le marqueur [`Field::SKINS` imbriqué](#fieldskins-en-profondeur--sous-champs-imbriqués-filtermap--filterdocument--filterwrap) sait **montrer ou cacher** un sous-champ selon le skin — mais il ne sait pas donner **deux formes différentes à la même clé** (une clé est unique dans une map, on ne peut pas déclarer deux `offers`). La table par skin le permet, posée sur le sous-champ `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` lui-même :
+
+```php
+'offers' =>
+[
+    Field::FILTER    => Filter::MAP ,
+    AQL::SKIN_FIELDS =>
+    [
+        // Version publique : le prix, rien d'autre
+        Skin::DEFAULT => [ 'price' => Filter::DEFAULT ] ,
+
+        // Version gestionnaire : le prix + sa décomposition
+        Skin::FULL    =>
+        [
+            'price'              => Filter::DEFAULT ,
+            'priceSpecification' => [ Field::FILTER => Filter::DOCUMENT , Field::FIELDS => [ 'basePrice' => Filter::DEFAULT , 'taxes' => Filter::DEFAULT ] ] ,
+        ] ,
+    ] ,
+]
+```
+
+Le public reçoit `offers: [ { "price": 100 }, … ]` ; le skin `full` reçoit en plus la décomposition, **structurée autrement** — la même clé `offers`, deux formes. Tout se cumule dans l'ordre habituel : le bucket est choisi par le skin, puis les marqueurs `Field::SKINS` filtrent *à l'intérieur* du bucket, puis les verrous `REQUIRES` s'appliquent sur ce qui reste.
+
+**La règle du « rien pour ce skin ».** Si la table déclarée ne résout rien pour le skin demandé — pas de bucket à son nom, pas de `'*'`, pas de `Field::FIELDS` à côté, ou un bucket explicitement vide — le sous-champ **disparaît** de la projection (clé absente). La déclaration se lit « je n'ai rien prévu pour ce skin ». Jamais de repli sur le sous-document brut (qui fuirait justement ce qu'on voulait cacher), jamais d'exception. Exemple : la table ci-dessus sans son bucket `Skin::DEFAULT` → en skin `default`, la clé `offers` n'apparaît tout simplement pas.
+
 ### Portée de `AQL::SKIN_FIELDS`
 
-Deux limites à connaître :
+Deux points à connaître :
 
-- `AQL::SKIN_FIELDS` est une **clé de définition d'edge ou de join** — c'est le seul endroit où elle est lue (elle y est ré-évaluée à chaque niveau d'imbrication des relations, le skin de la requête étant propagé). Posée sur un champ du modèle (racine `AQL::FIELDS`) ou sur un sous-champ d'un `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`, elle est **ignorée en silence**. Pour faire varier un champ ou un sous-champ avec le skin, le mécanisme est [`Field::SKINS`](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs), honoré à toute profondeur.
+- La clé est lue à **trois niveaux** : les définitions d'edges/joins (ré-évaluée à chaque niveau d'imbrication des relations), la **racine du modèle**, et les **sous-champs structurels** (`Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`). Posée ailleurs — par exemple sur un champ scalaire — elle est ignorée en silence ; pour montrer/cacher un champ selon le skin, le mécanisme reste [`Field::SKINS`](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs).
 - Un skin pinné via `AQL::SKIN` ne vaut que pour la définition qui le porte : ses sous-relations (`AQL::EDGES` / `AQL::JOINS` imbriqués) retombent sur le skin de la requête, sauf pin explicite sur leur propre définition.
 
 ## Quel mécanisme choisir ?
@@ -662,7 +726,8 @@ Deux limites à connaître :
 | Une seule projection, peu importe le skin | `AQL::FIELDS` seul |
 | Quelques sous-champs varient entre skins (count caché en full, edge caché en default…) | `Field::SKINS` posé sur les sous-champs de `AQL::FIELDS` |
 | Un sous-champ **imbriqué** (grille de prix, sous-objet d'un MAP/DOCUMENT/WRAP) ne doit sortir que dans certains skins | `Field::SKINS` posé sur le sous-champ imbriqué — honoré à toute profondeur |
-| La projection diffère largement entre skins (champs ajoutés, joins changés…) | `AQL::SKIN_FIELDS` avec une entrée par skin |
+| La projection diffère largement entre skins (champs ajoutés, joins changés…) | `AQL::SKIN_FIELDS` avec une entrée par skin — sur la définition d'edge/join, la racine du modèle ou un sous-champ MAP/DOCUMENT/WRAP |
+| La même clé imbriquée doit avoir **deux formes** selon le skin (grille minimale vs décomposée) | `AQL::SKIN_FIELDS` posé sur le sous-champ structurel |
 | Edge INBOUND vers un document qui peut référencer en retour la source | `AQL::SKIN => Skin::MAIN` sur la définition d'edge pour couper le cycle |
 | Restreindre la projection d'un edge ou d'un join à une permission utilisateur | `AQL::REQUIRES` sur la définition + injection du callable via `InjectAuthorizerTrait` |
 
