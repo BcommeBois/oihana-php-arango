@@ -31,7 +31,7 @@ This page documents the **controller layer** of the *skin* system:
 - The **runtime selection** via `?skin=` and the associated hooks (`PrepareSkin` trait).
 - The **`Skin::INTERNAL` special case** — strictly server projection, not HTTP-exposable.
 
-For the actual **field projection** (how `Field::SKINS` and `AQL::SKIN_FIELDS` filter fields and relations on the model side), see [Edge and join projection](../edges-joins-projection.md). That is the model layer, complementary to the one described here.
+For the actual **field projection** (how `Field::SKINS` and `AQL::SKIN_FIELDS` filter fields and relations on the model side), see [Field projection](../projection.md). That is the model layer, complementary to the one described here.
 
 ## Canonical *skin* catalog
 
@@ -101,7 +101,7 @@ Two keys attach a *skin* to a field or to an alternative projection:
 
 ### `Field::SKINS` — a field visible in some *skins*
 
-On an individual field of `AQL::FIELDS`, the `Field::SKINS` marker declares the **list of *skins* that activate the field**. A field without marker is visible in all *skins*. A field marked `Skin::FULL` only appears in the `full` projection. The marker is honored at **every depth**: it can also be placed on a nested sub-field of a `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` — see [`Field::SKINS` in depth](../edges-joins-projection.md#fieldskins-in-depth--nested-sub-fields-filtermap--filterdocument--filterwrap).
+On an individual field of `AQL::FIELDS`, the `Field::SKINS` marker declares the **list of *skins* that activate the field**. A field without marker is visible in all *skins*. A field marked `Skin::FULL` only appears in the `full` projection. The marker is honored at **every depth**: it can also be placed on a nested sub-field of a `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` — see [`Field::SKINS` in depth](../projection.md#fieldskins-in-depth--nested-sub-fields-filtermap--filterdocument--filterwrap).
 
 ```php
 use oihana\arango\enums\AQL    ;
@@ -174,7 +174,7 @@ AQL::SKIN_FIELDS =>
 ] ,
 ```
 
-The table is accepted at **three levels**: on an *edge*/*join* definition (e.g. a `Role` that exposes its `permissions[]` only on the user detail page in `full`), at the **model root** (the light list vs the full record, without per-field markers), and on a **structural sub-field** `MAP`/`DOCUMENT`/`WRAP` (two shapes for the same nested key). See [Edge and join projection — `AQL::SKIN_FIELDS`](../edges-joins-projection.md#alternative-projection-per-skin--aqlskin_fields) for the full semantics and resolution rules.
+The table is accepted at **three levels**: on an *edge*/*join* definition (e.g. a `Role` that exposes its `permissions[]` only on the user detail page in `full`), at the **model root** (the light list vs the full record, without per-field markers), and on a **structural sub-field** `MAP`/`DOCUMENT`/`WRAP` (two shapes for the same nested key). See [Field projection — `AQL::SKIN_FIELDS`](../projection.md#alternative-projection-per-skin--aqlskin_fields) for the full semantics and resolution rules.
 
 ### The parallel model ↔ controller contract
 
@@ -204,7 +204,7 @@ HTTP request
   → response
 ```
 
-On the model side, the *skin* value is propagated to `returnFields` and `buildVariables` which apply `Field::SKINS` and `AQL::SKIN_FIELDS`. All this is documented in detail in [Edge and join projection](../edges-joins-projection.md).
+On the model side, the *skin* value is propagated to `returnFields` and `buildVariables` which apply `Field::SKINS` and `AQL::SKIN_FIELDS`. All this is documented in detail in [Field projection](../projection.md).
 
 ## The `Skin::INTERNAL` special case
 
@@ -267,12 +267,12 @@ Controllers::USERS => fn( Container $c ) => new DocumentsController( $c ,
 ]) ,
 ```
 
-On the model side, the actual projection of each *skin* is controlled by `Field::SKINS` on the fields and `AQL::SKIN_FIELDS` on the *edges* — cf. [Edge and join projection](../edges-joins-projection.md).
+On the model side, the actual projection of each *skin* is controlled by `Field::SKINS` on the fields and `AQL::SKIN_FIELDS` on the *edges* — cf. [Field projection](../projection.md).
 
 ## See also
 
 - [Controllers overview](README.md) — full pipeline, lifecycle hooks.
-- [Edge and join projection](../edges-joins-projection.md) — model layer: `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::SKIN`.
+- [Field projection](../projection.md) — model layer: `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::SKIN`.
 - [Tips and pitfalls — `Skin::INTERNAL`](../tips.md#skininternal--server-only-projection) — golden rule in detail + current use cases.
 - [Capabilities](capabilities.md) — orthogonal system that can restrict the **value** of a *skin* to a Casbin permission (`Capability::PARAMS`).
 - [Enums reference](../enums.md) — `Skin`, `Arango::*`.

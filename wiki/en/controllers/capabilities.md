@@ -31,7 +31,7 @@ This page documents:
 - The **`Arango::CAPABILITIES` key** in the controller's DI definition, its format and sub-keys (`Capability::OBJECT`, `Capability::VALUES`, `Capability::KEYS`, `Capability::FALLBACK`, `Capability::POLICY`, `Capability::REQUIRE`, `Capability::DENY`).
 - The **6 + 1 traits** that implement *capability* enforcement: `CapabilityGuardTrait` (facade) + `CapabilityContextTrait` (shared state) + `CapabilityParamTrait`, `CapabilityFilterKeysTrait`, `CapabilityBinaryTrait`, `CapabilityFieldsTrait`, `CapabilityAuthorizerTrait`.
 - The **authorizer** pattern: a `Closure(string $subject): bool` injected per request that consults the Casbin `CapabilityEnforcer`.
-- **Field-level gating** on the model side via `AQL::REQUIRES` (and its interaction with `Arango::AUTHORIZER`) — covered in detail in [Edge and join projection](../edges-joins-projection.md).
+- **Field-level gating** on the model side via `AQL::REQUIRES` (and its interaction with `Arango::AUTHORIZER`) — covered in detail in [Field projection](../projection.md).
 
 ## Position in the pipeline
 
@@ -166,7 +166,7 @@ final class ProductsController extends DocumentsController
 
 ## The *authorizer* — toward the model
 
-A *capability* can also live **on the model side**, on an *edge* or a *join*: it's `AQL::REQUIRES`, documented in detail in [Edge and join projection](../edges-joins-projection.md#restrict-edge-or-join-projection-to-a-permission--aqlrequires).
+A *capability* can also live **on the model side**, on an *edge* or a *join*: it's `AQL::REQUIRES`, documented in detail in [Field projection](../projection.md#permission-gated-edges-and-joins--aqlrequires).
 
 The controller knows nothing about the internal authorization system — it **injects a *callable*** that the model consults as needed:
 
@@ -237,7 +237,7 @@ The client never needs to request a different URL depending on their role. The s
 ## See also
 
 - [Skins](skins.md) — complementary projection system (*capabilities* gate the **values** of *skins*).
-- [Edge and join projection — `AQL::REQUIRES`](../edges-joins-projection.md#restrict-edge-or-join-projection-to-a-permission--aqlrequires) — *capability* at the model level (edge/join).
+- [Field projection — `AQL::REQUIRES`](../projection.md#permission-gated-edges-and-joins--aqlrequires) — *capability* at the model level (edge/join).
 - [HTTP filters `?filter=`](../db/filter.md) — parameter covered by `CapabilityFilterKeysTrait`.
 - [Casbin RBAC adapter](../casbin.md) — underlying authorization system.
 - [Dependencies — Integration with `oihana/php-auth`](../getting-started/dependencies.md#integration-with-oihanaphp-auth) — the *authorizer* injection contract that keeps `oihana/php-arango` independent.

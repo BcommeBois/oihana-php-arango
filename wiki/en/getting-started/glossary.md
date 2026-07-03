@@ -160,7 +160,7 @@ High-level class that represents an ArangoDB collection and exposes the CRUD + l
 
 ### Projection
 
-Selection of the fields returned by the framework for a given document, dependent on the current *skin* and on the `Field::SKINS` markers placed on the fields. See [`edges-joins-projection.md`](../edges-joins-projection.md).
+Selection of the fields returned by the framework for a given document, dependent on the current *skin* and on the `Field::SKINS` markers placed on the fields. See [`projection.md`](../projection.md).
 
 ### Signal
 

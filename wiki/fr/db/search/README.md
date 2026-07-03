@@ -79,7 +79,7 @@ AQL::SEARCHABLE =>
 ] ,
 ```
 
-Le champ gardé n'est balayé que si l'**autorizer** de la requête (closure `Arango::AUTHORIZER`, injecté par le contrôleur, consulté par `isAuthorized()`) accorde un sujet — exactement comme le [gating de projection](../../edges-joins-projection.md) (`Field::REQUIRES`) et la [recherche View](per-field-options.md#permissions-de-recherche). Sans autorizer, la couche est désactivée (fail-open). **Si tous les champs cherchables sont refusés**, la recherche ne ramène **rien** (`FILTER false`) — elle n'est jamais silencieusement ignorée (ce qui renverrait tout).
+Le champ gardé n'est balayé que si l'**autorizer** de la requête (closure `Arango::AUTHORIZER`, injecté par le contrôleur, consulté par `isAuthorized()`) accorde un sujet — exactement comme le [gating de projection](../../projection.md) (`Field::REQUIRES`) et la [recherche View](per-field-options.md#permissions-de-recherche). Sans autorizer, la couche est désactivée (fail-open). **Si tous les champs cherchables sont refusés**, la recherche ne ramène **rien** (`FILTER false`) — elle n'est jamais silencieusement ignorée (ce qui renverrait tout).
 
 ## Cas limites
 

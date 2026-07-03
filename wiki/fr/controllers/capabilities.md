@@ -31,7 +31,7 @@ Cette page documente :
 - La **clé `Arango::CAPABILITIES`** dans la définition DI du contrôleur, son format et ses sous-clés (`Capability::OBJECT`, `Capability::VALUES`, `Capability::KEYS`, `Capability::FALLBACK`, `Capability::POLICY`, `Capability::REQUIRE`, `Capability::DENY`).
 - Les **6 + 1 traits** qui implémentent l'application des *capabilities* : `CapabilityGuardTrait` (façade) + `CapabilityContextTrait` (état partagé) + `CapabilityParamTrait`, `CapabilityFilterKeysTrait`, `CapabilityBinaryTrait`, `CapabilityFieldsTrait`, `CapabilityAuthorizerTrait`.
 - Le pattern d'**authorizer** : un `Closure(string $subject): bool` injecté par requête qui consulte le `CapabilityEnforcer` Casbin.
-- Le **gating au niveau du champ** côté modèle via `AQL::REQUIRES` (et son interaction avec `Arango::AUTHORIZER`) — couvert en détail dans [Projection des edges et joins](../edges-joins-projection.md).
+- Le **gating au niveau du champ** côté modèle via `AQL::REQUIRES` (et son interaction avec `Arango::AUTHORIZER`) — couvert en détail dans [La projection des champs](../projection.md).
 
 ## Position dans le pipeline
 
@@ -166,7 +166,7 @@ final class ProductsController extends DocumentsController
 
 ## L'*authorizer* — vers le modèle
 
-Une *capability* peut aussi vivre **au niveau du modèle**, sur un *edge* ou un *join* : c'est `AQL::REQUIRES`, documenté en détail dans [Projection des edges et joins](../edges-joins-projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires).
+Une *capability* peut aussi vivre **au niveau du modèle**, sur un *edge* ou un *join* : c'est `AQL::REQUIRES`, documenté en détail dans [Projection des edges et joins](../projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires).
 
 Le contrôleur ne sait rien du système d'autorisation utilisé en interne — il **injecte un *callable*** que le modèle consulte au besoin :
 
@@ -237,7 +237,7 @@ Le client n'a jamais besoin de demander une URL différente selon son rôle. Le 
 ## Voir aussi
 
 - [Skins](skins.md) — système de projection complémentaire (les *capabilities* gatent les **valeurs** des *skins*).
-- [Projection des edges et joins — `AQL::REQUIRES`](../edges-joins-projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires) — *capability* au niveau modèle (edge/join).
+- [Projection des edges et joins — `AQL::REQUIRES`](../projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires) — *capability* au niveau modèle (edge/join).
 - [Filtres HTTP `?filter=`](../db/filter.md) — paramètre couvert par `CapabilityFilterKeysTrait`.
 - [Adaptateur Casbin RBAC](../casbin.md) — système d'autorisation sous-jacent.
 - [Dépendances — Intégration avec `oihana/php-auth`](../getting-started/dependencies.md#intégration-avec-oihanaphp-auth) — le contrat d'injection d'*authorizer*.

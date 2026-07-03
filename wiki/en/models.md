@@ -56,7 +56,7 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::DATABASE` | `string` | DI identifier of the [`ArangoDB`](db/quickstart.md) service. |
 | `AQL::SCHEMA` | `class-string` | Schema class for hydration (`Thing` or hydratable). |
 | `AQL::FIELDS` | `array` | Exposed fields and their [`Filter::*`](enums.md#types) (see [Field](getting-started/glossary.md#field)). |
-| `AQL::SKIN_FIELDS` | `array` | Per-skin alternative projections (`skin => fields` table, see [edges-joins-projection.md](edges-joins-projection.md#at-the-model-level--one-projection-per-skin-for-the-root)). |
+| `AQL::SKIN_FIELDS` | `array` | Per-skin alternative projections (`skin => fields` table, see [projection.md](projection.md#at-the-model-level--one-projection-per-skin-for-the-root)). |
 | `AQL::FILTERS` | `array` | Fields filterable from URL and their `FilterType::*` (see [filter.md](db/filter.md)). |
 | `AQL::SEARCHABLE` | `array` | Fields `?search=` operates on. |
 | `AQL::SORTABLE` | `array` | Sort whitelist for `?sort=` ([three notations](#aqlsortable-notations)). |
@@ -296,7 +296,8 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 
 ## See also
 
-- [Edge and join projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS` (also honored on nested sub-fields), `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::SCOPE`.
+- [Field projection](projection.md) — `Field::SKINS` (also honored on nested sub-fields), `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::ALTERS`.
+- [Edge and join projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SCOPE`, `Filter::WRAP`, hierarchical traversals.
 - [Search & filtering](db/search-and-filtering.md) — overview of the 3 levers (`?search` / `?filter` / `?facets`).
 - [HTTP search `?search=`](db/search/README.md) — multi-field `LIKE` search.
 - [HTTP filters `?filter=`](db/filter.md) — URL filter syntax, `alt` transformations, operators.

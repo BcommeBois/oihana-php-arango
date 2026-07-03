@@ -31,7 +31,7 @@ Cette page documente la **couche contrôleur** du système de *skins* :
 - La **sélection au runtime** via `?skin=` et les hooks associés (`PrepareSkin` trait).
 - Le **cas particulier `Skin::INTERNAL`** — projection serveur strictement non exposable HTTP.
 
-Pour la **projection des champs** à proprement parler (comment `Field::SKINS` et `AQL::SKIN_FIELDS` filtrent les champs et les relations côté modèle), voir [Projection des edges et joins](../edges-joins-projection.md). C'est la couche modèle, complémentaire à celle décrite ici.
+Pour la **projection des champs** à proprement parler (comment `Field::SKINS` et `AQL::SKIN_FIELDS` filtrent les champs et les relations côté modèle), voir [La projection des champs](../projection.md). C'est la couche modèle, complémentaire à celle décrite ici.
 
 ## Catalogue des *skins* canoniques
 
@@ -101,7 +101,7 @@ Deux clés permettent d'attacher un *skin* à un champ ou à une projection alte
 
 ### `Field::SKINS` — un champ visible dans certains *skins*
 
-Sur un champ individuel de `AQL::FIELDS`, le marqueur `Field::SKINS` déclare la **liste des *skins* qui activent le champ**. Un champ sans marqueur est visible dans tous les *skins*. Un champ marqué `Skin::FULL` n'apparaît que dans la projection `full`. Le marqueur est honoré à **toute profondeur** : il peut aussi être posé sur un sous-champ imbriqué d'un `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` — voir [`Field::SKINS` en profondeur](../edges-joins-projection.md#fieldskins-en-profondeur--sous-champs-imbriqués-filtermap--filterdocument--filterwrap).
+Sur un champ individuel de `AQL::FIELDS`, le marqueur `Field::SKINS` déclare la **liste des *skins* qui activent le champ**. Un champ sans marqueur est visible dans tous les *skins*. Un champ marqué `Skin::FULL` n'apparaît que dans la projection `full`. Le marqueur est honoré à **toute profondeur** : il peut aussi être posé sur un sous-champ imbriqué d'un `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP` — voir [`Field::SKINS` en profondeur](../projection.md#fieldskins-en-profondeur--sous-champs-imbriqués-filtermap--filterdocument--filterwrap).
 
 ```php
 use oihana\arango\enums\AQL    ;
@@ -174,7 +174,7 @@ AQL::SKIN_FIELDS =>
 ] ,
 ```
 
-La table est acceptée à **trois niveaux** : sur une définition d'*edge*/*join* (par exemple, un `Role` qui expose ses `permissions[]` uniquement dans la fiche utilisateur en `full`), à la **racine du modèle** (la liste légère vs la fiche complète, sans marqueurs champ par champ), et sur un **sous-champ structurel** `MAP`/`DOCUMENT`/`WRAP` (deux formes pour la même clé imbriquée). Voir [Projection des edges et joins — `AQL::SKIN_FIELDS`](../edges-joins-projection.md#projection-alternative-selon-le-skin--aqlskin_fields) pour la sémantique complète et les règles de résolution.
+La table est acceptée à **trois niveaux** : sur une définition d'*edge*/*join* (par exemple, un `Role` qui expose ses `permissions[]` uniquement dans la fiche utilisateur en `full`), à la **racine du modèle** (la liste légère vs la fiche complète, sans marqueurs champ par champ), et sur un **sous-champ structurel** `MAP`/`DOCUMENT`/`WRAP` (deux formes pour la même clé imbriquée). Voir [Projection des edges et joins — `AQL::SKIN_FIELDS`](../projection.md#projection-alternative-selon-le-skin--aqlskin_fields) pour la sémantique complète et les règles de résolution.
 
 ### Le contrat parallèle modèle ↔ contrôleur
 
@@ -204,7 +204,7 @@ HTTP request
   → response
 ```
 
-Côté modèle, la valeur de *skin* est propagée à `returnFields` et `buildVariables` qui appliquent `Field::SKINS` et `AQL::SKIN_FIELDS`. Tout ça est documenté en détail dans [Projection des edges et joins](../edges-joins-projection.md).
+Côté modèle, la valeur de *skin* est propagée à `returnFields` et `buildVariables` qui appliquent `Field::SKINS` et `AQL::SKIN_FIELDS`. Tout ça est documenté en détail dans [La projection des champs](../projection.md).
 
 ## Le cas particulier `Skin::INTERNAL`
 
@@ -267,12 +267,12 @@ Controllers::USERS => fn( Container $c ) => new DocumentsController( $c ,
 ]) ,
 ```
 
-Côté modèle, la projection effective de chaque *skin* est contrôlée par `Field::SKINS` sur les champs et `AQL::SKIN_FIELDS` sur les *edges* — cf. [Projection des edges et joins](../edges-joins-projection.md).
+Côté modèle, la projection effective de chaque *skin* est contrôlée par `Field::SKINS` sur les champs et `AQL::SKIN_FIELDS` sur les *edges* — cf. [La projection des champs](../projection.md).
 
 ## Voir aussi
 
 - [Vue d'ensemble des contrôleurs](README.md) — pipeline complet, hooks de cycle de vie.
-- [Projection des edges et joins](../edges-joins-projection.md) — couche modèle : `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::SKIN`.
+- [La projection des champs](../projection.md) — couche modèle : `Field::SKINS`, `AQL::SKIN_FIELDS`, `AQL::SKIN`.
 - [Tips et pièges — `Skin::INTERNAL`](../tips.md#skininternal--projection-serveur-uniquement) — règle d'or détaillée + cas d'usage actuels.
 - [Capabilities](capabilities.md) — système orthogonal qui peut restreindre la **valeur** d'un *skin* à une permission Casbin (`Capability::PARAMS`).
 - [Référence des enums](../enums.md) — `Skin`, `Arango::*`.

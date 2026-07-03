@@ -227,7 +227,7 @@ Résultat : « Fauteuil cuir vintage » passe **devant** « Sac en cuir, style v
 
 ## Permissions de recherche
 
-`Search::REQUIRES` déclare le(s) **sujet(s) de permission** requis pour chercher — une chaîne ou une liste (sémantique OR) — en miroir exact de [`Field::REQUIRES`](../../edges-joins-projection.md) côté projection. La décision est déléguée à l'**autorizer** de la requête (le closure `Arango::AUTHORIZER`, injecté par le contrôleur et consulté par `isAuthorized()`). Il se déclare à **deux niveaux** :
+`Search::REQUIRES` déclare le(s) **sujet(s) de permission** requis pour chercher — une chaîne ou une liste (sémantique OR) — en miroir exact de [`Field::REQUIRES`](../../projection.md) côté projection. La décision est déléguée à l'**autorizer** de la requête (le closure `Arango::AUTHORIZER`, injecté par le contrôleur et consulté par `isAuthorized()`). Il se déclare à **deux niveaux** :
 
 - sur le **bloc `AQL::VIEW`** → garde **toute** la recherche (tous les champs) ;
 - dans une **entrée de `Search::FIELDS`** → garde **ce seul** champ.

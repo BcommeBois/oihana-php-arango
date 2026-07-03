@@ -25,12 +25,12 @@ FOR doc IN articles
         && (doc.withStatus =~ @c0)                 // ?facets
     SORT  …                                         // ?sort        (voir models.md)
     LIMIT …                                         // pagination   (voir models.md)
-    RETURN { … }                                    // projection   (Field::*, voir edges-joins-projection.md)
+    RETURN { … }                                    // projection   (Field::*, voir projection.md)
 ```
 
 On peut donc envoyer les trois dans la même requête — ils se cumulent (logique ET entre eux). `?search` forme son propre groupe `OR` interne, puis est ANDé au reste.
 
-> **Au-delà du filtrage.** Une requête de liste comprend aussi le **tri** ([`?sort`](../models.md#notations-de-aqlsortable)), la **pagination** (`?limit`/`?offset`) et la **projection** de sortie (skins, `Field::*`). Ils ne *filtrent* pas et ne sont pas couverts ici — voir [models.md](../models.md) et [Projection des edges et joins](../edges-joins-projection.md).
+> **Au-delà du filtrage.** Une requête de liste comprend aussi le **tri** ([`?sort`](../models.md#notations-de-aqlsortable)), la **pagination** (`?limit`/`?offset`) et la **projection** de sortie (skins, `Field::*`). Ils ne *filtrent* pas et ne sont pas couverts ici — voir [models.md](../models.md) et [La projection des champs](../projection.md).
 
 ## Tableau comparatif
 
@@ -52,7 +52,7 @@ Au-delà des différences de surface, les trois reposent sur **les mêmes brique
 
 - **Même cible AQL.** Chacun produit un fragment du `FILTER` de `buildListQuery`, évalué sur `doc`, combiné par `&&`.
 - **Même vocabulaire `op`** (pour filtres & facettes) : [`FilterComparator`](filter.md#opérateurs) (`eq/ne/gt/ge/lt/le/like/nlike/match/nmatch`) et `FilterArrayComparator` (`any.in/all.in/none.in…`). Aucun code maison ; un `op` inconnu retombe sur le défaut du type.
-- **Même moteur `alt`** (filtres & facettes) : les helpers `alterExpression()` / `resolveAltSides()` enveloppent le champ comparé (`key`) et/ou la valeur (`val`, `val:true` = miroir) avec des fonctions AQL (`lower`, `trim`, `abs`, `dateDay`…). Le pendant *sortie* est [`Field::ALTERS`](../edges-joins-projection.md#transformer-la-valeur-projetée--fieldalters).
+- **Même moteur `alt`** (filtres & facettes) : les helpers `alterExpression()` / `resolveAltSides()` enveloppent le champ comparé (`key`) et/ou la valeur (`val`, `val:true` = miroir) avec des fonctions AQL (`lower`, `trim`, `abs`, `dateDay`…). Le pendant *sortie* est [`Field::ALTERS`](../projection.md#transformer-la-valeur-projetée--fieldalters).
 - **Mêmes binds.** Seules les **valeurs** sont liées (`@bind`) ; les valeurs utilisateur ne touchent jamais le texte AQL directement.
 - **Même contrat de sécurité.** Seuls les `@bind` sont user-controlled ; l'`op` est whitelisté (`getAlias` → défaut) ; les clés/sous-champs venant de l'URL sont validés (`assertAttributeName`) ou whitelistés par déclaration.
 - **Même tolérance aux erreurs.** Un fragment mal formé (valeur invalide, sous-champ dangereux, facette non déclarée…) est **ignoré et journalisé** (`warning`) — il ne casse jamais la requête entière.

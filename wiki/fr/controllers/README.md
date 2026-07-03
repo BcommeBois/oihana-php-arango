@@ -227,7 +227,7 @@ $init = $this->injectFilters( $init ,
 
 **Namespace** : `oihana\arango\controllers\traits\inject\InjectAuthorizerTrait`
 
-Permet d'injecter un *authorizer* `Closure(string $subject): bool` qui sera consulté par le framework AQL pour décider d'inclure ou non un *edge* / *join* marqué `AQL::REQUIRES`. Voir [Projection des edges et joins](../edges-joins-projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires).
+Permet d'injecter un *authorizer* `Closure(string $subject): bool` qui sera consulté par le framework AQL pour décider d'inclure ou non un *edge* / *join* marqué `AQL::REQUIRES`. Voir [Projection des edges et joins](../projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires).
 
 ```php
 final class BatchController extends DocumentsController
@@ -460,5 +460,5 @@ Trait transverse consommé par tous les contrôleurs. Centralise la normalisatio
 - [Modèles `Documents` et `Edges`](../models.md) — la couche métier sous-jacente.
 - [Filtres HTTP `?filter=`](../db/filter.md) — syntaxe URL consommée par les contrôleurs.
 - [Filtrage interne](../db/filter-internal.md) — `InjectFilterTrait` et `AQL::CONDITIONS`.
-- [Projection des edges et joins](../edges-joins-projection.md) — `Skin`, `AQL::REQUIRES`, *authorizer*.
+- [La projection des champs](../projection.md) — `Skin`, `AQL::REQUIRES`, *authorizer*.
 - [Commandes Symfony Console](../commands.md) — exposition CLI parallèle.

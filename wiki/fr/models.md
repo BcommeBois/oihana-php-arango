@@ -56,7 +56,7 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 | `AQL::DATABASE`     | `string`        | Identifiant DI du service [`ArangoDB`](db/quickstart.md).                                              |
 | `AQL::SCHEMA`       | `class-string`  | Classe schéma pour l'hydratation (`Thing` ou hydratable).                                              |
 | `AQL::FIELDS`       | `array`         | Champs exposés et leur [`Filter::*`](enums.md#types) (cf. [Field](getting-started/glossary.md#field)). |
-| `AQL::SKIN_FIELDS`  | `array`         | Projections alternatives par *skin* (table `skin => champs`, cf. [edges-joins-projection.md](edges-joins-projection.md#au-niveau-du-modèle--une-projection-par-skin-pour-la-racine)). |
+| `AQL::SKIN_FIELDS`  | `array`         | Projections alternatives par *skin* (table `skin => champs`, cf. [projection.md](projection.md#au-niveau-du-modèle--une-projection-par-skin-pour-la-racine)). |
 | `AQL::FILTERS`      | `array`         | Champs filtrables depuis l'URL et leur `FilterType::*` (cf. [filter.md](db/filter.md)).                |
 | `AQL::SEARCHABLE`   | `array`         | Champs sur lesquels `?search=` opère.                                                                  |
 | `AQL::SORTABLE`     | `array`         | *Whitelist* de tri pour `?sort=` ([3 notations](#notations-de-aqlsortable)).                           |
@@ -296,7 +296,8 @@ Les hooks `beforeModelCall`/`afterModelCall` viennent du trait `ModelCallTrait` 
 
 ## Voir aussi
 
-- [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SKINS` (honoré aussi sur les sous-champs imbriqués), `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::SCOPE`.
+- [La projection des champs](projection.md) — `Field::SKINS` (honoré aussi sur les sous-champs imbriqués), `AQL::SKIN_FIELDS`, `AQL::REQUIRES`, `Field::ALTERS`.
+- [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, `Field::SCOPE`, `Filter::WRAP`, traversées hiérarchiques.
 - [Recherche & filtrage](db/search-and-filtering.md) — vue d'ensemble des 3 leviers (`?search` / `?filter` / `?facets`).
 - [Recherche HTTP `?search=`](db/search/README.md) — recherche multi-champs `LIKE`.
 - [Filtres HTTP `?filter=`](db/filter.md) — syntaxe URL des filtres, transformations `alt`, opérateurs.

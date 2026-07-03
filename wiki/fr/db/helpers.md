@@ -337,7 +337,7 @@ Utilisé par les facettes complexes (`Facet::ARRAY_COMPLEX`, `Facet::EDGE_COMPLE
 
 ## Helpers de projection par *skin*
 
-Deux fonctions liées au système de projection par *skin* (couvert en détail dans [Projection des edges et joins](../edges-joins-projection.md)) :
+Deux fonctions liées au système de projection par *skin* (couvert en détail dans [La projection des champs](../projection.md)) :
 
 | Fonction | Signature | Rôle |
 |---|---|---|
@@ -350,5 +350,5 @@ Ces deux fonctions ne sont presque jamais appelées directement par le code appl
 
 - [Bind variables `db/binds/`](binds.md) — placer les valeurs réelles produites par `aqlValue()` derrière des *placeholders* sûrs.
 - [Construire une requête AQL pas à pas](../aql/aql-building-queries.md) — assembler ces helpers avec les opérations AQL.
-- [Projection des edges et joins](../edges-joins-projection.md) — `matchesSkin` et `resolveSkinFields` en contexte.
+- [La projection des champs](../projection.md) — `matchesSkin` et `resolveSkinFields` en contexte.
 - [Documentation officielle AQL — fundamentals](https://docs.arangodb.com/stable/aql/fundamentals/).

@@ -227,7 +227,7 @@ As a result « Fauteuil cuir vintage » ranks **ahead of** « Sac en cuir, style
 
 ## Search permissions
 
-`Search::REQUIRES` declares the **permission subject(s)** required to search — a string or a list (OR semantics) — mirroring [`Field::REQUIRES`](../../edges-joins-projection.md) on the projection side. The decision is delegated to the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller and consulted by `isAuthorized()`). It is declared at **two levels**:
+`Search::REQUIRES` declares the **permission subject(s)** required to search — a string or a list (OR semantics) — mirroring [`Field::REQUIRES`](../../projection.md) on the projection side. The decision is delegated to the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller and consulted by `isAuthorized()`). It is declared at **two levels**:
 
 - on the **`AQL::VIEW` block** → gates the **whole** search (every field);
 - inside a **`Search::FIELDS` entry** → gates **that single** field.

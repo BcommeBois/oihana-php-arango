@@ -169,7 +169,7 @@ Tout sujet (`v0`) passé à l'*enforcer* (lecture ou écriture) doit passer par 
 ## Voir aussi
 
 - [Modèles `Documents` et `Edges`](models.md) — la couche métier consommée par l'adaptateur.
-- [Projection des edges et joins](edges-joins-projection.md) — `AQL::REQUIRES` exploité par le pattern d'autorisation Casbin.
+- [La projection des champs](projection.md) — `AQL::REQUIRES` exploité par le pattern d'autorisation Casbin.
 - [Contrôleurs Slim — `InjectAuthorizerTrait`](controllers/README.md#trait-injectauthorizertrait) — injection d'un *callable* `Closure(string $subject): bool` basé sur l'*enforcer*.
 - [Documentation officielle Casbin](https://casbin.org/docs/overview).
 - [Documentation officielle Casbin PHP](https://github.com/php-casbin/php-casbin).

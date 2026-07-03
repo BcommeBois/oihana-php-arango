@@ -169,7 +169,7 @@ Any subject (`v0`) passed to the *enforcer* (read or write) must go through `cas
 ## See also
 
 - [`Documents` and `Edges` models](models.md) — the business layer consumed by the adapter.
-- [Edge and join projection](edges-joins-projection.md) — `AQL::REQUIRES` exploited by the Casbin authorization pattern.
+- [Field projection](projection.md) — `AQL::REQUIRES` exploited by the Casbin authorization pattern.
 - [Slim controllers — `InjectAuthorizerTrait`](controllers/README.md#injectauthorizertrait) — injection of a `Closure(string $subject): bool` *callable* based on the *enforcer*.
 - [Official Casbin documentation](https://casbin.org/docs/overview).
 - [Official Casbin PHP documentation](https://github.com/php-casbin/php-casbin).

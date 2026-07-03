@@ -25,12 +25,12 @@ FOR doc IN articles
         && (doc.withStatus =~ @c0)                 // ?facets
     SORT  …                                         // ?sort        (see models.md)
     LIMIT …                                         // pagination   (see models.md)
-    RETURN { … }                                    // projection   (Field::*, see edges-joins-projection.md)
+    RETURN { … }                                    // projection   (Field::*, see projection.md)
 ```
 
 So you can send all three in the same request — they stack (logical AND between them). `?search` forms its own internal `OR` group, then is AND-ed to the rest.
 
-> **Beyond filtering.** A list query also has **sorting** ([`?sort`](../models.md#aqlsortable-notations)), **pagination** (`?limit`/`?offset`) and output **projection** (skins, `Field::*`). These do not *filter* and are out of scope here — see [models.md](../models.md) and [Edges and joins projection](../edges-joins-projection.md).
+> **Beyond filtering.** A list query also has **sorting** ([`?sort`](../models.md#aqlsortable-notations)), **pagination** (`?limit`/`?offset`) and output **projection** (skins, `Field::*`). These do not *filter* and are out of scope here — see [models.md](../models.md) and [Field projection](../projection.md).
 
 ## Comparison table
 
@@ -52,7 +52,7 @@ Beyond the surface differences, all three rest on **the same building blocks** �
 
 - **Same AQL target.** Each produces a fragment of `buildListQuery`'s `FILTER`, evaluated on `doc`, combined with `&&`.
 - **Same `op` vocabulary** (for filters & facets): [`FilterComparator`](filter.md#operators) (`eq/ne/gt/ge/lt/le/like/nlike/match/nmatch`) and `FilterArrayComparator` (`any.in/all.in/none.in…`). No bespoke codes; an unknown `op` falls back to the type default.
-- **Same `alt` engine** (filters & facets): the `alterExpression()` / `resolveAltSides()` helpers wrap the compared field (`key`) and/or the value (`val`, `val:true` = mirror) with AQL functions (`lower`, `trim`, `abs`, `dateDay`…). The *output* counterpart is [`Field::ALTERS`](../edges-joins-projection.md#transforming-the-projected-value--fieldalters).
+- **Same `alt` engine** (filters & facets): the `alterExpression()` / `resolveAltSides()` helpers wrap the compared field (`key`) and/or the value (`val`, `val:true` = mirror) with AQL functions (`lower`, `trim`, `abs`, `dateDay`…). The *output* counterpart is [`Field::ALTERS`](../projection.md#transforming-the-projected-value--fieldalters).
 - **Same binds.** Only **values** are bound (`@bind`); user input never reaches the AQL text directly.
 - **Same security contract.** Only `@bind`s are user-controlled; the `op` is whitelisted (`getAlias` → default); URL-provided keys/sub-fields are validated (`assertAttributeName`) or whitelisted by declaration.
 - **Same leniency.** A malformed fragment (invalid value, dangerous sub-field, undeclared facet…) is **skipped and logged** (`warning`) — it never breaks the whole query.

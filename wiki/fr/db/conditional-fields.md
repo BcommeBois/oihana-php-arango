@@ -156,4 +156,4 @@ price : (TO_BOOL(doc.active) && LOWER(doc.status) == 'public') ? LOWER(TRIM(doc.
         └─────────────── condition ───────────────┘            └──── then (+ALTERS) ───┘   └── else ──┘
 ```
 
-Voir aussi : [Helpers AQL](helpers.md) · [Projection edge et jointure](../edges-joins-projection.md).
+Voir aussi : [Helpers AQL](helpers.md) · [La projection des champs](../projection.md).

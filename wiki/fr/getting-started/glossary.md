@@ -164,7 +164,7 @@ Classe haut-niveau qui représente une collection ArangoDB et expose les opérat
 
 ### Projection
 
-Sélection des champs renvoyés par le framework pour un document donné, dépendante du *skin* courant et des marqueurs `Field::SKINS` posés sur les champs. Voir [`edges-joins-projection.md`](../edges-joins-projection.md).
+Sélection des champs renvoyés par le framework pour un document donné, dépendante du *skin* courant et des marqueurs `Field::SKINS` posés sur les champs. Voir [`projection.md`](../projection.md).
 
 ### Signal
 

@@ -79,7 +79,7 @@ AQL::SEARCHABLE =>
 ] ,
 ```
 
-The gated field is swept only when the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller, consulted by `isAuthorized()`) grants a subject — exactly like the [projection gating](../../edges-joins-projection.md) (`Field::REQUIRES`) and the [View search](per-field-options.md#search-permissions). With no authorizer the layer is disabled (fail-open). **If every searchable field is denied**, the search returns **nothing** (`FILTER false`) — it is never silently dropped (which would return everything).
+The gated field is swept only when the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller, consulted by `isAuthorized()`) grants a subject — exactly like the [projection gating](../../projection.md) (`Field::REQUIRES`) and the [View search](per-field-options.md#search-permissions). With no authorizer the layer is disabled (fail-open). **If every searchable field is denied**, the search returns **nothing** (`FILTER false`) — it is never silently dropped (which would return everything).
 
 ## Edge cases
 
