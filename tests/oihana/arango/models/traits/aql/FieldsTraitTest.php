@@ -2,6 +2,7 @@
 
 namespace tests\oihana\arango\models\traits\aql;
 
+use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
@@ -550,6 +551,199 @@ class FieldsTraitTest extends TestCase
 
         $main = $this->stub()->prepareQueryFields( $fields , 'main' ) ;
         $this->assertArrayNotHasKey( 'zip' , $main[ 'addr' ][ Field::FIELDS ] ) ;
+    }
+
+    // ---------------------------------------------------------------- skinFields : root per-skin projections
+
+    private function stubWithSkinFields() :FieldsTraitStub
+    {
+        $stub = $this->stub() ;
+        $stub->fields     = [ 'legacy' => Filter::DEFAULT ] ;
+        $stub->skinFields =
+        [
+            'default' => [ 'name' => Filter::DEFAULT ] ,
+            'full'    => [ 'name' => Filter::DEFAULT , 'secret' => Filter::DEFAULT ] ,
+            'empty'   => [] ,
+        ] ;
+        return $stub ;
+    }
+
+    public function testInitializeSkinFieldsSetsRegistryAndReturnsSelf() :void
+    {
+        $stub = $this->stub() ;
+        $registry = [ 'full' => [ 'name' => Filter::DEFAULT ] ] ;
+
+        $result = $stub->initializeSkinFields( [ AQL::SKIN_FIELDS => $registry ] ) ;
+
+        $this->assertSame( $stub , $result ) ;
+        $this->assertSame( $registry , $stub->skinFields ) ;
+    }
+
+    public function testInitializeSkinFieldsWithEmptyInitKeepsExisting() :void
+    {
+        $stub = $this->stub() ;
+        $stub->initializeSkinFields( [ AQL::SKIN_FIELDS => [ 'full' => [] ] ] ) ;
+        $stub->initializeSkinFields( [] ) ;
+
+        $this->assertSame( [ 'full' => [] ] , $stub->skinFields ) ;
+    }
+
+    public function testRootSkinFieldsPickTheBucketOfTheRequestedSkin() :void
+    {
+        $stub = $this->stubWithSkinFields() ;
+
+        $this->assertSame( [ 'name' ] , array_keys( $stub->prepareQueryFields( null , 'default' ) ) ) ;
+        $this->assertSame( [ 'name' , 'secret' ] , array_keys( $stub->prepareQueryFields( null , 'full' ) ) ) ;
+    }
+
+    public function testRootSkinFieldsFallBackOnLegacyFieldsForUnknownSkin() :void
+    {
+        // no '*' bucket declared → the resolution falls back on $this->fields
+        $out = $this->stubWithSkinFields()->prepareQueryFields( null , 'other' ) ;
+        $this->assertSame( [ 'legacy' ] , array_keys( $out ) ) ;
+    }
+
+    public function testRootSkinFieldsWildcardBucketCatchesUnknownAndNullSkins() :void
+    {
+        $stub = $this->stubWithSkinFields() ;
+        $stub->skinFields[ '*' ] = [ 'fallback' => Filter::DEFAULT ] ;
+
+        $this->assertSame( [ 'fallback' ] , array_keys( $stub->prepareQueryFields( null , 'other' ) ) ) ;
+        $this->assertSame( [ 'fallback' ] , array_keys( $stub->prepareQueryFields( null ) ) ) ;
+    }
+
+    public function testRootSkinFieldsEmptyRegistryKeepsLegacyBehavior() :void
+    {
+        $stub = $this->stub() ;
+        $stub->fields = [ 'legacy' => Filter::DEFAULT ] ;
+
+        $this->assertSame( [ 'legacy' ] , array_keys( $stub->prepareQueryFields( null , 'full' ) ) ) ;
+    }
+
+    public function testRootSkinFieldsAreBypassedByExplicitFields() :void
+    {
+        $out = $this->stubWithSkinFields()->prepareQueryFields( [ 'custom' => Filter::DEFAULT ] , 'full' ) ;
+        $this->assertSame( [ 'custom' ] , array_keys( $out ) ) ;
+    }
+
+    public function testRootSkinFieldsEmptyBucketYieldsNull() :void
+    {
+        // an empty bucket reads « no projection for this skin » → whole-document behavior upstream
+        $this->assertNull( $this->stubWithSkinFields()->prepareQueryFields( null , 'empty' ) ) ;
+    }
+
+    public function testInAppliesInsideTheResolvedBucket() :void
+    {
+        $out = $this->stubWithSkinFields()->prepareQueryFields( null , 'full' , null , 'secret' ) ;
+        $this->assertSame( [ 'secret' ] , array_keys( $out ) ) ;
+    }
+
+    public function testFieldSkinsMarkersInsideABucketAreFiltered() :void
+    {
+        $stub = $this->stub() ;
+        $stub->skinFields =
+        [
+            'full' =>
+            [
+                'name'   => Filter::DEFAULT ,
+                'hidden' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'other' ] ] ,
+            ] ,
+        ] ;
+
+        // the bucket is picked by the skin, then the Field::SKINS markers filter INSIDE it
+        $out = $stub->prepareQueryFields( null , 'full' ) ;
+        $this->assertSame( [ 'name' ] , array_keys( $out ) ) ;
+    }
+
+    // ---------------------------------------------------------------- skinFields : structural sub-fields
+
+    private function structuralSkinFields( string $filter ) :array
+    {
+        return
+        [
+            'name'    => Filter::DEFAULT ,
+            'pricing' =>
+            [
+                Field::FILTER    => $filter ,
+                AQL::SKIN_FIELDS =>
+                [
+                    'default' => [ 'price' => Filter::DEFAULT ] ,
+                    'full'    => [ 'price' => Filter::DEFAULT , 'cost' => Filter::DEFAULT ] ,
+                ] ,
+            ] ,
+        ] ;
+    }
+
+    public function testStructuralSkinFieldsPickTheBucketPerSkin() :void
+    {
+        foreach ( [ Filter::MAP , Filter::DOCUMENT , Filter::WRAP ] as $filter )
+        {
+            $fields = $this->structuralSkinFields( $filter ) ;
+
+            $default = $this->stub()->prepareQueryFields( $fields , 'default' ) ;
+            $this->assertSame( [ 'price' ] , array_keys( $default[ 'pricing' ][ Field::FIELDS ] ) , 'filter: ' . $filter ) ;
+
+            $full = $this->stub()->prepareQueryFields( $fields , 'full' ) ;
+            $this->assertSame( [ 'price' , 'cost' ] , array_keys( $full[ 'pricing' ][ Field::FIELDS ] ) , 'filter: ' . $filter ) ;
+        }
+    }
+
+    /**
+     * A declared table that resolves to nothing for the requested skin (no
+     * bucket, no '*', no Field::FIELDS fallback) drops the field itself — the
+     * declaration reads « nothing is planned for this skin ». Never a raw
+     * sub-document fallback (DOCUMENT), never an exception (WRAP).
+     */
+    public function testStructuralSkinFieldsUnresolvedDropTheField() :void
+    {
+        foreach ( [ Filter::MAP , Filter::DOCUMENT , Filter::WRAP ] as $filter )
+        {
+            $out = $this->stub()->prepareQueryFields( $this->structuralSkinFields( $filter ) , 'other' ) ;
+            $this->assertSame( [ 'name' ] , array_keys( $out ) , 'filter: ' . $filter ) ;
+        }
+    }
+
+    public function testStructuralSkinFieldsEmptyBucketDropsTheField() :void
+    {
+        $fields = $this->structuralSkinFields( Filter::DOCUMENT ) ;
+        $fields[ 'pricing' ][ AQL::SKIN_FIELDS ][ 'default' ] = [] ; // explicitly « nothing for this skin »
+
+        $out = $this->stub()->prepareQueryFields( $fields , 'default' ) ;
+        $this->assertSame( [ 'name' ] , array_keys( $out ) ) ;
+    }
+
+    public function testStructuralSkinFieldsFallBackOnFieldFieldsForUnknownSkin() :void
+    {
+        $fields = $this->structuralSkinFields( Filter::MAP ) ;
+        $fields[ 'pricing' ][ Field::FIELDS ] = [ 'label' => Filter::DEFAULT ] ; // legacy fallback beside the table
+
+        $out = $this->stub()->prepareQueryFields( $fields , 'other' ) ;
+        $this->assertSame( [ 'label' ] , array_keys( $out[ 'pricing' ][ Field::FIELDS ] ) ) ;
+    }
+
+    public function testStructuralSkinFieldsComposeWithNestedFieldSkins() :void
+    {
+        $fields = $this->structuralSkinFields( Filter::MAP ) ;
+        $fields[ 'pricing' ][ AQL::SKIN_FIELDS ][ 'full' ][ 'internal' ] =
+            [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'admin' ] ] ;
+
+        // the 'full' bucket is picked, then the nested Field::SKINS marker filters inside it
+        $out = $this->stub()->prepareQueryFields( $fields , 'full' ) ;
+        $this->assertSame( [ 'price' , 'cost' ] , array_keys( $out[ 'pricing' ][ Field::FIELDS ] ) ) ;
+    }
+
+    public function testStructuralSkinFieldsComposeWithFieldSkinsOnTheFieldItself() :void
+    {
+        $fields = $this->structuralSkinFields( Filter::MAP ) ;
+        $fields[ 'pricing' ][ Field::SKINS ] = [ 'full' ] ; // the field itself is full-only
+
+        // skin 'default' : the field is removed by its own marker before any bucket resolution
+        $out = $this->stub()->prepareQueryFields( $fields , 'default' ) ;
+        $this->assertSame( [ 'name' ] , array_keys( $out ) ) ;
+
+        // skin 'full' : the marker passes, then the 'full' bucket is picked
+        $full = $this->stub()->prepareQueryFields( $fields , 'full' ) ;
+        $this->assertSame( [ 'price' , 'cost' ] , array_keys( $full[ 'pricing' ][ Field::FIELDS ] ) ) ;
     }
 
     // ---------------------------------------------------------------- prepareQueryFields : unique keys (randomized)

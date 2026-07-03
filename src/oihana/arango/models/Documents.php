@@ -139,6 +139,7 @@ class Documents implements DocumentsModel
              ->initializeGroupable        ( $init )
              ->initializeJoins            ( $init )
              ->initializeFields           ( $init )
+             ->initializeSkinFields       ( $init )
              ->initializeMock             ( $init )
              ->initializeQueryID          ( $init )
              ->initializeSchema           ( $init )

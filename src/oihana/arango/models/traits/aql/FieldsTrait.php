@@ -24,6 +24,7 @@ use function oihana\arango\db\functions\documents\merge;
 use function oihana\arango\db\functions\notNull;
 use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\helpers\aqlFields;
+use function oihana\arango\db\helpers\resolveSkinFields;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\models\helpers\authorizeRelationFields;
@@ -154,6 +155,32 @@ trait FieldsTrait
     public array $fields = [] ;
 
     /**
+     * Optional per-skin alternative projections for the model's own fields.
+     *
+     * A `skin => fields` table with the exact same semantics as the
+     * `AQL::SKIN_FIELDS` key of an edge/join definition : each bucket is a
+     * complete fields array (same shape as {@see $fields}), the resolution
+     * order is `[$skin]` → `['*']` → `$fields` → `null`, and the selected
+     * bucket fully replaces the others (no merging). An edge/join that
+     * declares no projection of its own inherits the target model's buckets,
+     * since it prepares the model fields with the request skin.
+     *
+     * An empty registry (default) keeps the legacy single-projection
+     * behavior, byte-for-byte.
+     *
+     * @var array<string, array<string, mixed>>
+     * @example
+     * ```
+     * $model->skinFields =
+     * [
+     *     Skin::DEFAULT => [ Schema::NAME => Filter::DEFAULT ] ,
+     *     Skin::FULL    => [ Schema::NAME => Filter::DEFAULT , Schema::ROLES => [ Field::FILTER => Filter::EDGES ] ] ,
+     * ] ;
+     * ```
+     */
+    public array $skinFields = [] ;
+
+    /**
      * The 'fields' key for initialization arrays.
      */
     public const string FIELDS = 'fields' ;
@@ -187,13 +214,30 @@ trait FieldsTrait
     }
 
     /**
+     * Initialize the per-skin projections registry from an associative array.
+     *
+     * @param array<string, mixed> $init Optional initialization array containing an `AQL::SKIN_FIELDS` key.
+     *
+     * @return static
+     */
+    public function initializeSkinFields( array $init = [] ):static
+    {
+        $this->skinFields = $init[ AQL::SKIN_FIELDS ] ?? $this->skinFields ;
+        return $this;
+    }
+
+    /**
      * Prepares query fields based on internal definitions and optional skin filter.
      *
      * Converts string filters to array format, applies skins, and normalizes each field.
+     * When `$fields` is null and the model declares a `$skinFields` registry, the
+     * projection is resolved per skin first (`[$skin]` → `['*']` → `$fields` — the
+     * same order as an edge/join `AQL::SKIN_FIELDS`).
      * The skin filter applies at every nesting level : the sub-fields of a WRAP,
      * DOCUMENT or MAP definition are prepared with the same skin, so a nested
      * `Field::SKINS` marker is honored in depth. A structural field whose declared
-     * sub-fields are all removed by the skin is dropped from the result.
+     * sub-fields are all removed by the skin — or whose own `AQL::SKIN_FIELDS`
+     * table resolves to nothing for the requested skin — is dropped from the result.
      *
      * @param string|null       $skin      Optional skin to filter applicable fields.
      * @param array|null        $fields    Optional custom fields to process (defaults to $this->fields).
@@ -217,7 +261,19 @@ trait FieldsTrait
     )
     :?array
     {
-        $fields ??= $this->fields ;
+        if ( $fields === null )
+        {
+            // Root-level AQL::SKIN_FIELDS : the model can declare one projection per
+            // skin, resolved with the SAME helper (and order) as the edge/join
+            // definitions — [$skin] → ['*'] → $this->fields → null. An empty registry
+            // (default) keeps the legacy single-projection behavior. A bucket that
+            // resolves to an empty array means « no projection for this skin » — the
+            // caller then falls back on its no-projection behavior (whole document),
+            // exactly like an edge target does.
+            $fields = count( $this->skinFields ) > 0
+                    ? resolveSkinFields( [ AQL::SKIN_FIELDS => $this->skinFields , AQL::FIELDS => $this->fields ] , $skin )
+                    : $this->fields ;
+        }
 
         if ( empty( $fields ) )
         {
@@ -480,6 +536,11 @@ trait FieldsTrait
      * When the skin filters out ALL the declared sub-fields, the method returns
      * `null` and the field itself is dropped from the projection (key absent).
      *
+     * A structural field can also declare per-skin alternative sub-projections
+     * through `AQL::SKIN_FIELDS` (same table shape and resolution order as an
+     * edge/join definition). A declared table that resolves to nothing for the
+     * requested skin drops the field the same way (returns `null`).
+     *
      * @param string $key     Field name
      * @param array  $options Field options, may include:
      *  - Field::FILTER
@@ -510,8 +571,25 @@ trait FieldsTrait
     )
     : ?array
     {
-        $filter    = $options[ Field::FILTER ] ?? null ;
-        $subFields = $options[ Field::FIELDS ] ?? null ;
+        $filter = $options[ Field::FILTER ] ?? null ;
+
+        // A structural field (WRAP / DOCUMENT / MAP) can declare per-skin alternative
+        // sub-projections through AQL::SKIN_FIELDS, beside (or instead of) the single
+        // Field::FIELDS. The resolution reuses the shared helper — [$skin] → ['*'] →
+        // Field::FIELDS → null — so the semantics match the edge/join definitions and
+        // the model root. Without a declared table, this reads Field::FIELDS verbatim.
+        $hasSkinBuckets = is_array( $options[ AQL::SKIN_FIELDS ] ?? null ) ;
+        $subFields      = $hasSkinBuckets ? resolveSkinFields( $options , $skin ) : ( $options[ Field::FIELDS ] ?? null ) ;
+
+        // A declared table that resolves to nothing for the requested skin (no bucket,
+        // no '*' fallback, no Field::FIELDS — or an explicitly empty bucket) reads as
+        // « nothing is planned for this skin » : the field itself is dropped from the
+        // projection. Keeping it would leak the raw sub-document (the DOCUMENT
+        // no-fields fallback) or break the query (the WRAP no-fields guard).
+        if ( $hasSkinBuckets && empty( $subFields ) && ( $filter === Filter::WRAP || $filter === Filter::DOCUMENT || $filter === Filter::MAP ) )
+        {
+            return null ;
+        }
 
         $definition = clean
         ([

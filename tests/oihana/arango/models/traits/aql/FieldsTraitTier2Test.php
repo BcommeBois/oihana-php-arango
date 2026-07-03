@@ -369,6 +369,79 @@ final class FieldsTraitTier2Test extends TestCase
         $this->assertStringContainsString( 'street:doc.addr.street' , $denied ) ;
     }
 
+    // ---------------------------------------------------------------- root AQL::SKIN_FIELDS
+
+    /**
+     * End-to-end : a model-level `skinFields` registry drives the whole
+     * projection with the requested skin — one bucket per skin, the legacy
+     * `fields` as fallback, and an empty bucket falling back on the
+     * whole-document behavior.
+     */
+    public function testRootSkinFieldsDriveTheProjectionEndToEnd() :void
+    {
+        $host = $this->host() ;
+        $host->fields     = [ 'legacy' => Filter::DEFAULT ] ;
+        $host->skinFields =
+        [
+            'default' => [ 'name' => Filter::DEFAULT ] ,
+            'full'    => [ 'name' => Filter::DEFAULT , 'secret' => Filter::DEFAULT ] ,
+            'empty'   => [] ,
+        ] ;
+
+        $variables = [] ;
+
+        $this->assertSame( 'RETURN {name:doc.name}' , $host->returnFields( [ Arango::SKIN => 'default' ] , $variables ) ) ;
+        $this->assertSame( 'RETURN {name:doc.name, secret:doc.secret}' , $host->returnFields( [ Arango::SKIN => 'full' ] , $variables ) ) ;
+        $this->assertSame( 'RETURN {legacy:doc.legacy}' , $host->returnFields( [ Arango::SKIN => 'other' ] , $variables ) ) ;
+        $this->assertSame( 'RETURN doc' , $host->returnFields( [ Arango::SKIN => 'empty' ] , $variables ) ) ; // empty bucket → whole document
+    }
+
+    /**
+     * End-to-end : an edge definition WITHOUT a projection of its own inherits
+     * the target model's per-skin registry — the registry travels through the
+     * model constructor (`AQL::SKIN_FIELDS` init key), so this also guards the
+     * constructor wiring.
+     */
+    public function testEdgeWithoutProjectionInheritsTheTargetModelSkinFields() :void
+    {
+        $container = new Container() ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
+
+        $roles = new Documents( $container ,
+        [
+            DbAQL::COLLECTION  => 'roles' ,
+            DbAQL::LAZY        => false ,
+            DbAQL::SKIN_FIELDS =>
+            [
+                'default' => [ 'name' => Filter::DEFAULT ] ,
+                'full'    => [ 'name' => Filter::DEFAULT , 'permissions' => Filter::DEFAULT ] ,
+            ] ,
+        ] ) ;
+
+        $edge = new MockEdges( 'user_has_roles' ) ;
+        $edge->from = $this->documents( 'users' ) ;
+        $edge->to   = $roles ;
+
+        $init =
+        [
+            Arango::QUERY_FIELDS => [ 'roles' => [ Field::FILTER => Filter::EDGES ] ] ,
+            Arango::EDGES        => [ 'roles' => [ Arango::MODEL => $edge ] ] , // no projection declared
+        ] ;
+
+        $variables = [] ;
+        $this->host()->returnFields( $init + [ Arango::SKIN => 'full' ] , $variables ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'permissions' , $variables[ 0 ] ) ; // the target's 'full' bucket
+
+        $variables = [] ;
+        $this->host()->returnFields( $init + [ Arango::SKIN => 'default' ] , $variables ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringNotContainsString( 'permissions' , $variables[ 0 ] ) ; // the target's 'default' bucket
+        $this->assertStringContainsString( 'name' , $variables[ 0 ] ) ;
+    }
+
     // ---------------------------------------------------------------- definition-level AQL::REQUIRES
 
     /**
