@@ -493,14 +493,19 @@ Exemple : sur `/users`, on veut des rôles plats en liste et des rôles riches s
 Prop::ROLES =>
 [
     AQL::MODEL  => EdgesDefinition::USER_HAS_ROLES ,
-    AQL::FIELDS => role
-    ([
+    AQL::FIELDS =>
+    [
+        // Champs plats — visibles dans tous les skins (pas de marqueur)
+        Prop::_KEY                        => Filter::DEFAULT ,
+        Prop::NAME                        => Filter::DEFAULT ,
         Prop::IDENTIFIER                  => Filter::DEFAULT ,
+
+        // Comptes visibles seulement en liste, relations hydratées seulement sur la fiche
         Prop::PERMISSIONS_COUNT           => [ Field::FILTER => Filter::EDGES_COUNT , Field::SKINS => [ Skin::DEFAULT ] ] ,
         Prop::PERMISSIONS                 => [ Field::FILTER => Filter::EDGES       , Field::SKINS => [ Skin::FULL    ] ] ,
         Prop::APPLICATION_TEMPLATES_COUNT => [ Field::FILTER => Filter::EDGES_COUNT , Field::SKINS => [ Skin::DEFAULT ] ] ,
         Prop::APPLICATION_TEMPLATES       => [ Field::FILTER => Filter::EDGES       , Field::SKINS => [ Skin::FULL    ] ] ,
-    ]) ,
+    ] ,
     AQL::EDGES =>
     [
         Prop::PERMISSIONS_COUNT           => Prop::PERMISSIONS ,
@@ -558,9 +563,7 @@ Résultats :
 
 ## Projection alternative selon le skin — `AQL::SKIN_FIELDS`
 
-Quand la projection diffère largement entre skins, et que poser des `Field::SKINS` partout devient illisible, on peut déclarer plusieurs projections distinctes via `AQL::SKIN_FIELDS`.
-
-Forme générale :
+Quand la projection diffère largement entre skins, et que poser des `Field::SKINS` partout devient illisible, on peut déclarer plusieurs projections distinctes via `AQL::SKIN_FIELDS` : une table `skin => projection`, où chaque projection est un tableau de champs de la **même forme que `AQL::FIELDS`**. Au moment de construire la sous-requête, le framework choisit le bucket correspondant au skin de la requête.
 
 ```php
 AQL::EDGES =>
@@ -570,9 +573,27 @@ AQL::EDGES =>
         AQL::MODEL       => EdgesDefinition::USER_HAS_ROLES ,
         AQL::SKIN_FIELDS =>
         [
-            Skin::DEFAULT => role() ,                                       // version plate
-            Skin::FULL    => role([ Prop::PERMISSIONS => Filter::EDGES ]) , // version riche
-            '*'           => role() ,                                        // optionnel : entrée fallback
+            // Version plate (skin `default`, la liste) : champs scalaires seulement
+            Skin::DEFAULT =>
+            [
+                Prop::_KEY => Filter::DEFAULT ,
+                Prop::NAME => Filter::DEFAULT ,
+            ] ,
+
+            // Version riche (skin `full`, la fiche) : mêmes champs + relation hydratée
+            Skin::FULL =>
+            [
+                Prop::_KEY        => Filter::DEFAULT ,
+                Prop::NAME        => Filter::DEFAULT ,
+                Prop::PERMISSIONS => Filter::EDGES ,
+            ] ,
+
+            // Optionnel : bucket fallback pour tout autre skin
+            '*' =>
+            [
+                Prop::_KEY => Filter::DEFAULT ,
+                Prop::NAME => Filter::DEFAULT ,
+            ] ,
         ] ,
         AQL::EDGES =>
         [
@@ -581,6 +602,8 @@ AQL::EDGES =>
     ] ,
 ]
 ```
+
+Chaque bucket est une projection **complète et autonome** : le bucket choisi remplace entièrement les autres, il n'y a **pas de fusion** entre buckets (d'où la répétition de `_key`/`name` — voir la factorisation ci-dessous). Le marqueur `Filter::EDGES` du bucket `full` s'appuie sur l'entrée `AQL::EDGES` de la définition, exactement comme dans une projection `AQL::FIELDS` classique ; le bucket `default` ne portant pas le marqueur, la sous-traversée n'est pas émise pour ce skin.
 
 Ordre de résolution interne :
 
@@ -592,6 +615,45 @@ Ordre de résolution interne :
 Si `AQL::SKIN_FIELDS` est absent ou n'est pas un tableau, la résolution retombe directement sur `AQL::FIELDS`, ce qui garantit la rétro-compatibilité avec les définitions antérieures.
 
 `AQL::SKIN_FIELDS` est aussi reconnu par `buildJoinVariable`, le mécanisme est strictement le même pour les joins.
+
+### Factoriser les buckets avec une fonction de projection
+
+Les buckets partagent souvent une base commune ; l'écrire dans chaque bucket est fastidieux et source de dérive (un champ ajouté dans un bucket et oublié dans l'autre). Le pattern usuel est une **fonction de projection** côté projet hôte : un simple helper qui retourne la base et y fusionne des extras.
+
+```php
+/**
+ * Projection de base d'un rôle ; $extra ajoute (ou remplace) des champs par bucket.
+ */
+function role( array $extra = [] ) :array
+{
+    return
+    [
+        Prop::_KEY => Filter::DEFAULT ,
+        Prop::NAME => Filter::DEFAULT ,
+        ...$extra ,
+    ] ;
+}
+```
+
+La table de l'exemple précédent devient compacte :
+
+```php
+AQL::SKIN_FIELDS =>
+[
+    Skin::DEFAULT => role() ,                                       // version plate : la base seule
+    Skin::FULL    => role([ Prop::PERMISSIONS => Filter::EDGES ]) , // base + relation hydratée
+    '*'           => role() ,                                       // optionnel : fallback
+] ,
+```
+
+Ce helper appartient au **projet hôte** — il n'existe pas dans la lib, c'est une convention de configuration, pas une API. Il vaut le coup dès que plusieurs buckets (ou plusieurs définitions d'edges/joins visant le même modèle) partagent la même base de champs.
+
+### Portée de `AQL::SKIN_FIELDS`
+
+Deux limites à connaître :
+
+- `AQL::SKIN_FIELDS` est une **clé de définition d'edge ou de join** — c'est le seul endroit où elle est lue (elle y est ré-évaluée à chaque niveau d'imbrication des relations, le skin de la requête étant propagé). Posée sur un champ du modèle (racine `AQL::FIELDS`) ou sur un sous-champ d'un `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`, elle est **ignorée en silence**. Pour faire varier un champ ou un sous-champ avec le skin, le mécanisme est [`Field::SKINS`](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs), honoré à toute profondeur.
+- Un skin pinné via `AQL::SKIN` ne vaut que pour la définition qui le porte : ses sous-relations (`AQL::EDGES` / `AQL::JOINS` imbriqués) retombent sur le skin de la requête, sauf pin explicite sur leur propre définition.
 
 ## Quel mécanisme choisir ?
 

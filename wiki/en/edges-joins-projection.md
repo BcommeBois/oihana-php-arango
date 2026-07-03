@@ -493,14 +493,19 @@ Example: on `/users`, you want flat roles in the list and rich roles on the sing
 Prop::ROLES =>
 [
     AQL::MODEL  => EdgesDefinition::USER_HAS_ROLES ,
-    AQL::FIELDS => role
-    ([
+    AQL::FIELDS =>
+    [
+        // Flat fields — visible in every skin (no marker)
+        Prop::_KEY                        => Filter::DEFAULT ,
+        Prop::NAME                        => Filter::DEFAULT ,
         Prop::IDENTIFIER                  => Filter::DEFAULT ,
+
+        // Counts only on the list, hydrated relations only on the single fiche
         Prop::PERMISSIONS_COUNT           => [ Field::FILTER => Filter::EDGES_COUNT , Field::SKINS => [ Skin::DEFAULT ] ] ,
         Prop::PERMISSIONS                 => [ Field::FILTER => Filter::EDGES       , Field::SKINS => [ Skin::FULL    ] ] ,
         Prop::APPLICATION_TEMPLATES_COUNT => [ Field::FILTER => Filter::EDGES_COUNT , Field::SKINS => [ Skin::DEFAULT ] ] ,
         Prop::APPLICATION_TEMPLATES       => [ Field::FILTER => Filter::EDGES       , Field::SKINS => [ Skin::FULL    ] ] ,
-    ]) ,
+    ] ,
     AQL::EDGES =>
     [
         Prop::PERMISSIONS_COUNT           => Prop::PERMISSIONS ,
@@ -558,9 +563,7 @@ Outcomes:
 
 ## Alternative projection per skin — `AQL::SKIN_FIELDS`
 
-When the projection differs broadly between skins and putting `Field::SKINS` everywhere would hurt readability, declare distinct projections via `AQL::SKIN_FIELDS`.
-
-General shape:
+When the projection differs broadly between skins and putting `Field::SKINS` everywhere would hurt readability, declare distinct projections via `AQL::SKIN_FIELDS`: a `skin => projection` table where each projection is a fields array of the **same shape as `AQL::FIELDS`**. When building the sub-query, the framework picks the bucket matching the request skin.
 
 ```php
 AQL::EDGES =>
@@ -570,9 +573,27 @@ AQL::EDGES =>
         AQL::MODEL       => EdgesDefinition::USER_HAS_ROLES ,
         AQL::SKIN_FIELDS =>
         [
-            Skin::DEFAULT => role() ,                                       // flat version
-            Skin::FULL    => role([ Prop::PERMISSIONS => Filter::EDGES ]) , // rich version
-            '*'           => role() ,                                        // optional fallback bucket
+            // Flat version (skin `default`, the list): scalar fields only
+            Skin::DEFAULT =>
+            [
+                Prop::_KEY => Filter::DEFAULT ,
+                Prop::NAME => Filter::DEFAULT ,
+            ] ,
+
+            // Rich version (skin `full`, the single fiche): same fields + a hydrated relation
+            Skin::FULL =>
+            [
+                Prop::_KEY        => Filter::DEFAULT ,
+                Prop::NAME        => Filter::DEFAULT ,
+                Prop::PERMISSIONS => Filter::EDGES ,
+            ] ,
+
+            // Optional: fallback bucket for any other skin
+            '*' =>
+            [
+                Prop::_KEY => Filter::DEFAULT ,
+                Prop::NAME => Filter::DEFAULT ,
+            ] ,
         ] ,
         AQL::EDGES =>
         [
@@ -581,6 +602,8 @@ AQL::EDGES =>
     ] ,
 ]
 ```
+
+Each bucket is a **complete, standalone** projection: the selected bucket fully replaces the others, there is **no merging** between buckets (hence the repeated `_key`/`name` — see the factoring below). The `Filter::EDGES` marker in the `full` bucket relies on the definition's `AQL::EDGES` entry, exactly like in a classic `AQL::FIELDS` projection; since the `default` bucket does not carry the marker, the sub-traversal is not emitted for that skin.
 
 Internal resolution order:
 
@@ -592,6 +615,45 @@ Internal resolution order:
 If `AQL::SKIN_FIELDS` is absent or not an array, the resolution falls back directly on `AQL::FIELDS`, which guarantees backwards compatibility with pre-existing definitions.
 
 `AQL::SKIN_FIELDS` is also recognised by `buildJoinVariable`; the mechanism is strictly the same for joins.
+
+### Factoring the buckets with a projection function
+
+Buckets often share a common base; writing it in every bucket is tedious and drift-prone (a field added in one bucket and forgotten in another). The usual pattern is a **projection function** on the host-project side: a plain helper returning the base and merging extras into it.
+
+```php
+/**
+ * Base projection of a role; $extra adds (or overrides) fields per bucket.
+ */
+function role( array $extra = [] ) :array
+{
+    return
+    [
+        Prop::_KEY => Filter::DEFAULT ,
+        Prop::NAME => Filter::DEFAULT ,
+        ...$extra ,
+    ] ;
+}
+```
+
+The table from the previous example becomes compact:
+
+```php
+AQL::SKIN_FIELDS =>
+[
+    Skin::DEFAULT => role() ,                                       // flat version: the base alone
+    Skin::FULL    => role([ Prop::PERMISSIONS => Filter::EDGES ]) , // base + hydrated relation
+    '*'           => role() ,                                       // optional: fallback
+] ,
+```
+
+This helper belongs to the **host project** — it does not exist in the library; it is a configuration convention, not an API. It pays off as soon as several buckets (or several edge/join definitions targeting the same model) share the same field base.
+
+### Scope of `AQL::SKIN_FIELDS`
+
+Two limits worth knowing:
+
+- `AQL::SKIN_FIELDS` is an **edge or join definition key** — that is the only place where it is read (and it is re-resolved at every relation nesting level, the request skin being propagated). Placed on a model field (root `AQL::FIELDS`) or on a sub-field of a `Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`, it is **silently ignored**. To vary a field or a sub-field with the skin, the mechanism is [`Field::SKINS`](#per-request-projection--fieldskins-on-sub-fields), honored at every depth.
+- A skin pinned via `AQL::SKIN` only applies to the definition carrying it: its nested relations (nested `AQL::EDGES` / `AQL::JOINS`) fall back on the request skin, unless explicitly pinned on their own definition.
 
 ## Which mechanism to use?
 
