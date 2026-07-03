@@ -36,6 +36,7 @@
     "scripts": {
         "doc": "rm -rf docs && ./vendor/bin/phpdoc -c phpdoc.xml -v",
         "test": "./vendor/bin/phpunit",
+        "test:integration": "./vendor/bin/phpunit -c phpunit-integration.xml",
         "coverage": "XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-text --coverage-clover build/coverage/clover.xml --coverage-html build/coverage/html",
         "coverage:md": [
             "@coverage",
@@ -54,6 +55,7 @@
     "scripts-descriptions": {
         "doc": "Generate the phpDocumentor API documentation under docs/.",
         "test": "Run the PHPUnit test suite.",
+        "test:integration": "Run the live integration suite (group `integration`) against a real arangod — skips green when no server is reachable (configs/config.toml).",
         "coverage": "Run the suite with code coverage (text + Clover + HTML under build/coverage/). Requires Xdebug or PCOV.",
         "coverage:md": "Regenerate build/coverage/COVERAGE.md, a readable Markdown coverage summary (gitignored, never committed).",
         "test:clients": "Run the live end-to-end smoke test for the clients/ HTTP library against a real arangod.",
