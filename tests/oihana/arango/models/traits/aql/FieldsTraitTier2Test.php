@@ -207,6 +207,168 @@ final class FieldsTraitTier2Test extends TestCase
         $this->assertStringNotContainsString( 'doc_vertex' , $result ) ;
     }
 
+    // ---------------------------------------------------------------- nested Field::SKINS (deep skin filtering)
+
+    /**
+     * End-to-end : a `Field::SKINS` marker on a DOCUMENT sub-field varies the
+     * generated AQL with the requested skin — included when the skin matches,
+     * absent otherwise, and everything passes when no skin is requested.
+     */
+    public function testNestedSkinsFilterDocumentProjectionEndToEnd() :void
+    {
+        $init =
+        [
+            Arango::QUERY_FIELDS =>
+            [
+                'name' => Filter::DEFAULT ,
+                'addr' =>
+                [
+                    Field::FILTER => Filter::DOCUMENT ,
+                    Field::FIELDS =>
+                    [
+                        'street' => Filter::DEFAULT ,
+                        'zip'    => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $variables = [] ;
+
+        $this->assertSame
+        (
+            'RETURN {name:doc.name, addr:{street:doc.addr.street, zip:doc.addr.zip}}' ,
+            $this->host()->returnFields( $init + [ Arango::SKIN => 'full' ] , $variables ) ,
+        ) ;
+
+        $this->assertSame
+        (
+            'RETURN {name:doc.name, addr:{street:doc.addr.street}}' ,
+            $this->host()->returnFields( $init + [ Arango::SKIN => 'main' ] , $variables ) ,
+        ) ;
+
+        $this->assertSame
+        (
+            'RETURN {name:doc.name, addr:{street:doc.addr.street, zip:doc.addr.zip}}' ,
+            $this->host()->returnFields( $init , $variables ) ,
+        ) ;
+    }
+
+    /**
+     * End-to-end : when the skin filters out a MAP sub-field carrying an edge
+     * marker, the matching `LET` sub-traversal is not emitted at all — the edge
+     * collection never appears in the generated AQL.
+     */
+    public function testSkinFilteredNestedEdgeMarkerDropsItsLetVariable() :void
+    {
+        $edge = new MockEdges( 'offer_has_sellers' ) ;
+        $edge->from = $this->documents( 'offers' ) ;
+        $edge->to   = $this->documents( 'sellers' ) ;
+
+        $init =
+        [
+            Arango::QUERY_FIELDS =>
+            [
+                'offers' =>
+                [
+                    Field::FILTER => Filter::MAP ,
+                    Field::FIELDS =>
+                    [
+                        'price'   => Filter::DEFAULT ,
+                        'sellers' => [ Field::FILTER => Filter::EDGES , Field::SKINS => [ 'full' ] ] ,
+                    ] ,
+                    Field::EDGES => [ 'sellers' => [ Arango::MODEL => $edge ] ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $variables = [] ;
+        $full      = $this->host()->returnFields( $init + [ Arango::SKIN => 'full' ] , $variables ) ;
+
+        $this->assertStringContainsString( 'offer_has_sellers' , $full ) ;
+        $this->assertStringContainsString( 'sellers' , $full ) ;
+
+        $variables = [] ;
+        $main      = $this->host()->returnFields( $init + [ Arango::SKIN => 'main' ] , $variables ) ;
+
+        $this->assertStringNotContainsString( 'offer_has_sellers' , $main ) ;
+        $this->assertStringNotContainsString( 'sellers' , $main ) ;
+    }
+
+    /**
+     * End-to-end : a structural parent whose declared sub-fields are ALL removed
+     * by the skin disappears from the projection — no raw-document fallback for
+     * DOCUMENT, no exception for WRAP.
+     */
+    public function testParentDroppedEndToEndWhenTheSkinEmptiesItsSubFields() :void
+    {
+        foreach ( [ Filter::MAP , Filter::DOCUMENT , Filter::WRAP ] as $filter )
+        {
+            $variables = [] ;
+
+            $result = $this->host()->returnFields
+            (
+                [
+                    Arango::SKIN         => 'main' ,
+                    Arango::QUERY_FIELDS =>
+                    [
+                        'name'    => Filter::DEFAULT ,
+                        'pricing' =>
+                        [
+                            Field::FILTER => $filter ,
+                            Field::FIELDS =>
+                            [
+                                'internalCost' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                            ] ,
+                        ] ,
+                    ] ,
+                ] ,
+                $variables ,
+            ) ;
+
+            $this->assertSame( 'RETURN {name:doc.name}' , $result , 'filter: ' . $filter ) ;
+        }
+    }
+
+    /**
+     * End-to-end : Field::SKINS (view) and Field::REQUIRES (security) cohabit on
+     * the same nested sub-field. With a matching skin, the permission gating
+     * still decides — granted projects the field, denied drops it.
+     */
+    public function testNestedSkinsAndRequiresCohabitOnTheSameSubField() :void
+    {
+        $init =
+        [
+            Arango::SKIN         => 'full' ,
+            Arango::QUERY_FIELDS =>
+            [
+                'addr' =>
+                [
+                    Field::FILTER => Filter::DOCUMENT ,
+                    Field::FIELDS =>
+                    [
+                        'street' => Filter::DEFAULT ,
+                        'zip'    =>
+                        [
+                            Field::FILTER   => Filter::DEFAULT ,
+                            Field::SKINS    => [ 'full' ] ,
+                            Field::REQUIRES => 'addr.zip:read' ,
+                        ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $variables = [] ;
+
+        $granted = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => true ] , $variables ) ;
+        $this->assertStringContainsString( 'zip:doc.addr.zip' , $granted ) ;
+
+        $denied = $this->host()->returnFields( $init + [ Arango::AUTHORIZER => fn() => false ] , $variables ) ;
+        $this->assertStringNotContainsString( 'zip' , $denied ) ;
+        $this->assertStringContainsString( 'street:doc.addr.street' , $denied ) ;
+    }
+
     /**
      * Non-regression for the main query: with the default DOC_REF ('doc'), a
      * `Filter::EDGES_COUNT` still anchors its `LET` on `doc` exactly as before.

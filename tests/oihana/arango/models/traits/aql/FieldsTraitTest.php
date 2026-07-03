@@ -245,6 +245,12 @@ class FieldsTraitTest extends TestCase
 
     // ---------------------------------------------------------------- prepareQueryFields : subfields
 
+    /**
+     * Without a requested skin, the sub-fields of a DOCUMENT are normalized
+     * recursively and ALL kept — the deep skin filtering (a `Field::SKINS`
+     * marker on a nested sub-field) only applies when a skin is requested ;
+     * see the « nested skin filtering » section below.
+     */
     public function testDocumentSubFieldsAreNormalizedRecursively() :void
     {
         $out = $this->stub()->prepareQueryFields
@@ -310,6 +316,240 @@ class FieldsTraitTest extends TestCase
             [ 'addr' => [ Field::FILTER => Filter::DOCUMENT , Field::UNIQUE => 'addr' ] ] ,
             $out ,
         ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareQueryFields : nested skin filtering
+
+    /**
+     * A MAP whose sub-fields mix an unmarked entry (visible everywhere) and a
+     * `Field::SKINS`-restricted one.
+     */
+    private function nestedSkinMapFields() :array
+    {
+        return
+        [
+            'offers' =>
+            [
+                Field::FILTER => Filter::MAP ,
+                Field::FIELDS =>
+                [
+                    'price'              => Filter::DEFAULT ,
+                    'priceSpecification' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                ] ,
+            ] ,
+        ] ;
+    }
+
+    public function testMapSubFieldSkinsKeepTheMatchingSkin() :void
+    {
+        $out = $this->stub()->prepareQueryFields( $this->nestedSkinMapFields() , 'full' ) ;
+        $this->assertSame( [ 'price' , 'priceSpecification' ] , array_keys( $out[ 'offers' ][ Field::FIELDS ] ) ) ;
+    }
+
+    public function testMapSubFieldSkinsRemoveTheNonMatchingSkin() :void
+    {
+        $out = $this->stub()->prepareQueryFields( $this->nestedSkinMapFields() , 'main' ) ;
+        $this->assertSame( [ 'price' ] , array_keys( $out[ 'offers' ][ Field::FIELDS ] ) ) ;
+    }
+
+    public function testMapSubFieldsAllPassWhenNoSkinIsRequested() :void
+    {
+        $out = $this->stub()->prepareQueryFields( $this->nestedSkinMapFields() ) ;
+        $this->assertSame( [ 'price' , 'priceSpecification' ] , array_keys( $out[ 'offers' ][ Field::FIELDS ] ) ) ;
+    }
+
+    public function testDocumentSubFieldSkinsAreHonored() :void
+    {
+        $fields =
+        [
+            'addr' =>
+            [
+                Field::FILTER => Filter::DOCUMENT ,
+                Field::FIELDS =>
+                [
+                    'street' => Filter::DEFAULT ,
+                    'zip'    => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $full = $this->stub()->prepareQueryFields( $fields , 'full' ) ;
+        $this->assertSame( [ 'street' , 'zip' ] , array_keys( $full[ 'addr' ][ Field::FIELDS ] ) ) ;
+
+        $main = $this->stub()->prepareQueryFields( $fields , 'main' ) ;
+        $this->assertSame( [ 'street' ] , array_keys( $main[ 'addr' ][ Field::FIELDS ] ) ) ;
+    }
+
+    public function testWrapSubFieldSkinsAreHonored() :void
+    {
+        $fields =
+        [
+            'subject' =>
+            [
+                Field::FILTER => Filter::WRAP ,
+                Field::FIELDS =>
+                [
+                    'id'     => Filter::DEFAULT ,
+                    'secret' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $full = $this->stub()->prepareQueryFields( $fields , 'full' ) ;
+        $this->assertSame( [ 'id' , 'secret' ] , array_keys( $full[ 'subject' ][ Field::FIELDS ] ) ) ;
+
+        $main = $this->stub()->prepareQueryFields( $fields , 'main' ) ;
+        $this->assertSame( [ 'id' ] , array_keys( $main[ 'subject' ][ Field::FIELDS ] ) ) ;
+    }
+
+    /**
+     * The motivating use case : a two-level MAP (a price grid inside an offers
+     * array) whose innermost sub-field only appears in a dedicated skin. The
+     * skin filter must apply at EVERY depth, not only on the first level.
+     */
+    public function testNestedSkinsApplyAtEveryDepth() :void
+    {
+        $fields =
+        [
+            'offers' =>
+            [
+                Field::FILTER => Filter::MAP ,
+                Field::FIELDS =>
+                [
+                    'offers' =>
+                    [
+                        Field::FILTER => Filter::MAP ,
+                        Field::FIELDS =>
+                        [
+                            'price'              => Filter::DEFAULT ,
+                            'priceSpecification' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'offers.full' , 'full' ] ] ,
+                        ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $full = $this->stub()->prepareQueryFields( $fields , 'offers.full' ) ;
+        $this->assertSame
+        (
+            [ 'price' , 'priceSpecification' ] ,
+            array_keys( $full[ 'offers' ][ Field::FIELDS ][ 'offers' ][ Field::FIELDS ] ) ,
+        ) ;
+
+        $main = $this->stub()->prepareQueryFields( $fields , 'main' ) ;
+        $this->assertSame
+        (
+            [ 'price' ] ,
+            array_keys( $main[ 'offers' ][ Field::FIELDS ][ 'offers' ][ Field::FIELDS ] ) ,
+        ) ;
+    }
+
+    /**
+     * When the skin removes EVERY declared sub-field of a structural parent
+     * (MAP / DOCUMENT / WRAP), the parent itself is dropped from the projection
+     * — key absent, like a field whose own Field::SKINS does not match. This
+     * avoids leaking the raw sub-document (DOCUMENT fallback) or breaking the
+     * query (WRAP without fields throws).
+     */
+    public function testParentIsDroppedWhenTheSkinRemovesAllItsSubFields() :void
+    {
+        foreach ( [ Filter::MAP , Filter::DOCUMENT , Filter::WRAP ] as $filter )
+        {
+            $out = $this->stub()->prepareQueryFields
+            ([
+                'name'    => Filter::DEFAULT ,
+                'pricing' =>
+                [
+                    Field::FILTER => $filter ,
+                    Field::FIELDS =>
+                    [
+                        'internalCost' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                    ] ,
+                ] ,
+            ] , 'main' ) ;
+
+            $this->assertSame( [ 'name' ] , array_keys( $out ) , 'filter: ' . $filter ) ;
+        }
+    }
+
+    public function testPrepareQueryFieldsReturnsNullWhenEveryFieldIsDropped() :void
+    {
+        $out = $this->stub()->prepareQueryFields
+        ([
+            'pricing' =>
+            [
+                Field::FILTER => Filter::DOCUMENT ,
+                Field::FIELDS =>
+                [
+                    'internalCost' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                ] ,
+            ] ,
+        ] , 'main' ) ;
+
+        $this->assertNull( $out ) ;
+    }
+
+    /**
+     * The parent-drop rule cascades : an inner DOCUMENT emptied by the skin
+     * disappears from its enclosing MAP, whose remaining sub-fields survive.
+     */
+    public function testNestedParentDropCascadesInsideAnEnclosingMap() :void
+    {
+        $out = $this->stub()->prepareQueryFields
+        ([
+            'offers' =>
+            [
+                Field::FILTER => Filter::MAP ,
+                Field::FIELDS =>
+                [
+                    'label'   => Filter::DEFAULT ,
+                    'details' =>
+                    [
+                        Field::FILTER => Filter::DOCUMENT ,
+                        Field::FIELDS =>
+                        [
+                            'secret' => [ Field::FILTER => Filter::DEFAULT , Field::SKINS => [ 'full' ] ] ,
+                        ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ] , 'main' ) ;
+
+        $this->assertSame( [ 'label' ] , array_keys( $out[ 'offers' ][ Field::FIELDS ] ) ) ;
+    }
+
+    /**
+     * Field::SKINS (view) and Field::REQUIRES (security) cohabit on the same
+     * nested sub-field : when the skin matches, the normalized definition keeps
+     * the REQUIRES marker so the permission gating still applies downstream
+     * (aqlFields / buildVariables) ; when the skin does not match, the field is
+     * removed before any permission check.
+     */
+    public function testNestedSkinsCohabitWithRequiresOnTheSameSubField() :void
+    {
+        $fields =
+        [
+            'addr' =>
+            [
+                Field::FILTER => Filter::DOCUMENT ,
+                Field::FIELDS =>
+                [
+                    'street' => Filter::DEFAULT ,
+                    'zip'    =>
+                    [
+                        Field::FILTER   => Filter::DEFAULT ,
+                        Field::SKINS    => [ 'full' ] ,
+                        Field::REQUIRES => 'addr.zip:read' ,
+                    ] ,
+                ] ,
+            ] ,
+        ] ;
+
+        $full = $this->stub()->prepareQueryFields( $fields , 'full' ) ;
+        $this->assertSame( 'addr.zip:read' , $full[ 'addr' ][ Field::FIELDS ][ 'zip' ][ Field::REQUIRES ] ) ;
+
+        $main = $this->stub()->prepareQueryFields( $fields , 'main' ) ;
+        $this->assertArrayNotHasKey( 'zip' , $main[ 'addr' ][ Field::FIELDS ] ) ;
     }
 
     // ---------------------------------------------------------------- prepareQueryFields : unique keys (randomized)

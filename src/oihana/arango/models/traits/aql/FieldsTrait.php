@@ -79,6 +79,10 @@ use function oihana\core\strings\randomKey;
  *      If null, uses `$this->fields`. You can pass a custom array of field definitions.
  * - `$skin`:
  *      Filters fields based on their `Field::SKINS` property using matchesSkin().
+ *      The skin is propagated to the nested sub-fields of WRAP / DOCUMENT / MAP
+ *      definitions, so a `Field::SKINS` marker is honored at every depth. When
+ *      the skin removes every declared sub-field of a structural field, the
+ *      field itself is dropped from the projection (key absent).
  * - `$in`:
  *      If null → all fields are included.
  *      If array → only keys present in the array are included.
@@ -184,6 +188,10 @@ trait FieldsTrait
      * Prepares query fields based on internal definitions and optional skin filter.
      *
      * Converts string filters to array format, applies skins, and normalizes each field.
+     * The skin filter applies at every nesting level : the sub-fields of a WRAP,
+     * DOCUMENT or MAP definition are prepared with the same skin, so a nested
+     * `Field::SKINS` marker is honored in depth. A structural field whose declared
+     * sub-fields are all removed by the skin is dropped from the result.
      *
      * @param string|null       $skin      Optional skin to filter applicable fields.
      * @param array|null        $fields    Optional custom fields to process (defaults to $this->fields).
@@ -236,10 +244,23 @@ trait FieldsTrait
             {
                 $options = [ Field::FILTER => $options ] ;
             }
-            $queryFields[ $key ] = $this->normalizeFieldDefinition( $key , $options , $parentKey ) ;
+
+            $definition = $this->normalizeFieldDefinition( $key , $options , $parentKey , $skin ) ;
+
+            // A structural field (MAP / DOCUMENT / WRAP) whose declared sub-fields are ALL
+            // filtered out by the skin is dropped entirely — the key does not appear in the
+            // projection, exactly like a field whose own Field::SKINS does not match. Keeping
+            // it would leak the raw sub-document (DOCUMENT falls back to `key: doc.key`) or
+            // break the query (WRAP without fields throws).
+            if ( $definition === null )
+            {
+                continue ;
+            }
+
+            $queryFields[ $key ] = $definition ;
         }
 
-        return $queryFields;
+        return count( $queryFields ) > 0 ? $queryFields : null ;
     }
 
     /**
@@ -419,6 +440,13 @@ trait FieldsTrait
      * - Handles subfields for DOCUMENT or MAP filters
      * - Generates unique keys for special filters
      *
+     * The sub-fields of a structural filter (WRAP, DOCUMENT, MAP) are prepared
+     * recursively with the SAME skin, so a `Field::SKINS` marker on a nested
+     * sub-field is honored at every depth — with the level-one rules: a sub-field
+     * without a marker is always kept, and a `null` skin keeps everything.
+     * When the skin filters out ALL the declared sub-fields, the method returns
+     * `null` and the field itself is dropped from the projection (key absent).
+     *
      * @param string $key     Field name
      * @param array  $options Field options, may include:
      *  - Field::FILTER
@@ -426,8 +454,10 @@ trait FieldsTrait
      *  - Field::QUOTED
      *  - Field::FIELDS (for DOCUMENT or MAP)
      * @param ?string $parentKey The Optional parent key
+     * @param ?string $skin      Optional skin propagated to the nested sub-fields.
      *
-     * @return array<string, mixed> Normalized field definition
+     * @return array<string, mixed>|null Normalized field definition, or `null` when the
+     *                                   skin removed every declared sub-field.
      *
      * @example
      * ```
@@ -438,7 +468,14 @@ trait FieldsTrait
      * ]);
      * ```
      */
-    private function normalizeFieldDefinition( string $key , array $options = [] , ?string $parentKey = null ): array
+    private function normalizeFieldDefinition
+    (
+        string  $key              ,
+        array   $options   = []   ,
+        ?string $parentKey = null ,
+        ?string $skin      = null
+    )
+    : ?array
     {
         $filter    = $options[ Field::FILTER ] ?? null ;
         $subFields = $options[ Field::FIELDS ] ?? null ;
@@ -466,11 +503,20 @@ trait FieldsTrait
         {
             // Filter::WRAP wraps the reference itself under the key — like DOCUMENT/MAP it is rendered inline
             // (no LET variable on the WRAP entry itself, so no Field::UNIQUE). Keep the projected sub-fields
-            // (recursively prepared, so a nested edge/join marker gets its own generated Field::UNIQUE) ;
-            // the Field::RAW opt-in is already preserved above.
+            // (recursively prepared with the SAME skin, so a nested Field::SKINS marker is honored at every
+            // depth and a nested edge/join marker gets its own generated Field::UNIQUE) ; the Field::RAW
+            // opt-in is already preserved above. When the skin removes every declared sub-field, the whole
+            // wrapped field is dropped (a WRAP without fields nor RAW would throw downstream).
             if ( !empty( $subFields ) )
             {
-                $definition[ Field::FIELDS ] = $this->prepareQueryFields( $subFields ) ;
+                $prepared = $this->prepareQueryFields( $subFields , $skin ) ;
+
+                if ( $prepared === null )
+                {
+                    return null ;
+                }
+
+                $definition[ Field::FIELDS ] = $prepared ;
             }
 
             // The wrapped reference can carry its own relations : a Field::EDGES / Field::JOINS map
@@ -494,7 +540,17 @@ trait FieldsTrait
         }
         else if ( ( $filter === Filter::DOCUMENT || $filter === Filter::MAP ) && !empty( $subFields ) )
         {
-            $definition[ Field::FIELDS ] = $this->prepareQueryFields( $subFields ) ;
+            // Same deep-skin contract as WRAP above : the sub-fields are prepared with the
+            // request skin, and a fully-filtered projection drops the parent field itself
+            // (a DOCUMENT without fields would otherwise fall back to the RAW sub-document).
+            $prepared = $this->prepareQueryFields( $subFields , $skin ) ;
+
+            if ( $prepared === null )
+            {
+                return null ;
+            }
+
+            $definition[ Field::FIELDS ] = $prepared ;
 
             $joins = $options[ Field::JOINS ] ?? [] ;
             if ( !empty( $joins ) )
