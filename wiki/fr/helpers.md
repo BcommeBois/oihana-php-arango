@@ -10,7 +10,7 @@ Les helpers de cette page travaillent côté **entrée** : grammaire textuelle
 HTTP, identifiants de documents, formats de révision.
 
 > **Exception :** le sous-dossier [`conditions/`](../../src/oihana/arango/helpers/conditions/)
-> (`isProperty()` / `isAdditionalType()`) produit *bien* des fragments de condition AQL — il est
+> (`isProperty()` / `isAdditionalType()` / `isSchemaType()`) produit *bien* des fragments de condition AQL — il est
 > documenté aux côtés de `AQL::CONDITIONS` dans
 > [Filtrage interne](db/filter-internal.md#sucre-syntaxique--isproperty--isadditionaltype)
 > plutôt qu'ici.

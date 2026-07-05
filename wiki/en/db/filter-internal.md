@@ -146,6 +146,28 @@ $init[ AQL::CONDITIONS ] =
 ] ;
 ```
 
+### `isSchemaType()` — from a `Thing` class rather than a string literal
+
+`isAdditionalType()` above takes the schema type as a **string literal** (`'Person'`), which has to be copied by hand and kept in sync with the corresponding `org\schema\Thing` class. `isSchemaType()` — same folder, `oihana\arango\helpers\conditions` — takes the **class** itself instead and resolves its canonical type URI through `Thing::getSchemaType()` (the class's `CONTEXT` constant plus its short name), before delegating to `isAdditionalType()`:
+
+```php
+function isSchemaType( string|array $class , string $docRef = AQL::DOC ) : array
+```
+
+```php
+use function oihana\arango\helpers\conditions\isSchemaType ;
+use xyz\oihana\schema\organizations\Customer ;
+use xyz\oihana\schema\places\CustomerSite ;
+use xyz\oihana\schema\places\Warehouse ;
+
+isSchemaType( Customer::class )                            ; // [ "doc.additionalType == 'https://schema.oihana.xyz/Customer'" ]
+isSchemaType( [ CustomerSite::class , Warehouse::class ] )  ; // [ "doc.additionalType IN ['https://schema.oihana.xyz/CustomerSite','https://schema.oihana.xyz/Warehouse']" ]
+```
+
+A single class collapses to an `==` condition, several classes build an `IN` condition — exactly `isAdditionalType()`'s own rule, inherited for free. Accepts `Thing` itself or any of its subclasses; any other class throws `InvalidArgumentException` — one invalid class among several is enough to reject the whole call, nothing partially built.
+
+> **Why bother, over a plain string?** A `Thing` subclass rename or a `CONTEXT` change (a type moving from `schema.org` to the project's own `xyz.oihana` namespace) is picked up automatically everywhere `isSchemaType()` is used — a hand-copied `'Person'` literal would silently drift.
+
 ### Composition with `?filter=`
 
 The two mechanisms coexist without conflict:

@@ -146,6 +146,28 @@ $init[ AQL::CONDITIONS ] =
 ] ;
 ```
 
+### `isSchemaType()` — depuis une classe `Thing` plutôt qu'un littéral
+
+`isAdditionalType()` ci-dessus prend le type schema.org sous forme de **littéral chaîne** (`'Person'`), qu'il faut recopier à la main et maintenir synchronisé avec la classe `org\schema\Thing` correspondante. `isSchemaType()` — même dossier, `oihana\arango\helpers\conditions` — prend la **classe** elle-même à la place et résout son URI de type canonique via `Thing::getSchemaType()` (la constante `CONTEXT` de la classe plus son nom court), avant de déléguer à `isAdditionalType()` :
+
+```php
+function isSchemaType( string|array $class , string $docRef = AQL::DOC ) : array
+```
+
+```php
+use function oihana\arango\helpers\conditions\isSchemaType ;
+use xyz\oihana\schema\organizations\Customer ;
+use xyz\oihana\schema\places\CustomerSite ;
+use xyz\oihana\schema\places\Warehouse ;
+
+isSchemaType( Customer::class )                            ; // [ "doc.additionalType == 'https://schema.oihana.xyz/Customer'" ]
+isSchemaType( [ CustomerSite::class , Warehouse::class ] )  ; // [ "doc.additionalType IN ['https://schema.oihana.xyz/CustomerSite','https://schema.oihana.xyz/Warehouse']" ]
+```
+
+Une classe unique s'aplatit en condition `==`, plusieurs classes construisent un `IN` — exactement la règle d'`isAdditionalType()`, héritée gratuitement. Accepte `Thing` lui-même ou n'importe laquelle de ses sous-classes ; toute autre classe lève `InvalidArgumentException` — une seule classe invalide parmi plusieurs suffit à rejeter tout l'appel, rien n'est construit partiellement.
+
+> **Pourquoi pas juste une chaîne ?** Un renommage de sous-classe `Thing` ou un changement de `CONTEXT` (un type qui passe de `schema.org` au namespace propre du projet `xyz.oihana`) est répercuté automatiquement partout où `isSchemaType()` est utilisé — un littéral `'Person'` recopié à la main dériverait silencieusement.
+
 ### Composition avec `?filter=`
 
 Les deux mécanismes cohabitent sans conflit :

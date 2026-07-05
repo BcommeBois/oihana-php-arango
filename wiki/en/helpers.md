@@ -10,7 +10,7 @@ etc.). The helpers on this page work on the **input** side: textual
 HTTP grammar, document identifiers, revision formats.
 
 > **Exception:** the [`conditions/`](../../src/oihana/arango/helpers/conditions/) sub-folder
-> (`isProperty()` / `isAdditionalType()`) *does* produce AQL condition fragments — it is
+> (`isProperty()` / `isAdditionalType()` / `isSchemaType()`) *does* produce AQL condition fragments — it is
 > documented alongside `AQL::CONDITIONS` in
 > [Internal filtering](db/filter-internal.md#condition-builder-sugar--isproperty--isadditionaltype)
 > rather than here.
