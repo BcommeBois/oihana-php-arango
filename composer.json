@@ -406,6 +406,8 @@
             "src/oihana/arango/helpers/parseIdentifier.php",
             "src/oihana/arango/helpers/parseKey.php",
             "src/oihana/arango/helpers/sortKeys.php",
+            "src/oihana/arango/helpers/conditions/isAdditionalType.php" ,
+            "src/oihana/arango/helpers/conditions/isProperty.php" ,
             "src/oihana/arango/migrations/helpers/dropFieldQuery.php",
             "src/oihana/arango/migrations/helpers/renameFieldQuery.php",
             "src/oihana/arango/migrations/helpers/setDefaultQuery.php",
