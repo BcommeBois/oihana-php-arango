@@ -313,7 +313,7 @@ Deux points à connaître :
 | La projection diffère largement entre skins (champs ajoutés, joins changés…) | `AQL::SKIN_FIELDS` avec une entrée par skin — sur la définition d'edge/join, la racine du modèle ou un sous-champ MAP/DOCUMENT/WRAP |
 | La même clé imbriquée doit avoir **deux formes** selon le skin (grille minimale vs décomposée) | `AQL::SKIN_FIELDS` posé sur le sous-champ structurel |
 | Edge INBOUND vers un document qui peut référencer en retour la source | `AQL::SKIN => Skin::MAIN` sur la définition d'edge pour couper le cycle |
-| Restreindre la projection d'un edge ou d'un join à une permission utilisateur | `AQL::REQUIRES` sur la définition + injection du callable via `InjectAuthorizerTrait` |
+| Restreindre la projection d'un edge ou d'un join à une permission utilisateur | `AQL::REQUIRES` sur la définition — le callable est posé automatiquement par la base (ou `InjectAuthorizerTrait` pour un callable stable) |
 
 Les mécanismes se cumulent. Une définition peut combiner `AQL::SKIN_FIELDS` pour la projection principale, des `Field::SKINS` sur les sous-champs des projections individuelles, et un `AQL::SKIN` pour pinner le skin du target. La résolution est indépendante à chaque niveau.
 
@@ -441,40 +441,24 @@ Quand la clé est absente, aucun contrôle n'est appliqué — comportement par 
 
 **Limite 3 — Le compteur de tableau stocké n'a pas de définition à verrouiller.** `Filter::JOINS_COUNT` ne suit aucune relation — il compte les éléments d'un tableau **déjà stocké dans le document** (ex. `doc.memberIds`). Pas de définition derrière, donc pas d'endroit où poser `AQL::REQUIRES` : pour le cacher, poser `Field::REQUIRES` sur le champ lui-même.
 
-**Limite 4 — Sans contrôleur d'accès injecté, tout est ouvert.** Si une route n'injecte aucun authorizer (script d'administration, traitement interne, test), aucun verrou ne bloque : tout sort. C'est le contrat existant (voir « Comportement quand l'authorizer est absent » ci-dessous) — la protection n'existe que là où le contrôleur fournit le callable.
+**Limite 4 — Sans contrôleur d'accès injecté, tout est ouvert.** Si aucun authorizer n'est posé (script d'administration, traitement interne, test, ou simplement une *stack* d'autorisation non enregistrée dans le conteneur), aucun verrou ne bloque : tout sort. C'est le contrat existant (voir « Comportement quand l'authorizer est absent » ci-dessous) — la protection n'existe que là où la *stack* d'autorisation est enregistrée et la requête authentifiée (la base pose alors le callable automatiquement).
 
-### Câblage côté contrôleur — pattern recommandé
+### Câblage côté contrôleur — automatique depuis la base
 
-`oihana/php-arango` ne connaît rien du système d'autorisation utilisé (Casbin, OPA, contrôle maison…). Le contrôleur fournit un callable `Closure(string $subject): bool` que le framework appellera pour chaque sujet déclaré.
+`oihana/php-arango` ne connaît rien du système d'autorisation utilisé (Casbin, OPA, contrôle maison…) : la décision est déléguée à un callable `Closure(string $subject): bool`. **Depuis la version courante, `DocumentsController` fournit ce callable tout seul — vous n'avez plus rien à surcharger.**
 
-`DocumentsController` expose deux hooks de cycle de vie issus du trait [`ModelCallTrait`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/ModelCallTrait.php) — `beforeModelCall( ?Request , array &$init )` et `afterModelCall( ?Request , array &$init , mixed &$result )` — qui sont automatiquement invoqués autour de chaque opération CRUD principale (`list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete`). Le pattern recommandé est d'override `beforeModelCall` une seule fois pour activer le contrôle d'accès sur tous les verbes HTTP du contrôleur :
+La base compose le trait `PermissionAuthorizerTrait` et arme, dès le constructeur (via [`AuthorizationContextTrait`](../../src/oihana/arango/controllers/traits/AuthorizationContextTrait.php)), l'*enforcer* de capacités et le résolveur de sujet lus dans le conteneur DI (`CapabilityEnforcerInterface` et `PermissionSubjectResolverInterface`). Elle surcharge elle-même le hook `beforeModelCall( ?Request , array &$init )` — issu du trait [`ModelCallTrait`](https://github.com/BcommeBois/oihana-php-system/blob/main/src/oihana/controllers/traits/ModelCallTrait.php), automatiquement invoqué autour de chaque opération CRUD principale (`list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete`) — pour fabriquer à chaque requête un authorizer request-scoped (`buildPermissionAuthorizer()`) et le poser sous `Arango::AUTHORIZER`.
 
-```php
-use oihana\api\controllers\traits\CapabilityAuthorizerTrait;
-use oihana\arango\controllers\DocumentsController;
-use oihana\arango\enums\Arango;
+Concrètement : **il suffit d'enregistrer `CapabilityEnforcerInterface` et `PermissionSubjectResolverInterface` dans le conteneur DI.** Dès qu'ils sont présents et que la requête porte un utilisateur authentifié, les verrous `Field::REQUIRES` / `AQL::REQUIRES` s'appliquent sur **tous** les verbes du contrôleur — sans une ligne de câblage par contrôleur ni par verbe HTTP.
 
-use Psr\Http\Message\ServerRequestInterface as Request;
+Deux garde-fous préservent la compatibilité :
 
-final class UsersController extends DocumentsController
-{
-    use CapabilityAuthorizerTrait ;
+- **un authorizer déjà posé dans `$init` gagne** — un appelant, un test unitaire ou une sous-classe qui en a posé un plus tôt n'est jamais écrasé ;
+- **`buildPermissionAuthorizer()` retourne `null` — donc rien n'est posé — s'il manque une pièce** (pas de requête, pas d'*enforcer*, pas de résolveur, ou pas d'utilisateur authentifié). Le framework retombe alors sur son comportement par défaut (fail open, voir section suivante), donc un contrôleur qui ne porte pas la *stack* d'autorisation garde son comportement d'avant.
 
-    protected function beforeModelCall( ?Request $request , array &$init ) : void
-    {
-        parent::beforeModelCall( $request , $init ) ;
+> ⚠ **Compatibilité ascendante.** Là où la *stack* Casbin et un utilisateur authentifié sont présents, un marqueur `Field::REQUIRES` / `AQL::REQUIRES` jusqu'ici dormant devient désormais **appliqué**. Auditez vos définitions de modèles pour de tels marqueurs avant de mettre à jour.
 
-        if ( ( $authorizer = $this->buildAuthorizer( $request ) ) !== null )
-        {
-            $init[ Arango::AUTHORIZER ] = $authorizer ;
-        }
-    }
-}
-```
-
-Le trait `CapabilityAuthorizerTrait` — fait partie de la facade `CapabilityGuardTrait` — fabrique un `Closure(string): bool` request-scoped basé sur le `CapabilityEnforcer` Casbin et le `userId` Zitadel courant. Il applique automatiquement `safeSubject` sur l'identifiant utilisateur (voir [tips auth-code](https://github.com/BcommeBois/oihana-php-auth/blob/main/wiki/fr/tips.md)). Quand l'enforcer est indisponible ou que la requête ne porte pas d'utilisateur authentifié, `buildAuthorizer` retourne `null` — l'`if` saute et le framework retombe sur son comportement par défaut (fail open, voir section suivante).
-
-Avantage : l'override est **une seule ligne par contrôleur**, pas par verbe HTTP. Le câblage couvre `list`, `get`, `last`, `count`, `insert`, `update`, `replace`, `delete` automatiquement.
+Une sous-classe ne surcharge plus `beforeModelCall` que pour un cas particulier : fournir un authorizer calculé autrement, ou poser un callable stable non lié au *request* (voir la variante ci-dessous).
 
 ### Variante — pattern request-agnostique avec `InjectAuthorizerTrait`
 
@@ -501,11 +485,11 @@ final class BatchController extends DocumentsController
 }
 ```
 
-`initializeArangoAuthorizer` accepte tout format de callable PHP standard (Closure, invokable, `[obj, 'method']`, `'Class::method'`, fonction qualifiée — la résolution passe par `oihana\core\callables\resolveCallable`). Pour les cas Casbin + request-scoped en production, préférer le pattern `CapabilityAuthorizerTrait` ci-dessus.
+`initializeArangoAuthorizer` accepte tout format de callable PHP standard (Closure, invokable, `[obj, 'method']`, `'Class::method'`, fonction qualifiée — la résolution passe par `oihana\core\callables\resolveCallable`). Pour les cas Casbin + request-scoped en production, rien à faire : le câblage automatique de la base (section précédente) suffit.
 
 ### Comportement quand l'authorizer est absent
 
-Si `$init[Arango::AUTHORIZER]` n'est pas posé (le contrôleur n'override pas `beforeModelCall`, ou aucun enforcer n'est enregistré pour ce contrôleur), la fonction de contrôle interne `isAuthorized` retourne `true` par défaut — la projection est **autorisée** (fail open). Cette logique évite de casser une route quand on ajoute `AQL::REQUIRES` sur une définition partagée tant que tous les contrôleurs concernés n'ont pas été câblés.
+Si `$init[Arango::AUTHORIZER]` n'est pas posé (pas de requête, l'*enforcer* ou le résolveur de sujet n'est pas enregistré dans le conteneur, ou la requête ne porte pas d'utilisateur authentifié — les conditions sous lesquelles `buildPermissionAuthorizer()` retourne `null`), la fonction de contrôle interne `isAuthorized` retourne `true` par défaut — la projection est **autorisée** (fail open). Cette logique évite de casser une route quand on ajoute `AQL::REQUIRES` sur une définition partagée tant que la *stack* d'autorisation n'est pas en place partout.
 
 Pour soumettre une projection à permission de manière stricte, le middleware `Authorized` sur la route HTTP (Casbin niveau permission HTTP) doit toujours être l'enveloppe principale — `AQL::REQUIRES` est une **deuxième couche** de contrôle d'accès à l'intérieur de la projection AQL, pas un remplacement.
 

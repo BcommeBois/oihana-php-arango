@@ -132,7 +132,7 @@ Enforcement is implemented by seven traits exposed by [`oihana/php-auth`](https:
 | `CapabilityFilterKeysTrait` | `enforceFilterKeys( $request )` for *map*-type parameters (`?filter=`). Gates the filter **keys**. | On resources with sensitive filterable fields (prices, private data). |
 | `CapabilityFieldsTrait` | `enforceFields( $payload )` to gate the **body fields** on `PATCH` / `POST` / `PUT`. | When a field must only be modifiable by some users (e.g. `level` on `/roles`). |
 | `CapabilityBinaryTrait` | `hasCapability( $request , $paramName )` for **binary** parameters (`?bench=true`) or **cross-cutting actions**. | For *features* not mapped on a value but on the presence of a parameter. |
-| `CapabilityAuthorizerTrait` | `buildAuthorizer( $request )` produces a **request-scoped** `Closure(string $subject): bool`. | To provide the *authorizer* to the model layer via `Arango::AUTHORIZER` (gating `AQL::REQUIRES` on edges/joins). |
+| `CapabilityAuthorizerTrait` | `buildAuthorizer( $request )` produces a **request-scoped** `Closure(string $subject): bool` that reads the string as a **capability discriminator** (`PARAM:<name>` action). | For an ad-hoc *capability* check inside controller logic. ⚠ **Not** for `AQL::REQUIRES`: that gating uses permission labels, guarded by `buildPermissionAuthorizer` — posed automatically by the base (see below). |
 
 Standard usage pattern in a custom controller:
 
@@ -155,29 +155,36 @@ final class ProductsController extends DocumentsController
         // Gate the keys of ?filter=
         $this->enforceFilterKeys( $request , $init ) ;
 
-        // Inject the authorizer for the model layer (AQL::REQUIRES)
-        if ( ( $authorizer = $this->buildAuthorizer( $request ) ) !== null )
-        {
-            $init[ Arango::AUTHORIZER ] = $authorizer ;
-        }
+        // The permission authorizer that guards AQL::REQUIRES / Field::REQUIRES
+        // is posed automatically by the base (buildPermissionAuthorizer) —
+        // nothing to inject here. See "The authorizer — toward the model" below.
     }
 }
 ```
 
+> ⚠ **Do not re-inject `buildAuthorizer( $request )` under `Arango::AUTHORIZER` here.** It would **overwrite** the permission authorizer posed by the base — the correct one for `AQL::REQUIRES` — with the *capability* authorizer, which reads the string as a `PARAM:` discriminator rather than a permission label. The two are not interchangeable (see the next section).
+
 ## The *authorizer* — toward the model
 
-A *capability* can also live **on the model side**, on an *edge* or a *join*: it's `AQL::REQUIRES`, documented in detail in [Field projection](../projection.md#permission-gated-edges-and-joins--aqlrequires).
+A permission can also live **on the model side**, on an *edge* or a *join*: it's `AQL::REQUIRES` (and `Field::REQUIRES` on a field), documented in detail in [Field projection](../projection.md#permission-gated-edges-and-joins--aqlrequires). The model knows nothing about the authorization system: it consults a *callable* `Closure(string $subject): bool` posed under `Arango::AUTHORIZER`.
 
-The controller knows nothing about the internal authorization system — it **injects a *callable*** that the model consults as needed:
+**As of the current version, that *callable* is posed automatically by the base `DocumentsController`** — you inject nothing. See [Projection — automatic wiring](../projection.md#wiring-on-the-controller-side--automatic-from-the-base).
 
-```php
-$init[ Arango::AUTHORIZER ] = fn( string $subject ) : bool
-                            => $enforcer->enforce( $userId , $subject , 'view' ) ;
-```
+### Two authorizers, two vocabularies — do not confuse them
 
-`CapabilityAuthorizerTrait::buildAuthorizer( $request )` automatically produces this request-scoped *callable* based on the Casbin `CapabilityEnforcer`. The model then filters its `AQL::REQUIRES`-annotated *edges* and *joins* by consulting that *callable* — without ever having to understand Casbin itself.
+`oihana/php-auth` exposes **two** *callable* factories, of the same signature but reading the string differently:
 
-This is the **separation-of-concerns contract** between `oihana/php-arango` (which knows nothing about authentication) and the `oihana/php-auth` layer (which implements Casbin). The *authorizer* remains injectable from the outside — see [Integration with `oihana/php-auth`](../getting-started/dependencies.md#integration-with-oihanaphp-auth).
+| | `buildAuthorizer` (`CapabilityAuthorizerTrait`) | `buildPermissionAuthorizer` (`PermissionAuthorizerTrait`) |
+|---|---|---|
+| The received string is… | a **capability discriminator** | a **permission label** (e.g. `users.roles:list`) |
+| Translation | mapped to a `PARAM:<name>` action | resolved to an `(object, action)` couple via `PermissionSubjectResolverInterface` |
+| *enforcer* call | `has( userId, object, perm )` | `enforceObjectAction( userId, object, action )` |
+| Usage | ad-hoc *capability* check | **`AQL::REQUIRES` / `Field::REQUIRES`** |
+| Who poses it | you, if needed, in your logic | **the base, automatically** in `beforeModelCall` |
+
+`AQL::REQUIRES` / `Field::REQUIRES` values are **permission labels**: only `buildPermissionAuthorizer` evaluates them correctly. Posing `buildAuthorizer` under `Arango::AUTHORIZER` would read `users.roles:list` as a `PARAM:users.roles:list` *capability* — and would **overwrite** the correct authorizer posed by the base along the way. Do not do it.
+
+This is the **separation-of-concerns contract** between `oihana/php-arango` (which knows nothing about authentication) and the `oihana/php-auth` layer (which implements Casbin). The *authorizer* remains injectable from the outside for special cases — see [Integration with `oihana/php-auth`](../getting-started/dependencies.md#integration-with-oihanaphp-auth).
 
 ## Complete example — `/products?skin=offers.full`
 

@@ -132,7 +132,7 @@ L'enforcement est implémenté par sept traits exposés par [`oihana/php-auth`](
 | `CapabilityFilterKeysTrait` | `enforceFilterKeys( $request )` pour les paramètres de type *map* (`?filter=`). Gate les **clés** du filtre. | Sur les ressources avec des champs filtrables sensibles (prix, données privées). |
 | `CapabilityFieldsTrait` | `enforceFields( $payload )` pour gater les **champs du body** sur `PATCH` / `POST` / `PUT`. | Quand un champ ne doit être modifiable que par certains utilisateurs (par exemple `level` sur `/roles`). |
 | `CapabilityBinaryTrait` | `hasCapability( $request , $paramName )` pour les paramètres **binaires** (`?bench=true`) ou les **actions transverses**. | Pour les *features* qu'on ne mappe pas sur une valeur mais sur la présence d'un paramètre. |
-| `CapabilityAuthorizerTrait` | `buildAuthorizer( $request )` produit un `Closure(string $subject): bool` **request-scoped**. | Pour fournir l'*authorizer* à la couche modèle via `Arango::AUTHORIZER` (gating de `AQL::REQUIRES` sur les edges/joins). |
+| `CapabilityAuthorizerTrait` | `buildAuthorizer( $request )` produit un `Closure(string $subject): bool` **request-scoped** qui lit la string comme un **discriminant de *capability*** (action `PARAM:<name>`). | Pour un contrôle *capability* ad-hoc dans la logique du contrôleur. ⚠ **Pas** pour `AQL::REQUIRES` : ce *gating* utilise des libellés de permission, gardés par `buildPermissionAuthorizer` — posé automatiquement par la base (voir ci-dessous). |
 
 Pattern d'usage standard dans un contrôleur custom :
 
@@ -155,29 +155,36 @@ final class ProductsController extends DocumentsController
         // Gate les clés de ?filter=
         $this->enforceFilterKeys( $request , $init ) ;
 
-        // Injecte l'authorizer pour la couche modèle (AQL::REQUIRES)
-        if ( ( $authorizer = $this->buildAuthorizer( $request ) ) !== null )
-        {
-            $init[ Arango::AUTHORIZER ] = $authorizer ;
-        }
+        // L'authorizer de permission qui garde AQL::REQUIRES / Field::REQUIRES
+        // est posé automatiquement par la base (buildPermissionAuthorizer) —
+        // rien à injecter ici. Voir « L'authorizer — vers le modèle » ci-dessous.
     }
 }
 ```
 
+> ⚠ **Ne réinjectez pas `buildAuthorizer( $request )` sous `Arango::AUTHORIZER` ici.** Ce serait **écraser** l'authorizer de permission posé par la base — le bon pour `AQL::REQUIRES` — par l'authorizer de *capability*, qui interprète la string comme un discriminant `PARAM:` et non comme un libellé de permission. Les deux ne sont pas interchangeables (voir la section suivante).
+
 ## L'*authorizer* — vers le modèle
 
-Une *capability* peut aussi vivre **au niveau du modèle**, sur un *edge* ou un *join* : c'est `AQL::REQUIRES`, documenté en détail dans [Projection des edges et joins](../projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires).
+Une permission peut aussi vivre **au niveau du modèle**, sur un *edge* ou un *join* : c'est `AQL::REQUIRES` (et `Field::REQUIRES` sur un champ), documenté en détail dans [Projection des edges et joins](../projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires). Le modèle ne sait rien du système d'autorisation : il consulte un *callable* `Closure(string $subject): bool` posé sous `Arango::AUTHORIZER`.
 
-Le contrôleur ne sait rien du système d'autorisation utilisé en interne — il **injecte un *callable*** que le modèle consulte au besoin :
+**Depuis la version courante, ce *callable* est posé automatiquement par la base `DocumentsController`** — vous n'avez rien à injecter. Voir [Projection — câblage automatique](../projection.md#câblage-côté-contrôleur--automatique-depuis-la-base).
 
-```php
-$init[ Arango::AUTHORIZER ] = fn( string $subject ) : bool
-                            => $enforcer->enforce( $userId , $subject , 'view' ) ;
-```
+### Deux authorizers, deux vocabulaires — ne pas les confondre
 
-`CapabilityAuthorizerTrait::buildAuthorizer( $request )` fabrique automatiquement ce *callable* request-scoped basé sur le `CapabilityEnforcer` Casbin. Le modèle filtre alors ses *edges* et *joins* annotés `AQL::REQUIRES` en consultant ce *callable* — sans avoir à comprendre Casbin lui-même.
+`oihana/php-auth` expose **deux** fabriques de *callable*, de même signature mais qui lisent la string différemment :
 
-C'est le contrat de **séparation des responsabilités** entre `oihana/php-arango` (qui ne sait rien de l'authentification) et la couche `oihana/php-auth` (qui implémente Casbin). L'*authorizer* est injectable depuis l'extérieur — voir [Intégration avec `oihana/php-auth`](../getting-started/dependencies.md#intégration-avec-oihanaphp-auth).
+| | `buildAuthorizer` (`CapabilityAuthorizerTrait`) | `buildPermissionAuthorizer` (`PermissionAuthorizerTrait`) |
+|---|---|---|
+| La string reçue est… | un **discriminant de *capability*** | un **libellé de permission** (ex. `users.roles:list`) |
+| Traduction | mappée en action `PARAM:<name>` | résolue en couple `(object, action)` via `PermissionSubjectResolverInterface` |
+| Appel *enforcer* | `has( userId, object, perm )` | `enforceObjectAction( userId, object, action )` |
+| Usage | contrôle *capability* ad-hoc | **`AQL::REQUIRES` / `Field::REQUIRES`** |
+| Qui le pose | vous, si besoin, dans votre logique | **la base, automatiquement** dans `beforeModelCall` |
+
+Les valeurs de `AQL::REQUIRES` / `Field::REQUIRES` sont des **libellés de permission** : seul `buildPermissionAuthorizer` les évalue correctement. Poser `buildAuthorizer` sous `Arango::AUTHORIZER` interpréterait `users.roles:list` comme une *capability* `PARAM:users.roles:list` — et **écraserait** au passage le bon authorizer posé par la base. Ne le faites pas.
+
+C'est le contrat de **séparation des responsabilités** entre `oihana/php-arango` (qui ne sait rien de l'authentification) et la couche `oihana/php-auth` (qui implémente Casbin). L'*authorizer* reste injectable depuis l'extérieur pour les cas particuliers — voir [Intégration avec `oihana/php-auth`](../getting-started/dependencies.md#intégration-avec-oihanaphp-auth).
 
 ## Exemple complet — `/products?skin=offers.full`
 

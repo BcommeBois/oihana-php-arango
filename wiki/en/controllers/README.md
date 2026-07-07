@@ -168,7 +168,7 @@ final class UsersController extends DocumentsController
     protected function beforeModelCall( ?Request $request , array &$init ) : void
     {
         parent::beforeModelCall( $request , $init ) ;
-        // ... authorizer injection, validation, cross-cutting filter
+        // ... validation, cross-cutting filter (the permission authorizer is already posed by the base)
     }
 
     protected function afterModelCall
@@ -229,6 +229,8 @@ $init = $this->injectFilters( $init ,
 
 Allows injecting an *authorizer* `Closure(string $subject): bool` that the AQL framework will consult to decide whether to include an `AQL::REQUIRES`-marked *edge* / *join*. See [Field projection](../projection.md#permission-gated-edges-and-joins--aqlrequires).
 
+> **Note.** In production (Casbin + *request-scoped*) you usually have **nothing to wire**: `DocumentsController` already poses the permission authorizer automatically as soon as the authorization stack is registered in the DI container (see [Projection — automatic wiring](../projection.md#wiring-on-the-controller-side--automatic-from-the-base)). `InjectAuthorizerTrait` is only for a **stable** callable known at construction and not bound to the request (CLI batch, test, callable resolved straight from the container).
+
 ```php
 final class BatchController extends DocumentsController
 {
@@ -248,7 +250,7 @@ final class BatchController extends DocumentsController
 }
 ```
 
-For the *request-scoped* pattern with Casbin (the most common in production), see `CapabilityAuthorizerTrait` from the host project.
+For the *request-scoped* pattern with Casbin (the most common in production), nothing to do: the base wires it automatically (see the note above).
 
 ## `EdgesController`
 

@@ -286,7 +286,7 @@ CRUD operations go through lifecycle hooks consumable by subclassing or controll
 
 | Hook | Phase | Typical use |
 |---|---|---|
-| `beforeModelCall( $request , array &$init )` | Before each controller CRUD operation. | Filter injection, *authorizer*, cross-cutting validation. |
+| `beforeModelCall( $request , array &$init )` | Before each controller CRUD operation. | Filter injection, custom *authorizer* (the default is already posed by the base), cross-cutting validation. |
 | `afterModelCall( $request , array &$init , mixed &$result )` | After each operation. | Response enrichment, *logging*, *audit*. |
 | `afterDelete` (*signal*) | After a vertex `delete()`. | Edge cascade (`EdgesFromTrait`/`EdgesToTrait`). |
 
