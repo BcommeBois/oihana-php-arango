@@ -10,14 +10,12 @@ use oihana\arango\models\enums\Search;
 use oihana\enums\Char;
 use oihana\enums\Order;
 use oihana\exceptions\BindException;
-use oihana\exceptions\ValidationException;
 use oihana\traits\SortDefaultTrait;
 
 use org\schema\constants\Schema;
 
 use function oihana\arango\db\functions\geo\distance;
 use function oihana\arango\db\functions\search\bm25;
-use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\resolveGeoPoint;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\normalizeSortable;
@@ -82,8 +80,14 @@ use function oihana\core\strings\key;
  * - `?near=…&sort=name` keeps `name` only — distance is **not** auto-appended.
  * - `?sort=distance` without `?near=` is dropped (no anchor).
  *
+ * The `key` names the geo field, so it is a **sort dimension** and passes the same
+ * fail-closed gate as any sort key: it must be declared in `AQL::SORTABLE` (which
+ * resolves the field path and, via `Field::REQUIRES`, gates it — a geo field hidden
+ * from the projection stays untriable). A missing, unwhitelisted or refused key
+ * simply drops the distance sort.
+ *
  * The reference point is bound (`@lat` / `@lng`) and the predicate uses
- * `DISTANCE(doc.<key>.latitude, doc.<key>.longitude, @lat, @lng)`, so it is
+ * `DISTANCE(doc.<field>.latitude, doc.<field>.longitude, @lat, @lng)`, so it is
  * index-accelerated by a two-field `GeoIndex`. Coordinates are bound **only**
  * when a `distance` criterion is actually emitted, so the query never declares
  * an unused bind variable.
@@ -138,7 +142,6 @@ trait SortTrait
      * @return string|null The `SORT` body (without the `SORT` keyword), or an empty string when nothing sorts.
      *
      * @throws BindException When a bound coordinate cannot be registered.
-     * @throws ValidationException When the `?near=` `key` is not a safe attribute name.
      *
      * @example Plain field sort
      * ```php
@@ -246,7 +249,7 @@ trait SortTrait
                         if( !$nearResolved )
                         {
                             $nearResolved   = true ;
-                            $nearExpression = $this->prepareNear( $init[ Arango::NEAR ] , $binds , $docRef ) ;
+                            $nearExpression = $this->prepareNear( $init[ Arango::NEAR ] , $binds , $docRef , $init ) ;
                         }
 
                         if( $nearExpression !== null )
@@ -302,6 +305,37 @@ trait SortTrait
      */
     private function authorizeSortKey( string $key , mixed $entry , array $init , string $docRef ) : ?string
     {
+        [ $path , $requires ] = $this->resolveSortEntry( $key , $entry ) ;
+
+        if( !$this->isSortAuthorized( $requires , $init ) )
+        {
+            return null ;
+        }
+
+        return key( compile( $path , Char::DOT ) , $docRef ) ;
+    }
+
+    /**
+     * Resolve a whitelisted sort entry to its `[ fieldPath, requires ]` pair.
+     *
+     * The entry (the `$sortable[$key]` value) is either a plain field path — a string
+     * or an array path (`[ 'address', 'city' ]`) — or an **explicit definition** (an
+     * associative array carrying `Field::PATH` and/or `Field::REQUIRES`). The permission
+     * subject is resolved in two steps, aligned on the projection's `Field::REQUIRES`:
+     * - **explicit** — a `Field::REQUIRES` declared on the entry itself takes priority;
+     * - **inherited** — otherwise the subject of the homonymous field declared in
+     *   `$this->fields` is reused, so « what you cannot read, you cannot sort on ».
+     *
+     * Shared by the textual `?sort=` grammar and the `?near=` distance anchor, so both
+     * resolve a geo/scalar field the same way.
+     *
+     * @param string $key   The public URL key (already resolved against the whitelist).
+     * @param mixed  $entry The `$sortable[$key]` value (path or explicit definition).
+     *
+     * @return array{0:mixed,1:mixed} The `[ fieldPath, requires ]` pair (`requires` may be `null`).
+     */
+    private function resolveSortEntry( string $key , mixed $entry ) : array
+    {
         // Explicit definition (Façon A): an associative array carries its own path
         // and/or permission. A pure list is an array path, not a definition.
         $isDefinition = is_array( $entry ) && !array_is_list( $entry ) ;
@@ -320,36 +354,62 @@ trait SortTrait
             }
         }
 
-        if( $requires !== null && !isAuthorized( [ Field::REQUIRES => $requires ] , $init ) )
-        {
-            return null ;
-        }
+        return [ $path , $requires ] ;
+    }
 
-        return key( compile( $path , Char::DOT ) , $docRef ) ;
+    /**
+     * Decide whether a resolved sort/near `requires` subject is granted for the request.
+     *
+     * No subject (`null`) or no authorizer injected sorts freely (fail-open — exactly the
+     * field-level semantics). Otherwise the subject is run through {@see isAuthorized()}.
+     *
+     * @param mixed $requires The `Field::REQUIRES` subject(s) resolved for the field, or `null`.
+     * @param array $init     The request-level init. Reads `Arango::AUTHORIZER`.
+     *
+     * @return bool `true` when the field may be sorted on, `false` when refused.
+     */
+    private function isSortAuthorized( mixed $requires , array $init ) : bool
+    {
+        return $requires === null || isAuthorized( [ Field::REQUIRES => $requires ] , $init ) ;
     }
 
     /**
      * Build the `DISTANCE(...)` expression for a `?near=` anchor and bind its coordinates.
      *
-     * Reads the `{ key, latitude, longitude }` payload, validates the attribute key
-     * against injection ({@see assertAttributeName()}), binds the reference point, and
-     * returns the AQL distance expression. Returns `null` when the `key` is missing or
-     * the coordinates are incomplete.
+     * The `key` of the payload names the geo field to order by distance from, so it is a
+     * **sort dimension** and travels through the same fail-closed gate as any sort key: it
+     * must be declared in `$this->sortable` (URL key → geo field path) and it inherits (or
+     * declares) a `Field::REQUIRES` permission — a geo field hidden from the projection
+     * stays untriable (no distance oracle). Returns `null` when the key is missing, is not
+     * whitelisted, is refused by permission, or the coordinates are incomplete.
      *
      * @param array      $near   The `?near=` payload (`{ key, latitude, longitude }`), already array-checked by the caller.
      * @param array|null $binds  Bind variables, populated by reference.
      * @param string     $docRef The document variable the fields hang off.
+     * @param array      $init   The request-level init. Reads `Arango::AUTHORIZER`.
      *
-     * @return string|null `DISTANCE(doc.<key>.latitude, doc.<key>.longitude, @lat, @lng)` or `null`.
+     * @return string|null `DISTANCE(doc.<field>.latitude, doc.<field>.longitude, @lat, @lng)` or `null`.
      *
      * @throws BindException When a bound coordinate cannot be registered.
-     * @throws ValidationException When the `key` is not a safe attribute name.
      */
-    protected function prepareNear( array $near , ?array &$binds , string $docRef = AQL::DOC ): ?string
+    protected function prepareNear( array $near , ?array &$binds , string $docRef = AQL::DOC , array $init = [] ): ?string
     {
         $key = $near[ FilterParam::KEY ] ?? null ;
 
         if( !is_string( $key ) || $key === Char::EMPTY )
+        {
+            return null ;
+        }
+
+        // Fail-closed whitelist: the geo key must be a declared sortable dimension.
+        if( !is_array( $this->sortable ) || !array_key_exists( $key , $this->sortable ) )
+        {
+            return null ;
+        }
+
+        [ $field , $requires ] = $this->resolveSortEntry( $key , $this->sortable[ $key ] ) ;
+
+        if( !$this->isSortAuthorized( $requires , $init ) )
         {
             return null ;
         }
@@ -361,12 +421,12 @@ trait SortTrait
             return null ;
         }
 
-        assertAttributeName( $key ) ;
+        $field = compile( $field , Char::DOT ) ;
 
         return distance
         (
-            key( $key . Char::DOT . Schema::LATITUDE  , $docRef ) ,
-            key( $key . Char::DOT . Schema::LONGITUDE , $docRef ) ,
+            key( $field . Char::DOT . Schema::LATITUDE  , $docRef ) ,
+            key( $field . Char::DOT . Schema::LONGITUDE , $docRef ) ,
             $this->bind( $latitude  , $binds ) ,
             $this->bind( $longitude , $binds )
         ) ;

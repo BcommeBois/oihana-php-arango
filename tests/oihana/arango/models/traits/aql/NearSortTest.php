@@ -14,15 +14,16 @@ use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\filters\FilterParam;
-use oihana\exceptions\ValidationException;
 
 /**
  * Tests for the `?near=` distance sorting in SortTrait.
  */
 class NearSortTest extends TestCase
 {
+    private Container $container;
     private Documents $model;
     private array $binds;
 
@@ -39,14 +40,27 @@ class NearSortTest extends TestCase
 
         $container->set( LoggerInterface::class , new NullLogger() ) ;
 
-        $this->model = new Documents( $container ,
+        $this->container = $container ;
+
+        $this->model = $this->modelWithSortable( [ 'name' , 'geo' ] ) ;
+
+        $this->binds = [] ;
+    }
+
+    /**
+     * Build a Documents model with a given `?sort=`/`?near=` whitelist.
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    private function modelWithSortable( array $sortable ): Documents
+    {
+        return new Documents( $this->container ,
         [
             AQL::COLLECTION => 'testCollection' ,
             AQL::LAZY       => false ,
-            AQL::SORTABLE   => [ 'name' => 'name' ] ,
+            AQL::SORTABLE   => $sortable ,
         ]);
-
-        $this->binds = [] ;
     }
 
     private function near(): array
@@ -180,12 +194,56 @@ class NearSortTest extends TestCase
         $this->assertStringNotContainsString( 'doc.geo.latitude' , $result ) ;
     }
 
-    public function testNearWithUnsafeKeyThrows(): void
+    public function testNearWithUnsafeKeyIsDropped(): void
     {
+        // Fail-closed: an unsafe key is not whitelisted, so it is dropped — no
+        // exception, no injection, no distance sort.
         $init = [ Arango::NEAR => [ FilterParam::KEY => 'geo || 1==1' , 'latitude' => 48.85 , 'longitude' => 2.35 ] ] ;
 
-        $this->expectException( ValidationException::class ) ;
+        $result = $this->model->prepareSort( $init , binds: $this->binds ) ;
 
-        $this->model->prepareSort( $init , binds: $this->binds ) ;
+        $this->assertSame( '' , $result ) ;
+        $this->assertStringNotContainsString( 'DISTANCE' , $result ) ;
+    }
+
+    public function testNearKeyNotWhitelistedYieldsNoDistance(): void
+    {
+        // The model whitelists 'geo' only; a different geo key is refused.
+        $init = [ Arango::NEAR => [ FilterParam::KEY => 'location' , 'latitude' => 48.85 , 'longitude' => 2.35 ] ] ;
+
+        $result = $this->model->prepareSort( $init , binds: $this->binds ) ;
+
+        $this->assertSame( '' , $result ) ;
+        $this->assertNotContains( 48.85 , $this->binds ) ;
+    }
+
+    public function testNearKeyDeniedByPermissionYieldsNoDistance(): void
+    {
+        // The geo dimension is permission-gated; a denying authorizer drops the distance sort.
+        $model = $this->modelWithSortable
+        (
+            [ 'geo' => [ Field::PATH => 'geo' , Field::REQUIRES => 'geo:read' ] ]
+        ) ;
+
+        $init = [ Arango::NEAR => $this->near() , Arango::AUTHORIZER => fn() => false ] ;
+
+        $result = $model->prepareSort( $init , binds: $this->binds ) ;
+
+        $this->assertSame( '' , $result ) ;
+        $this->assertNotContains( 48.8566 , $this->binds ) ;
+    }
+
+    public function testNearKeyAllowedByPermissionSorts(): void
+    {
+        $model = $this->modelWithSortable
+        (
+            [ 'geo' => [ Field::PATH => 'geo' , Field::REQUIRES => 'geo:read' ] ]
+        ) ;
+
+        $init = [ Arango::NEAR => $this->near() , Arango::AUTHORIZER => fn( string $s ) => $s === 'geo:read' ] ;
+
+        $result = $model->prepareSort( $init , binds: $this->binds ) ;
+
+        $this->assertStringContainsString( 'DISTANCE(doc.geo.latitude,doc.geo.longitude,' , $result ) ;
     }
 }

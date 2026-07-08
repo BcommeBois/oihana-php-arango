@@ -64,7 +64,8 @@ class GeoIntegrationTest extends IntegrationTestCase
                 'geo'  => FilterType::GEO ,
                 'type' => FilterType::STRING ,
             ] ,
-            AQL::SORTABLE   => [ 'name' => 'name' ] ,
+            // 'geo' is whitelisted so the ?near= distance dimension is allowed (fail-closed gate).
+            AQL::SORTABLE   => [ 'name' , 'geo' ] ,
         ]);
     }
 
