@@ -4,6 +4,7 @@ namespace tests\oihana\arango\db\helpers;
 
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 use function oihana\arango\db\helpers\buildInlineFilterCondition;
@@ -53,6 +54,24 @@ final class BuildInlineFilterConditionTest extends TestCase
         $result = buildInlineFilterCondition( 'score' , 'ge' , 10 , $binds ) ;
 
         $this->assertMatchesRegularExpression( '/^CURRENT\.score >= @\S+$/' , $result ) ;
+    }
+
+    public function testDottedSubFieldPathIsAccepted(): void
+    {
+        $binds  = [] ;
+        $result = buildInlineFilterCondition( 'address.city' , 'eq' , 'Paris' , $binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^CURRENT\.address\.city == @\S+$/' , $result ) ;
+    }
+
+    public function testUnsafeFieldNameThrows(): void
+    {
+        // Defense in depth: an injection-looking sub-field name (e.g. from a `match`
+        // filter with no AQL::FILTERS whitelist) never reaches CURRENT.<field>.
+        $this->expectException( ValidationException::class ) ;
+
+        $binds = [] ;
+        buildInlineFilterCondition( 'x) || 1==1' , 'eq' , 'v' , $binds ) ;
     }
 
     /**

@@ -7,6 +7,7 @@ use oihana\arango\models\enums\filters\FilterMatch;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Boolean;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
 
 use RuntimeException;
 

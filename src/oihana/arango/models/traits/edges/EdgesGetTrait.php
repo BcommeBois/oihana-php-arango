@@ -564,6 +564,10 @@ trait EdgesGetTrait
             $target = $target ?? $from ;
         }
 
+        // SECURITY INVARIANT: `Arango::RETURN`, `Arango::SORT`, `Arango::EDGE_COLLECTION` and `Arango::GRAPH`
+        // are inlined verbatim here (a raw SORT bypasses prepareSort()'s whitelist/permission gate).
+        // They are server-only knobs — NEVER wire a client parameter into these keys. A client sort must travel
+        // through `?sort=` (whitelisted + permission-gated by SortTrait), not this path.
         $raw       = $init[ Arango::RAW       ] ?? false ;
         $return    = $init[ Arango::RETURN    ] ?? null  ;
         $schema    = $init[ Arango::SCHEMA    ] ?? null  ;

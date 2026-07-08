@@ -5,6 +5,7 @@ namespace oihana\arango\db\helpers;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\binds\aqlBind;
 
@@ -29,6 +30,7 @@ use function oihana\arango\db\binds\aqlBind;
  *
  * @throws BindException If binding fails
  * @throws UnsupportedOperationException If an alt chain is invalid
+ * @throws ValidationException If the field is not a safe attribute name
  *
  * @example
  * ```php
@@ -62,6 +64,11 @@ function buildInlineFilterCondition
 )
 :string
 {
+    // Defense in depth: the field is interpolated into `CURRENT.<field>`, so it
+    // must be a safe attribute name — the sole guard on a `match` sub-field name
+    // when the caller declares no `AQL::FILTERS` whitelist (never trust the path).
+    assertAttributeName( $field ) ;
+
     $aqlOperator = FilterComparator::getAlias( $operator ) ;
 
     // `alt` wraps the compared field (left) and/or the bound value (right).
