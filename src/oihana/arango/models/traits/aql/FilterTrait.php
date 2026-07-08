@@ -15,6 +15,7 @@ use oihana\arango\db\enums\Operator;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\models\enums\filters\FilterMatch;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\filters\FilterType;
 use oihana\arango\models\traits\aql\filters\HasFilterArray;
@@ -38,6 +39,7 @@ use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\models\helpers\isAttributeAuthorized;
+use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\key;
@@ -512,6 +514,22 @@ trait FilterTrait
 
                 if ( $definition !== null )
                 {
+                    // Permission gate (Option B): every sub-field referenced by the
+                    // `match` inherits the Field::REQUIRES of its exact sub-field in
+                    // the projection. A refused one neutralises the whole predicate to
+                    // `false` — never dropped, which would loosen a `none` match into
+                    // an existence oracle.
+                    if ( property_exists( $this , 'fields' ) && is_array( $init[ FilterParam::MATCH ] ) )
+                    {
+                        foreach ( $this->collectMatchFields( $init[ FilterParam::MATCH ] ) as $matchField )
+                        {
+                            if ( !isPathAuthorized( $baseKey . Char::DOT . $matchField , $this->fields , $auth ) )
+                            {
+                                return Boolean::FALSE ;
+                            }
+                        }
+                    }
+
                     return $this->prepareFilterArray( $init , $binds , $docRef ) ;
                 }
             }
@@ -547,6 +565,39 @@ trait FilterTrait
         }
 
         return null ;
+    }
+
+    /**
+     * Collects the field names referenced by a `match` payload, for the permission
+     * gate. Mirrors the shape read by {@see \oihana\arango\db\helpers\buildCombinedInlineFilter()}:
+     * the explicit `all` / `any` / `none` lists expose their field under `key`,
+     * while the simple object form (`{ propertyID: …, value: … }`) uses its keys
+     * directly.
+     *
+     * @param array $match The `match` payload (already validated as an array by the caller).
+     *
+     * @return array<int,string> The referenced sub-field names (possibly empty).
+     */
+    private function collectMatchFields( array $match ) : array
+    {
+        foreach ( [ FilterMatch::ALL , FilterMatch::ANY , FilterMatch::NONE ] as $logic )
+        {
+            if ( isset( $match[ $logic ] ) && is_array( $match[ $logic ] ) )
+            {
+                $names = [] ;
+                foreach ( $match[ $logic ] as $condition )
+                {
+                    if ( is_array( $condition ) && isset( $condition[ FilterParam::KEY ] ) )
+                    {
+                        $names[] = (string) $condition[ FilterParam::KEY ] ;
+                    }
+                }
+                return $names ;
+            }
+        }
+
+        // Simple object form: the keys are the field names.
+        return array_map( 'strval' , array_keys( $match ) ) ;
     }
 
     /**

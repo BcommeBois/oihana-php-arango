@@ -227,12 +227,14 @@ trait HasHierarchicalFilter
             ),
             Filter::ARRAY_EXPANSION => $this->buildArrayTraversal
             (
-                $segments    ,
-                $segmentInfo ,
-                $init        ,
-                $binds    ,
-                $docRef      ,
-                $auth        ,
+                $segments      ,
+                $segmentInfo   ,
+                $init          ,
+                $binds         ,
+                $docRef        ,
+                $auth          ,
+                $currentFields ,
+                $fieldPath     ,
             ),
             Filter::EDGE, Filter::EDGES => $this->buildEdgeTraversal
             (
@@ -275,17 +277,30 @@ trait HasHierarchicalFilter
      */
     private function buildArrayTraversal
     (
-        array      $remainingSegments ,
-        FilterPath $segmentInfo       ,
-        array      $init              ,
-        array      &$binds            ,
-        string     $docRef            ,
-        array      $auth        = [] , // reserved: leaf-in-array field gating is a later pass
+        array      $remainingSegments   ,
+        FilterPath $segmentInfo         ,
+        array      $init                ,
+        array      &$binds              ,
+        string     $docRef              ,
+        array      $auth          = []   ,
+        ?array     $currentFields = null ,
+        array      $fieldPath     = []   ,
     )
     : ?string
     {
         $currentKey = end($segmentInfo->path ) ;
         $cleanKey   = str_replace( Operator::ARRAY_EXPANSION , '' , $currentKey ) ;
+
+        // Permission gate (Option B): the object-array leaf (`contactPoint[*].email`)
+        // inherits the Field::REQUIRES of its exact sub-field in the current model's
+        // projection. A refused sub-field neutralises the whole predicate to `false`
+        // (never dropped) — the edge/join short-circuit then sinks the traversal.
+        $leafRelative = implode( Char::DOT , [ ...$fieldPath , $cleanKey , ...$remainingSegments ] ) ;
+
+        if ( !isPathAuthorized( $leafRelative , $currentFields , $auth ) )
+        {
+            return Boolean::FALSE ;
+        }
 
         $nestedPath = implode(Char::DOT , $remainingSegments ) ;
         $fullPath   = $cleanKey . Operator::ARRAY_EXPANSION . Char::DOT . $nestedPath ;

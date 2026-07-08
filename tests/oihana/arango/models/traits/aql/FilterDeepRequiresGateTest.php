@@ -218,4 +218,87 @@ class FilterDeepRequiresGateTest extends TestCase
         $this->assertStringContainsString( 'LENGTH(FOR ' , $result ) ;
         $this->assertContains( 1000000 , $this->binds ) ;
     }
+
+    // ---------------------------------------------------------------- object-array leaf (B2)
+
+    /**
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    private function arrayModel( array $fields ): Documents
+    {
+        return new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'organizations' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'contactPoint'       => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS => [ 'email' => FilterType::STRING ] ] ,
+                'additionalProperty' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS => [ 'propertyID' => FilterType::STRING , 'value' => FilterType::BOOL ] ] ,
+            ],
+            AQL::FIELDS     => $fields ,
+        ]);
+    }
+
+    public function testRefusedObjectArrayLeafIsNeutralised(): void
+    {
+        // `contactPoint[*].email` — `email` locked in the array element's projection.
+        $model  = $this->arrayModel( [ 'contactPoint' => [ Field::FIELDS => [ 'email' => [ Field::REQUIRES => 'pii:read' ] ] ] ] ) ;
+        $result = $model->prepareFilter( $this->filter( [ 'key' => 'contactPoint[*].email' , 'val' => 'x@y.com' ] , fn() => false ) , $this->binds ) ;
+
+        $this->assertSame( Boolean::FALSE , $result ) ;
+        $this->assertNotContains( 'x@y.com' , $this->binds ) ;
+    }
+
+    public function testGrantedObjectArrayLeafExpands(): void
+    {
+        $model  = $this->arrayModel( [ 'contactPoint' => [ Field::FIELDS => [ 'email' => [ Field::REQUIRES => 'pii:read' ] ] ] ] ) ;
+        $result = $model->prepareFilter( $this->filter( [ 'key' => 'contactPoint[*].email' , 'val' => 'x@y.com' ] , fn( string $s ) => $s === 'pii:read' ) , $this->binds ) ;
+
+        $this->assertStringContainsString( 'CURRENT.email' , $result ) ;
+        $this->assertContains( 'x@y.com' , $this->binds ) ;
+    }
+
+    public function testObjectArrayLeafFailsOpenWithoutAuthorizer(): void
+    {
+        $model  = $this->arrayModel( [ 'contactPoint' => [ Field::FIELDS => [ 'email' => [ Field::REQUIRES => 'pii:read' ] ] ] ] ) ;
+        $result = $model->prepareFilter( $this->filter( [ 'key' => 'contactPoint[*].email' , 'val' => 'x@y.com' ] ) , $this->binds ) ;
+
+        $this->assertStringContainsString( 'CURRENT.email' , $result ) ;
+    }
+
+    public function testRefusedMatchFieldNeutralisesTheWholePredicate(): void
+    {
+        // Simple match form: `value` is locked → the whole predicate is `false`
+        // (never dropped, which under a `none` match would be an existence oracle).
+        $model  = $this->arrayModel( [ 'additionalProperty' => [ Field::FIELDS => [ 'propertyID' => true , 'value' => [ Field::REQUIRES => 'admin:read' ] ] ] ] ) ;
+        $init   = $this->filter( [ 'key' => 'additionalProperty[*]' , 'match' => [ 'propertyID' => 'generateReceipt' , 'value' => true ] ] , fn() => false ) ;
+        $result = $model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertSame( Boolean::FALSE , $result ) ;
+        $this->assertNotContains( 'generateReceipt' , $this->binds ) ;
+    }
+
+    public function testGrantedMatchFieldsBuildTheInlineFilter(): void
+    {
+        $model  = $this->arrayModel( [ 'additionalProperty' => [ Field::FIELDS => [ 'propertyID' => true , 'value' => [ Field::REQUIRES => 'admin:read' ] ] ] ] ) ;
+        $init   = $this->filter( [ 'key' => 'additionalProperty[*]' , 'match' => [ 'propertyID' => 'generateReceipt' , 'value' => true ] ] , fn( string $s ) => $s === 'admin:read' ) ;
+        $result = $model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertStringContainsString( 'CURRENT.propertyID' , $result ) ;
+        $this->assertContains( 'generateReceipt' , $this->binds ) ;
+    }
+
+    public function testRefusedMatchFieldInExplicitFormIsNeutralised(): void
+    {
+        // Explicit `all` form: the locked field is referenced under `key`.
+        $model = $this->arrayModel( [ 'additionalProperty' => [ Field::FIELDS => [ 'propertyID' => true , 'value' => [ Field::REQUIRES => 'admin:read' ] ] ] ] ) ;
+        $init  = $this->filter(
+        [
+            'key'   => 'additionalProperty[*]' ,
+            'match' => [ 'all' => [ [ 'key' => 'propertyID' , 'op' => 'eq' , 'val' => 'x' ] , [ 'key' => 'value' , 'op' => 'eq' , 'val' => true ] ] ] ,
+        ] , fn() => false ) ;
+
+        $this->assertSame( Boolean::FALSE , $model->prepareFilter( $init , $this->binds ) ) ;
+    }
 }
