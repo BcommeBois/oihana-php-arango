@@ -285,7 +285,20 @@ trait ListQueryTrait
 
         if ( $collect !== Char::EMPTY )
         {
-            $sort   = aqlSort( $this->prepareGroupSort( $init ) ) ;
+            // The group sort may only reference variables the COLLECT actually emits
+            // (dimensions + aggregates + count) — a dimension dropped by the
+            // permission gate leaves no variable to sort on.
+            $groupVars =
+            [
+                ...array_keys( $collectSpec[ AQL::ASSIGN    ] ?? [] ) ,
+                ...array_keys( $collectSpec[ AQL::AGGREGATE ] ?? [] ) ,
+            ] ;
+            if ( isset( $collectSpec[ AQL::WITH_COUNT ] ) )
+            {
+                $groupVars[] = $collectSpec[ AQL::WITH_COUNT ] ;
+            }
+
+            $sort   = aqlSort( $this->prepareGroupSort( $init , $groupVars ) ) ;
             $return = aqlCollectReturn( $collectSpec , $init[ Arango::RETURN ] ?? null ) ;
         }
         else

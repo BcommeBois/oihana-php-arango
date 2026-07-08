@@ -141,11 +141,14 @@ class ListQueryTraitTest extends TestCase
 
     public function testGroupByHighLevelSpecWithCountAndSort() :void
     {
+        $stub = $this->stub() ;
+        $stub->groupable = [ 'category' => 'category' ] ; // fail-closed: the dimension must be whitelisted
+
         $binds = [] ;
         $this->assertSame
         (
             'FOR doc IN @@collection COLLECT category = doc.category WITH COUNT INTO count SORT count DESC RETURN {category, count}' ,
-            $this->stub()->buildListQuery
+            $stub->buildListQuery
             (
                 [ Arango::GROUP => [ Group::BY => 'category' , Group::COUNT => true , Group::SORT => '-count' ] ] ,
                 $binds
@@ -155,11 +158,14 @@ class ListQueryTraitTest extends TestCase
 
     public function testGroupByHighLevelAggregateWithFilterAndLimit() :void
     {
+        $stub = $this->stub() ;
+        $stub->groupable = [ 'year' => 'created' ] ;
+
         $binds = [] ;
         $this->assertSame
         (
             'FOR doc IN @@collection FILTER doc.y==1 COLLECT year = DATE_YEAR(doc.created) AGGREGATE total = SUM(doc.amount) LIMIT 10 RETURN {year, total}' ,
-            $this->stub()->buildListQuery
+            $stub->buildListQuery
             (
                 [
                     Arango::CONDITIONS => [ 'doc.y==1' ] ,

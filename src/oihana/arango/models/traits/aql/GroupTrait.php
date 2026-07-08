@@ -16,6 +16,7 @@ use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlAsc;
 use function oihana\arango\db\operations\aqlDesc;
+use function oihana\arango\models\helpers\isAttributeAuthorized;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\func;
 use function oihana\core\strings\key;
@@ -43,9 +44,11 @@ trait GroupTrait
      *
      * When set, only whitelisted {@see Group::BY} keys are allowed and each
      * resolves to its real field path (decoupling the public group key from the
-     * internal attribute, like {@see SortTrait::$sortable}). When `null`,
-     * grouping is open but every field is still validated against AQL injection
-     * via {@see assertAttributeName()}.
+     * internal attribute, like {@see SortTrait::$sortable}). The gate is
+     * **fail-closed**: `null` (no whitelist) means **nothing is groupable** — a
+     * client key never reaches `doc.<key>`. A whitelisted dimension is further
+     * permission-gated (`Field::REQUIRES` inherited from the projection), so a
+     * field hidden from reading cannot be grouped on (no group-by oracle).
      *
      * @var array<string,string>|null
      */
@@ -90,8 +93,8 @@ trait GroupTrait
         }
 
         $spec      = [] ;
-        $assign    = $this->collectAssign( $group , $docRef ) ;
-        $aggregate = $this->collectAggregate( $group , $docRef ) ;
+        $assign    = $this->collectAssign( $group , $docRef , $init ) ;
+        $aggregate = $this->collectAggregate( $group , $docRef , $init ) ;
 
         if ( !empty( $assign ) )
         {
@@ -139,7 +142,7 @@ trait GroupTrait
      *
      * @return string|null The inner sort expression, or null when none.
      */
-    public function prepareGroupSort( array $init = [] ) :?string
+    public function prepareGroupSort( array $init = [] , ?array $availableVars = null ) :?string
     {
         $group = $init[ Arango::GROUP ] ?? null ;
         $sort  = is_array( $group ) ? ( $group[ Group::SORT ] ?? null ) : null ;
@@ -158,14 +161,18 @@ trait GroupTrait
                 continue ;
             }
 
-            if ( $token[ 0 ] === Char::HYPHEN )
+            $desc = $token[ 0 ] === Char::HYPHEN ;
+            $name = $desc ? ltrim( $token , Char::HYPHEN ) : $token ;
+
+            // Guardrail: only sort on group/aggregate variables actually emitted.
+            // A dimension dropped by the permission gate leaves no variable, so
+            // sorting on it would reference an undefined name (invalid AQL).
+            if ( $availableVars !== null && !in_array( $name , $availableVars , true ) )
             {
-                $parts[] = aqlDesc( ltrim( $token , Char::HYPHEN ) ) ;
+                continue ;
             }
-            else
-            {
-                $parts[] = aqlAsc( $token ) ;
-            }
+
+            $parts[] = $desc ? aqlDesc( $name ) : aqlAsc( $name ) ;
         }
 
         return empty( $parts ) ? null : compile( $parts , Char::COMMA . Char::SPACE ) ;
@@ -181,7 +188,7 @@ trait GroupTrait
      *
      * @throws ValidationException
      */
-    private function collectAggregate( array $group , string $docRef ) :array
+    private function collectAggregate( array $group , string $docRef , array $init = [] ) :array
     {
         $agg = $group[ Group::AGG ] ?? null ;
         if ( !is_array( $agg ) || empty( $agg ) )
@@ -196,6 +203,13 @@ trait GroupTrait
 
             $function = FacetAggregator::getAlias( $code ) ;
             if ( $function === null || $field === null )
+            {
+                continue ;
+            }
+
+            // Permission gate: aggregating a field hidden from the projection leaks
+            // a bound of its value (MAX/MIN/AVG/SUM) — the aggregate is dropped.
+            if ( !isAttributeAuthorized( explode( Char::DOT , (string) $field )[ 0 ] , $this->fields ?? null , $init ) )
             {
                 continue ;
             }
@@ -219,10 +233,17 @@ trait GroupTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function collectAssign( array $group , string $docRef ) :array
+    private function collectAssign( array $group , string $docRef , array $init = [] ) :array
     {
         $fields = $this->normalizeGroupFields( $group[ Group::BY ] ?? null ) ;
         if ( empty( $fields ) )
+        {
+            return [] ;
+        }
+
+        // Fail-closed whitelist: without a declared `$groupable`, nothing is
+        // groupable — a client key never reaches doc.<key> (aligned on $sortable).
+        if ( !is_array( $this->groupable ) )
         {
             return [] ;
         }
@@ -231,15 +252,19 @@ trait GroupTrait
         $assign = [] ;
         foreach ( $fields as $var => $field )
         {
-            // Optional whitelist/mapping: when $groupable is set, the variable
-            // (URL key) must be whitelisted and resolves to its real field path.
-            if ( is_array( $this->groupable ) )
+            // The variable (URL key) must be whitelisted and resolves to its field path.
+            if ( !array_key_exists( $var , $this->groupable ) )
             {
-                if ( !array_key_exists( $var , $this->groupable ) )
-                {
-                    continue ;
-                }
-                $field = $this->groupable[ $var ] ;
+                continue ;
+            }
+            $field = $this->groupable[ $var ] ;
+
+            // Permission gate: grouping by a field hidden from the projection
+            // (Field::REQUIRES) would leak its distinct values — the dimension is
+            // dropped (an output, not a constraint, so removing it leaks nothing).
+            if ( !isAttributeAuthorized( explode( Char::DOT , (string) $field )[ 0 ] , $this->fields ?? null , $init ) )
+            {
+                continue ;
             }
 
             assertAttributeName( $field ) ; // guards against AQL injection through the field path.

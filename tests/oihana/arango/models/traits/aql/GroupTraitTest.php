@@ -18,6 +18,8 @@ use function oihana\arango\db\operations\aqlCollectReturn;
 class GroupTraitStub
 {
     use GroupTrait ;
+
+    public ?array $fields = null ; // projection map — powers the inherited permission gate
 }
 
 /**
@@ -28,9 +30,11 @@ class GroupTraitStub
  */
 class GroupTraitTest extends TestCase
 {
-    private function stub() :GroupTraitStub
+    private function stub( ?array $groupable = null ) :GroupTraitStub
     {
-        return new GroupTraitStub() ;
+        $stub = new GroupTraitStub() ;
+        $stub->groupable = $groupable ; // fail-closed: dimensions must be whitelisted
+        return $stub ;
     }
 
     /**
@@ -77,7 +81,7 @@ class GroupTraitTest extends TestCase
      */
     public function testGroupByCsvAndCount() :void
     {
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'category' => 'category' ] )->prepareCollect(
         [
             Arango::GROUP => [ Group::BY => 'category' , Group::COUNT => true ] ,
         ]) ;
@@ -91,7 +95,7 @@ class GroupTraitTest extends TestCase
      */
     public function testGroupByMultipleAndDottedFieldNaming() :void
     {
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'category' => 'category' , 'address_city' => 'address.city' ] )->prepareCollect(
         [
             Arango::GROUP => [ Group::BY => 'category,address.city' ] ,
         ]) ;
@@ -104,7 +108,7 @@ class GroupTraitTest extends TestCase
      */
     public function testExplicitVarNameMapAndAlt() :void
     {
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'year' => 'created' ] )->prepareCollect(
         [
             Arango::GROUP =>
             [
@@ -127,7 +131,7 @@ class GroupTraitTest extends TestCase
     public function testCountAlongsideAggregatesUsesLengthOne() :void
     {
         // count + aggregates -> LENGTH(1), never AGGREGATE + WITH COUNT (G1 rule).
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'category' => 'category' ] )->prepareCollect(
         [
             Arango::GROUP =>
             [
@@ -145,7 +149,7 @@ class GroupTraitTest extends TestCase
      */
     public function testAggregateAsArrayDefinition() :void
     {
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'category' => 'category' ] )->prepareCollect(
         [
             Arango::GROUP => [ Group::BY => 'category' , Group::AGG => [ 'total' => [ 'sum' , 'amount' ] ] ] ,
         ]) ;
@@ -158,7 +162,7 @@ class GroupTraitTest extends TestCase
      */
     public function testUnknownAggregateCodeIsSkipped() :void
     {
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'category' => 'category' ] )->prepareCollect(
         [
             Arango::GROUP => [ Group::BY => 'category' , Group::AGG => [ 'x' => 'nope:amount' ] ] ,
         ]) ;
@@ -171,7 +175,7 @@ class GroupTraitTest extends TestCase
      */
     public function testEmptyGroupByFieldsAreIgnored() :void
     {
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'category' => 'category' ] )->prepareCollect(
         [
             Arango::GROUP => [ Group::BY => 'category, , ' , Group::COUNT => true ] ,
         ]) ;
@@ -199,7 +203,7 @@ class GroupTraitTest extends TestCase
     public function testNonScalarFieldsAndAggregateDefinitionsAreSkipped() :void
     {
         // A non string/array aggregate definition and non-string BY entries are ignored.
-        $spec = $this->stub()->prepareCollect(
+        $spec = $this->stub( [ 'cat' => 'category' ] )->prepareCollect(
         [
             Arango::GROUP =>
             [
@@ -214,10 +218,21 @@ class GroupTraitTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
+    public function testUnwhitelistedGroupKeyIsDroppedFailClosed() :void
+    {
+        // Fail-closed: with no $groupable, an injection-looking client key is
+        // dropped (never reaches doc.<key>), so nothing is grouped.
+        $spec = $this->stub()->prepareCollect( [ Arango::GROUP => [ Group::BY => 'category) RETURN doc //' ] ] ) ;
+        $this->assertSame( [] , $spec ) ;
+    }
+
     public function testInjectionInGroupByFieldThrows() :void
     {
+        // A whitelisted key mapping to an unsafe field path is still guarded by
+        // assertAttributeName (defense in depth on the trusted mapping).
         $this->expectException( ValidationException::class ) ;
-        $this->stub()->prepareCollect( [ Arango::GROUP => [ Group::BY => 'category) RETURN doc //' ] ] ) ;
+        $this->stub( [ 'x' => 'category) RETURN doc //' ] )
+             ->prepareCollect( [ Arango::GROUP => [ Group::BY => 'x' ] ] ) ;
     }
 
     /**
