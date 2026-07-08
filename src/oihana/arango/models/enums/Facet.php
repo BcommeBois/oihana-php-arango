@@ -11,6 +11,7 @@ class Facet
     public const string AGG               = 'facet_agg' ;
     public const string ALT               = 'facet_alt' ;
     public const string ARRAY_COMPLEX     = 'facet_array_complex' ;
+    public const string DISTINCT          = 'facet_distinct' ;
     public const string EDGE              = 'facet_edge' ;
     public const string EDGE_AGGREGATE    = 'facet_edge_aggregate' ;
     public const string EDGE_COMPLEX      = 'facet_edge_complex' ;

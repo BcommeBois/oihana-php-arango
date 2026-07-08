@@ -20,11 +20,14 @@ use oihana\exceptions\ValidationException;
 
 use oihana\reflect\exceptions\ConstantException;
 
+use org\schema\constants\Schema;
+
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
 use ReflectionException;
 
+use function oihana\arango\db\functions\arrays\countDistinct;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlCollect;
 use function oihana\arango\db\operations\aqlCollectReturn;
@@ -60,6 +63,15 @@ use function oihana\core\strings\key;
  * `Facet::PROPERTY` carrying the `[*]` array-expansion marker (e.g.
  * `offers[*].priceCurrency`) unwinds the object array and counts the sub-field
  * per element — see {@see FacetCountsQueryTrait::buildFacetCountSubquery()}.
+ *
+ * The unwinding facet types (the `[*]` expansion and the {@see Facet::IN}
+ * family) count array *elements* by default, so a document whose array repeats
+ * the same value in several elements is counted several times — diverging from
+ * the equivalent `?filter=` existence test, which counts *documents*. Declaring
+ * `Facet::DISTINCT => true` on such a facet switches its bucket count to
+ * `COUNT_DISTINCT( doc._key )`, so the count reflects distinct root documents
+ * and matches the filter. The flag is opt-in (default unchanged) and a no-op on
+ * the scalar {@see Facet::FIELD} type, which already counts one row per document.
  *
  * @see FacetCountsQueryTrait::buildFacetCountsQuery() The entry point.
  */
@@ -191,6 +203,17 @@ trait FacetCountsQueryTrait
 
         $sort = aqlSort( compile( [ Group::COUNT_NAME , Order::DESC ] ) ) ;
 
+        // Opt-in `Facet::DISTINCT => true`: count DISTINCT root documents per
+        // bucket instead of the unwound array elements. Only the two unwinding
+        // branches (the `[*]` expansion and the IN/LIST family) over-count a
+        // document when the same sub-field value repeats across several of its
+        // array elements — that is the divergence from the equivalent `?filter=`
+        // existence test (which counts documents). The scalar FIELD branch already
+        // emits one row per document, so the flag is a no-op there and is left
+        // untouched. When set, the shared tail aggregates COUNT_DISTINCT on the
+        // ROOT document key (whatever the `[*]` hop depth) — see facetCountCollect().
+        $distinctKey = !empty( $facet[ Facet::DISTINCT ] ) ? key( Schema::_KEY , $docRef ) : null ;
+
         // An object-array sub-field is declared with the `[*]` expansion marker
         // (e.g. `offers[*].priceCurrency`). Unlike `?filter=` / `?search`, which
         // flatten the path, a facet count must *unwind* the array with a FOR and
@@ -234,7 +257,7 @@ trait FacetCountsQueryTrait
                 $for ,
                 $filter ,
                 ...$fors ,
-                ...$this->facetCountCollect( $value , $sort ) ,
+                ...$this->facetCountCollect( $value , $sort , $distinctKey ) ,
             ]) ;
         }
 
@@ -256,7 +279,7 @@ trait FacetCountsQueryTrait
                     $for ,
                     $filter ,
                     aqlFor( [ AQL::DOC_REF => self::FACET_COUNT_ITEM , AQL::IN => key( $property , $docRef ) ] ) ,
-                    ...$this->facetCountCollect( self::FACET_COUNT_ITEM , $sort ) ,
+                    ...$this->facetCountCollect( self::FACET_COUNT_ITEM , $sort , $distinctKey ) ,
                 ]) ,
 
             default => null ,
@@ -264,23 +287,40 @@ trait FacetCountsQueryTrait
     }
 
     /**
-     * The shared `COLLECT value = <expr> WITH COUNT INTO count SORT count DESC RETURN { value, count }` tail.
+     * The shared `COLLECT value = <expr> … SORT count DESC RETURN { value, count }` tail.
      *
-     * @param string $expression The value expression to group on.
-     * @param string $sort The pre-built `SORT count DESC` clause.
+     * By default the bucket count is the number of unwound rows
+     * (`WITH COUNT INTO count`). When `$distinctKey` is provided (opt-in
+     * `Facet::DISTINCT => true` on an unwinding facet), the count becomes the
+     * number of DISTINCT root documents in the bucket
+     * (`AGGREGATE count = COUNT_DISTINCT( <distinctKey> )`), so a document whose
+     * array repeats the same sub-field value is counted once — matching the
+     * `?filter=` existence semantics. The aggregate is deliberately named
+     * {@see Group::COUNT_NAME} (`count`) so the derived `RETURN { value, count }`
+     * and the `SORT count DESC` clause stay identical in both modes.
+     *
+     * @param string      $expression The value expression to group on.
+     * @param string      $sort The pre-built `SORT count DESC` clause.
+     * @param string|null $distinctKey The root document key expression to count
+     *                                 distinctly (e.g. `doc._key`), or null for
+     *                                 the default per-element count.
      *
      * @return array{0:string,1:string,2:string} `[ COLLECT, SORT, RETURN ]` fragments.
      *
      * @throws ReflectionException
      * @throws UnsupportedOperationException
      */
-    private function facetCountCollect( string $expression , string $sort ) :array
+    private function facetCountCollect( string $expression , string $sort , ?string $distinctKey = null ) :array
     {
-        $spec =
-        [
-            AQL::ASSIGN     => [ self::FACET_COUNT_VALUE => $expression ] ,
-            AQL::WITH_COUNT => Group::COUNT_NAME ,
-        ] ;
+        $spec = $distinctKey !== null
+              ? [
+                    AQL::ASSIGN    => [ self::FACET_COUNT_VALUE => $expression ] ,
+                    AQL::AGGREGATE => [ Group::COUNT_NAME => countDistinct( $distinctKey ) ] ,
+                ]
+              : [
+                    AQL::ASSIGN     => [ self::FACET_COUNT_VALUE => $expression ] ,
+                    AQL::WITH_COUNT => Group::COUNT_NAME ,
+                ] ;
 
         return [ aqlCollect( $spec ) , $sort , aqlCollectReturn( $spec ) ] ;
     }

@@ -35,6 +35,13 @@ class FacetCountsQueryTraitStub
             'deep'          => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b[*].c' ] , // multi-level → one FOR per hop
             'deepMid'       => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b.c[*].d' ] , // intermediate path between hops
             'danger'        => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].x);y' ] , // dangerous sub-field → guarded
+
+            // Facet::DISTINCT => true : count distinct ROOT documents per bucket
+            // (COUNT_DISTINCT(doc._key)) instead of the unwound elements.
+            'currencyDistinct' => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].priceCurrency' , Facet::DISTINCT => true ] , // [*] sub-field
+            'keywordsDistinct' => [ Facet::TYPE => Facet::IN    , Facet::DISTINCT => true ] , // IN family unwind
+            'deepDistinct'     => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b[*].c' , Facet::DISTINCT => true ] , // multi-hop → distinct still on root _key
+            'categoryDistinct' => [ Facet::TYPE => Facet::FIELD , Facet::DISTINCT => true ] , // scalar FIELD → flag is a no-op
         ] ;
     }
 }
@@ -199,5 +206,69 @@ class FacetCountsQueryTraitTest extends TestCase
         $this->expectException( ValidationException::class ) ;
         $binds = [] ;
         $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'danger' ] , $binds ) ;
+    }
+
+    public function testDistinctArraySubFieldCountsRootDocuments() :void
+    {
+        $binds = [] ;
+        // Facet::DISTINCT => true on a `[*]` sub-field: the tail aggregates
+        // COUNT_DISTINCT(doc._key) instead of WITH COUNT — a document repeating
+        // the same priceCurrency across several offers is counted once.
+        $this->assertSame
+        (
+            'LET currencyDistinct = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {currencyDistinct}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currencyDistinct' ] , $binds ) ,
+        ) ;
+        $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
+    }
+
+    public function testDistinctInFamilyCountsRootDocuments() :void
+    {
+        $binds = [] ;
+        // The IN/LIST family unwinds too, so it over-counts the same way — the
+        // flag applies there as well.
+        $this->assertSame
+        (
+            'LET keywordsDistinct = (FOR doc IN @@collection FOR item IN doc.keywordsDistinct COLLECT value = item AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {keywordsDistinct}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'keywordsDistinct' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testDistinctMultiHopAlwaysTargetsRootKey() :void
+    {
+        $binds = [] ;
+        // Whatever the `[*]` hop depth, the distinct always targets the ROOT
+        // document key (doc._key), never the intermediate item references.
+        $this->assertSame
+        (
+            'LET deepDistinct = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b COLLECT value = item2.c AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {deepDistinct}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deepDistinct' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testDistinctIsNoOpOnScalarFieldFacet() :void
+    {
+        $binds = [] ;
+        // A scalar FIELD already emits one row per document, so DISTINCT cannot
+        // over-count: the flag is ignored and the default WITH COUNT tail stays.
+        $this->assertSame
+        (
+            'LET categoryDistinct = (FOR doc IN @@collection COLLECT value = doc.categoryDistinct WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {categoryDistinct}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryDistinct' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testDistinctInheritsListFilter() :void
+    {
+        $stub = $this->stub() ;
+        $stub->conditions = [ 'doc.active==1' ] ;
+
+        $binds = [] ;
+        // The distinct sub-query shares the same conjunctive filter as the list.
+        $this->assertSame
+        (
+            'LET currencyDistinct = (FOR doc IN @@collection FILTER doc.active==1 FOR item IN doc.offers COLLECT value = item.priceCurrency AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {currencyDistinct}' ,
+            $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currencyDistinct' ] , $binds ) ,
+        ) ;
     }
 }
