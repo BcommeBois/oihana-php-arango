@@ -29,8 +29,13 @@ use function oihana\core\strings\key;
  * ### `?sort=` grammar
  * A comma-separated list of keys; a leading `-` flips a key to descending. Each
  * key is resolved through the model's {@see AQL::SORTABLE} whitelist (URL key →
- * AQL field path); unknown keys are silently dropped. When no `?sort=` is given,
- * the model's `SORT_DEFAULT` applies.
+ * AQL field path); a key outside the whitelist is silently dropped. The gate is
+ * **fail-closed**: when a model declares no whitelist (`$sortable === null`),
+ * nothing sorts — a client key never reaches `doc.<key>`. When no `?sort=` is
+ * given, the model's `SORT_DEFAULT` applies, and it too must name whitelisted
+ * keys (it flows through the same gate). The synthetic `distance` / `score`
+ * keys are the exception — they are driven by `?near=` / a View search and are
+ * resolved upstream of the whitelist, so they sort even without a `SORTABLE`.
  * ```
  * ?sort=name,-created   // SORT doc.name ASC, doc.created DESC
  * ```
@@ -89,7 +94,8 @@ trait SortTrait
      * `urlKey => fieldPath` map. Three interchangeable notations are accepted and may
      * be mixed: the legacy associative `urlKey => fieldPath`, the indexed shorthand
      * `fieldName` (token equals field), and the indexed alias `[ urlKey => fieldPath ]`.
-     * `null` (open mode) is preserved. The normalisation is idempotent.
+     * `null` is preserved and means **fail-closed** (no whitelist → nothing client
+     * sorts). The normalisation is idempotent.
      *
      * @param array $init
      * @return $this
@@ -116,7 +122,7 @@ trait SortTrait
      * @return string|null The `SORT` body (without the `SORT` keyword), or an empty string when nothing sorts.
      *
      * @throws BindException When a bound coordinate cannot be registered.
-     * @throws ValidationException When a sort key (open mode) or the `?near=` `key` is not a safe attribute name.
+     * @throws ValidationException When the `?near=` `key` is not a safe attribute name.
      *
      * @example Plain field sort
      * ```php
@@ -235,19 +241,12 @@ trait SortTrait
                     continue ;
                 }
 
-                if( is_array( $sortable ) )
+                // Whitelist gate (fail-closed): a client key is honored only when
+                // the model declares it in `$sortable`. No whitelist (`null`) means
+                // nothing client-supplied sorts — the key never reaches doc.<key>.
+                if( is_array( $sortable ) && array_key_exists( $key , $sortable ) )
                 {
-                    if( array_key_exists( $key , $sortable ) )
-                    {
-                        $orders[] = key( compile( $sortable[ $key ] ?? null , Char::DOT ) , $docRef ) . Char::SPACE . $order ;
-                    }
-                }
-                else
-                {
-                    // Open mode (no whitelist): the URL key flows into doc.<key>,
-                    // so it must be validated against AQL injection.
-                    assertAttributeName( $key ) ;
-                    $orders[] = key( $key , $docRef ) . Char::SPACE . $order ;
+                    $orders[] = key( compile( $sortable[ $key ] ?? null , Char::DOT ) , $docRef ) . Char::SPACE . $order ;
                 }
             }
         }

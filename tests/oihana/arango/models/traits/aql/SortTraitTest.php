@@ -17,8 +17,8 @@ class SortTraitStub
 
 /**
  * Unit coverage for {@see SortTrait::prepareSort()} — the textual sort
- * grammar (`name,-identifier`) turned into an AQL `SORT` expression, with
- * optional alias mapping through the `$sortable` whitelist.
+ * grammar (`name,-identifier`) turned into an AQL `SORT` expression, resolved
+ * through the fail-closed `$sortable` whitelist.
  */
 class SortTraitTest extends TestCase
 {
@@ -32,25 +32,22 @@ class SortTraitTest extends TestCase
 
     public function testSingleAscending() :void
     {
-        $this->assertSame( 'doc.name ASC' , $this->stub()->prepareSort( [ 'sort' => 'name' ] ) ) ;
+        $this->assertSame( 'doc.name ASC' , $this->stub( [ 'name' => 'name' ] )->prepareSort( [ 'sort' => 'name' ] ) ) ;
     }
 
-    public function testOpenModeAllowsDottedPath() :void
+    public function testWhitelistResolvesDottedFieldPath() :void
     {
-        // No $sortable whitelist: a valid nested attribute path is accepted.
-        $this->assertSame( 'doc.address.city ASC' , $this->stub()->prepareSort( [ 'sort' => 'address.city' ] ) ) ;
-    }
-
-    public function testOpenModeRejectsInjectionKey() :void
-    {
-        // No $sortable whitelist: an unsafe sort key must not reach doc.<key>.
-        $this->expectException( \oihana\exceptions\ValidationException::class ) ;
-        $this->stub()->prepareSort( [ 'sort' => 'name) RETURN doc //' ] ) ;
+        // The whitelist may map a URL key to a nested attribute path.
+        $this->assertSame
+        (
+            'doc.address.city ASC' ,
+            $this->stub( [ 'city' => 'address.city' ] )->prepareSort( [ 'sort' => 'city' ] ) ,
+        ) ;
     }
 
     public function testLeadingHyphenIsDescending() :void
     {
-        $this->assertSame( 'doc.name DESC' , $this->stub()->prepareSort( [ 'sort' => '-name' ] ) ) ;
+        $this->assertSame( 'doc.name DESC' , $this->stub( [ 'name' => 'name' ] )->prepareSort( [ 'sort' => '-name' ] ) ) ;
     }
 
     public function testMultipleCriteria() :void
@@ -58,7 +55,7 @@ class SortTraitTest extends TestCase
         $this->assertSame
         (
             'doc.name ASC, doc.age DESC' ,
-            $this->stub()->prepareSort( [ 'sort' => 'name,-age' ] ) ,
+            $this->stub( [ 'name' => 'name' , 'age' => 'age' ] )->prepareSort( [ 'sort' => 'name,-age' ] ) ,
         ) ;
     }
 
@@ -76,13 +73,26 @@ class SortTraitTest extends TestCase
         $this->assertSame( '' , $this->stub( [ 'title' => 'name' ] )->prepareSort( [ 'sort' => 'nope' ] ) ) ;
     }
 
+    public function testFailClosedDropsClientKeyWhenNoWhitelist() :void
+    {
+        // No whitelist (`$sortable === null`): a client key never reaches doc.<key>.
+        $this->assertSame( '' , $this->stub()->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    public function testFailClosedDropsInjectionKeyWhenNoWhitelist() :void
+    {
+        // An injection-looking key is simply dropped (fail-closed), it does not sort.
+        $this->assertSame( '' , $this->stub()->prepareSort( [ 'sort' => 'name) RETURN doc //' ] ) ) ;
+    }
+
     public function testCustomDocumentReference() :void
     {
-        $this->assertSame( 'x.name ASC' , $this->stub()->prepareSort( [ 'sort' => 'name' ] , null , 'x' ) ) ;
+        $this->assertSame( 'x.name ASC' , $this->stub( [ 'name' => 'name' ] )->prepareSort( [ 'sort' => 'name' ] , null , 'x' ) ) ;
     }
 
     public function testArraySortIsJoinedAsIs() :void
     {
+        // Server-side escape hatch: an already-built array bypasses the grammar.
         $this->assertSame
         (
             'doc.foo ASC, doc.bar DESC' ,
@@ -92,12 +102,29 @@ class SortTraitTest extends TestCase
 
     public function testFallsBackOnSortDefaultWhenNoSortGiven() :void
     {
-        $this->assertSame( 'doc.name ASC' , $this->stub( sortDefault: 'name' )->prepareSort( [] ) ) ;
+        // The default sort must name a whitelisted key (it flows through the same gate).
+        $this->assertSame
+        (
+            'doc.name ASC' ,
+            $this->stub( [ 'name' => 'name' ] , sortDefault: 'name' )->prepareSort( [] ) ,
+        ) ;
+    }
+
+    public function testSortDefaultIsDroppedWhenNotWhitelisted() :void
+    {
+        // A default sort key outside the whitelist is dropped like any other — fail-closed.
+        $this->assertSame( '' , $this->stub( [ 'name' => 'name' ] , sortDefault: 'created' )->prepareSort( [] ) ) ;
+    }
+
+    public function testSortDefaultIsDroppedWhenNoWhitelist() :void
+    {
+        // No whitelist at all: even the model's default sort produces nothing.
+        $this->assertSame( '' , $this->stub( sortDefault: 'name' )->prepareSort( [] ) ) ;
     }
 
     public function testEmptyWhenNoSortAndNoDefault() :void
     {
-        $this->assertSame( '' , $this->stub()->prepareSort( [] ) ) ;
+        $this->assertSame( '' , $this->stub( [ 'name' => 'name' ] )->prepareSort( [] ) ) ;
     }
 
     public function testInitializeSortableSetsTheWhitelist() :void
@@ -131,13 +158,14 @@ class SortTraitTest extends TestCase
         $this->assertSame( 'doc.givenName ASC, doc._to DESC' , $stub->prepareSort( [ 'sort' => 'name,-_to' ] ) ) ;
     }
 
-    public function testInitializeSortableKeepsOpenModeWhenNull() :void
+    public function testNullSortableIsFailClosed() :void
     {
         $stub = new SortTraitStub() ;
         $stub->initializeSortable( [] ) ;
 
-        // No whitelist provided: open mode is preserved (null), not coerced to [].
+        // No whitelist provided: `null` is preserved and means fail-closed —
+        // a client key produces nothing (it is not coerced to open mode).
         $this->assertNull( $stub->sortable ) ;
-        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+        $this->assertSame( '' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
     }
 }

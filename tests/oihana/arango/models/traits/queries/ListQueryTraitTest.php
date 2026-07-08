@@ -45,11 +45,14 @@ class ListQueryTraitTest extends TestCase
 
     public function testLimitOffsetAndSort() :void
     {
+        $stub = $this->stub() ;
+        $stub->sortable = [ 'name' => 'name' , 'age' => 'age' ] ; // fail-closed: sort keys must be whitelisted
+
         $binds = [] ;
         $this->assertSame
         (
             'FOR doc IN @@collection SORT doc.name ASC, doc.age DESC LIMIT 5, 10 RETURN doc' ,
-            $this->stub()->buildListQuery( [ Arango::LIMIT => 10 , Arango::OFFSET => 5 , 'sort' => 'name,-age' ] , $binds ) ,
+            $stub->buildListQuery( [ Arango::LIMIT => 10 , Arango::OFFSET => 5 , 'sort' => 'name,-age' ] , $binds ) ,
         ) ;
     }
 

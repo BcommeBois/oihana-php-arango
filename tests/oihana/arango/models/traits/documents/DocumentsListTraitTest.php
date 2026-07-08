@@ -28,6 +28,7 @@ final class DocumentsListTraitTest extends TestCase
     {
         $model = new MockDocuments( 'users' ) ;
         $model->documentsResult = [] ;
+        $model->sortable = [ 'name' => 'name' ] ; // fail-closed: the sort key must be whitelisted
 
         $model->list( [ Arango::LIMIT => 10 , Arango::OFFSET => 5 , 'sort' => 'name' ] ) ;
 
