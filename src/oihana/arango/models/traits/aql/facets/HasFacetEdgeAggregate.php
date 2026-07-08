@@ -70,13 +70,13 @@ trait HasFacetEdgeAggregate
      * ?facets={"balanceSheets":5}  // defaults (count, ge): at least 5 linked balance sheets
      * ```
      */
-    protected function prepareFacetEdgeAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    protected function prepareFacetEdgeAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc , array $init = [] ) :string
     {
         $docRef = AQL::DOC_PREFIX . $key ;
         $edge   = $facet[ AQL::EDGE ] ?? null ;
 
         $for = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => compile( [ Traversal::INBOUND , $doc , $edge ] ) ] ) ;
 
-        return $this->prepareAggregateConditions( $value , $facet , $for , null , $docRef , $key , $binds ) ;
+        return $this->prepareAggregateConditions( $value , $facet , $for , null , $docRef , $key , $binds , $init ) ;
     }
 }

@@ -9,12 +9,14 @@ use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\facets\FacetAggregator;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\assertAttributeName;
+use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operators\greaterThan;
@@ -91,21 +93,41 @@ trait HasFacetAggregateConditions
         ?string $prefix ,
         string  $docRef ,
         string  $key ,
-        array   &$binds
+        array   &$binds ,
+        array   $init = []
     )
     :string
     {
-        $agg   = $facet[ Facet::AGG  ] ?? FacetAggregator::COUNT ;
-        $field = $facet[ AQL::FIELDS ] ?? null ;
-        $op    = $facet[ Facet::OP   ] ?? FilterComparator::GE ;
+        $agg = $facet[ Facet::AGG ] ?? FacetAggregator::COUNT ;
+        $op  = $facet[ Facet::OP  ] ?? FilterComparator::GE ;
+
+        // Declared aggregatable field(s) = the whitelist the URL may pick from: a
+        // string is a single allowed field, a list is the allowed set (its first
+        // entry being the default). Fail-closed — with nothing declared, the URL
+        // cannot choose a field at all (no aggregate oracle on a free-form attribute).
+        $declared = $facet[ AQL::FIELDS ] ?? null ;
+        $allowed  = is_array( $declared ) ? array_values( $declared ) : ( $declared !== null ? [ $declared ] : [] ) ;
+        $field    = $allowed[ 0 ] ?? null ;
 
         // {agg, field, op, val} request object overrides the configured defaults;
         // a bare scalar is read as the threshold directly.
         if( is_array( $value ) && !array_is_list( $value ) )
         {
-            $agg   = $value[ FilterParam::AGG   ] ?? $agg ;
-            $field = $value[ FilterParam::FIELD ] ?? $field ;
-            $op    = $value[ FilterParam::OP    ] ?? $op ;
+            $agg = $value[ FilterParam::AGG ] ?? $agg ;
+            $op  = $value[ FilterParam::OP  ] ?? $op ;
+
+            // Levier 1: a URL-provided field must belong to the declared whitelist,
+            // otherwise the facet is neutralised to `false` (never dropped, and never
+            // an arbitrary attribute).
+            if( array_key_exists( FilterParam::FIELD , $value ) )
+            {
+                if( !in_array( $value[ FilterParam::FIELD ] , $allowed , true ) )
+                {
+                    return Boolean::FALSE ;
+                }
+                $field = $value[ FilterParam::FIELD ] ;
+            }
+
             if( !array_key_exists( FilterParam::VAL , $value ) )
             {
                 return Char::EMPTY ;
@@ -132,7 +154,19 @@ trait HasFacetAggregateConditions
         }
         else
         {
-            $field = is_array( $field ) ? ( $field[ 0 ] ?? null ) : $field ;
+            // Levier 2 (opt-in): when the facet declares its target model, the
+            // aggregated field inherits that model's Field::REQUIRES per request — a
+            // refused field neutralises the facet. Absent AQL::MODEL → skipped (the
+            // whitelist above already bounds the surface).
+            $model = $facet[ AQL::MODEL ] ?? null ;
+            if( $model !== null && isset( $this->container ) && $this->container->has( $model ) )
+            {
+                if( !isPathAuthorized( (string) $field , $this->container->get( $model )->fields ?? null , $init ) )
+                {
+                    return Boolean::FALSE ;
+                }
+            }
+
             assertAttributeName( $field ) ; // guard the (possibly URL-provided) field against AQL injection
             $return = aqlReturn( key( $field , $docRef ) ) ;
         }

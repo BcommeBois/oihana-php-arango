@@ -29,9 +29,10 @@ class FacetTraitStub
     use BindTrait ,
         FacetTrait ;
 
-    public mixed    $logger     = null ;
-    public ?string  $collection = 'mycol' ;
-    public ?array   $fields     = null ; // projection map — powers the inherited permission gate
+    public mixed        $logger     = null ;
+    public ?string      $collection = 'mycol' ;
+    public ?array       $fields     = null ; // projection map — powers the inherited permission gate
+    public ?\DI\Container $container = null ; // resolves an aggregate facet's AQL::MODEL for the Levier 2 gate
 
     public function __toString() :string
     {
@@ -130,9 +131,9 @@ class FacetTraitStub
      * @throws ReflectionException
      * @throws ValidationException
      */
-    public function callEdgeAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    public function callEdgeAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc , array $init = [] ) :string
     {
-        return $this->prepareFacetEdgeAggregate( $key , $value , $binds , $facet , $doc ) ;
+        return $this->prepareFacetEdgeAggregate( $key , $value , $binds , $facet , $doc , $init ) ;
     }
 
     /**
@@ -145,9 +146,9 @@ class FacetTraitStub
      * @throws BindException
      * @throws ValidationException
      */
-    public function callJoinAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    public function callJoinAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc , array $init = [] ) :string
     {
-        return $this->prepareFacetJoinAggregate( $key , $value , $binds , $facet , $doc ) ;
+        return $this->prepareFacetJoinAggregate( $key , $value , $binds , $facet , $doc , $init ) ;
     }
 
     /**

@@ -74,7 +74,7 @@ trait HasFacetJoinAggregate
      * ?facets={"comments":{"agg":"count","op":"lt","val":2}}      // lightly commented (fewer than 2)
      * ```
      */
-    protected function prepareFacetJoinAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
+    protected function prepareFacetJoinAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc , array $init = [] ) :string
     {
         $docRef     = AQL::DOC_PREFIX . $key ;
         $collection = $facet[ AQL::COLLECTION ] ?? null ;
@@ -89,6 +89,6 @@ trait HasFacetJoinAggregate
 
         $for = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => $collection ] ) ;
 
-        return $this->prepareAggregateConditions( $value , $facet , $for , $match , $docRef , $key , $binds ) ;
+        return $this->prepareAggregateConditions( $value , $facet , $for , $match , $docRef , $key , $binds , $init ) ;
     }
 }

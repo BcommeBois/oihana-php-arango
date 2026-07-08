@@ -115,11 +115,11 @@ trait FacetTrait
                         {
                             Facet::ARRAY_COMPLEX        => $this->prepareFacetArrayComplex    ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::EDGE                 => $this->prepareFacetEdge            ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::EDGE_AGGREGATE       => $this->prepareFacetEdgeAggregate   ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::EDGE_AGGREGATE       => $this->prepareFacetEdgeAggregate   ( $key , $value , $binds , $facet , $docRef , $init ) ,
                             Facet::EDGE_COMPLEX         => $this->prepareFacetEdgeComplex     ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::IN                   => $this->prepareFacetIn              ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::JOIN                 => $this->prepareFacetJoin            ( $key , $value , $binds , $facet , $docRef ) ,
-                            Facet::JOIN_AGGREGATE       => $this->prepareFacetJoinAggregate   ( $key , $value , $binds , $facet , $docRef ) ,
+                            Facet::JOIN_AGGREGATE       => $this->prepareFacetJoinAggregate   ( $key , $value , $binds , $facet , $docRef , $init ) ,
                             Facet::JOIN_COMPLEX         => $this->prepareFacetJoinComplex     ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::LIST                 => $this->prepareFacetList            ( $key , $value , $binds , $facet , $docRef ) ,
                             Facet::LIST_FIELD           => $this->prepareFacetListField       ( $key , $value , $binds , $facet , $docRef ) ,

@@ -34,7 +34,7 @@ class FacetAggregateTest extends TestCase
 
     public function testJoinAggregateAverageOverJoinedField(): void
     {
-        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' ] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' , AQL::FIELDS => 'score' ] ;
         $value  = [ 'agg' => 'avg' , 'field' => 'score' , 'op' => 'ge' , 'val' => 4 ] ;
         $result = $this->stub->callJoinAggregate( 'comments' , $value , $this->binds , $facet , AQL::DOC ) ;
 
@@ -78,7 +78,7 @@ class FacetAggregateTest extends TestCase
 
     public function testJoinAggregateArrayOfKeysUsesInJoin(): void
     {
-        $facet  = [ AQL::COLLECTION => 'tags' , AQL::KEY => '_key' , Facet::PROPERTY => 'tagIds' , AQL::ARRAY => true ] ;
+        $facet  = [ AQL::COLLECTION => 'tags' , AQL::KEY => '_key' , Facet::PROPERTY => 'tagIds' , AQL::ARRAY => true , AQL::FIELDS => 'weight' ] ;
         $value  = [ 'agg' => 'sum' , 'field' => 'weight' , 'val' => 10 ] ;
         $result = $this->stub->callJoinAggregate( 'tags' , $value , $this->binds , $facet , AQL::DOC ) ;
 
@@ -105,7 +105,7 @@ class FacetAggregateTest extends TestCase
 
     public function testJoinAggregateUrlOverridesDefinitionDefaults(): void
     {
-        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' , Facet::AGG => 'avg' , AQL::FIELDS => 'score' , Facet::OP => 'ge' ] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' , Facet::AGG => 'avg' , AQL::FIELDS => [ 'score' , 'rank' ] , Facet::OP => 'ge' ] ;
         $value  = [ 'agg' => 'min' , 'field' => 'rank' , 'op' => 'lt' , 'val' => 2 ] ;
         $result = $this->stub->callJoinAggregate( 'comments' , $value , $this->binds , $facet , AQL::DOC ) ;
 
@@ -123,7 +123,7 @@ class FacetAggregateTest extends TestCase
 
     public function testEdgeAggregateAverageOverInboundVertices(): void
     {
-        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ;
         $value  = [ 'agg' => 'avg' , 'field' => 'revenue' , 'op' => 'ge' , 'val' => 1000000 ] ;
         $result = $this->stub->callEdgeAggregate( 'balanceSheets' , $value , $this->binds , $facet , AQL::DOC ) ;
 
@@ -153,7 +153,7 @@ class FacetAggregateTest extends TestCase
 
     public function testEdgeAggregateSumAndMaxAndLessThan(): void
     {
-        $facet = [ AQL::EDGE => 'balance_edges' ] ;
+        $facet = [ AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ;
 
         $sum = $this->stub->callEdgeAggregate( 'balanceSheets' , [ 'agg' => 'sum' , 'field' => 'revenue' , 'val' => 5000000 ] , $this->binds , $facet , AQL::DOC ) ;
         $this->assertStringContainsString( 'SUM(FOR doc_balanceSheets IN INBOUND doc balance_edges RETURN doc_balanceSheets.revenue) >= @' , $sum ) ;
@@ -170,7 +170,7 @@ class FacetAggregateTest extends TestCase
 
     public function testNumericStringThresholdIsCastToNumber(): void
     {
-        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ;
         $value  = [ 'agg' => 'avg' , 'field' => 'revenue' , 'val' => '1000000' ] ;
         $this->stub->callEdgeAggregate( 'balanceSheets' , $value , $this->binds , $facet , AQL::DOC ) ;
 
@@ -179,7 +179,7 @@ class FacetAggregateTest extends TestCase
 
     public function testMissingValReturnsEmpty(): void
     {
-        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' ] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' , AQL::FIELDS => 'score' ] ;
         $result = $this->stub->callJoinAggregate( 'comments' , [ 'agg' => 'avg' , 'field' => 'score' ] , $this->binds , $facet , AQL::DOC ) ;
 
         $this->assertSame( '' , $result ) ;
@@ -196,10 +196,33 @@ class FacetAggregateTest extends TestCase
 
     public function testMaliciousFieldIsRejected(): void
     {
-        $facet = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' ] ;
+        // A malicious field declared in the config still hits the injection guard
+        // (defence in depth on the trusted path). A malicious URL field outside the
+        // whitelist is neutralised earlier — see testUrlFieldOutsideWhitelistIsNeutralised.
+        $facet = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' , AQL::FIELDS => 'score) || true || (' ] ;
 
         $this->expectException( ValidationException::class ) ;
-        $this->stub->callJoinAggregate( 'comments' , [ 'agg' => 'avg' , 'field' => 'score) || true || (' , 'val' => 1 ] , $this->binds , $facet , AQL::DOC ) ;
+        $this->stub->callJoinAggregate( 'comments' , [ 'agg' => 'avg' , 'val' => 1 ] , $this->binds , $facet , AQL::DOC ) ;
+    }
+
+    public function testUrlFieldOutsideWhitelistIsNeutralised(): void
+    {
+        // Levier 1 (fail-closed): the URL asks for a field the facet does not declare
+        // as aggregatable → the facet is neutralised to `false` (no aggregate oracle).
+        $facet  = [ AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ;
+        $result = $this->stub->callEdgeAggregate( 'balanceSheets' , [ 'agg' => 'max' , 'field' => 'salary' , 'val' => 1 ] , $this->binds , $facet , AQL::DOC ) ;
+
+        $this->assertSame( 'false' , $result ) ;
+        $this->assertSame( [] , $this->binds ) ;
+    }
+
+    public function testUrlFieldRejectedWhenNoWhitelistDeclared(): void
+    {
+        // Fail-closed default: no AQL::FIELDS declared → the URL cannot pick a field.
+        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $result = $this->stub->callEdgeAggregate( 'balanceSheets' , [ 'agg' => 'max' , 'field' => 'revenue' , 'val' => 1 ] , $this->binds , $facet , AQL::DOC ) ;
+
+        $this->assertSame( 'false' , $result ) ;
     }
 
     public function testNonCountAggregatorWithoutFieldIsRejected(): void
