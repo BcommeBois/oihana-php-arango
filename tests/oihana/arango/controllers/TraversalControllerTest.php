@@ -48,6 +48,23 @@ final class TraversalControllerTest extends ControllerTestCase
         ]) ;
     }
 
+    /**
+     * A controller wired without the {@see TraversalController::EDGE} model, so
+     * `$this->edges` stays null and the "not configured" guards fire.
+     */
+    private function makeControllerWithoutEdge() :TraversalController
+    {
+        $container = new Container() ;
+        AppFactory::setContainer( $container ) ;
+        $app = AppFactory::create() ;
+
+        return new TraversalController( $container ,
+        [
+            ControllerParam::APP    => $app ,
+            ControllerParam::ROUTER => $app->getRouteCollector()->getRouteParser() ,
+        ]) ;
+    }
+
     // ---- parent (INBOUND, single) ---------------------------------------
 
     public function testGetParentReturnsTheInboundVertex() :void
@@ -148,5 +165,24 @@ final class TraversalControllerTest extends ControllerTestCase
         // fail() with a null response returns null ; no traversal is attempted.
         $this->assertNull( $this->makeController( $edges )->getChildren( null , null , [] ) ) ;
         $this->assertSame( [] , $edges->calls ) ;
+    }
+
+    public function testSingleMissingIdReturnsNull() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+
+        // single() with a missing id fails before any traversal.
+        $this->assertNull( $this->makeController( $edges )->getParent( null , null , [] ) ) ;
+        $this->assertSame( [] , $edges->calls ) ;
+    }
+
+    public function testManyWithoutEdgeReturnsNull() :void
+    {
+        $this->assertNull( $this->makeControllerWithoutEdge()->getChildren( null , null , [ Schema::ID => '5' ] ) ) ;
+    }
+
+    public function testSingleWithoutEdgeReturnsNull() :void
+    {
+        $this->assertNull( $this->makeControllerWithoutEdge()->getParent( null , null , [ Schema::ID => '5' ] ) ) ;
     }
 }
