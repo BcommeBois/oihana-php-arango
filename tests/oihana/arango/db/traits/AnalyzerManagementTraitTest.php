@@ -8,6 +8,7 @@ use oihana\arango\clients\analyzer\IdentityAnalyzer;
 use oihana\arango\clients\analyzer\NgramAnalyzer;
 use oihana\arango\clients\analyzer\NormAnalyzer;
 use oihana\arango\clients\analyzer\PipelineAnalyzer;
+use oihana\arango\clients\analyzer\RawAnalyzer;
 use oihana\arango\clients\analyzer\TextAnalyzer;
 use oihana\arango\clients\Database;
 use oihana\arango\clients\exceptions\ArangoException;
@@ -304,6 +305,75 @@ class AnalyzerManagementTraitTest extends ArangoDBTestCase
 
         $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertContains( 'auto.properties.pipeline[1].min : server 2 ≠ declared 3' , $report->changes ) ;
+    }
+
+    public function testDiffPipelineInSyncWhenAnUnorderedMapNormalizesEqual() :void
+    {
+        // A pipeline property declared as a map (not the usual sub-analyzer
+        // list) carrying a nested list : the server reports the same values in
+        // a different order. normalizeAnalyzerValue must key-sort the map and
+        // sort the nested list, so both sides compare equal.
+        $definition = new AnalyzerDefinition
+        (
+            'auto' ,
+            new RawAnalyzer( 'pipeline' , [ 'pipeline' => [ 'x' => 'y' , 'nested' => [ 3 , 1 , 2 ] ] ] ) ,
+        ) ;
+
+        $server =
+        [
+            'name'       => 'unit::auto' ,
+            'type'       => 'pipeline' ,
+            'properties' => [ 'pipeline' => [ 'nested' => [ 1 , 2 , 3 ] , 'x' => 'y' ] ] ,
+            'features'   => [] ,
+        ] ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->analyzer( true , $server ) ) )->analyzerDiff( $definition ) ;
+
+        $this->assertSame( DiffStatus::IN_SYNC , $report->status ) ;
+        $this->assertSame( [] , $report->changes ) ;
+    }
+
+    public function testDiffPipelineDriftsWhenTheServerValueIsNotAList() :void
+    {
+        // The server reports a scalar `pipeline` where the declaration is the
+        // usual sub-analyzer list : the non-list guard yields a whole-chain drift.
+        $server =
+        [
+            'name'       => 'unit::auto' ,
+            'type'       => 'pipeline' ,
+            'properties' => [ 'pipeline' => 'not-a-list' ] ,
+            'features'   => [] ,
+        ] ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->analyzer( true , $server ) ) )->analyzerDiff( $this->pipelineDefinition() ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertNotEmpty( array_filter( $report->changes , static fn( string $c ) => str_contains( $c , 'auto.properties.pipeline : server "not-a-list"' ) ) ) ;
+    }
+
+    public function testForceSkipsAViewWhoseLinksAreNotAnArray() :void
+    {
+        $definition = $this->definition() ;
+
+        // A View whose `links` is a scalar : rebuildDependentViews must skip it
+        // (never call updateProperties) yet still recreate the analyzer.
+        $view = $this->createMock( View::class ) ;
+        $view->method( 'getName' )->willReturn( 'brokenView' ) ;
+        $view->method( 'properties' )->willReturn( [ 'links' => 'oops' ] ) ;
+        $view->expects( $this->never() )->method( 'updateProperties' ) ;
+
+        $analyzer = $this->analyzer( true , $this->serverGet( type: 'norm' ) ) ;
+        $analyzer->expects( $this->once() )->method( 'drop' )->with( true ) ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'analyzer' )->willReturn( $analyzer ) ;
+        $database->method( 'views' )->willReturn( [ $view ] ) ;
+        $database->expects( $this->once() )->method( 'createAnalyzer' )->with( 'myz' , $definition->options , $definition->features ) ;
+
+        $report = $this->newArangoDB( $database )->analyzerSync( $definition , force: true ) ;
+
+        $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
+        $this->assertTrue( $report->applied ) ;
     }
 
     public function testDiffListsDependentViews() :void
