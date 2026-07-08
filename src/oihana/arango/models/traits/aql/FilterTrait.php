@@ -26,6 +26,7 @@ use oihana\arango\models\traits\aql\filters\HasFilterDocumentation;
 use oihana\arango\models\traits\aql\filters\HasFilterNumber;
 use oihana\arango\models\traits\aql\filters\HasFilterString;
 use oihana\arango\models\traits\aql\filters\HasHierarchicalFilter;
+use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
@@ -36,6 +37,7 @@ use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\arango\db\helpers\resolveAltSides;
+use function oihana\arango\models\helpers\isAttributeAuthorized;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\key;
@@ -440,10 +442,19 @@ trait FilterTrait
     (
         ?array $init   = [] ,
         ?array &$binds = null ,
-        string $docRef = AQL::DOC
+        string $docRef = AQL::DOC ,
+        array  $auth   = []
     )
     :?string
     {
+        // Capture the request-level authorizer BEFORE `$init` is narrowed to the
+        // filter payload — it powers the permission gate at every nesting depth.
+        // The root call reads it from `$init`; recursive calls receive it via `$auth`.
+        if ( empty( $auth ) && is_array( $init ) && array_key_exists( Arango::AUTHORIZER , $init ) )
+        {
+            $auth = [ Arango::AUTHORIZER => $init[ Arango::AUTHORIZER ] ] ;
+        }
+
         $init = $init[ Arango::FILTER ] ?? $init ?? null ;
 
         if ( !is_array( $this->filters ) || empty( $this->filters ) || !is_array( $init ) || empty( $init ) )
@@ -460,9 +471,23 @@ trait FilterTrait
                 return null ;
             }
 
+            // Permission gate: a field hidden from the projection (Field::REQUIRES)
+            // stays unfilterable (no filter oracle). The refused predicate is
+            // NEUTRALISED to `false` — never dropped, which would loosen an AND —
+            // so it composes safely in and/or/not (a && false → ∅, a || false → a,
+            // NOT false → true). The subject is inherited from the homonymous root
+            // field; the leaf of a deeper path is gated by its own relation (Gate C)
+            // or left to a later pass. Gates compose (AND) with the relation gate.
+            $rootSegment = str_replace( Operator::ARRAY_EXPANSION , Char::EMPTY , explode( Char::DOT , $key )[ 0 ] ) ;
+
+            if ( property_exists( $this , 'fields' ) && !isAttributeAuthorized( $rootSegment , $this->fields , $auth ) )
+            {
+                return Boolean::FALSE ;
+            }
+
             if ( str_contains( $key , Char::DOT ) )
             {
-                return $this->prepareHierarchicalFilter( $init , $binds , $docRef ) ;
+                return $this->prepareHierarchicalFilter( $init , $binds , $docRef , $auth ) ;
             }
 
             // A single-segment relation key (e.g. `members[*]` for an edge, or a
@@ -474,7 +499,7 @@ trait FilterTrait
 
             if ( is_array( $relationDef ) && in_array( $relationDef[ AQL::TYPE ] ?? null , [ Filter::EDGE , Filter::EDGES , Filter::JOIN , Filter::JOINS ] , true ) )
             {
-                return $this->prepareHierarchicalFilter( $init , $binds , $docRef ) ;
+                return $this->prepareHierarchicalFilter( $init , $binds , $docRef , $auth ) ;
             }
 
             if ( str_contains( $key , Operator::ARRAY_EXPANSION ) && isset( $init[ FilterParam::MATCH ] ) )
@@ -518,7 +543,7 @@ trait FilterTrait
         }
         else
         {
-            return $this->prepareFilterConditions( $init , $binds , $docRef ) ;
+            return $this->prepareFilterConditions( $init , $binds , $docRef , $auth ) ;
         }
 
         return null ;

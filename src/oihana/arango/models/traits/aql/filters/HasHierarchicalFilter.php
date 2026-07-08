@@ -21,6 +21,7 @@ use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\Edges;
+use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\reflect\exceptions\ConstantException;
@@ -41,6 +42,7 @@ use function oihana\arango\db\operations\aqlTraversal;
 use function oihana\arango\db\helpers\resolveTraversalQuantifier;
 use function oihana\arango\models\helpers\edges\getEdges;
 use function oihana\arango\models\helpers\extractNestedRelations;
+use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\parseFilterSegment;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\betweenParentheses;
@@ -76,7 +78,8 @@ trait HasHierarchicalFilter
     (
         array  $init   ,
         array  &$binds ,
-        string $docRef = AQL::DOC
+        string $docRef = AQL::DOC ,
+        array  $auth   = []
     )
     : ?string
     {
@@ -96,6 +99,7 @@ trait HasHierarchicalFilter
             init       : $init                ,
             binds    : $binds                 ,
             docRef     : $docRef              ,
+            auth       : $auth                ,
         );
     }
 
@@ -133,6 +137,7 @@ trait HasHierarchicalFilter
         array  $parentPath   = [] ,
         array  $currentEdges = [] ,
         array  $currentJoins = [] ,
+        array  $auth         = [] ,
     )
     : ?string
     {
@@ -186,6 +191,7 @@ trait HasHierarchicalFilter
                     binds             : $binds          ,
                     docRef            : $docRef         ,
                     availableEdges    : $availableEdges ,
+                    auth              : $auth           ,
                 ),
                 Filter::JOIN, Filter::JOINS => $this->buildJoinTraversal
                 (
@@ -195,6 +201,7 @@ trait HasHierarchicalFilter
                     binds             : $binds          ,
                     docRef            : $docRef         ,
                     availableJoins    : $availableJoins ,
+                    auth              : $auth           ,
                 ),
                 default => $this->buildLeafCondition( $segmentInfo , $init , $binds , $docRef ),
             };
@@ -210,6 +217,7 @@ trait HasHierarchicalFilter
                 $init        ,
                 $binds    ,
                 $docRef      ,
+                $auth        ,
             ),
             Filter::ARRAY_EXPANSION => $this->buildArrayTraversal
             (
@@ -218,6 +226,7 @@ trait HasHierarchicalFilter
                 $init        ,
                 $binds    ,
                 $docRef      ,
+                $auth        ,
             ),
             Filter::EDGE, Filter::EDGES => $this->buildEdgeTraversal
             (
@@ -227,6 +236,7 @@ trait HasHierarchicalFilter
                 binds           : $binds    ,
                 docRef            : $docRef      ,
                 availableEdges    : $availableEdges  ,
+                auth              : $auth       ,
             ),
             Filter::JOIN, Filter::JOINS => $this->buildJoinTraversal
             (
@@ -236,6 +246,7 @@ trait HasHierarchicalFilter
                 binds           : $binds    ,
                 docRef            : $docRef      ,
                 availableJoins    : $availableJoins  ,
+                auth              : $auth       ,
             ),
             default => null
         };
@@ -263,6 +274,7 @@ trait HasHierarchicalFilter
         array      $init              ,
         array      &$binds            ,
         string     $docRef            ,
+        array      $auth        = [] , // reserved: leaf-in-array field gating is a later pass
     )
     : ?string
     {
@@ -321,7 +333,8 @@ trait HasHierarchicalFilter
         FilterPath $segmentInfo       ,
         array      $init              ,
         array      &$binds            ,
-        string     $docRef
+        string     $docRef            ,
+        array      $auth        = []
     )
     : ?string
     {
@@ -335,7 +348,8 @@ trait HasHierarchicalFilter
             init       : $init,
             binds    : $binds ,
             docRef     : $nestedDocRef ,
-            parentPath : $segmentInfo->path  // Pass accumulated path
+            parentPath : $segmentInfo->path , // Pass accumulated path
+            auth       : $auth ,
         );
     }
 
@@ -368,6 +382,7 @@ trait HasHierarchicalFilter
         array      &$binds            ,
         string     $docRef            ,
         array      $availableEdges    = [] ,
+        array      $auth              = [] ,
     )
     : ?string
     {
@@ -385,6 +400,15 @@ trait HasHierarchicalFilter
             throw new RuntimeException( "Edge '$relationRef' not found for path: $pathStr");
         }
         // @codeCoverageIgnoreEnd
+
+        // Permission gate (relation level): a relation locked at its definition
+        // (AQL::REQUIRES on the edge config, the same subject read by the projection
+        // gate) cannot be filtered through — the whole traversal is neutralised to
+        // `false`, so a relation hidden from the response stays unfilterable.
+        if ( !isAuthorized( $edgeConfig , $auth ) )
+        {
+            return Boolean::FALSE ;
+        }
 
         $edges = getEdges($edgeConfig[ AQL::MODEL ] ?? null , $this->container ) ;
         if ( !( $edges instanceof Edges ) )
@@ -426,6 +450,7 @@ trait HasHierarchicalFilter
                 parentPath   : $segmentInfo->path                ,
                 currentEdges : $nextLevel[ AQL::EDGES ]          ,
                 currentJoins : $nextLevel[ AQL::JOINS ]          ,
+                auth         : $auth                             ,
             );
 
             if ( !$innerCondition )
@@ -509,6 +534,7 @@ trait HasHierarchicalFilter
         array      &$binds            ,
         string     $docRef            ,
         array      $availableJoins    = [] ,
+        array      $auth              = [] ,
     )
     : ?string
     {
@@ -525,6 +551,13 @@ trait HasHierarchicalFilter
             throw new RuntimeException("Join '$relationRef' not found for path: $pathStr");
         }
         // @codeCoverageIgnoreEnd
+
+        // Permission gate (relation level): a join locked at its definition
+        // (AQL::REQUIRES) cannot be filtered through — neutralised to `false`.
+        if ( !isAuthorized( $joinConfig , $auth ) )
+        {
+            return Boolean::FALSE ;
+        }
 
         $joinKey = $joinConfig[ AQL::KEY   ] ?? Schema::_KEY ;
         $model   = $joinConfig[ AQL::MODEL ] ?? null ;
@@ -576,6 +609,7 @@ trait HasHierarchicalFilter
                 parentPath   : $segmentInfo->path                ,
                 currentEdges : $nextLevel[ AQL::EDGES ]          ,
                 currentJoins : $nextLevel[ AQL::JOINS ]          ,
+                auth         : $auth                             ,
             );
 
             if ( !$innerCondition )

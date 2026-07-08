@@ -48,7 +48,8 @@ trait HasFilterConditions
     (
         array  $init   = [] ,
         ?array &$binds = null ,
-        string $docRef = AQL::DOC
+        string $docRef = AQL::DOC ,
+        array  $auth   = []
     )
     :?string
     {
@@ -62,7 +63,7 @@ trait HasFilterConditions
                 {
                     if( isset( $init[0] ) )
                     {
-                        return logicalNot( $this->prepareFilter( $init[0] , $binds , $docRef ) , true ) ;
+                        return logicalNot( $this->prepareFilter( $init[0] , $binds , $docRef , $auth ) , true ) ;
                     }
                     else
                     {
@@ -78,7 +79,7 @@ trait HasFilterConditions
 
         foreach( $init as $key => $value )
         {
-            $init[ $key ] = $this->prepareFilter( $value , $binds , $docRef  )  ;
+            $init[ $key ] = $this->prepareFilter( $value , $binds , $docRef , $auth )  ;
         }
 
         return predicates( $init , $logicalOperator , true ) ;

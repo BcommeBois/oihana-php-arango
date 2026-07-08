@@ -434,6 +434,7 @@
             "src/oihana/arango/models/helpers/extractToIDs.php",
             "src/oihana/arango/models/helpers/extractVertexIDs.php",
             "src/oihana/arango/models/helpers/getDocuments.php",
+            "src/oihana/arango/models/helpers/isAttributeAuthorized.php",
             "src/oihana/arango/models/helpers/isAuthorized.php",
             "src/oihana/arango/models/helpers/joins/buildJoinVariable.php",
             "src/oihana/arango/models/helpers/joins/buildJoinVariables.php",
