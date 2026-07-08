@@ -116,6 +116,56 @@ class GroupRequiresGateTest extends TestCase
         $this->assertSame( 'COLLECT category = doc.category AGGREGATE top = MAX(doc.salary)' , aqlCollect( $spec ) ) ;
     }
 
+    // ---------------------------------------------------------------- deep path gate (sub-field)
+
+    public function testRefusedDeepDimensionIsDropped(): void
+    {
+        $stub = new GroupGateStub() ;
+        $stub->groupable = [ 'city' => 'address.city' ] ; // url key -> deep field path
+        $stub->fields    = [ 'address' => [ Field::FIELDS => [ 'city' => [ Field::REQUIRES => 'geo:read' ] ] ] ] ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP      => [ Group::BY => 'city' ] ,
+            Arango::AUTHORIZER => fn() => false ,
+        ]) ;
+
+        // The sub-field 'city' is locked in depth → dimension dropped (root
+        // 'address' is unlocked: the old root-only gate would have leaked it).
+        $this->assertSame( '' , aqlCollect( $spec ) ) ;
+    }
+
+    public function testGrantedDeepDimensionIsGrouped(): void
+    {
+        $stub = new GroupGateStub() ;
+        $stub->groupable = [ 'city' => 'address.city' ] ;
+        $stub->fields    = [ 'address' => [ Field::FIELDS => [ 'city' => [ Field::REQUIRES => 'geo:read' ] ] ] ] ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP      => [ Group::BY => 'city' ] ,
+            Arango::AUTHORIZER => fn( string $s ) => $s === 'geo:read' ,
+        ]) ;
+
+        $this->assertSame( 'COLLECT city = doc.address.city' , aqlCollect( $spec ) ) ;
+    }
+
+    public function testRefusedDeepAggregateIsDropped(): void
+    {
+        $stub = new GroupGateStub() ;
+        $stub->groupable = [ 'category' => 'category' ] ;
+        $stub->fields    = [ 'address' => [ Field::FIELDS => [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ] ] ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP      => [ Group::BY => 'category' , Group::AGG => [ 'top' => 'max:address.salary' ] ] ,
+            Arango::AUTHORIZER => fn() => false ,
+        ]) ;
+
+        // The MAX(address.salary) bound is not leaked — only the dimension remains.
+        $this->assertSame( 'COLLECT category = doc.category' , aqlCollect( $spec ) ) ;
+    }
+
     // ---------------------------------------------------------------- group-sort guardrail
 
     public function testGroupSortKeepsOnlyEmittedVariables(): void

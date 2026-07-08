@@ -16,7 +16,7 @@ use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlAsc;
 use function oihana\arango\db\operations\aqlDesc;
-use function oihana\arango\models\helpers\isAttributeAuthorized;
+use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\func;
 use function oihana\core\strings\key;
@@ -208,8 +208,10 @@ trait GroupTrait
             }
 
             // Permission gate: aggregating a field hidden from the projection leaks
-            // a bound of its value (MAX/MIN/AVG/SUM) — the aggregate is dropped.
-            if ( !isAttributeAuthorized( explode( Char::DOT , (string) $field )[ 0 ] , $this->fields ?? null , $init ) )
+            // a bound of its value (MAX/MIN/AVG/SUM) — the aggregate is dropped. The
+            // whole path is gated (not only its root), so a locked sub-field
+            // (`address.city`) is honored in depth.
+            if ( !isPathAuthorized( (string) $field , $this->fields ?? null , $init ) )
             {
                 continue ;
             }
@@ -262,7 +264,9 @@ trait GroupTrait
             // Permission gate: grouping by a field hidden from the projection
             // (Field::REQUIRES) would leak its distinct values — the dimension is
             // dropped (an output, not a constraint, so removing it leaks nothing).
-            if ( !isAttributeAuthorized( explode( Char::DOT , (string) $field )[ 0 ] , $this->fields ?? null , $init ) )
+            // The whole path is gated (not only its root), so a locked sub-field
+            // (`address.city`) is honored in depth.
+            if ( !isPathAuthorized( (string) $field , $this->fields ?? null , $init ) )
             {
                 continue ;
             }
