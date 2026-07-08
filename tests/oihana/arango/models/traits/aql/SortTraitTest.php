@@ -3,16 +3,21 @@
 namespace tests\oihana\arango\models\traits\aql;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 use oihana\arango\models\traits\aql\SortTrait;
 
 use PHPUnit\Framework\TestCase;
 
 /**
- * Bare host exposing {@see SortTrait} for isolated testing.
+ * Bare host exposing {@see SortTrait} for isolated testing. It carries a `$fields`
+ * projection map so the permission gate can inherit a field's `Field::REQUIRES`.
  */
 class SortTraitStub
 {
     use SortTrait ;
+
+    public ?array $fields = null ;
 }
 
 /**
@@ -167,5 +172,88 @@ class SortTraitTest extends TestCase
         // a client key produces nothing (it is not coerced to open mode).
         $this->assertNull( $stub->sortable ) ;
         $this->assertSame( '' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    // ------------------------------------------------------------------ Permission gate
+
+    /** Façon B — the sort inherits the homonymous field's REQUIRES; a denied subject drops it. */
+    public function testInheritedRequiresDropsSortWhenDenied() :void
+    {
+        $stub = $this->stub( [ 'salary' => 'salary' ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+
+        $init = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( '' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** Façon B — a granted subject lets the inherited-gated field sort. */
+    public function testInheritedRequiresAllowsSortWhenGranted() :void
+    {
+        $stub = $this->stub( [ 'salary' => 'salary' ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+
+        $init = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn( string $s ) => $s === 'hr:read' ] ;
+        $this->assertSame( 'doc.salary ASC' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** A field without REQUIRES sorts freely, even under a denying authorizer. */
+    public function testFieldWithoutRequiresSortsFreely() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' ] ) ;
+        $stub->fields = [ 'name' => true ] ; // a non-array definition carries no gate
+
+        $init = [ 'sort' => 'name' , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** Fail-open: a gated field with no authorizer injected still sorts (field-level semantics). */
+    public function testGatedFieldSortsWhenNoAuthorizerInjected() :void
+    {
+        $stub = $this->stub( [ 'salary' => 'salary' ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+
+        $this->assertSame( 'doc.salary ASC' , $stub->prepareSort( [ 'sort' => 'salary' ] ) ) ;
+    }
+
+    /** Façon A — an explicit definition carries its own path and gate; denied drops it. */
+    public function testExplicitRequiresDropsSortWhenDenied() :void
+    {
+        $stub = $this->stub( [ 'rank' => [ Field::PATH => 'internal.rank' , Field::REQUIRES => 'staff:read' ] ] ) ;
+
+        $init = [ 'sort' => 'rank' , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( '' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** Façon A — a granted subject sorts, resolving the explicit Field::PATH (field absent from $fields). */
+    public function testExplicitRequiresAllowsAndResolvesPath() :void
+    {
+        $stub = $this->stub( [ 'rank' => [ Field::PATH => 'internal.rank' , Field::REQUIRES => 'staff:read' ] ] ) ;
+
+        $init = [ 'sort' => 'rank' , Arango::AUTHORIZER => fn( string $s ) => $s === 'staff:read' ] ;
+        $this->assertSame( 'doc.internal.rank ASC' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** Façon A — an explicit definition without a Field::PATH falls back on the URL key. */
+    public function testExplicitDefinitionPathDefaultsToTheKey() :void
+    {
+        $stub = $this->stub( [ 'secret' => [ Field::REQUIRES => 'ops:read' ] ] ) ;
+
+        $init = [ 'sort' => 'secret' , Arango::AUTHORIZER => fn() => true ] ;
+        $this->assertSame( 'doc.secret ASC' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** Precedence — an explicit REQUIRES on the sortable entry overrides the inherited one. */
+    public function testExplicitRequiresOverridesInherited() :void
+    {
+        $stub = $this->stub( [ 'salary' => [ Field::PATH => 'salary' , Field::REQUIRES => 'explicit:sub' ] ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'inherited:sub' ] ] ;
+
+        // The explicit subject is granted → sorts (the inherited subject is ignored).
+        $granted = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn( string $s ) => $s === 'explicit:sub' ] ;
+        $this->assertSame( 'doc.salary ASC' , $stub->prepareSort( $granted ) ) ;
+
+        // Only the inherited subject is granted → denied, because the explicit one wins.
+        $denied = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn( string $s ) => $s === 'inherited:sub' ] ;
+        $this->assertSame( '' , $stub->prepareSort( $denied ) ) ;
     }
 }

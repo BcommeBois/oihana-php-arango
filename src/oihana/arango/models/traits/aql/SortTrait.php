@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits\aql;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\Search;
 use oihana\enums\Char;
@@ -18,6 +19,7 @@ use function oihana\arango\db\functions\geo\distance;
 use function oihana\arango\db\functions\search\bm25;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\resolveGeoPoint;
+use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\normalizeSortable;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
@@ -39,6 +41,20 @@ use function oihana\core\strings\key;
  * ```
  * ?sort=name,-created   // SORT doc.name ASC, doc.created DESC
  * ```
+ *
+ * ### Permission gate
+ * A whitelisted key can still be **permission-gated**, so a field hidden from the
+ * projection stays untriable (no sort oracle). The `Field::REQUIRES` subject is
+ * resolved by {@see authorizeSortKey()} — inherited from the homonymous field in
+ * `$this->fields` by default, or declared explicitly on the `$sortable` entry:
+ * ```php
+ * // Inherited: `salary` is gated in $fields → its sort inherits the same subject.
+ * AQL::SORTABLE => [ Prop::NAME , Prop::SALARY ]
+ *
+ * // Explicit: a sortable-only field (absent from the projection) carries its own gate.
+ * AQL::SORTABLE => [ Prop::NAME , 'rank' => [ Field::PATH => 'internal.rank' , Field::REQUIRES => 'staff:read' ] ]
+ * ```
+ * A denied key drops its criterion; no subject (or no authorizer injected) sorts freely.
  *
  * ### `AQL::SORTABLE` notations
  * The whitelist is normalised by {@see normalizeSortable()} into the canonical
@@ -246,12 +262,70 @@ trait SortTrait
                 // nothing client-supplied sorts — the key never reaches doc.<key>.
                 if( is_array( $sortable ) && array_key_exists( $key , $sortable ) )
                 {
-                    $orders[] = key( compile( $sortable[ $key ] ?? null , Char::DOT ) , $docRef ) . Char::SPACE . $order ;
+                    // Permission gate: a field hidden from projection stays untriable
+                    // (no sort oracle). A refused key drops its criterion.
+                    $field = $this->authorizeSortKey( $key , $sortable[ $key ] ?? null , $init , $docRef ) ;
+
+                    if( $field !== null )
+                    {
+                        $orders[] = $field . Char::SPACE . $order ;
+                    }
                 }
             }
         }
 
         return compile( $orders , Char::COMMA . Char::SPACE ) ;
+    }
+
+    /**
+     * Resolve a whitelisted sort entry to its AQL field expression, gated by permission.
+     *
+     * The entry (the `$sortable[$key]` value) is either a plain field path — a string
+     * or an array path (`[ 'address', 'city' ]`) — or an **explicit definition** (an
+     * associative array carrying `Field::PATH` and/or `Field::REQUIRES`). The permission
+     * subject is resolved in two steps, aligned on the projection's `Field::REQUIRES`:
+     * - **explicit** — a `Field::REQUIRES` declared on the entry itself takes priority;
+     * - **inherited** — otherwise the subject of the homonymous field declared in
+     *   `$this->fields` is reused, so « what you cannot read, you cannot sort on ».
+     *
+     * When a subject is resolved and {@see isAuthorized()} denies it, the key is refused
+     * (`null`) and the caller drops the criterion — a field hidden from the projection
+     * stays untriable (no sort oracle). No subject, or no authorizer injected, sorts
+     * freely (fail-open — exactly the field-level semantics).
+     *
+     * @param string $key    The public URL key (already resolved against the whitelist).
+     * @param mixed  $entry  The `$sortable[$key]` value (path or explicit definition).
+     * @param array  $init   The request-level init. Reads `Arango::AUTHORIZER`.
+     * @param string $docRef The document variable the field hangs off.
+     *
+     * @return string|null The `doc.<field>` expression, or `null` when the sort is refused.
+     */
+    private function authorizeSortKey( string $key , mixed $entry , array $init , string $docRef ) : ?string
+    {
+        // Explicit definition (Façon A): an associative array carries its own path
+        // and/or permission. A pure list is an array path, not a definition.
+        $isDefinition = is_array( $entry ) && !array_is_list( $entry ) ;
+
+        $path     = $isDefinition ? ( $entry[ Field::PATH     ] ?? $key ) : $entry ;
+        $requires = $isDefinition ? ( $entry[ Field::REQUIRES ] ?? null ) : null ;
+
+        // Inherited permission (Façon B): reuse the homonymous projected field's subject.
+        if( $requires === null && property_exists( $this , 'fields' ) && is_array( $this->fields ) )
+        {
+            $fieldDefinition = $this->fields[ $key ] ?? null ;
+
+            if( is_array( $fieldDefinition ) )
+            {
+                $requires = $fieldDefinition[ Field::REQUIRES ] ?? null ;
+            }
+        }
+
+        if( $requires !== null && !isAuthorized( [ Field::REQUIRES => $requires ] , $init ) )
+        {
+            return null ;
+        }
+
+        return key( compile( $path , Char::DOT ) , $docRef ) ;
     }
 
     /**
