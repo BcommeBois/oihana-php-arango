@@ -5,6 +5,7 @@ namespace tests\oihana\arango\db\helpers;
 use oihana\arango\models\enums\filters\FilterMatch;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -95,6 +96,63 @@ final class BuildCombinedInlineFilterTest extends TestCase
 
         $this->expectException( RuntimeException::class ) ;
         buildCombinedInlineFilter( [ 'secret' => 'x' ] , $binds , [ 'email' => true ] ) ;
+    }
+
+    /**
+     * Fail-loud: an operator spec (`{op,val}`) written as a simple-form value is a
+     * silent-0 trap — `CURRENT.price == @{op,val}` never matches. It must throw and
+     * point to the explicit `all` form.
+     *
+     * @throws BindException
+     */
+    public function testSimpleFormOperatorObjectValueThrows(): void
+    {
+        $binds = [] ;
+
+        $this->expectException( ValidationException::class ) ;
+        buildCombinedInlineFilter( [ 'price' => [ 'op' => 'gt' , 'val' => 0 ] ] , $binds ) ;
+    }
+
+    /**
+     * A list value in the simple form is rejected the same way (array equality is an
+     * object comparison — it belongs in the explicit `all` form).
+     *
+     * @throws BindException
+     */
+    public function testSimpleFormListValueThrows(): void
+    {
+        $binds = [] ;
+
+        $this->expectException( ValidationException::class ) ;
+        buildCombinedInlineFilter( [ 'tags' => [ 'a' , 'b' ] ] , $binds ) ;
+    }
+
+    /**
+     * The object-comparison intent stays expressible through the explicit `all` form,
+     * where a non-scalar `val` is legitimate.
+     *
+     * @throws BindException
+     */
+    public function testExplicitAllFormAcceptsAnObjectValue(): void
+    {
+        $binds  = [] ;
+        $match  = [ FilterMatch::ALL => [ [ FilterParam::KEY => 'geo' , FilterParam::OP => 'eq' , FilterParam::VAL => [ 'latitude' => 48.85 , 'longitude' => 2.35 ] ] ] ] ;
+        $result = buildCombinedInlineFilter( $match , $binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^CURRENT\.geo == @\S+$/' , $result ) ;
+    }
+
+    /**
+     * A `null` value keeps its dedicated null-literal form (not a scalar, but valid).
+     *
+     * @throws BindException
+     */
+    public function testSimpleFormNullValueIsStillAccepted(): void
+    {
+        $binds  = [] ;
+        $result = buildCombinedInlineFilter( [ 'deletedAt' => null ] , $binds ) ;
+
+        $this->assertSame( 'CURRENT.deletedAt == null' , $result ) ;
     }
 
     /**

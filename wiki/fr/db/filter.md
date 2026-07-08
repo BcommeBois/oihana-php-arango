@@ -825,6 +825,69 @@ Quand chaque élément est un **objet**, la condition porte sur un sous-champ (`
 - `quant` **absent** = comportement legacy inchangé (défaut `==` / existentiel `LENGTH(...) > 0`).
 - `n` est converti en **entier** (anti-injection) ; un `quant` inconnu **rejette** le filtre (`ValidationException`). Le champ reste compatible `alt`.
 
+#### Les deux formes de `match` — et les trois pièges rejetés
+
+Un `match` sur un tableau d'objets s'écrit de **deux façons**. La forme choisie change ce que tu as le droit d'exprimer.
+
+**Forme simple** — chaque clé est un sous-champ, chaque valeur est ce qu'il doit **égaler** (`==` sous-entendu, le tout en `AND`). Réservée aux **scalaires** :
+
+```jsonc
+{"key":"contactPoint[*]","match":{"verified":true,"type":"home"}}
+// → CURRENT.verified == true  AND  CURRENT.type == "home"
+```
+
+**Forme `all` / `any` / `none`** — dès qu'il faut un **opérateur** (autre que `==`), une **valeur non scalaire** (objet, plage), ou une logique `OR` / `NOT` :
+
+```jsonc
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"gt","val":0}]}}
+// → CURRENT.price > 0
+```
+
+> **Pourquoi c'est important.** Trois écritures malformées produisaient autrefois une AQL **valide mais toujours fausse** → `total: 0` **en silence**. « 0 » ressemble à une vraie réponse métier : impossible de distinguer « il n'y a rien » de « j'ai mal écrit le filtre ». Ces trois formes **lèvent désormais une `ValidationException`** (cohérent avec le virage *fail-closed* de `sort` / `group` / facettes). À ne pas confondre avec une **clé inconnue**, qui reste **silencieusement ignorée** (le filtre ne s'applique pas → renvoie *plus* de résultats, comportement voulu et sûr).
+
+**Piège 1 — sous-champ d'objet imbriqué après `[*]`** *(désormais corrigé automatiquement)*
+
+**La situation.** Chaque `offer` contient un objet `seller`, et on veut filtrer sur `seller.id`.
+
+```jsonc
+{"key":"offers[*].seller.id","val":"org-42"}
+```
+
+Avant, le chemin pointé après `[*]` n'était pas reconnu et retombait sur `doc.offers[*].seller.id == @v` — une **projection de tableau** comparée à un scalaire, **jamais vraie**. Il construit maintenant la bonne forme inline :
+
+```aql
+LENGTH(doc.offers[* FILTER CURRENT.seller.id == @v]) > 0
+```
+
+*(Un sous-champ **direct** — `offers[*].priceCurrency` — fonctionnait déjà ; seul le sous-chemin **pointé** était cassé.)*
+
+**Piège 2 — un opérateur glissé dans la forme simple** *(rejeté)*
+
+```jsonc
+// ✗ ce qu'on écrit par erreur
+{"key":"offers[*]","match":{"price":{"op":"gt","val":0}}}
+// l'objet {op,val} est pris comme « valeur à égaler » → CURRENT.price == @{op,val} → jamais vrai
+
+// ✓ la forme correcte
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"gt","val":0}]}}
+```
+
+En forme simple, **toute valeur non scalaire** (objet ou tableau) est refusée. Même l'**égalité contre un objet** (`{"geo":{"latitude":48.85,"longitude":2.35}}`) doit passer par la forme `all` (`{"all":[{"key":"geo","op":"eq","val":{…}}]}`), où une `val` non scalaire est légitime.
+
+**Piège 3 — un opérateur non câblé dans un `match` (ex. `between`)** *(rejeté)*
+
+```jsonc
+// ✗ ce qu'on écrit par erreur
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"between","val":[10,100]}]}}
+// `between` (et tout opérateur non reconnu : contains, sw, regex, ou une faute de frappe)
+// retombait sur `==` contre le tableau brut → CURRENT.price == @[10,100] → jamais vrai
+
+// ✓ la forme correcte — deux conditions bornant la plage
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"ge","val":10},{"key":"price","op":"le","val":100}]}}
+```
+
+À l'intérieur d'un `match`, seuls les opérateurs **inline reconnus** sont acceptés : `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `nin`, `like`, `nlike`, `match`, `nmatch`. Tout autre lève une `ValidationException` au lieu de dégrader silencieusement en `==`.
+
 ### Combinaisons hash
 
 ```jsonc

@@ -74,6 +74,39 @@ final class BuildInlineFilterConditionTest extends TestCase
         buildInlineFilterCondition( 'x) || 1==1' , 'eq' , 'v' , $binds ) ;
     }
 
+    public function testBetweenOperatorThrowsInsteadOfDegradingToEquality(): void
+    {
+        // Fail-loud: `between` is not wired inline — it used to degrade to `==`
+        // against the raw [min,max] array, a valid AQL that never matched (silent 0).
+        $this->expectException( ValidationException::class ) ;
+
+        $binds = [] ;
+        buildInlineFilterCondition( 'price' , 'between' , [ 10 , 100 ] , $binds ) ;
+    }
+
+    public function testUnknownOperatorThrowsInsteadOfDegradingToEquality(): void
+    {
+        // The guard is generic: any operator outside FilterComparator::__ALIAS__
+        // (a flat-only form like `contains`, or a typo like `gte`) is rejected.
+        $this->expectException( ValidationException::class ) ;
+
+        $binds = [] ;
+        buildInlineFilterCondition( 'name' , 'contains' , 'foo' , $binds ) ;
+    }
+
+    /**
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     */
+    public function testInOperatorRemainsSupportedWithAnArrayValue(): void
+    {
+        // `in` / `nin` ARE recognised aliases: the array value is legitimate.
+        $binds  = [] ;
+        $result = buildInlineFilterCondition( 'status' , 'in' , [ 'a' , 'b' ] , $binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^CURRENT\.status IN @\S+$/' , $result ) ;
+    }
+
     /**
      * @throws BindException
      * @throws UnsupportedOperationException

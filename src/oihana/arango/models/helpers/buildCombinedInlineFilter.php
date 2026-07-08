@@ -8,6 +8,7 @@ use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Boolean;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
 use RuntimeException;
 
@@ -53,6 +54,7 @@ use RuntimeException;
  *
  * @throws BindException If binding fails
  * @throws UnsupportedOperationException If an alt chain is invalid
+ * @throws ValidationException If the simple object form is given a non-scalar value (use the explicit `all` form)
  *
  * @example
  * ```php
@@ -140,6 +142,22 @@ function buildCombinedInlineFilter
                     "Field '$key' is not allowed in match filter. " .
                     "Allowed fields: " . implode( ', ' , array_keys( $allowedFields ) )
                 ) ;
+            }
+
+            // Fail-loud: the simple object form compares a sub-field to a SCALAR
+            // (`CURRENT.<field> == <value>`). A non-scalar value is almost always an
+            // operator spec written in the wrong place (`{"price":{"op":"gt","val":0}}`),
+            // which would bind the whole object and never match — a silent `0`. Use the
+            // explicit `all` form for an operator (or an object equality).
+            if ( $value !== null && !is_scalar( $value ) )
+            {
+                throw new ValidationException( sprintf
+                (
+                    "Invalid `match` value for field '%s': the simple object form only compares to a scalar. " .
+                    "Use the explicit `all` form for an operator or an object comparison, e.g. " .
+                    "{\"all\":[{\"key\":\"%s\",\"op\":\"gt\",\"val\":…}]}." ,
+                    $key , $key
+                ) ) ;
             }
 
             $parts[] = buildInlineFilterCondition

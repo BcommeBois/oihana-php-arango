@@ -182,11 +182,20 @@ trait HasFilterArray
                 }
             }
 
-            // Extract field from key (e.g., "doc.contactPoint[*].email" → "email")
-            if ( preg_match( '/^(.+)\[\*]\.(\w+)$/' , $key , $matches ) )
+            // Extract the field from the key. The sub-field part now accepts a DOTTED
+            // path so a nested object leaf (`offers[*].seller.id`, where `seller` is
+            // an object) builds the correct inline `CURRENT.seller.id` — instead of
+            // falling through to `doc.offers[*].seller.id == @v`, an array projection
+            // compared to a scalar that never matches (a silent `0`). The base stays
+            // greedy, so a multi-level array (`employee[*].contactPoint[*].verified`)
+            // keeps its existing existential `LENGTH(…[* FILTER CURRENT.<leaf>])` form
+            // (the greedy base absorbs the inner `[*]`, the field is the final leaf).
+            // `assertAttributeName()` (in the inline builder) still guards the dotted
+            // name against injection.
+            if ( preg_match( '/^(.+)\[\*]\.([\w.]+)$/' , $key , $matches ) )
             {
-                $baseKey = $matches[1] ; // "doc.contactPoint"
-                $field   = $matches[2] ; // "email"
+                $baseKey = $matches[1] ; // "doc.contactPoint" or "doc.offers"
+                $field   = $matches[2] ; // "email" or "seller.id"
 
                 // Determine the inline filter condition
                 $inlineCondition = buildInlineFilterCondition

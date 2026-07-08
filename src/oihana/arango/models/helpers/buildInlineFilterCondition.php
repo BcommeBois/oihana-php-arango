@@ -69,7 +69,24 @@ function buildInlineFilterCondition
     // when the caller declares no `AQL::FILTERS` whitelist (never trust the path).
     assertAttributeName( $field ) ;
 
-    $aqlOperator = FilterComparator::getAlias( $operator ) ;
+    // Fail-loud: only the recognised comparators (FilterComparator::__ALIAS__) have a
+    // meaningful inline form (`CURRENT.<field> <op> …`). An unknown operator — a range
+    // like `between`, a typo (`gte`), or a flat-only form (`contains`, `sw`, `regex`,
+    // `distance`) — would otherwise silently degrade to `==` against the raw value: a
+    // valid AQL that never matches, i.e. a silent `0`. The `null` sentinel makes an
+    // unrecognised operator observable (getAlias otherwise defaults to `==`).
+    $aqlOperator = FilterComparator::getAlias( $operator , null ) ;
+
+    if ( $aqlOperator === null )
+    {
+        throw new ValidationException( sprintf
+        (
+            "Operator '%s' is not supported inside a `match` / array-expansion inline filter. " .
+            "Supported operators: eq, ne, gt, ge, lt, le, in, nin, like, nlike, match, nmatch. " .
+            "For a range, use two conditions (e.g. `ge` + `le`) instead of `between`." ,
+            $operator
+        ) ) ;
+    }
 
     // `alt` wraps the compared field (left) and/or the bound value (right).
     [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;

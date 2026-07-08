@@ -825,6 +825,69 @@ When each element is an **object**, the condition targets a sub-field (`reviews[
 - `quant` **absent** = legacy behaviour unchanged (default `==` / existential `LENGTH(...) > 0`).
 - `n` is cast to an **integer** (injection-safe); an unknown `quant` **rejects** the filter (`ValidationException`). The field stays `alt`-aware.
 
+#### The two `match` forms — and the three rejected traps
+
+A `match` on an object array is written in **two ways**. The form you pick changes what you are allowed to express.
+
+**Simple form** — each key is a sub-field, each value is what it must **equal** (`==` implied, all `AND`ed). Scalars only:
+
+```jsonc
+{"key":"contactPoint[*]","match":{"verified":true,"type":"home"}}
+// → CURRENT.verified == true  AND  CURRENT.type == "home"
+```
+
+**`all` / `any` / `none` form** — as soon as you need an **operator** (other than `==`), a **non-scalar value** (object, range), or `OR` / `NOT` logic:
+
+```jsonc
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"gt","val":0}]}}
+// → CURRENT.price > 0
+```
+
+> **Why this matters.** Three malformed spellings used to produce a **valid but always-false** AQL → `total: 0` **silently**. A `0` looks like a genuine business answer: you cannot tell "nothing matches" from "I mistyped the filter". These three forms now **throw a `ValidationException`** (consistent with the *fail-closed* turn of `sort` / `group` / facets). Not to be confused with an **unknown key**, which stays **silently ignored** (the filter does not apply → returns *more* results, the intended, safe behaviour).
+
+**Trap 1 — nested object sub-field after `[*]`** *(now auto-corrected)*
+
+**The situation.** Each `offer` holds a `seller` object, and we filter on `seller.id`.
+
+```jsonc
+{"key":"offers[*].seller.id","val":"org-42"}
+```
+
+The dotted path after `[*]` was not recognised and fell through to `doc.offers[*].seller.id == @v` — an **array projection** compared to a scalar, **never true**. It now builds the correct inline form:
+
+```aql
+LENGTH(doc.offers[* FILTER CURRENT.seller.id == @v]) > 0
+```
+
+*(A **direct** sub-field — `offers[*].priceCurrency` — already worked; only the **dotted** sub-path was broken.)*
+
+**Trap 2 — an operator slipped into the simple form** *(rejected)*
+
+```jsonc
+// ✗ what one writes by mistake
+{"key":"offers[*]","match":{"price":{"op":"gt","val":0}}}
+// the {op,val} object is taken as the "value to equal" → CURRENT.price == @{op,val} → never true
+
+// ✓ the correct form
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"gt","val":0}]}}
+```
+
+In the simple form, **any non-scalar value** (object or array) is refused. Even an **object equality** (`{"geo":{"latitude":48.85,"longitude":2.35}}`) must go through the `all` form (`{"all":[{"key":"geo","op":"eq","val":{…}}]}`), where a non-scalar `val` is legitimate.
+
+**Trap 3 — an operator not wired inside a `match` (e.g. `between`)** *(rejected)*
+
+```jsonc
+// ✗ what one writes by mistake
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"between","val":[10,100]}]}}
+// `between` (and any unrecognised operator: contains, sw, regex, or a typo)
+// fell through to `==` against the raw array → CURRENT.price == @[10,100] → never true
+
+// ✓ the correct form — two conditions bounding the range
+{"key":"offers[*]","match":{"all":[{"key":"price","op":"ge","val":10},{"key":"price","op":"le","val":100}]}}
+```
+
+Inside a `match`, only the **recognised inline operators** are accepted: `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `nin`, `like`, `nlike`, `match`, `nmatch`. Anything else throws a `ValidationException` instead of silently degrading to `==`.
+
 ### Hash combinations
 
 ```jsonc

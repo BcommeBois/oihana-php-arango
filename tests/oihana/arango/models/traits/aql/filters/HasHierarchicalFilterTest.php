@@ -268,6 +268,52 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
+     * A DOTTED sub-path after the `[*]` (a nested object leaf, `offers[*].seller.id`
+     * where `seller` is an object) builds the correct inline `CURRENT.seller.id`
+     * condition — instead of the former `doc.offers[*].seller.id == @v` (an array
+     * projection compared to a scalar) that never matched, a silent `0`.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testArrayExpansionFilterWithNestedObjectLeaf(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'products' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'offers' =>
+                [
+                    AQL::TYPE    => Filter::ARRAY_EXPANSION ,
+                    AQL::FILTERS =>
+                    [
+                        'seller' => FilterType::STRING ,
+                    ]
+                ]
+            ]
+        ]);
+
+        $init = [ 'key' => 'offers[*].seller.id' , 'val' => 'org-42' ] ;
+
+        $result = $model->prepareFilter( $init , $this->binds ) ;
+
+        // Correct inline form, not the always-false projection equality.
+        $this->assertStringContainsString( 'LENGTH' , $result ) ;
+        $this->assertStringContainsString( 'CURRENT.seller.id ==' , $result ) ;
+        $this->assertStringContainsString( '> 0' , $result ) ;
+        $this->assertStringNotContainsString( '.seller.id ==' , str_replace( 'CURRENT.seller.id ==' , '' , $result ) ) ;
+    }
+
+    /**
      * @throws BindException
      * @throws ConstantException
      * @throws ContainerExceptionInterface
