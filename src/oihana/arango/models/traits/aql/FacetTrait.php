@@ -19,7 +19,11 @@ use oihana\arango\models\traits\aql\facets\HasFacetJoinAggregate;
 use oihana\arango\models\traits\aql\facets\HasFacetJoinComplex;
 use oihana\arango\models\traits\aql\facets\HasFacetList;
 use oihana\arango\models\traits\aql\facets\HasFacetListField;
+use oihana\enums\Boolean;
 use oihana\enums\Char;
+
+use function oihana\arango\models\helpers\isAttributeAuthorized;
+use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\core\strings\predicates;
 
 /**
@@ -89,6 +93,17 @@ trait FacetTrait
                 $facet = $this->facets[ $key ] ?? null ;
                 if( !is_null( $facet ) )
                 {
+                    // Permission gate: a facet on a field hidden from the projection
+                    // (Field::REQUIRES, inherited from $fields or declared on the facet)
+                    // is NEUTRALISED to `false` — a hidden field is not filterable through
+                    // a facet (no facet oracle). Never dropped: dropping an ANDed facet
+                    // would loosen the result, itself a leak.
+                    if ( !isAttributeAuthorized( $key , $this->fields ?? null , $init ) || !isAuthorized( $facet , $init ) )
+                    {
+                        $predicates[] = Boolean::FALSE ;
+                        continue ;
+                    }
+
                     $type = $facet[ Facet::TYPE ] ?? null ;
 
                     // A malformed facet (invalid bind name, reflection error, …) must

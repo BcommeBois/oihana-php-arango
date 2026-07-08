@@ -31,6 +31,7 @@ class FacetTraitStub
 
     public mixed    $logger     = null ;
     public ?string  $collection = 'mycol' ;
+    public ?array   $fields     = null ; // projection map — powers the inherited permission gate
 
     public function __toString() :string
     {

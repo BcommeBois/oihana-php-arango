@@ -34,6 +34,8 @@ use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlSort;
 use function oihana\arango\db\helpers\aqlDocument;
+use function oihana\arango\models\helpers\isAttributeAuthorized;
+use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
 
@@ -134,6 +136,15 @@ trait FacetCountsQueryTrait
             // Whitelist: only configured facet keys are countable.
             $facet = is_string( $dimension ) ? ( $this->facets[ $dimension ] ?? null ) : null ;
             if ( !is_array( $facet ) )
+            {
+                continue ;
+            }
+
+            // Permission gate: a dimension on a field hidden from the projection
+            // (Field::REQUIRES, inherited from $fields or declared on the facet) is
+            // dropped — its distinct values and counts would leak the hidden field
+            // in clear (a direct facet-counts oracle).
+            if ( !isAttributeAuthorized( $dimension , $this->fields ?? null , $init ) || !isAuthorized( $facet , $init ) )
             {
                 continue ;
             }
