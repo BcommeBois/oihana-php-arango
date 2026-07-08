@@ -43,6 +43,7 @@ use function oihana\arango\db\helpers\resolveTraversalQuantifier;
 use function oihana\arango\models\helpers\edges\getEdges;
 use function oihana\arango\models\helpers\extractNestedRelations;
 use function oihana\arango\models\helpers\isAuthorized;
+use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\arango\models\helpers\parseFilterSegment;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\betweenParentheses;
@@ -94,12 +95,13 @@ trait HasHierarchicalFilter
 
         return $this->buildFilterRecursive
         (
-            segments   : $segments            ,
-            filters    : $this->filters ?? [] ,
-            init       : $init                ,
-            binds    : $binds                 ,
-            docRef     : $docRef              ,
-            auth       : $auth                ,
+            segments      : $segments            ,
+            filters       : $this->filters ?? [] ,
+            init          : $init                ,
+            binds         : $binds               ,
+            docRef        : $docRef              ,
+            auth          : $auth                ,
+            currentFields : $this->fields ?? null ,
         );
     }
 
@@ -134,10 +136,12 @@ trait HasHierarchicalFilter
         array  $init              ,
         array  &$binds            ,
         string $docRef            ,
-        array  $parentPath   = [] ,
-        array  $currentEdges = [] ,
-        array  $currentJoins = [] ,
-        array  $auth         = [] ,
+        array  $parentPath    = []   ,
+        array  $currentEdges  = []   ,
+        array  $currentJoins  = []   ,
+        array  $auth          = []   ,
+        ?array $currentFields = null ,
+        array  $fieldPath     = []   ,
     )
     : ?string
     {
@@ -203,7 +207,7 @@ trait HasHierarchicalFilter
                     availableJoins    : $availableJoins ,
                     auth              : $auth           ,
                 ),
-                default => $this->buildLeafCondition( $segmentInfo , $init , $binds , $docRef ),
+                default => $this->buildLeafCondition( $segmentInfo , $init , $binds , $docRef , $currentFields , $fieldPath , $auth ),
             };
         }
 
@@ -212,12 +216,14 @@ trait HasHierarchicalFilter
         {
             Filter::DOCUMENT => $this->buildDocumentTraversal
             (
-                $segments    ,
-                $segmentInfo ,
-                $init        ,
-                $binds    ,
-                $docRef      ,
-                $auth        ,
+                $segments      ,
+                $segmentInfo   ,
+                $init          ,
+                $binds         ,
+                $docRef        ,
+                $auth          ,
+                $currentFields ,
+                $fieldPath     ,
             ),
             Filter::ARRAY_EXPANSION => $this->buildArrayTraversal
             (
@@ -329,27 +335,36 @@ trait HasHierarchicalFilter
      */
     private function buildDocumentTraversal
     (
-        array      $remainingSegments ,
-        FilterPath $segmentInfo       ,
-        array      $init              ,
-        array      &$binds            ,
-        string     $docRef            ,
-        array      $auth        = []
+        array      $remainingSegments   ,
+        FilterPath $segmentInfo         ,
+        array      $init                ,
+        array      &$binds              ,
+        string     $docRef              ,
+        array      $auth          = []   ,
+        ?array     $currentFields = null ,
+        array      $fieldPath     = []   ,
     )
     : ?string
     {
         $currentKey   = end($segmentInfo->path );
         $nestedDocRef = key( $currentKey , $docRef ) ;
 
+        // A nested document stays in the SAME model: keep $currentFields and extend
+        // the relative field path so the leaf gate sees the exact sub-field
+        // (e.g. `address.city`) — not only the root segment.
+        $fieldPath[] = str_replace( Operator::ARRAY_EXPANSION , Char::EMPTY , (string) $currentKey ) ;
+
         return $this->buildFilterRecursive
         (
-            segments   : $remainingSegments ,
-            filters    : $segmentInfo->nestedFilters ?? [] ,
-            init       : $init,
-            binds    : $binds ,
-            docRef     : $nestedDocRef ,
-            parentPath : $segmentInfo->path , // Pass accumulated path
-            auth       : $auth ,
+            segments      : $remainingSegments ,
+            filters       : $segmentInfo->nestedFilters ?? [] ,
+            init          : $init,
+            binds         : $binds ,
+            docRef        : $nestedDocRef ,
+            parentPath    : $segmentInfo->path , // Pass accumulated path
+            auth          : $auth ,
+            currentFields : $currentFields ,
+            fieldPath     : $fieldPath ,
         );
     }
 
@@ -442,16 +457,27 @@ trait HasHierarchicalFilter
         {
             $innerCondition = $this->buildFilterRecursive
             (
-                segments     : $remainingSegments                ,
-                filters      : $segmentInfo->nestedFilters ?? [] ,
-                init         : $init                             ,
-                binds      : $binds                            ,
-                docRef       : $vertexID                         ,
-                parentPath   : $segmentInfo->path                ,
-                currentEdges : $nextLevel[ AQL::EDGES ]          ,
-                currentJoins : $nextLevel[ AQL::JOINS ]          ,
-                auth         : $auth                             ,
+                segments      : $remainingSegments                ,
+                filters       : $segmentInfo->nestedFilters ?? [] ,
+                init          : $init                             ,
+                binds         : $binds                            ,
+                docRef        : $vertexID                         ,
+                parentPath    : $segmentInfo->path                ,
+                currentEdges  : $nextLevel[ AQL::EDGES ]          ,
+                currentJoins  : $nextLevel[ AQL::JOINS ]          ,
+                auth          : $auth                             ,
+                currentFields : $targetModel?->fields            , // switch to the target model's projection
+                fieldPath     : []                               , // relative path resets across the relation
             );
+
+            // Permission gate (Option B): a leaf refused inside the traversal
+            // neutralises the WHOLE traversal to `false` — returned BEFORE the
+            // quantifier negation below, so a refused leaf under `all`/`none` can
+            // never become `NOT(false) = true` (an existence oracle).
+            if ( $innerCondition === Boolean::FALSE )
+            {
+                return Boolean::FALSE ;
+            }
 
             if ( !$innerCondition )
             {
@@ -601,16 +627,26 @@ trait HasHierarchicalFilter
         {
             $innerCondition = $this->buildFilterRecursive
             (
-                segments     : $remainingSegments                ,
-                filters      : $segmentInfo->nestedFilters ?? [] ,
-                init         : $init                             ,
-                binds      : $binds                            ,
-                docRef       : $joinDocRef                       ,
-                parentPath   : $segmentInfo->path                ,
-                currentEdges : $nextLevel[ AQL::EDGES ]          ,
-                currentJoins : $nextLevel[ AQL::JOINS ]          ,
-                auth         : $auth                             ,
+                segments      : $remainingSegments                ,
+                filters       : $segmentInfo->nestedFilters ?? [] ,
+                init          : $init                             ,
+                binds         : $binds                            ,
+                docRef        : $joinDocRef                       ,
+                parentPath    : $segmentInfo->path                ,
+                currentEdges  : $nextLevel[ AQL::EDGES ]          ,
+                currentJoins  : $nextLevel[ AQL::JOINS ]          ,
+                auth          : $auth                             ,
+                currentFields : $documents->fields               , // switch to the joined model's projection
+                fieldPath     : []                               , // relative path resets across the relation
             );
+
+            // Permission gate (Option B): a leaf refused inside the join
+            // neutralises the WHOLE join to `false` — returned BEFORE the quantifier
+            // negation below (same rationale as the edge traversal).
+            if ( $innerCondition === Boolean::FALSE )
+            {
+                return Boolean::FALSE ;
+            }
 
             if ( !$innerCondition )
             {
@@ -670,10 +706,13 @@ trait HasHierarchicalFilter
      */
     private function buildLeafCondition
     (
-        FilterPath $segmentInfo ,
-        array      $init        ,
-        array      &$binds      ,
-        string     $docRef      ,
+        FilterPath $segmentInfo         ,
+        array      $init                ,
+        array      &$binds              ,
+        string     $docRef              ,
+        ?array     $currentFields = null ,
+        array      $fieldPath     = []   ,
+        array      $auth          = []   ,
     )
     : ?string
     {
@@ -682,6 +721,19 @@ trait HasHierarchicalFilter
 
         // Remove array notation if present (e.g., "email[*]" -> "email")
         $fieldKey = str_replace( Operator::ARRAY_EXPANSION , '' , $fieldKey ) ;
+
+        // Permission gate (Option B): the leaf inherits the Field::REQUIRES of the
+        // exact sub-field in the CURRENT model's projection (the target model when a
+        // relation was crossed). A refused leaf is neutralised to `false` — never
+        // dropped — and, through the edge/join short-circuit, sinks the whole
+        // traversal. The relative path (reset across each relation) lets a locked
+        // sub-field be seen in depth (`address.city`, `employee[*].salary`).
+        $relativePath = implode( Char::DOT , [ ...$fieldPath , $fieldKey ] ) ;
+
+        if ( !isPathAuthorized( $relativePath , $currentFields , $auth ) )
+        {
+            return Boolean::FALSE ;
+        }
 
         // Create filter init for this field
         $fieldInit =
