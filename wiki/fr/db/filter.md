@@ -922,7 +922,7 @@ Le filtre **hérite** de la permission du champ homonyme de `$fields`. Refusé, 
 
 > **Fail-open.** Aucun `Field::REQUIRES`, ou aucun *authorizer* branché → le filtre s'applique normalement (sémantique des `fields`). Un champ **non projeté** (absent de `$fields`) reste librement filtrable — c'est le cas d'usage « filtrer sur une donnée qu'on n'affiche pas ». Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
 >
-> **Limite.** Une feuille *à l'intérieur* d'une relation autorisée (`employee[*].salary`) est gatée au niveau de la relation, pas encore du champ feuille.
+> **Profondeur.** Le gate descend au **champ feuille exact**, pas seulement à la racine : un sous-champ d'un document imbriqué (`address.city`), une feuille **à travers** un edge/join (`employee[*].salary` hérite du `Field::REQUIRES` du **modèle cible**) et un sous-champ de tableau d'objets (`contactPoint[*].email`, y compris via `match`) sont tous gatés. Une feuille refusée neutralise **toute la traversée** en `false` — y compris sous le quantificateur `all`/`none` (jamais transformée en oracle d'existence).
 
 ## Bonnes pratiques
 

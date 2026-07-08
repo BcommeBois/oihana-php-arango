@@ -186,7 +186,7 @@ public ?array $groupable = [ 'category' => 'category' , 'salary' => 'salary' ] ;
 | `?group[group_by]=salary` → `COLLECT salary = doc.salary` | dimension **dropped** |
 | `?group[group_agg][m]=max:salary` → `MAX(doc.salary)` | aggregate **dropped** |
 
-> **Migration (BC).** `groupable = null` no longer means "everything groupable" but **nothing**: declare `AQL::GROUPABLE` with the keys a client may group on. **Fail-open**: with no `REQUIRES` / authorizer, a whitelisted field groups normally. **Limit**: a deep path is gated at the root segment. See [Field projection](../projection.md) and [Sorting](sort.md#sort-permission).
+> **Migration (BC).** `groupable = null` no longer means "everything groupable" but **nothing**: declare `AQL::GROUPABLE` with the keys a client may group on. **Fail-open**: with no `REQUIRES` / authorizer, a whitelisted field groups normally. **Depth**: a deep path (`address.city`) is gated at the **exact sub-field**, not only the root. See [Field projection](../projection.md) and [Sorting](sort.md#sort-permission).
 
 ## See also
 

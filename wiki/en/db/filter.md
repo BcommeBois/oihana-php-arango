@@ -922,7 +922,7 @@ The filter **inherits** the permission of the homonymous field in `$fields`. Whe
 
 > **Fail-open.** No `Field::REQUIRES`, or no authorizer injected → the filter applies normally (the `fields` semantics). A field **not projected** (absent from `$fields`) stays freely filterable — the "filter on data you don't display" use case. See [Field projection](../projection.md) and [Sorting](sort.md#sort-permission).
 >
-> **Limit.** A leaf *inside* an authorized relation (`employee[*].salary`) is gated at the relation level, not yet at the leaf field.
+> **Depth.** The gate descends to the **exact leaf field**, not only the root: a sub-field of a nested document (`address.city`), a leaf **across** an edge/join (`employee[*].salary` inherits the **target model's** `Field::REQUIRES`) and an object-array sub-field (`contactPoint[*].email`, including via `match`) are all gated. A refused leaf neutralises the **whole traversal** to `false` — even under the `all`/`none` quantifier (never turned into an existence oracle).
 
 ## Best practices
 

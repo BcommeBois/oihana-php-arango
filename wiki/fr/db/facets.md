@@ -202,7 +202,7 @@ La valeur de requête est l'objet **`{agg, field, op, val}`** ; chaque clé est 
 | Clé | Rôle | Défaut |
 |---|---|---|
 | `agg` | l'agrégateur : `avg`, `sum`, `min`, `max`, `count` | `Facet::AGG`, sinon `count` |
-| `field` | le champ numérique agrégé du document lié (ignoré par `count`) | `AQL::FIELDS` |
+| `field` | le champ numérique agrégé du document lié (ignoré par `count`) — **doit appartenir à la liste blanche `AQL::FIELDS`** (voir *Permission du champ agrégé*) | `AQL::FIELDS` (1er élément) |
 | `op` | le comparateur du seuil (`ge`, `gt`, `le`, `lt`, `eq`, `ne`) | `Facet::OP`, sinon `ge` |
 | `val` | le seuil (numérique) — **requis** (sinon la facette est ignorée) | — |
 
@@ -265,7 +265,37 @@ Des **organisations** et leurs **bilans** annuels reliés par une arête `balanc
 >
 > Exemple : avec trois orgs `o1` (bilans 1,2 M / 0,9 M), `o2` (bilan 0,2 M) et `o3` (aucun bilan), la requête `?facets={"balanceSheets":{"agg":"min","field":"revenue","op":"lt","val":500000}}` ne renvoie **que `o2`** — `o3` est exclu par la garde, alors que sans elle `MIN([]) = null < 500000` l'aurait fait remonter.
 
-> **Pas de négation `-` ni d'`alt`** sur les facettes aggregate : l'`op` porte déjà le sens (`ne`/`lt`/…), et le champ comme le seuil sont numériques. Un `field` venant de l'URL est validé (`assertAttributeName`) et un `agg` inconnu rend la facette sans effet (ignorée + logguée).
+> **Pas de négation `-` ni d'`alt`** sur les facettes aggregate : l'`op` porte déjà le sens (`ne`/`lt`/…), et le champ comme le seuil sont numériques. Un `field` venant de l'URL est validé (`assertAttributeName`) **et doit appartenir à la liste blanche `AQL::FIELDS`** (voir ci-dessous) ; un `agg` inconnu rend la facette sans effet (ignorée + logguée).
+
+#### Permission du champ agrégé (liste blanche `AQL::FIELDS` + `AQL::MODEL`)
+
+Le champ agrégé peut venir de l'**URL** (`{"field":"…"}`). Laissé libre, il serait un **oracle** : `{"agg":"max","field":"salary",…}` + une dichotomie sur `val` reconstruit une **borne** d'un champ pourtant caché. Deux verrous le ferment.
+
+**Verrou 1 — liste blanche, fermée par défaut.** L'URL ne peut choisir qu'un champ **déclaré** dans `AQL::FIELDS` : une **chaîne** = le seul champ autorisé, une **liste** = l'ensemble autorisé (son 1ᵉʳ élément est le défaut). Un champ hors liste — ou n'importe quel champ si **rien** n'est déclaré — **neutralise la facette** (`false`).
+
+La situation. Une facette qui déclare un seul champ, et une requête qui en réclame un autre :
+
+```php
+'balanceSheets' => [ Facet::TYPE => Facet::EDGE_AGGREGATE , AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ,
+```
+```
+?facets={"balanceSheets":{"agg":"max","field":"revenue","val":X}}   // ✅ dans la liste → agrège revenue
+?facets={"balanceSheets":{"agg":"max","field":"salary","val":X}}    // ❌ hors liste → facette neutralisée (false)
+```
+Pour autoriser plusieurs champs : `AQL::FIELDS => [ 'revenue' , 'ebitda' ]`.
+
+**Verrou 2 — verrou de lecture du champ cible (opt-in `AQL::MODEL`).** Si la facette déclare son **modèle cible**, le champ agrégé hérite du `Field::REQUIRES` de ce modèle, **par utilisateur** :
+
+```php
+'balanceSheets' => [
+    Facet::TYPE => Facet::EDGE_AGGREGATE , AQL::EDGE => 'balance_edges' ,
+    AQL::FIELDS => [ 'revenue' , 'ebitda' ] , AQL::MODEL => Models::BALANCE ,
+] ,
+```
+
+Si `revenue` porte `Field::REQUIRES => 'finance:read'` dans le modèle `BALANCE`, la facette est **neutralisée** pour un utilisateur sans ce droit (et agrège normalement pour un utilisateur autorisé). Sans `AQL::MODEL`, ce verrou est **sauté** — seule la liste blanche s'applique.
+
+> ⚠️ **Migration.** Une facette aggregate qui laissait l'URL choisir le `field` **sans** déclarer `AQL::FIELDS` doit désormais le déclarer (même bascule *fermée par défaut* que `?sort=` / `?groupBy=`). Une facette qui déclarait déjà `AQL::FIELDS` et interroge ce même champ est inchangée.
 
 ### `Facet::ARRAY_COMPLEX` — tableau d'objets embarqués *(complexe)*
 
@@ -433,7 +463,7 @@ public array $facets = [ 'salary' => [ Facet::TYPE => Facet::FIELD ] ] ; // hér
 | `?facets=` (facette-filtre) | **neutralisée en `false`** (comme un filtre — jamais élargie) |
 | `?facetCounts=` (distribution) | **dimension écartée** (retire une sortie, n'assouplit rien) |
 
-> **Fail-open** identique aux filtres (aucun `REQUIRES` ou aucun *authorizer* → facette normale). **Limite** : les facettes de relation (EDGE/JOIN) et les agrégats sont gatés au niveau de la clé, pas encore de la définition de relation / du champ agrégé. Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
+> **Fail-open** identique aux filtres (aucun `REQUIRES` ou aucun *authorizer* → facette normale). **Champ agrégé** : le champ d'une facette aggregate est verrouillé par **liste blanche** (`AQL::FIELDS`) et, en option, par le `Field::REQUIRES` du **modèle cible** (`AQL::MODEL`) — voir *Permission du champ agrégé*. **Facettes de relation** (EDGE/JOIN) : verrouillées explicitement par un `Field::REQUIRES` posé **sur la facette** (pas d'héritage automatique depuis une relation homonyme). Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
 
 ## Compteurs de facettes `?facetCounts=`
 
