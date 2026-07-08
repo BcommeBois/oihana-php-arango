@@ -832,6 +832,35 @@ Quand chaque élément est un **objet**, la condition porte sur un sous-champ (`
 // FILTER MD5(doc.password) == @password
 ```
 
+## Permission (`REQUIRES`)
+
+Whitelister *ce qu'on peut filtrer* (`AQL::FILTERS`) ne dit rien sur *ce qu'on a le droit de lire*. Un champ **caché à la lecture** par une permission (`Field::REQUIRES` dans la projection) mais laissé filtrable devient un **oracle** : `?filter={"key":"salary","op":"gt","val":1000}` inclut ou exclut le document selon une valeur qu'on n'a pas le droit de voir — et un prédicat bindable permet de la retrouver par dichotomie.
+
+**La situation.** `salary` est protégé dans la projection, tout en restant déclaré filtrable.
+
+```php
+public array $fields  = [ 'name' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+public array $filters = [ 'name' => FilterType::STRING , 'salary' => FilterType::NUMBER ] ;
+```
+
+Le filtre **hérite** de la permission du champ homonyme de `$fields`. Refusé, le prédicat est **neutralisé en `false`** — jamais retiré (retirer une condition d'un `ET` élargirait le résultat, autre fuite). Il compose donc sans risque dans `and`/`or`/`not` :
+
+| Contexte | Refusé donne | Fuite ? |
+|---|---|---|
+| `a && false` | branche vide | non |
+| `a \|\| false` | `a` | non |
+| `NOT false` | `true` (n'exclut rien) | non |
+
+| Utilisateur **avec** `hr:read` | Utilisateur **sans** `hr:read` |
+|---|---|
+| `?filter=…salary…` → prédicat normal | `?filter=…salary…` → **neutralisé** (aucun résultat trahi) |
+
+**Relations.** Une relation verrouillée à sa définition (`AQL::REQUIRES` sur l'edge/join) ne peut pas être filtrée à travers : la traversée entière est neutralisée. Les deux gates composent (logique ET).
+
+> **Fail-open.** Aucun `Field::REQUIRES`, ou aucun *authorizer* branché → le filtre s'applique normalement (sémantique des `fields`). Un champ **non projeté** (absent de `$fields`) reste librement filtrable — c'est le cas d'usage « filtrer sur une donnée qu'on n'affiche pas ». Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
+>
+> **Limite.** Une feuille *à l'intérieur* d'une relation autorisée (`employee[*].salary`) est gatée au niveau de la relation, pas encore du champ feuille.
+
 ## Bonnes pratiques
 
 ### Performance et index

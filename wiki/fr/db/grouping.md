@@ -168,7 +168,25 @@ $articles = new Documents( $container ,
 // ?groupBy=secret    → ignoré (non whitelisté)
 ```
 
-Quand `groupable` est `null` (défaut), le regroupement est ouvert mais reste protégé contre l'injection par `assertAttributeName()`.
+Quand `groupable` est `null` (défaut), le regroupement est **fail-closed** : rien n'est groupable (voir *Permission* ci-dessous).
+
+## Permission (`REQUIRES`)
+
+`?groupBy=` est **fail-closed** : sans `AQL::GROUPABLE` déclaré, **rien n'est groupable** (comme le tri). Et une dimension whitelistée sur un champ **caché à la lecture** (`Field::REQUIRES`) reste un **oracle** : `COLLECT` révèle ses valeurs distinctes et leurs comptes ; un agrégat (`MAX/MIN/AVG/SUM`) fuit une **borne**.
+
+La permission **hérite** du champ homonyme de `$fields` ; refusée, la **dimension ou l'agrégat est écarté** (retire une sortie, n'assouplit rien).
+
+```php
+public array  $fields    = [ 'category' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+public ?array $groupable = [ 'category' => 'category' , 'salary' => 'salary' ] ;
+```
+
+| Utilisateur **avec** `hr:read` | Utilisateur **sans** `hr:read` |
+|---|---|
+| `?group[group_by]=salary` → `COLLECT salary = doc.salary` | dimension **écartée** |
+| `?group[group_agg][m]=max:salary` → `MAX(doc.salary)` | agrégat **écarté** |
+
+> **Migration (BC).** `groupable = null` ne signifie plus « tout groupable » mais **rien** : déclare `AQL::GROUPABLE` avec les clés que le client peut grouper (celles du `SORT_DEFAULT` incluses). **Fail-open** : sans `REQUIRES`/*authorizer*, un champ whitelisté se groupe normalement. **Limite** : un chemin profond est gaté à la racine. Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
 
 ## Voir aussi
 

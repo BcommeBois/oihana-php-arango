@@ -832,6 +832,35 @@ When each element is an **object**, the condition targets a sub-field (`reviews[
 // FILTER MD5(doc.password) == @password
 ```
 
+## Permission (`REQUIRES`)
+
+Whitelisting *what can be filtered* (`AQL::FILTERS`) says nothing about *what may be read*. A field **hidden from reading** by a permission (`Field::REQUIRES` on the projection) yet left filterable becomes an **oracle**: `?filter={"key":"salary","op":"gt","val":1000}` includes or excludes the document by a value you may not see — and a bindable predicate lets you recover it by binary search.
+
+**The situation.** `salary` is gated in the projection yet still declared filterable.
+
+```php
+public array $fields  = [ 'name' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+public array $filters = [ 'name' => FilterType::STRING , 'salary' => FilterType::NUMBER ] ;
+```
+
+The filter **inherits** the permission of the homonymous field in `$fields`. When refused, the predicate is **neutralised to `false`** — never dropped (dropping an AND term would loosen the result, another leak). So it composes safely in `and`/`or`/`not`:
+
+| Context | A refusal yields | Leak? |
+|---|---|---|
+| `a && false` | empty branch | no |
+| `a \|\| false` | `a` | no |
+| `NOT false` | `true` (excludes nothing) | no |
+
+| User **with** `hr:read` | User **without** `hr:read` |
+|---|---|
+| `?filter=…salary…` → normal predicate | `?filter=…salary…` → **neutralised** (no result betrayed) |
+
+**Relations.** A relation locked at its definition (`AQL::REQUIRES` on the edge/join) cannot be filtered through: the whole traversal is neutralised. Both gates compose (logical AND).
+
+> **Fail-open.** No `Field::REQUIRES`, or no authorizer injected → the filter applies normally (the `fields` semantics). A field **not projected** (absent from `$fields`) stays freely filterable — the "filter on data you don't display" use case. See [Field projection](../projection.md) and [Sorting](sort.md#sort-permission).
+>
+> **Limit.** A leaf *inside* an authorized relation (`employee[*].salary`) is gated at the relation level, not yet at the leaf field.
+
 ## Best practices
 
 ### Performance and indexes

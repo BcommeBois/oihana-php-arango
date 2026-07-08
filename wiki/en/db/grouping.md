@@ -168,7 +168,25 @@ $articles = new Documents( $container ,
 // ?groupBy=secret    → ignored (not whitelisted)
 ```
 
-When `groupable` is `null` (default), grouping is open but still protected against injection by `assertAttributeName()`.
+When `groupable` is `null` (default), grouping is **fail-closed**: nothing is groupable (see *Permission* below).
+
+## Permission (`REQUIRES`)
+
+`?groupBy=` is **fail-closed**: without a declared `AQL::GROUPABLE`, **nothing is groupable** (like sorting). And a whitelisted dimension on a field **hidden from reading** (`Field::REQUIRES`) is still an **oracle**: `COLLECT` reveals its distinct values and their counts; an aggregate (`MAX/MIN/AVG/SUM`) leaks a **bound**.
+
+The permission **inherits** from the homonymous field in `$fields`; when refused, the **dimension or aggregate is dropped** (removes an output, loosens nothing).
+
+```php
+public array  $fields    = [ 'category' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+public ?array $groupable = [ 'category' => 'category' , 'salary' => 'salary' ] ;
+```
+
+| User **with** `hr:read` | User **without** `hr:read` |
+|---|---|
+| `?group[group_by]=salary` → `COLLECT salary = doc.salary` | dimension **dropped** |
+| `?group[group_agg][m]=max:salary` → `MAX(doc.salary)` | aggregate **dropped** |
+
+> **Migration (BC).** `groupable = null` no longer means "everything groupable" but **nothing**: declare `AQL::GROUPABLE` with the keys a client may group on. **Fail-open**: with no `REQUIRES` / authorizer, a whitelisted field groups normally. **Limit**: a deep path is gated at the root segment. See [Field projection](../projection.md) and [Sorting](sort.md#sort-permission).
 
 ## See also
 

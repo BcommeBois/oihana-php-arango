@@ -416,6 +416,25 @@ Le contrat est strict : **seules les valeurs liées (`@bind`) sont sous contrôl
 - Les **clés de facette** sont whitelistées (`Arango::FACETS` du modèle ; clé absente → ignorée).
 - Les **noms de sous-champs** des facettes complexes (issus de l'URL et concaténés dans `doc.<champ>`) sont validés par [`assertAttributeName`](helpers.md#garde-anti-injection--isattributename--assertattributename) : un nom dangereux fait échouer la facette (ignorée + `warning`), aucun fragment n'atteint l'AQL.
 
+## Permission (`REQUIRES`)
+
+Comme les filtres, une facette sur un champ **caché à la lecture** (`Field::REQUIRES`) fuit : utilisée comme filtre elle laisse ce champ restreindre le jeu ; via `?facetCounts=`, elle renvoie ses **valeurs distinctes et leurs comptes en clair** (oracle direct).
+
+La permission se résout par **héritage** du champ homonyme de `$fields`, **ou** par un `Field::REQUIRES` posé directement sur la définition de facette (elle est déjà un tableau) :
+
+```php
+public array $fields = [ 'name' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+public array $facets = [ 'salary' => [ Facet::TYPE => Facet::FIELD ] ] ; // hérite de $fields
+// ou explicite : 'salary' => [ Facet::TYPE => Facet::FIELD , Field::REQUIRES => 'hr:read' ]
+```
+
+| Surface | Refusée → |
+|---|---|
+| `?facets=` (facette-filtre) | **neutralisée en `false`** (comme un filtre — jamais élargie) |
+| `?facetCounts=` (distribution) | **dimension écartée** (retire une sortie, n'assouplit rien) |
+
+> **Fail-open** identique aux filtres (aucun `REQUIRES` ou aucun *authorizer* → facette normale). **Limite** : les facettes de relation (EDGE/JOIN) et les agrégats sont gatés au niveau de la clé, pas encore de la définition de relation / du champ agrégé. Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
+
 ## Compteurs de facettes `?facetCounts=`
 
 Les facettes ci-dessus **filtrent** la liste. Pour afficher, à côté de la liste, le **nombre de documents par valeur** de chaque facette (la barre latérale « Catégorie : Cuisine (42), Voyage (17) »), on demande des **compteurs**. Un compteur ne **restreint jamais** la liste — il dénombre sur ce que la liste affiche déjà, donc il n'entre jamais en conflit avec `?filter=` / `?facets=` (il en *hérite* les filtres) :
@@ -509,6 +528,65 @@ LET currency = (FOR doc IN @@products FILTER <mêmes filtres>
 ```
 
 > C'est le bon outil quand on veut **plusieurs ventilations indépendantes** dans une réponse. Pour transformer la liste elle-même en **une** agrégation, voir le [Regroupement `?groupBy=` / `?group=`](grouping.md).
+
+### Compter des documents distincts par bucket (`Facet::DISTINCT`)
+
+La situation. Une facette qui **déplie un tableau** — que ce soit un sous-champ
+`[*]` (`offers[*].sellerId`) ou une facette d'appartenance `Facet::IN`
+(`keywords`) — compte par défaut les **éléments** du tableau, pas les documents.
+Si le **même** vendeur apparaît dans 3 offres du **même** produit, ce produit est
+compté **3 fois** dans le bucket.
+
+C'est cohérent tant qu'on veut « combien d'éléments matchent ». Mais une barre
+latérale d'UI attend en général « combien de **documents** matchent » — le même
+nombre que renverrait le filtre d'existence équivalent
+`?filter={"key":"offers[*].sellerId","val":"X"}`, qui compte des **documents**
+(`LENGTH(...) > 0`). Le compteur par éléments affiche alors un nombre **gonflé**
+qui ne correspond pas au nombre de résultats du filtre.
+
+Soit un produit dont le même `sellerId` se répète sur plusieurs offres :
+
+```json
+{ "_key": "prod-1",
+  "offers": [ { "sellerId": "acme" }, { "sellerId": "acme" }, { "sellerId": "globex" } ] }
+```
+
+- Compte **par éléments** (défaut) : `acme` → 2, `globex` → 1.
+- Compte **par documents** : `acme` → 1, `globex` → 1 (le produit apparaît une
+  seule fois par bucket, comme avec `?filter=`).
+
+Pour basculer sur le comptage par documents, on pose l'option **opt-in**
+`Facet::DISTINCT => true` sur la déclaration de la facette :
+
+```php
+Arango::FACETS => [
+    'seller' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => 'offers[*].sellerId' , Facet::DISTINCT => true ] ,
+]
+```
+
+Seule l'**agrégation** change : le `WITH COUNT INTO count` devient un
+`AGGREGATE count = COUNT_DISTINCT( doc._key )`. Le dépliage, le tri et la
+projection `{ value, count }` restent identiques :
+
+```aql
+LET seller = (FOR doc IN @@products FILTER <mêmes filtres>
+              FOR item IN doc.offers
+              COLLECT value = item.sellerId AGGREGATE count = COUNT_DISTINCT( doc._key )
+              SORT count DESC RETURN { value, count })
+```
+
+- **Opt-in, rétro-compatible** : sans le flag, le comportement (compte par
+  éléments) est **inchangé**.
+- S'applique à **toutes les facettes qui déplient** : les sous-champs `[*]`
+  (mono‑ et multi‑hops) **et** la famille `Facet::IN` / `Facet::LIST` /
+  `Facet::LIST_FIELD` / `Facet::LIST_FIELD_SORTED`.
+- Le « distinct » porte **toujours** sur la clé du **document racine**
+  (`doc._key`), quelle que soit la profondeur des `[*]` (`a[*].b[*].c` compte
+  quand même des documents racine distincts).
+- **Sans effet** sur une facette scalaire `Facet::FIELD` : elle émet déjà une
+  ligne par document, donc le flag est ignoré (le `WITH COUNT` est conservé).
+- Ne touche ni à `?facetsOnly=` ni au `total` exact — ils proviennent déjà d'un
+  `count()` dédié.
 
 ### Les comptes sans les documents (`?facetsOnly=`)
 

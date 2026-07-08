@@ -455,6 +455,25 @@ The contract is strict: **only bound values (`@bind`) are under user control**.
   an unsafe name makes the facet fail (dropped + `warning`), and no fragment ever
   reaches the AQL.
 
+## Permission (`REQUIRES`)
+
+Like filters, a facet on a field **hidden from reading** (`Field::REQUIRES`) leaks: used as a filter it lets that field narrow the set; via `?facetCounts=` it returns its **distinct values and their counts in clear** (a direct oracle).
+
+The permission resolves by **inheritance** from the homonymous field in `$fields`, **or** from a `Field::REQUIRES` declared on the facet definition itself (it is already an array):
+
+```php
+public array $fields = [ 'name' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+public array $facets = [ 'salary' => [ Facet::TYPE => Facet::FIELD ] ] ; // inherits from $fields
+// or explicit: 'salary' => [ Facet::TYPE => Facet::FIELD , Field::REQUIRES => 'hr:read' ]
+```
+
+| Surface | A refusal → |
+|---|---|
+| `?facets=` (facet-filter) | **neutralised to `false`** (like a filter — never loosened) |
+| `?facetCounts=` (distribution) | **dimension dropped** (removes an output, loosens nothing) |
+
+> **Fail-open** as for filters (no `REQUIRES` or no authorizer → normal facet). **Limit**: relation facets (EDGE/JOIN) and aggregates are gated at the key level, not yet at the relation-definition / aggregated-field level. See [Field projection](../projection.md) and [Sorting](sort.md#sort-permission).
+
 ## Facet counts `?facetCounts=`
 
 The facets above **filter** the list. To show, alongside the list, the **number
@@ -553,6 +572,63 @@ LET currency = (FOR doc IN @@products FILTER <same filters>
 
 > This is the right tool for **several independent breakdowns** in one response.
 > To turn the list itself into **one** aggregation, see [Grouping `?groupBy=` / `?group=`](grouping.md).
+
+### Counting distinct documents per bucket (`Facet::DISTINCT`)
+
+The setup. A facet that **unwinds an array** — whether a `[*]` sub-field
+(`offers[*].sellerId`) or an `Facet::IN` membership facet (`keywords`) — counts
+the array **elements** by default, not the documents. If the **same** seller
+appears in 3 offers of the **same** product, that product is counted **3 times**
+in the bucket.
+
+That is consistent when you want "how many elements match". But a UI sidebar
+usually expects "how many **documents** match" — the same number the equivalent
+existence filter `?filter={"key":"offers[*].sellerId","val":"X"}` returns, which
+counts **documents** (`LENGTH(...) > 0`). The per-element count then shows an
+**inflated** number that does not match the filter's result count.
+
+Take a product whose same `sellerId` repeats across several offers:
+
+```json
+{ "_key": "prod-1",
+  "offers": [ { "sellerId": "acme" }, { "sellerId": "acme" }, { "sellerId": "globex" } ] }
+```
+
+- **Per-element** count (default): `acme` → 2, `globex` → 1.
+- **Per-document** count: `acme` → 1, `globex` → 1 (the product appears once per
+  bucket, as with `?filter=`).
+
+To switch to per-document counting, set the **opt-in** option
+`Facet::DISTINCT => true` on the facet declaration:
+
+```php
+Arango::FACETS => [
+    'seller' => [ Facet::TYPE => Facet::IN , Facet::PROPERTY => 'offers[*].sellerId' , Facet::DISTINCT => true ] ,
+]
+```
+
+Only the **aggregation** changes: the `WITH COUNT INTO count` becomes an
+`AGGREGATE count = COUNT_DISTINCT( doc._key )`. The unwind, the sort and the
+`{ value, count }` projection stay identical:
+
+```aql
+LET seller = (FOR doc IN @@products FILTER <same filters>
+              FOR item IN doc.offers
+              COLLECT value = item.sellerId AGGREGATE count = COUNT_DISTINCT( doc._key )
+              SORT count DESC RETURN { value, count })
+```
+
+- **Opt-in, backward compatible**: without the flag the behaviour (per-element
+  count) is **unchanged**.
+- Applies to **every unwinding facet**: the `[*]` sub-fields (single- and
+  multi-hop) **and** the `Facet::IN` / `Facet::LIST` / `Facet::LIST_FIELD` /
+  `Facet::LIST_FIELD_SORTED` family.
+- The distinct always targets the **root document** key (`doc._key`), whatever
+  the `[*]` hop depth (`a[*].b[*].c` still counts distinct root documents).
+- **No effect** on a scalar `Facet::FIELD` facet: it already emits one row per
+  document, so the flag is ignored (the `WITH COUNT` is kept).
+- Touches neither `?facetsOnly=` nor the exact `total` — they already come from
+  a dedicated `count()`.
 
 ### Counts without the documents (`?facetsOnly=`)
 
