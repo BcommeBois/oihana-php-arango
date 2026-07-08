@@ -156,7 +156,7 @@ Reserved for the [`FilterType::GEO`](#filter-types) type. It filters documents b
 
 `op` may be omitted (the `geo` type implies `distance`). **A radius is required**: with neither `min` nor `max`, no clause is emitted. The sub-attributes read are `<key>.latitude` / `<key>.longitude` (Schema.org); `DISTANCE` operates on two scalars, so the predicate is **index-accelerated** as soon as a two-field [`GeoIndex`](../clients/indexes.md) covers them. See the [geospatial functions](../aql/aql-functions-geo.md) catalog.
 
-> **Filtering ≠ sorting.** `distance` **bounds** (radius) but does not **order**. To rank from nearest to farthest, use the dedicated [`?near=`](search-and-filtering.md#distance-sorting-near) parameter — composable with this filter.
+> **Filtering ≠ sorting.** `distance` **bounds** (radius) but does not **order**. To rank from nearest to farthest, use the dedicated [`?near=`](sort.md#distance-sorting-near) parameter — composable with this filter.
 
 ## Filter types
 

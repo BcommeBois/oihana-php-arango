@@ -79,7 +79,7 @@ Le contrat de `?search=` est inchangé : termes séparés par des virgules, **OR
 
 ### Pertinence et `?sort=`
 
-Une recherche active expose la clé de tri synthétique **`score`** (le pendant pertinence de [`distance`](../search-and-filtering.md) pour `?near=`) :
+Une recherche active expose la clé de tri synthétique **`score`** (le pendant pertinence de [`distance`](../sort.md#tri-par-distance-near) pour `?near=`) :
 
 | Requête | Ordre |
 |---|---|

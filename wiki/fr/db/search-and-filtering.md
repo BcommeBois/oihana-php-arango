@@ -30,7 +30,7 @@ FOR doc IN articles
 
 On peut donc envoyer les trois dans la même requête — ils se cumulent (logique ET entre eux). `?search` forme son propre groupe `OR` interne, puis est ANDé au reste.
 
-> **Au-delà du filtrage.** Une requête de liste comprend aussi le **tri** ([`?sort`](../models.md#notations-de-aqlsortable)), la **pagination** (`?limit`/`?offset`) et la **projection** de sortie (skins, `Field::*`). Ils ne *filtrent* pas et ne sont pas couverts ici — voir [models.md](../models.md) et [La projection des champs](../projection.md).
+> **Au-delà du filtrage.** Une requête de liste comprend aussi le **tri** ([`?sort=` / `?near=`](sort.md)), la **pagination** (`?limit`/`?offset`) et la **projection** de sortie (skins, `Field::*`). Ils ne *filtrent* pas et ne sont pas couverts ici — voir [Tri](sort.md) et [La projection des champs](../projection.md).
 
 ## Tableau comparatif
 
@@ -93,30 +93,7 @@ Au-delà des différences de surface, les trois reposent sur **les mêmes brique
 
 À part des trois leviers ci-dessus, qui **restreignent**, `?near=` **ordonne** : il classe la liste du plus proche au plus loin d'un point géographique. Il ne filtre pas — combine-le avec un [filtre `geo`](filter.md#opérateur-distance-géolocalisation) pour borner un rayon.
 
-```
-?near={"key":"geo","latitude":48.8566,"longitude":2.3522}
-# → SORT DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) ASC
-```
-
-`?near=` fournit le **point d'ancrage** (attribut Schema.org `GeoCoordinates`, alias `lat`/`lng`/`lon` acceptés) et expose une **clé de tri synthétique `distance`** que `?sort=` pilote — `?sort=` reste l'**unique autorité de tri** :
-
-| Requête | Tri |
-|---|---|
-| `?near=…` seul | `distance` ASC (défaut, plus proche d'abord) |
-| `?near=…&sort=-distance` | plus loin d'abord |
-| `?near=…&sort=distance,name` | distance puis nom (tu choisis la priorité) |
-| `?near=…&sort=name` | nom seul — distance **non** ajoutée (le `?sort` explicite décide) |
-| `?sort=distance` sans `?near=` | ignoré (pas d'ancrage) |
-
-Combinaison typique — les 10 lieux **les plus proches**, musées, dans 5 km :
-
-```
-?near={"key":"geo","latitude":48.8566,"longitude":2.3522}
-&filter=[{"key":"type","val":"museum"},{"key":"geo","op":"distance","val":{"latitude":48.8566,"longitude":2.3522},"max":5000}]
-&limit=10
-```
-
-`DISTANCE` opère sur deux scalaires → tri **index-accéléré** par un [`GeoIndex`](../clients/indexes.md) à deux champs. Les coordonnées ne sont bindées que si un critère `distance` est réellement émis (jamais de bind inutilisé). Voir les [fonctions géospatiales](../aql/aql-functions-geo.md).
+Le tri par distance est traité avec le reste du tri sur sa page dédiée : **[Tri → Tri par distance (`?near=`)](sort.md#tri-par-distance-near)** (point d'ancrage, clé `distance`, whitelist de la clé géo, combinaisons `?near=`/`?sort=`, `GeoIndex`).
 
 ## Voir aussi
 
@@ -125,5 +102,6 @@ Combinaison typique — les 10 lieux **les plus proches**, musées, dans 5 km :
 - [Filtres `?filter=`](filter.md) — comparateurs, `alt`, ET/OU/NON, dates, `between`, `AT LEAST`, `distance`.
 - [Facettes `?facets=`](facets.md) — catalogue des types (FIELD/IN/EDGE/JOIN/complexes/agrégats).
 - [Filtrage interne `AQL::CONDITIONS`](filter-internal.md) — conditions serveur-only (jamais exposées à l'URL).
+- [Tri `?sort=` / `?near=`](sort.md) — *whitelist* `SORTABLE`, permission de tri, tri par distance.
 - [ArangoSearch (vues)](../clients/arangosearch.md) — full-text avancé (analyseurs, scoring) ; à distinguer du `?search` simple.
-- [Modèles `Documents`](../models.md) — tri, pagination et cycle de vie de la requête de liste.
+- [Modèles `Documents`](../models.md) — pagination et cycle de vie de la requête de liste.

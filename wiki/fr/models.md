@@ -59,7 +59,7 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 | `AQL::SKIN_FIELDS`  | `array`         | Projections alternatives par *skin* (table `skin => champs`, cf. [projection.md](projection.md#au-niveau-du-modèle--une-projection-par-skin-pour-la-racine)). |
 | `AQL::FILTERS`      | `array`         | Champs filtrables depuis l'URL et leur `FilterType::*` (cf. [filter.md](db/filter.md)).                |
 | `AQL::SEARCHABLE`   | `array`         | Champs sur lesquels `?search=` opère.                                                                  |
-| `AQL::SORTABLE`     | `array`         | *Whitelist* de tri pour `?sort=` ([3 notations](#notations-de-aqlsortable)).                           |
+| `AQL::SORTABLE`     | `array`         | *Whitelist* de tri pour `?sort=` (voir [Tri](db/sort.md)).                                             |
 | `AQL::SORT_DEFAULT` | `string`        | Tri par défaut au format grammaire ([`sortKeys`](helpers.md)).                                         |
 | `AQL::EDGES`        | `array`         | Définitions d'*edges* (cf. [edges-joins-projection.md](edges-joins-projection.md)).                    |
 | `AQL::JOINS`        | `array`         | Définitions de *joins* (même page).                                                                    |
@@ -73,26 +73,14 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 | `AQL::CONDITIONS`   | `array`         | Conditions AQL injectées côté serveur (cf. [filter-internal.md](db/filter-internal.md)).               |
 | `AQL::BINDS`        | `array`         | *Bind variables* injectées côté serveur.                                                               |
 
-### Notations de `AQL::SORTABLE`
+### Tri — `AQL::SORTABLE` / `AQL::SORT_DEFAULT`
 
-La *whitelist* de tri résout chaque clé de `?sort=` (grammaire : liste séparée par des virgules, un `-` en tête inverse en descendant) vers un champ AQL. Trois notations interchangeables sont acceptées et **peuvent être mélangées dans le même tableau** :
+Le tri (`?sort=` et `?near=`) a sa **page dédiée** : [Tri](db/sort.md). L'essentiel :
 
-```php
-// Raccourci indexé — la clé URL est identique au champ (le cas courant) :
-AQL::SORTABLE => [ Prop::_FROM , Prop::_TO , Prop::CREATED , Prop::MODIFIED ]
+- **Fail-closed** — `AQL::SORTABLE` résout chaque clé de `?sort=` vers un champ AQL (3 notations mélangeables : raccourci indexé, alias, associatif). Une clé hors *whitelist* est **silencieusement ignorée** ; **`null` (pas de *whitelist*) = rien n'est triable** (jamais « tout »). `AQL::SORT_DEFAULT` traverse la même *whitelist* et doit donc nommer des clés déclarées.
+- **Permission** — une clé de tri peut être **gatée** (`Field::REQUIRES`), héritée du champ homonyme de la projection ou déclarée explicitement, pour qu'un champ caché à la lecture ne soit pas triable (pas d'oracle de tri).
 
-// Alias indexé — la clé publique diffère du champ AQL (?sort=name → doc.givenName) :
-AQL::SORTABLE => [ [ Prop::NAME => Prop::GIVEN_NAME ] , Prop::CREATED ]
-
-// Associatif (historique) — toujours supporté, inchangé :
-AQL::SORTABLE => [ Prop::CREATED => Prop::CREATED , Prop::NAME => Prop::GIVEN_NAME ]
-```
-
-- Le sens de la paire est toujours `[ cléURL => champAQL ]`, identique dans les trois formes.
-- La valeur d'un champ peut être un chemin multi-segments (`[ 'address', 'city' ]` → `address.city`), y compris en forme alias.
-- Une clé de `?sort=` hors *whitelist* est **silencieusement ignorée** ; `null` (pas de *whitelist*) active le **mode ouvert** (tout attribut, validé contre l'injection).
-
-La normalisation (`oihana\arango\models\helpers\normalizeSortable()`) replie n'importe laquelle des trois formes vers la map canonique `cléURL => champAQL`, une seule fois à la construction. Elle est **idempotente** et **rétro-compatible** : une map associative existante est renvoyée telle quelle.
+Détail des trois notations, du gate de permission et du tri par distance `?near=` dans [Tri](db/sort.md).
 
 ### Méthodes principales
 

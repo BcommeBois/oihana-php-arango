@@ -79,7 +79,7 @@ The `?search=` contract is unchanged: comma-separated terms, **OR** everywhere â
 
 ### Relevance and `?sort=`
 
-An active search exposes the synthetic **`score`** sort key (the relevance counterpart of [`distance`](../search-and-filtering.md#distance-sorting-near) for `?near=`):
+An active search exposes the synthetic **`score`** sort key (the relevance counterpart of [`distance`](../sort.md#distance-sorting-near) for `?near=`):
 
 | Request | Order |
 |---|---|

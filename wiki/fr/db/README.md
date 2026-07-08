@@ -27,7 +27,8 @@ Si vous avez juste besoin de **lancer une requête et lire du JSON**, prenez le 
 | 7 | [Filtrage interne — `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) | Conditions serveur-only, `FilterType::VIRTUAL`, règle de choix URL vs interne. |
 | 8 | [Facettes HTTP `?facets=`](facets.md) | Syntaxe URL `?facets=`, déclaration `Arango::FACETS` / `Facet::TYPE`, catalogue des types (FIELD, IN, EDGE, JOIN, *_COMPLEX, *_AGGREGATE), opérateurs, négation, sécurité, **compteurs de facettes `?facetCounts=`**. |
 | 9 | [Regroupement HTTP `?groupBy=` / `?group=`](grouping.md) | `GROUP BY` via `COLLECT` : syntaxe URL (`?groupBy=` CSV + `?group=` JSON), vocabulaire `Arango::GROUP` / `Group`, les trois usages (distinct / comptage / agrégats), tri des groupes, spec brute `Arango::COLLECT`, whitelist `groupable` et sécurité. |
-| 10 | [Expliquer et profiler les requêtes](explain-and-profiling.md) | `explain()` / `explainList()` typés → `ExplainResult` (règles d'optimiseur, **quels index la requête utilise réellement**) et profiling via l'option `'profile'` → `getProfile()` / `getStats()` → `ProfileResult` / `ExecutionStats` (scanné / filtré / temps / timings par phase). |
+| 10 | [Tri `?sort=` / `?near=`](sort.md) | La *whitelist* fail-closed `AQL::SORTABLE` (3 notations), `SORT_DEFAULT`, le **gate de permission** du tri (hérité de `$fields` ou explicite — pas d'oracle de tri), les clés synthétiques `distance` / `score`, et le **tri par distance `?near=`** (clé géo whitelistée, `GeoIndex`). |
+| 11 | [Expliquer et profiler les requêtes](explain-and-profiling.md) | `explain()` / `explainList()` typés → `ExplainResult` (règles d'optimiseur, **quels index la requête utilise réellement**) et profiling via l'option `'profile'` → `getProfile()` / `getStats()` → `ProfileResult` / `ExecutionStats` (scanné / filtré / temps / timings par phase). |
 
 ## Cartographie du dossier `db/`
 

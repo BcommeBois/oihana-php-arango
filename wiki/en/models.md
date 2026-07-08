@@ -59,7 +59,7 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::SKIN_FIELDS` | `array` | Per-skin alternative projections (`skin => fields` table, see [projection.md](projection.md#at-the-model-level--one-projection-per-skin-for-the-root)). |
 | `AQL::FILTERS` | `array` | Fields filterable from URL and their `FilterType::*` (see [filter.md](db/filter.md)). |
 | `AQL::SEARCHABLE` | `array` | Fields `?search=` operates on. |
-| `AQL::SORTABLE` | `array` | Sort whitelist for `?sort=` ([three notations](#aqlsortable-notations)). |
+| `AQL::SORTABLE` | `array` | Sort whitelist for `?sort=` (see [Sorting](db/sort.md)). |
 | `AQL::SORT_DEFAULT` | `string` | Default sort in grammar format ([`sortKeys`](helpers.md)). |
 | `AQL::EDGES` | `array` | *Edge* definitions (see [edges-joins-projection.md](edges-joins-projection.md)). |
 | `AQL::JOINS` | `array` | *Join* definitions (same page). |
@@ -73,26 +73,14 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::CONDITIONS` | `array` | Server-side injected AQL conditions (see [filter-internal.md](db/filter-internal.md)). |
 | `AQL::BINDS` | `array` | Server-side injected *bind variables*. |
 
-### `AQL::SORTABLE` notations
+### Sorting — `AQL::SORTABLE` / `AQL::SORT_DEFAULT`
 
-The sort whitelist resolves each `?sort=` key (grammar: a comma-separated list, a leading `-` flips a key to descending) to an AQL field. Three interchangeable notations are accepted and **may be mixed in the same array**:
+Sorting (`?sort=` and `?near=`) has its own **dedicated page**: [Sorting](db/sort.md). The essentials:
 
-```php
-// Indexed shorthand — the URL key equals the field (the common case):
-AQL::SORTABLE => [ Prop::_FROM , Prop::_TO , Prop::CREATED , Prop::MODIFIED ]
+- **Fail-closed** — `AQL::SORTABLE` resolves each `?sort=` key to an AQL field (three mixable notations: indexed shorthand, alias, associative). A key outside the whitelist is **silently dropped**; **`null` (no whitelist) = nothing is sortable** (never "everything"). `AQL::SORT_DEFAULT` goes through the same whitelist and must therefore name declared keys.
+- **Permission** — a sort key may be **gated** (`Field::REQUIRES`), inherited from the homonymous projection field or declared explicitly, so a field hidden from reading is not sortable (no sort oracle).
 
-// Indexed alias — the public key differs from the AQL field (?sort=name → doc.givenName):
-AQL::SORTABLE => [ [ Prop::NAME => Prop::GIVEN_NAME ] , Prop::CREATED ]
-
-// Associative (legacy) — still supported, unchanged:
-AQL::SORTABLE => [ Prop::CREATED => Prop::CREATED , Prop::NAME => Prop::GIVEN_NAME ]
-```
-
-- The pair direction is always `[ urlKey => fieldPath ]`, identical across the three forms.
-- A field value may be a multi-segment path (`[ 'address', 'city' ]` → `address.city`), in alias form too.
-- A `?sort=` key outside the whitelist is **silently dropped**; `null` (no whitelist) enables **open mode** (any attribute, validated against injection).
-
-Normalisation (`oihana\arango\models\helpers\normalizeSortable()`) folds any of the three forms into the canonical `urlKey => fieldPath` map, once at construction. It is **idempotent** and **backward-compatible**: an existing associative map is returned untouched.
+The three notations, the permission gate and distance sorting `?near=` are detailed in [Sorting](db/sort.md).
 
 ### Main methods
 
