@@ -47,14 +47,16 @@ Les bornes sont renvoyées sous la clé `bounds` de l'enveloppe de succès stand
   "count": 50,
   "total": 120,
   "bounds": {
-    "width":  { "min": 5,  "max": 240 },
-    "height": { "min": 10, "max": 300 }
+    "width":  { "min": 5,  "max": 240, "count": 8123 },
+    "height": { "min": 10, "max": 300, "count": 7960 }
   },
   "result": [ /* …documents filtrés… */ ]
 }
 ```
 
-`MIN` / `MAX` **ignorent les valeurs nulles** : un champ absent d'un document ne fausse pas son étendue ; un champ sans aucune valeur non nulle dans l'ensemble renvoie `{ "min": null, "max": null }`.
+Chaque borne porte aussi un **`count`** : le nombre de valeurs qui ont encadré l'étendue (non nulles, après exclusions) — l'UI sait ainsi si un curseur a lieu d'être (`count` à 0 → aucune valeur, pas de curseur).
+
+`MIN` / `MAX` **ignorent les valeurs nulles** : un champ absent d'un document ne fausse pas son étendue ; un champ sans aucune valeur non nulle dans l'ensemble renvoie `{ "min": null, "max": null, "count": 0 }`.
 
 ## Déclaration côté modèle
 
@@ -64,30 +66,46 @@ Deux formes d'entrée :
 
 ```php
 use oihana\arango\db\enums\AQL ;
-use oihana\arango\enums\Field ;
-use oihana\arango\models\enums\Facet ;
+use oihana\arango\models\enums\Bound ;
 
 $products = new Documents
 ([
     AQL::BOUNDS =>
     [
-        'width'  ,                                              // champ plat de premier niveau
-        'height' ,
-        'weight' => [ Facet::PROPERTY => 'grossWeight' ] ,      // champ plat, propriété renommée
-        'price'  => [ Facet::PROPERTY => 'offers[*].price' ] ,  // mesure imbriquée dans un tableau d'objets
+        'width'  => [ Bound::POSITIVE => true ] ,              // champ plat, ignore les <= 0
+        'height' => [ Bound::POSITIVE => true ] ,
+        'density' ,                                            // champ plat nu (aucune exclusion)
+        'weight' => [ Bound::PROPERTY => 'grossWeight' ] ,     // propriété renommée
+        'price'  => [ Bound::PROPERTY => 'offers[*].price' ] , // mesure imbriquée dans un tableau d'objets
     ]
 ]) ;
 ```
 
-- Un **nom nu** (`'width'`) borne le champ scalaire homonyme de premier niveau.
-- Une **définition** `[ Facet::PROPERTY => '…' ]` vise une propriété au nom différent, ou une **mesure imbriquée** atteinte par un marqueur d'expansion `[*]` (`offers[*].price`) — le même marqueur que les [facettes](facets.md#compter-un-sous-champ-dun-tableau-dobjets-) et les [filtres](filter.md) acceptent déjà.
+- Un **nom nu** (`'density'`) borne le champ scalaire homonyme de premier niveau, sans exclusion.
+- Une **définition** (tableau) vise une propriété au nom différent ou imbriquée (`Bound::PROPERTY`), et/ou pose des [options d'exclusion](#options-dexclusion).
 
 Clés de configuration :
 
 | Clé | Rôle | Défaut |
 |---|---|---|
-| `Facet::PROPERTY` | La propriété document visée (alias du nom d'URL, chemin `[*]` accepté). | le nom de la borne |
-| `Field::REQUIRES` | Le(s) sujet(s) de permission gardant la borne. | *hérité de `AQL::FIELDS`* |
+| `Bound::PROPERTY` | La propriété document visée (alias du nom d'URL, chemin `[*]` accepté). | le nom de la borne |
+| `Bound::POSITIVE` | `true` → ne garder que les valeurs `> 0`. | `false` |
+| `Bound::MIN` | Borne basse du **domaine accepté** : exclut les valeurs `< MIN`. | *aucune* |
+| `Bound::MAX` | Borne haute du **domaine accepté** : exclut les valeurs `> MAX`. | *aucune* |
+| `Bound::IGNORE` | Valeur(s) sentinelle(s) à exclure — scalaire ou liste. | *aucune* |
+| `Bound::REQUIRES` | Le(s) sujet(s) de permission gardant la borne. | *hérité de `AQL::FIELDS`* |
+
+### Options d'exclusion
+
+`MIN` / `MAX` ignorent les `null`, mais **pas** les valeurs *sentinelles* : si `0` encode « non renseigné » dans vos données, il écrase le minimum observé à 0. Les options d'exclusion mappent une valeur écartée sur `null` (que `MIN` / `MAX` ignorent), **par champ** — un document exclu d'une borne encadre quand même les autres. Elles se **cumulent** (ET logique).
+
+| Besoin | Déclaration | AQL du garde |
+|---|---|---|
+| Ignorer les `<= 0` (« 0 = non rempli ») | `[ Bound::POSITIVE => true ]` | `doc.x > 0 ? doc.x : null` |
+| Domaine accepté `[-50, 200]` (ex. température) | `[ Bound::MIN => -50 , Bound::MAX => 200 ]` | `doc.x >= -50 && doc.x <= 200 ? doc.x : null` |
+| Exclure des sentinelles | `[ Bound::IGNORE => [ 0, 5, 15 ] ]` | `doc.x NOT IN [0,5,15] ? doc.x : null` |
+
+> ⚠️ **`Bound::MIN` / `MAX` (déclaration) ≠ `min` / `max` (sortie).** En déclaration, ils bornent le **domaine d'entrée accepté** (un filtre) ; en sortie, `min` / `max` sont les **valeurs observées**. Mots identiques, rôles distincts.
 
 ## AQL généré
 
@@ -95,16 +113,16 @@ Clés de configuration :
 
 ```aql
 FOR doc IN @@products FILTER <mêmes filtres>
-COLLECT AGGREGATE width_min = MIN(doc.width), width_max = MAX(doc.width),
-                  height_min = MIN(doc.height), height_max = MAX(doc.height)
-RETURN { width: { min: width_min, max: width_max }, height: { min: height_min, max: height_max } }
+COLLECT AGGREGATE width_min = MIN(doc.width), width_max = MAX(doc.width), width_count = SUM(doc.width != null ? 1 : 0),
+                  height_min = MIN(doc.height), height_max = MAX(doc.height), height_count = SUM(doc.height != null ? 1 : 0)
+RETURN { width: { min: width_min, max: width_max, count: width_count }, height: { min: height_min, max: height_max, count: height_count } }
 ```
 
 Une **mesure imbriquée** `[*]` doit déplier son tableau, donc elle ne peut pas partager la boucle `FOR` racine : elle reçoit sa propre sous-requête `LET`, fusionnée au bloc plat par `MERGE` :
 
 ```aql
 LET __bounds = FIRST(( FOR doc IN @@products FILTER <mêmes filtres> COLLECT AGGREGATE … RETURN { … } ))
-LET price    = FIRST(( FOR doc IN @@products FILTER <mêmes filtres> FOR item IN doc.offers COLLECT AGGREGATE lo = MIN(item.price), hi = MAX(item.price) RETURN { min: lo, max: hi } ))
+LET price    = FIRST(( FOR doc IN @@products FILTER <mêmes filtres> FOR item IN doc.offers COLLECT AGGREGATE lo = MIN(item.price), hi = MAX(item.price), cnt = SUM(item.price != null ? 1 : 0) RETURN { min: lo, max: hi, count: cnt } ))
 RETURN MERGE( __bounds, { price: price } )
 ```
 
@@ -118,12 +136,12 @@ RETURN MERGE( __bounds, { price: price } )
 
 Une borne sur un champ **caché à la lecture** (`Field::REQUIRES`) fuit **plus fort** qu'un compteur : un `{ min, max }` **est** une valeur réelle du champ (le prix le plus bas, la dimension d'un produit confidentiel), pas seulement un dénombrement. La garde n'est donc **pas optionnelle**.
 
-La permission se résout par **héritage** du champ homonyme de `AQL::FIELDS`, **ou** par un `Field::REQUIRES` posé directement sur la définition de borne :
+La permission se résout par **héritage** du champ homonyme de `AQL::FIELDS`, **ou** par un `Bound::REQUIRES` posé directement sur la définition de borne :
 
 ```php
-public array $fields = [ 'price' => [ Field::REQUIRES => 'sales:read' ] ] ;
+public array $fields = [ 'price' => [ Field::REQUIRES => 'sales:read' ] ] ; // projection
 public array $bounds = [ 'price' ] ; // hérite de $fields
-// ou explicite : 'price' => [ Facet::PROPERTY => 'offers[*].price' , Field::REQUIRES => 'sales:read' ]
+// ou explicite : 'price' => [ Bound::PROPERTY => 'offers[*].price' , Bound::REQUIRES => 'sales:read' ]
 ```
 
 Une borne refusée est **écartée** de la requête (elle retire une sortie, n'assouplit rien). La résolution marche **au sous-champ exact** (via [`isPathAuthorized`](../projection.md)) : un `dimensions.width` verrouillé profondément est attrapé, pas seulement sa racine.
@@ -144,7 +162,7 @@ GET /products?facetCounts=category&bounds=width,height&metaOnly=true
   "count": 0,
   "total": 120,
   "facets": { "category": [ {"value":"tools","count":80}, {"value":"garden","count":40} ] },
-  "bounds": { "width": {"min":5,"max":240}, "height": {"min":10,"max":300} },
+  "bounds": { "width": {"min":5,"max":240,"count":8123}, "height": {"min":10,"max":300,"count":7960} },
   "result": []
 }
 ```

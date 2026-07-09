@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
 
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
-use oihana\arango\models\enums\Facet;
+use oihana\arango\models\enums\Bound;
 use oihana\arango\models\traits\queries\BoundsQueryTrait;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 use Psr\Container\ContainerExceptionInterface;
@@ -95,7 +95,7 @@ class BoundsRequiresGateTest extends TestCase
     public function testExplicitRequiresOnTheBoundDefinitionDropsTheField() :void
     {
         $stub = $this->stub() ;
-        $stub->bounds = [ 'secret' => [ Facet::PROPERTY => 'secret' , Field::REQUIRES => 'ops:read' ] ] ;
+        $stub->bounds = [ 'secret' => [ Bound::PROPERTY => 'secret' , Bound::REQUIRES => 'ops:read' ] ] ;
 
         $binds = [] ;
         $init  = [ Arango::BOUNDS => 'secret' , Arango::AUTHORIZER => fn() => false ] ;
@@ -106,7 +106,7 @@ class BoundsRequiresGateTest extends TestCase
     public function testDeepSubFieldIsGatedAtTheExactLeaf() :void
     {
         $stub = $this->stub() ;
-        $stub->bounds = [ 'dimWidth' => [ Facet::PROPERTY => 'dimensions.width' ] ] ;
+        $stub->bounds = [ 'dimWidth' => [ Bound::PROPERTY => 'dimensions.width' ] ] ;
         $stub->fields = [ 'dimensions' => [ Field::FIELDS => [ 'width' => [ Field::REQUIRES => 'dim:read' ] ] ] ] ;
 
         $binds = [] ;

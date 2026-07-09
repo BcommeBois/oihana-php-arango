@@ -4,7 +4,7 @@ namespace tests\oihana\arango\models\traits\queries;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
-use oihana\arango\models\enums\Facet;
+use oihana\arango\models\enums\Bound;
 use oihana\arango\models\traits\queries\BoundsQueryTrait;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
@@ -26,17 +26,17 @@ class BoundsQueryTraitStub
         [
             'width'  => true ,                                          // flat scalar
             'height' => true ,                                          // flat scalar
-            'weight' => [ Facet::PROPERTY => 'grossWeight' ] ,          // flat, renamed property
-            'price'  => [ Facet::PROPERTY => 'offers[*].price' ] ,      // nested, one hop
-            'deep'   => [ Facet::PROPERTY => 'offers[*].tiers[*].amount' ] , // nested, two hops
+            'weight' => [ Bound::PROPERTY => 'grossWeight' ] ,          // flat, renamed property
+            'price'  => [ Bound::PROPERTY => 'offers[*].price' ] ,      // nested, one hop
+            'deep'   => [ Bound::PROPERTY => 'offers[*].tiers[*].amount' ] , // nested, two hops
         ] ;
     }
 }
 
 /**
  * Unit coverage for {@see BoundsQueryTrait::buildBoundsQuery()} — the numeric
- * `{ min, max }` extent query, flat fields sharing one COLLECT and nested ([*])
- * fields getting their own FIRST(( … )) LET.
+ * `{ min, max, count }` extent query, flat fields sharing one COLLECT and nested
+ * ([*]) fields getting their own FIRST(( … )) LET, plus the exclusion options.
  */
 class BoundsQueryTraitTest extends TestCase
 {
@@ -52,8 +52,9 @@ class BoundsQueryTraitTest extends TestCase
         $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width,height' ] , $binds ) ;
 
         $this->assertStringContainsString( 'COLLECT AGGREGATE width_min = MIN(doc.width), width_max = MAX(doc.width)' , $query ) ;
+        $this->assertStringContainsString( 'width_count = SUM(doc.width != null ? 1 : 0)' , $query ) ;
         $this->assertStringContainsString( 'height_min = MIN(doc.height), height_max = MAX(doc.height)' , $query ) ;
-        $this->assertStringContainsString( '{width: {min: width_min, max: width_max}, height: {min: height_min, max: height_max}}' , $query ) ;
+        $this->assertStringContainsString( '{width: {min: width_min, max: width_max, count: width_count}, height: {min: height_min, max: height_max, count: height_count}}' , $query ) ;
 
         // One pass: a single COLLECT, no LET, no MERGE for flat-only.
         $this->assertSame( 1 , substr_count( $query , 'COLLECT' ) ) ;
@@ -68,7 +69,7 @@ class BoundsQueryTraitTest extends TestCase
         $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'weight' ] , $binds ) ;
 
         $this->assertStringContainsString( 'weight_min = MIN(doc.grossWeight), weight_max = MAX(doc.grossWeight)' , $query ) ;
-        $this->assertStringContainsString( '{weight: {min: weight_min, max: weight_max}}' , $query ) ;
+        $this->assertStringContainsString( '{weight: {min: weight_min, max: weight_max, count: weight_count}}' , $query ) ;
     }
 
     public function testNestedFieldUnwindsIntoItsOwnLet() :void
@@ -80,7 +81,8 @@ class BoundsQueryTraitTest extends TestCase
         $this->assertStringContainsString( 'LET price = FIRST((FOR doc IN' , $query ) ;
         $this->assertStringContainsString( 'FOR item IN doc.offers' , $query ) ;
         $this->assertStringContainsString( 'COLLECT AGGREGATE lo = MIN(item.price), hi = MAX(item.price)' , $query ) ;
-        $this->assertStringContainsString( 'RETURN {min: lo, max: hi}' , $query ) ;
+        $this->assertStringContainsString( 'cnt = SUM(item.price != null ? 1 : 0)' , $query ) ;
+        $this->assertStringContainsString( 'RETURN {min: lo, max: hi, count: cnt}' , $query ) ;
         $this->assertStringContainsString( 'RETURN {price: price}' , $query ) ;
     }
 
@@ -172,12 +174,68 @@ class BoundsQueryTraitTest extends TestCase
     {
         // A bare name and a keyed (nested) definition in the same whitelist.
         $stub = $this->stub() ;
-        $stub->bounds = [ 'width' , 'price' => [ Facet::PROPERTY => 'offers[*].price' ] ] ;
+        $stub->bounds = [ 'width' , 'price' => [ Bound::PROPERTY => 'offers[*].price' ] ] ;
         $binds = [] ;
         $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width,price' ] , $binds ) ;
 
         $this->assertStringContainsString( 'width_min = MIN(doc.width)' , $query ) ;
         $this->assertStringContainsString( 'MIN(item.price)' , $query ) ;
         $this->assertStringContainsString( 'RETURN MERGE(__bounds,{price: price})' , $query ) ;
+    }
+
+    public function testPositiveExcludesNonPositiveValues() :void
+    {
+        $stub = $this->stub() ;
+        $stub->bounds = [ 'width' => [ Bound::POSITIVE => true ] ] ;
+        $binds = [] ;
+        $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'MIN(doc.width > 0 ? doc.width : null)' , $query ) ;
+        $this->assertStringContainsString( 'MAX(doc.width > 0 ? doc.width : null)' , $query ) ;
+        $this->assertStringContainsString( 'SUM(doc.width > 0 ? 1 : 0)' , $query ) ;
+    }
+
+    public function testMinMaxDefineTheAcceptedDomain() :void
+    {
+        $stub = $this->stub() ;
+        $stub->bounds = [ 'temp' => [ Bound::MIN => -50 , Bound::MAX => 200 ] ] ;
+        $binds = [] ;
+        $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'temp' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'MIN(doc.temp >= -50 && doc.temp <= 200 ? doc.temp : null)' , $query ) ;
+    }
+
+    public function testIgnoreAcceptsAScalarOrAList() :void
+    {
+        $stub  = $this->stub() ;
+        $binds = [] ;
+
+        $stub->bounds = [ 'width' => [ Bound::IGNORE => 0 ] ] ;
+        $this->assertStringContainsString( 'doc.width NOT IN [0] ? doc.width : null' , $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width' ] , $binds ) ) ;
+
+        $stub->bounds = [ 'width' => [ Bound::IGNORE => [ 0 , 5 , 15 ] ] ] ;
+        $this->assertStringContainsString( 'doc.width NOT IN [0,5,15] ? doc.width : null' , $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width' ] , $binds ) ) ;
+    }
+
+    public function testExclusionOptionsCombineWithAnd() :void
+    {
+        $stub = $this->stub() ;
+        $stub->bounds = [ 'width' => [ Bound::POSITIVE => true , Bound::MAX => 500 , Bound::IGNORE => 99 ] ] ;
+        $binds = [] ;
+        $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'doc.width > 0 && doc.width <= 500 && doc.width NOT IN [99] ? doc.width : null' , $query ) ;
+    }
+
+    public function testBareFieldCountsNonNullValues() :void
+    {
+        $stub = $this->stub() ;
+        $stub->bounds = [ 'width' ] ;
+        $binds = [] ;
+        $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width' ] , $binds ) ;
+
+        // No exclusion: raw value, count of the non-null.
+        $this->assertStringContainsString( 'width_min = MIN(doc.width),' , $query ) ;
+        $this->assertStringContainsString( 'width_count = SUM(doc.width != null ? 1 : 0)' , $query ) ;
     }
 }
