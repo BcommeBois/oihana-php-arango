@@ -9,6 +9,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
+use oihana\arango\controllers\traits\PrepareBoundsTrait;
 use oihana\arango\controllers\traits\PrepareFacetCountsTrait;
 use oihana\arango\controllers\traits\PrepareFacetsOnlyTrait;
 use oihana\arango\controllers\traits\PrepareGroupTrait;
@@ -30,6 +31,7 @@ trait DocumentsControllerListTrait
         CheckOwnerArgumentsTrait ,
         ModelTrait ,
         OutputDocumentsTrait ,
+        PrepareBoundsTrait ,
         PrepareFacetCountsTrait ,
         PrepareFacetsOnlyTrait ,
         PrepareGroupTrait ,
@@ -82,6 +84,7 @@ trait DocumentsControllerListTrait
 
             $facetsOnly  = $this->prepareFacetsOnly ( $request , $init , $params ) ;
             $facetCounts = $this->prepareFacetCounts( $request , $init , $params ) ;
+            $bounds      = $this->prepareBounds     ( $request , $init , $params ) ;
 
             $isDocuments = $this->model instanceof Documents && !$this->model->mock ;
 
@@ -113,6 +116,12 @@ trait DocumentsControllerListTrait
             if( !empty( $facetCounts ) && $isDocuments )
             {
                 $options[ Arango::FACETS ] = $this->model->facetCounts( [ ...$modelInit , Arango::FACET_COUNTS => $facetCounts ] ) ;
+            }
+
+            // Numeric { min, max } bounds alongside the list (range controls).
+            if( !empty( $bounds ) && $isDocuments )
+            {
+                $options[ Arango::BOUNDS ] = $this->model->bounds( [ ...$modelInit , Arango::BOUNDS => $bounds ] ) ;
             }
 
             $this->endBench( $timestamp , $options ) ;

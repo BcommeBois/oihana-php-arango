@@ -134,6 +134,25 @@ class DocumentsControllerReadTest extends ControllerTestCase
         $this->assertStringContainsString( 'LET category' , $model->lastQuery ) ;
     }
 
+    public function testListComputesBoundsWhenRequested() :void
+    {
+        $model = new MockDocuments( 'products' ) ;
+        $model->bounds          = [ 'width' => true ] ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] ] ;
+        $model->firstResult     = [ 'width' => [ 'min' => 5 , 'max' => 240 ] ] ; // canned extent
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        // ?bounds=width → the controller runs bounds() over the same filter and
+        // attaches the { min, max } extent to the response options.
+        $request = $this->makeRequest( [ Arango::BOUNDS => 'width' ] ) ;
+        $result  = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertSame( [ 'min' => 5 , 'max' => 240 ] , $payload[ Arango::BOUNDS ][ 'width' ] ) ;
+        $this->assertStringContainsString( 'COLLECT AGGREGATE width_min = MIN(doc.width)' , $model->lastQuery ) ;
+    }
+
     public function testListReturnsNullOnModelFailure() :void
     {
         $controller = $this->makeDocumentsController( new ThrowingDocuments( 'users' ) ) ;
