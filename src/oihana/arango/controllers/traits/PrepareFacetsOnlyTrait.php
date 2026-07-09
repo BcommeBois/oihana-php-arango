@@ -19,6 +19,10 @@ use function oihana\controllers\helpers\getQueryParam;
  * when `?facetCounts=…` is also present, the per-value facet counts are still
  * returned. This is the "counts sidebar without the documents" mode.
  *
+ * @deprecated Superseded by {@see PrepareMetaOnlyTrait} (`?metaOnly=`), which
+ *             also keeps the numeric bounds. `?facetsOnly=` stays a truthy alias
+ *             of `?metaOnly=`; the controller ORs the two flags.
+ *
  * @package oihana\arango\controllers\traits
  * @since   1.0.0
  * @author  Marc Alcaraz

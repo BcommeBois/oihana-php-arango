@@ -13,6 +13,7 @@ use oihana\arango\controllers\traits\PrepareBoundsTrait;
 use oihana\arango\controllers\traits\PrepareFacetCountsTrait;
 use oihana\arango\controllers\traits\PrepareFacetsOnlyTrait;
 use oihana\arango\controllers\traits\PrepareGroupTrait;
+use oihana\arango\controllers\traits\PrepareMetaOnlyTrait;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\controllers\traits\BenchTrait;
@@ -35,6 +36,7 @@ trait DocumentsControllerListTrait
         PrepareFacetCountsTrait ,
         PrepareFacetsOnlyTrait ,
         PrepareGroupTrait ,
+        PrepareMetaOnlyTrait ,
         PrepareParamTrait ,
         StatusTrait;
 
@@ -82,17 +84,21 @@ trait DocumentsControllerListTrait
                 Arango::SORT       => $this->prepareSort   ( $request , $init , $params ) ,
             ] ;
 
-            $facetsOnly  = $this->prepareFacetsOnly ( $request , $init , $params ) ;
+            // metaOnly = "the sidebar, not the documents". `?facetsOnly=` stays a
+            // deprecated truthy alias.
+            $metaOnly    = $this->prepareMetaOnly   ( $request , $init , $params )
+                        || $this->prepareFacetsOnly ( $request , $init , $params ) ;
             $facetCounts = $this->prepareFacetCounts( $request , $init , $params ) ;
             $bounds      = $this->prepareBounds     ( $request , $init , $params ) ;
 
             $isDocuments = $this->model instanceof Documents && !$this->model->mock ;
 
-            if( $facetsOnly )
+            if( $metaOnly )
             {
-                // Counts-only mode: the document-fetch query is skipped. The list
+                // Meta-only mode: the document-fetch query is skipped. The list
                 // returns an empty result set while `total` (exact, same filters,
-                // via count()) and the per-value facet counts are still computed.
+                // via count()) and the requested facet counts / bounds are still
+                // computed.
                 $documents = [] ;
                 $total     = $isDocuments ? $this->model->count( $modelInit ) : 0 ;
             }

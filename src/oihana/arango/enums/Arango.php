@@ -108,7 +108,7 @@ class Arango
     /**
      * The 'counter' parameter.
      * Name of the sibling field holding the length of an embedded array, kept in
-     * sync (`LENGTH(...)`) on every mutation by {@see oihana\arango\models\traits\DocumentsArrayTrait}.
+     * sync (`LENGTH(...)`) on every mutation by {@see DocumentsArrayTrait}.
      */
     public const string COUNTER = 'counter' ;
 
@@ -180,7 +180,7 @@ class Arango
     /**
      * The 'facetCounts' parameter — the list of facet keys (from `Arango::FACETS`)
      * for which per-value bucket counts are computed alongside the list, by
-     * {@see \oihana\arango\models\traits\queries\FacetCountsQueryTrait::buildFacetCountsQuery()}.
+     * {@see FacetCountsQueryTrait::buildFacetCountsQuery()}.
      */
     public const string FACET_COUNTS = 'facetCounts' ;
 
@@ -188,7 +188,7 @@ class Arango
      * The 'facetsOnly' flag — when truthy (and `Arango::FACET_COUNTS` is
      * requested), the document-fetch query is skipped: the list returns an empty
      * result set while the per-value facet counts (and an exact `total` computed
-     * by {@see \oihana\arango\models\traits\documents\DocumentsCountTrait::count()})
+     * by {@see DocumentsCountTrait::count()})
      * are still returned. Useful for a faceted-search sidebar that only needs the
      * counts, not the documents.
      */
@@ -206,15 +206,13 @@ class Arango
 
     /**
      * The 'group' parameter — holds a high-level grouping spec
-     * ({@see \oihana\arango\models\enums\Group}) translated into an AQL `COLLECT`
-     * by {@see \oihana\arango\models\traits\aql\GroupTrait::prepareCollect()}.
+     * ({@see Group}) translated into an AQL `COLLECT` by {@see GroupTrait::prepareCollect()}.
      */
     public const string GROUP = 'group' ;
 
     /**
      * The 'groupable' parameter — the optional whitelist/mapping of groupable
-     * dimensions (`urlKey => fieldPath`) consumed by
-     * {@see \oihana\arango\models\traits\aql\GroupTrait::$groupable}.
+     * dimensions (`urlKey => fieldPath`) consumed by {@see GroupTrait::$groupable}.
      */
     public const string GROUPABLE = 'groupable' ;
 
@@ -267,8 +265,18 @@ class Arango
     public const string MATCH = 'match' ;
 
     /**
+     * The 'metaOnly' flag — when truthy, the document-fetch query is skipped: the
+     * list returns an empty result set while the response *metadata* (an exact
+     * `total` from {@see DocumentsCountTrait::count()},
+     * plus the requested facet counts and numeric bounds) is still computed.
+     * The generic "give me the sidebar, not the documents" mode, spanning facet
+     * counts and bounds alike. Supersedes the counts-only {@see Arango::FACETS_ONLY}.
+     */
+    public const string META_ONLY = 'metaOnly' ;
+
+    /**
      * The 'mode' parameter.
-     * Optional per-call override of an embedded array field's {@see oihana\arango\models\enums\ArrayMode}.
+     * Optional per-call override of an embedded array field's {@see ArrayMode}.
      */
     public const string MODE = 'mode' ;
 
@@ -287,7 +295,7 @@ class Arango
      *
      * Holds a `{ key, latitude, longitude }` object: the document attribute to
      * measure from (`key`) plus the reference point. It exposes the synthetic
-     * `distance` sort key consumed by {@see \oihana\arango\models\traits\aql\SortTrait::prepareSort()}.
+     * `distance` sort key consumed by {@see SortTrait::prepareSort()}.
      */
     public const string NEAR = 'near' ;
 
@@ -314,7 +322,7 @@ class Arango
     /**
      * The 'profile' parameter — when truthy, `list()` / `get()` run the query in
      * profiled mode (`true` → profile level 2) and the measurements are exposed
-     * through {@see \oihana\arango\models\traits\ArangoTrait::getProfile()}.
+     * through {@see ArangoTrait::getProfile()}.
      */
     public const string PROFILE = 'profile' ;
 

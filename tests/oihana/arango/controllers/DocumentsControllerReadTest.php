@@ -226,4 +226,49 @@ class DocumentsControllerReadTest extends ControllerTestCase
         $this->assertSame( 0 , $payload[ Output::TOTAL ] ) ;
         $this->assertArrayNotHasKey( Arango::FACETS , $payload ) ;
     }
+
+    // ---- metaOnly (metadata-only mode) ----------------------------------
+
+    public function testListMetaOnlyReturnsBoundsWithoutDocuments() :void
+    {
+        // count() is overridden so the meta-only total (42) is distinct from the
+        // canned extent returned by bounds() through getFirstResult().
+        $model = new class( 'products' ) extends MockDocuments
+        {
+            public function count( array $init = [] ) :int { return 42 ; }
+        } ;
+        $model->bounds          = [ 'width' => true ] ;
+        $model->documentsResult = [ (object) [ '_key' => 'x' ] ] ; // would leak if list() ran
+        $model->firstResult     = [ 'width' => [ 'min' => 5 , 'max' => 240 ] ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        // ?metaOnly=true&bounds=width → no documents, exact total + bounds.
+        $request  = $this->makeRequest( [ Arango::META_ONLY => 'true' , Arango::BOUNDS => 'width' ] ) ;
+        $result   = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload  = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertSame( [] , $payload[ Output::RESULT ] ) ;                                       // documents skipped
+        $this->assertSame( 42 , $payload[ Output::TOTAL ] ) ;                                        // exact count(), not count(documents)
+        $this->assertSame( [ 'min' => 5 , 'max' => 240 ] , $payload[ Arango::BOUNDS ][ 'width' ] ) ; // bounds still computed
+    }
+
+    public function testListFacetsOnlyStaysATruthyAliasOfMetaOnly() :void
+    {
+        // The deprecated ?facetsOnly= still skips the documents (OR-ed into metaOnly).
+        $model = new class( 'users' ) extends MockDocuments
+        {
+            public function count( array $init = [] ) :int { return 9 ; }
+        } ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        $request  = $this->makeRequest( [ Arango::FACETS_ONLY => 'true' ] ) ;
+        $result   = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload  = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertSame( [] , $payload[ Output::RESULT ] ) ;
+        $this->assertSame( 9 , $payload[ Output::TOTAL ] ) ;
+    }
 }
