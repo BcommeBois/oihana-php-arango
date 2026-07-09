@@ -427,7 +427,7 @@ trait FilterTrait
      * @param array|null $init
      * @param ?array $binds
      * @param string $docRef
-     *
+     * @param array $auth
      * @return ?string
      *
      * @throws BindException

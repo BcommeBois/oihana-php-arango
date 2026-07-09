@@ -31,7 +31,6 @@ use function oihana\arango\db\functions\arrays\countDistinct;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlCollect;
 use function oihana\arango\db\operations\aqlCollectReturn;
-use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
@@ -77,6 +76,8 @@ use function oihana\core\strings\key;
  */
 trait FacetCountsQueryTrait
 {
+    use FilteredScopeTrait ;
+
     /**
      * The bucket value attribute name in the returned rows (`{ value, count }`).
      */
@@ -121,25 +122,9 @@ trait FacetCountsQueryTrait
             return Char::EMPTY ;
         }
 
-        // Active View search: every counting sub-query iterates the View with
-        // the same SEARCH segment as the list (and the search leaves the FILTER),
-        // so the buckets reflect exactly the displayed set. The expression and
-        // its binds are evaluated once and shared by all dimensions.
-        $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
-
-        $for = $viewSearch !== null
-             ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
-             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
-
-        $filter = aqlFilter
-        ([
-            ...$this->conditions ,
-            $this->prepareActive( $init , $bindVars ) ,
-            $this->prepareFacets( $init , $bindVars ) ,
-            $this->prepareFilter( $init , $bindVars ) ,
-            $viewSearch === null ? $this->prepareSearch( $init , $bindVars ) : null ,
-            ...( $init[ AQL::CONDITIONS ] ?? [] )
-        ]) ;
+        // The FOR + conjunctive FILTER are the list's scope, so every bucket
+        // reflects exactly the displayed set. Shared by every list-family query.
+        [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars ) ;
 
         $lets  = [] ;
         $names = [] ;

@@ -53,6 +53,7 @@ trait ListQueryTrait
         FacetTrait ,
         FieldsTrait ,
         FilterTrait ,
+        FilteredScopeTrait ,
         GroupTrait ,
         SearchTrait ,
         SortTrait ;
@@ -257,27 +258,12 @@ trait ListQueryTrait
         $offset    = $init[ Arango::OFFSET    ] ?? 0  ;
         $variables = $init[ Arango::VARIABLES ] ?? [] ;
 
-        // Active View search (AQL::VIEW declaration + ?search term): the FOR
-        // iterates the View with an index-accelerated SEARCH segment, and the
-        // search leaves the FILTER. Otherwise the classic collection FOR with
-        // the LIKE sweep in the FILTER is kept, byte-for-byte.
-        $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
+        // The FOR + conjunctive FILTER are the list's scope (View + SEARCH when a
+        // ?search term hits a declared View, otherwise the collection FOR with the
+        // LIKE sweep in the FILTER). Shared by every list-family query.
+        [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars ) ;
 
-        $for = $viewSearch !== null
-             ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
-             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
-
-        $limit = aqlLimit  ( $limit , $offset ) ;
-
-        $filter = aqlFilter
-        ([
-            ...$this->conditions ,
-            $this->prepareActive( $init , $bindVars ) ,
-            $this->prepareFacets( $init , $bindVars ) ,
-            $this->prepareFilter( $init , $bindVars ) ,
-            $viewSearch === null ? $this->prepareSearch( $init , $bindVars ) : null ,
-            ...( $init[ AQL::CONDITIONS ] ?? [] )
-        ]);
+        $limit = aqlLimit( $limit , $offset ) ;
 
         // Optional COLLECT (grouping/aggregation), from the high-level Arango::GROUP
         // spec or a raw Arango::COLLECT spec. When present, `doc` is out of scope:

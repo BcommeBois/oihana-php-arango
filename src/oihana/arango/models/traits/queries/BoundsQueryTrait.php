@@ -30,7 +30,6 @@ use function oihana\arango\db\functions\numerics\min;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\operations\aqlCollect;
-use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
@@ -81,6 +80,8 @@ use function oihana\core\strings\key;
  */
 trait BoundsQueryTrait
 {
+    use FilteredScopeTrait ;
+
     /**
      * The upper-bound aggregate variable of a nested sub-query.
      */
@@ -144,25 +145,9 @@ trait BoundsQueryTrait
             return Char::EMPTY ;
         }
 
-        // Active View search: every extent sub-query iterates the View with the
-        // same SEARCH segment as the list (and the search leaves the FILTER), so
-        // the bounds reflect exactly the displayed set. The expression and its
-        // binds are evaluated once and shared by all fields.
-        $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
-
-        $for = $viewSearch !== null
-             ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
-             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
-
-        $filter = aqlFilter
-        ([
-            ...$this->conditions ,
-            $this->prepareActive( $init , $bindVars ) ,
-            $this->prepareFacets( $init , $bindVars ) ,
-            $this->prepareFilter( $init , $bindVars ) ,
-            $viewSearch === null ? $this->prepareSearch( $init , $bindVars ) : null ,
-            ...( $init[ AQL::CONDITIONS ] ?? [] )
-        ]) ;
+        // The FOR + conjunctive FILTER are the list's scope, so the bounds frame
+        // exactly the displayed set. Shared by every list-family query.
+        [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars ) ;
 
         $aggregate  = [] ; // flat COLLECT AGGREGATE assignments, shared in one pass
         $flatReturn = [] ; // flat RETURN entries: "field: { min: …, max: … }"

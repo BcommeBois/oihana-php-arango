@@ -106,6 +106,8 @@ trait SearchTrait
      * @param array|string|null $search The `$init` array (reads `Arango::SEARCH`) or the search term itself.
      *
      * @return bool
+     *
+     * @throws ValidationException
      */
     public function hasViewSearch( array|string|null $search = [] ) :bool
     {
@@ -718,6 +720,8 @@ trait SearchTrait
      * value (`0` included) overrides the global tolerance.
      *
      * @return array<string, array<string, float|int>>
+     *
+     * @throws ValidationException
      */
     protected function getViewFieldSpecs() :array
     {
@@ -817,6 +821,8 @@ trait SearchTrait
      * field paths and their weights.
      *
      * @return array<string, float>
+     *
+     * @throws ValidationException
      */
     protected function getViewSearchFields() :array
     {

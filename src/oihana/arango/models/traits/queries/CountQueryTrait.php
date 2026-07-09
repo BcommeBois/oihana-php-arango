@@ -2,16 +2,13 @@
 
 namespace oihana\arango\models\traits\queries;
 
+use ReflectionException;
 use DI\DependencyException;
+
 use DI\NotFoundException;
-use oihana\exceptions\UnsupportedOperationException;
-use oihana\exceptions\ValidationException;
-use oihana\reflect\exceptions\ConstantException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
-use ReflectionException;
 
-use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\aql\ActiveTrait;
 use oihana\arango\models\traits\aql\BindTrait;
@@ -19,11 +16,12 @@ use oihana\arango\models\traits\aql\FacetTrait;
 use oihana\arango\models\traits\aql\FilterTrait;
 use oihana\arango\models\traits\aql\SearchTrait;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\models\traits\ConditionsTrait;
+use oihana\reflect\exceptions\ConstantException;
 
 use function oihana\arango\db\functions\arrays\length;
-use function oihana\arango\db\operations\aqlFilter;
-use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
 
 /**
@@ -41,6 +39,7 @@ trait CountQueryTrait
         ConditionsTrait ,
         BindTrait   ,
         FacetTrait  ,
+        FilteredScopeTrait ,
         FilterTrait ,
         SearchTrait ;
 
@@ -82,31 +81,11 @@ trait CountQueryTrait
             return aqlReturn( length( $this->bindCollection( $bindVars ) ) ) ;
         }
 
-        // Active View search: count over the same View + SEARCH segment as the
-        // list query, so list() and count() always agree (the search leaves the
-        // FILTER). Otherwise the classic filtered collection count is kept.
-        // The collection (or the View) is bound only on its own branch — an
-        // unused bind variable would be rejected by the server.
-        $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
-
-        $for = $viewSearch !== null
-             ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
-             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
+        // The FOR + conjunctive FILTER are the list's scope, so count() and
+        // list() always agree. Shared by every list-family query.
+        [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars ) ;
 
         // Full count with filtering layers
-        return aqlReturn( length
-        ([
-            $for ,
-            aqlFilter
-            ([
-                ...$this->conditions ,
-                $this->prepareActive ( $init , $bindVars ) ,
-                $this->prepareFacets ( $init , $bindVars ) ,
-                $this->prepareFilter ( $init , $bindVars ) ,
-                $viewSearch === null ? $this->prepareSearch( $init , $bindVars ) : null ,
-                ...( $init[ Arango::CONDITIONS ] ?? [] )
-            ]) ,
-            aqlReturn( 1 )
-        ])) ;
+        return aqlReturn( length( [ $for , $filter , aqlReturn( 1 ) ] ) ) ;
     }
 }
