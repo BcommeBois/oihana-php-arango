@@ -6,7 +6,8 @@ use oihana\arango\models\traits\documents\callbacks\OnUpdateRelations;
 
 trait DocumentsMethodsTrait
 {
-    use DocumentsCountTrait    ,
+    use DocumentsBoundsTrait   ,
+        DocumentsCountTrait    ,
         DocumentsDeleteTrait   ,
         DocumentsExistTrait    ,
         DocumentsFacetCountsTrait ,

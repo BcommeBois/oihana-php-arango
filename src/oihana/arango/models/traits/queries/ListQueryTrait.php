@@ -16,6 +16,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\enums\Char;
 use oihana\arango\models\traits\aql\ActiveTrait;
+use oihana\arango\models\traits\aql\BoundTrait;
 use oihana\arango\models\traits\aql\FacetTrait;
 use oihana\arango\models\traits\aql\FieldsTrait;
 use oihana\arango\models\traits\aql\FilterTrait;
@@ -47,6 +48,7 @@ use function oihana\core\strings\compile;
 trait ListQueryTrait
 {
     use ActiveTrait ,
+        BoundTrait ,
         ConditionsTrait ,
         FacetTrait ,
         FieldsTrait ,

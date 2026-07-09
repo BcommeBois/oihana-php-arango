@@ -53,6 +53,16 @@ class Arango
     public const string AUTHORIZER = 'authorizer' ;
 
     /**
+     * The 'bounds' parameter — the list of bound keys (from `AQL::BOUNDS`) whose
+     * numeric `{ min, max }` extent is computed alongside the document list.
+     *
+     * Driven at runtime by `?bounds=key1,key2` (CSV); each key must be declared
+     * in the model's `$bounds` whitelist (`AQL::BOUNDS`). Unknown keys are
+     * ignored at the model layer.
+     */
+    public const string BOUNDS = 'bounds' ;
+
+    /**
      * The 'cacheable' parameter.
      */
     public const string CACHEABLE = 'cacheable' ;

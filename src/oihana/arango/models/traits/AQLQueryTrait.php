@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits;
 
 use oihana\arango\models\traits\aql\ActiveTrait;
 use oihana\arango\models\traits\aql\BindTrait;
+use oihana\arango\models\traits\aql\BoundTrait;
 use oihana\arango\models\traits\aql\FacetTrait;
 use oihana\arango\models\traits\aql\FilterTrait;
 use oihana\arango\models\traits\aql\GroupTrait;
@@ -18,6 +19,7 @@ trait AQLQueryTrait
 {
     use ActiveTrait ,
         BindTrait ,
+        BoundTrait ,
         FilterTrait ,
         FacetTrait ,
         GroupTrait ,

@@ -129,6 +129,7 @@ class Documents implements DocumentsModel
              ->initializeAlters           ( $init )
              ->initializeArrays           ( $init )
              ->initializeBinds            ( $init )
+             ->initializeBounds           ( $init )
              ->initializeConfig           ( $init , $container )
              ->initializeConditions       ( $init )
              ->initializeDebug            ( $init )

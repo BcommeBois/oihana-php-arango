@@ -22,6 +22,7 @@ class AQL
     public const string ASSIGN          = 'assign' ;
     public const string BINDS           = 'binds' ;
     public const string BOTH            = 'both' ;
+    public const string BOUNDS          = 'bounds' ;
     public const string CHILDREN        = 'children' ;
     public const string COLLECTION      = 'collection' ;
     public const string CONDITIONS      = 'conditions' ;
