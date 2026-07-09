@@ -154,4 +154,30 @@ class BoundsQueryTraitTest extends TestCase
 
         $this->assertStringContainsString( 'FILTER doc.active == 1' , $query ) ;
     }
+
+    public function testAcceptsABareListWhitelist() :void
+    {
+        // The declaration may list bare field names (numeric keys) rather than a
+        // keyed map — e.g. `AQL::BOUNDS => [ 'width', 'height' ]`.
+        $stub = $this->stub() ;
+        $stub->bounds = [ 'density' , 'height' , 'width' ] ;
+        $binds = [] ;
+        $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width,height' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'width_min = MIN(doc.width)' , $query ) ;
+        $this->assertStringContainsString( 'height_min = MIN(doc.height)' , $query ) ;
+    }
+
+    public function testMixesBareNamesAndKeyedDefinitions() :void
+    {
+        // A bare name and a keyed (nested) definition in the same whitelist.
+        $stub = $this->stub() ;
+        $stub->bounds = [ 'width' , 'price' => [ Facet::PROPERTY => 'offers[*].price' ] ] ;
+        $binds = [] ;
+        $query = $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width,price' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'width_min = MIN(doc.width)' , $query ) ;
+        $this->assertStringContainsString( 'MIN(item.price)' , $query ) ;
+        $this->assertStringContainsString( 'RETURN MERGE(__bounds,{price: price})' , $query ) ;
+    }
 }

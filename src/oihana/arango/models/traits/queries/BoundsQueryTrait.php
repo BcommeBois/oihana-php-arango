@@ -145,6 +145,14 @@ trait BoundsQueryTrait
             return Char::EMPTY ;
         }
 
+        // The whitelist accepts both a bare field name (list entry) and a keyed
+        // definition — normalise once to a `field => definition` map.
+        $whitelist = $this->normalizeBounds() ;
+        if ( empty( $whitelist ) )
+        {
+            return Char::EMPTY ;
+        }
+
         // The FOR + conjunctive FILTER are the list's scope, so the bounds frame
         // exactly the displayed set. Shared by every list-family query.
         [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars ) ;
@@ -156,19 +164,13 @@ trait BoundsQueryTrait
 
         foreach ( $fields as $field )
         {
-            // Whitelist: only declared bound keys are boundable.
-            if ( !is_string( $field ) )
+            // Whitelist: only declared bound fields are boundable.
+            if ( !is_string( $field ) || !array_key_exists( $field , $whitelist ) )
             {
                 continue ;
             }
 
-            $bound = $this->bounds[ $field ] ?? null ;
-            if ( $bound === null )
-            {
-                continue ;
-            }
-
-            $definition = is_array( $bound ) ? $bound : [] ;
+            $definition = $whitelist[ $field ] ;
             $property   = $definition[ Facet::PROPERTY ] ?? $field ;
 
             // Permission gate: a bound on a field hidden from the projection
@@ -202,6 +204,39 @@ trait BoundsQueryTrait
         }
 
         return $this->assembleBoundsQuery( $for , $filter , $aggregate , $flatReturn , $lets , $mergeParts ) ;
+    }
+
+    /**
+     * Normalizes the `$bounds` whitelist to a `field => definition` map.
+     *
+     * Accepts both notations, mixed in the same declaration:
+     * - a **bare field name** (list entry, e.g. `'width'`) → an empty definition;
+     * - a **keyed definition** (`'price' => [ Facet::PROPERTY => '…' ]`) → itself
+     *   (a non-array value, e.g. `'width' => true`, becomes an empty definition).
+     *
+     * @return array<string,array> The normalized whitelist (empty when nothing boundable).
+     */
+    private function normalizeBounds() :array
+    {
+        if ( !is_array( $this->bounds ) )
+        {
+            return [] ;
+        }
+
+        $whitelist = [] ;
+        foreach ( $this->bounds as $key => $value )
+        {
+            if ( is_string( $key ) )
+            {
+                $whitelist[ $key ] = is_array( $value ) ? $value : [] ;
+            }
+            elseif ( is_string( $value ) )
+            {
+                $whitelist[ $value ] = [] ;
+            }
+        }
+
+        return $whitelist ;
     }
 
     /**
