@@ -654,8 +654,15 @@ GET /products?facetCounts=category&facetsOnly=true
   avec un `result` vide et sans `facets` — une sonde « combien y en a-t-il ? » peu
   coûteuse.
 
+> **Déprécié.** `?facetsOnly=` est supplanté par le drapeau générique
+> [`?metaOnly=`](bounds.md#les-bornes-sans-les-documents-metaonly), qui saute
+> pareillement les documents mais conserve **aussi** les [bornes `?bounds=`](bounds.md),
+> pas seulement les compteurs. `?facetsOnly=` reste un **alias** vrai (le contrôleur
+> combine les deux drapeaux) — aucun changement pour les appels existants.
+
 ## Voir aussi
 
+- [Bornes HTTP `?bounds=`](bounds.md) — l'étendue `{ min, max }` d'un champ numérique, à côté de la liste.
 - [Filtres HTTP `?filter=`](filter.md) — comparateurs, transformations `alt`, conditions composées.
 - [Regroupement HTTP `?groupBy=` / `?group=`](grouping.md) — transformer la liste en agrégation.
 - [Helpers AQL `db/helpers/`](helpers.md) — `isAttributeName` / `assertAttributeName`, introspection AQL.

@@ -692,8 +692,15 @@ GET /products?facetCounts=category&facetsOnly=true
 - Used **alone** (no `?facetCounts=`), it still returns the exact `total` with an
   empty `result` and no `facets` — a cheap "how many match?" probe.
 
+> **Deprecated.** `?facetsOnly=` is superseded by the generic
+> [`?metaOnly=`](bounds.md#bounds-without-the-documents-metaonly) flag, which
+> likewise skips the documents but **also** keeps the [bounds `?bounds=`](bounds.md),
+> not only the counts. `?facetsOnly=` stays a truthy **alias** (the controller ORs
+> the two flags) — no change for existing calls.
+
 ## See also
 
+- [HTTP bounds `?bounds=`](bounds.md) — the `{ min, max }` extent of a numeric field, beside the list.
 - [HTTP filters `?filter=`](filter.md) — comparators, `alt` transforms, compound conditions.
 - [HTTP grouping `?groupBy=` / `?group=`](grouping.md) — turn the list into an aggregation.
 - [AQL helpers `db/helpers/`](helpers.md) — `isAttributeName` / `assertAttributeName`, AQL introspection.
