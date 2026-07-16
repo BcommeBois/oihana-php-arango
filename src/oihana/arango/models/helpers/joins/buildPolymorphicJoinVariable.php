@@ -13,27 +13,23 @@ use Psr\Container\NotFoundExceptionInterface;
 use oihana\arango\enums\Arango;
 use oihana\arango\db\enums\AQL;
 
-use function oihana\arango\db\functions\arrays\append;
-use function oihana\arango\db\helpers\aqlArray;
-use function oihana\arango\db\operations\aqlLet;
-use function oihana\arango\db\operators\equal;
-use function oihana\arango\db\operators\notIn;
-use function oihana\arango\models\helpers\isAuthorized;
-use function oihana\core\strings\betweenDoubleQuotes;
+use function oihana\arango\models\helpers\buildPolymorphicRelationVariable;
 use function oihana\core\strings\betweenParentheses;
-use function oihana\core\strings\key;
 
 /**
  * Builds a single AQL 'LET' subquery for a *polymorphic* join — a join whose
  * target collection is chosen at query time from a discriminator field of the
  * parent document.
  *
- * AQL forbids a computed collection in `FOR … IN …`, so a polymorphic join is
- * expressed as an **`APPEND` of guarded static branches**: one regular join
- * sub-query per `Arango::MAP` entry, each guarded by an equality on the
- * discriminator field so only the matching branch yields rows. The resulting
- * `LET` therefore always holds an **array** — exactly like a regular join — and
- * the projection layer ({@see \oihana\arango\db\helpers\fields\aqlFieldObject()})
+ * The whole branch machinery (guarding, per-branch permission gating, the
+ * `FALLBACK` branch, the `APPEND` combine) lives in the shared
+ * {@see buildPolymorphicRelationVariable()}; this function only resolves the
+ * join-specific shared defaults — the parent key path (`Arango::PROPERTY`,
+ * defaulting to `$name`) and the foreign key attribute (`Arango::KEY`) — and
+ * supplies the per-branch builder that wraps {@see buildJoinSubquery()}.
+ *
+ * The resulting `LET` always holds an **array** — exactly like a regular join —
+ * so the projection layer ({@see \oihana\arango\db\helpers\fields\aqlFieldObject()})
  * unwraps it with `FIRST()` for a `Filter::JOIN` or keeps the whole array for a
  * `Filter::JOINS`.
  *
@@ -50,21 +46,6 @@ use function oihana\core\strings\key;
  *       RETURN { _key: doc_join._key, name: doc_join.name } )
  * )
  * ```
- *
- * Each branch is delegated to {@see buildJoinSubquery()}, so the whole join
- * machinery (filtering, sorting, skinning, nested edges / joins) applies per
- * branch. The parent key path (`Arango::PROPERTY`, defaulting to `$name`) and an
- * optional foreign key attribute (`Arango::KEY`) declared at the top level are
- * shared as defaults across branches; a branch may override its own key.
- *
- * Each branch is permission-gated on its own (`Field::REQUIRES` / `AQL::REQUIRES`
- * via {@see isAuthorized()}): a denied branch is dropped from the `APPEND`
- * (fail-closed — its collection is never queried), composing with the field- /
- * definition-level gates that guard the whole join. An optional `Arango::FALLBACK`
- * branch catches discriminator values matching none of the DECLARED types
- * (guarded by `NOT IN [ … ]` over all map keys, gated or not). When every branch
- * is gated out the `LET` holds `[]`, so the projection resolves to `null` /
- * `[]` rather than a broken statement.
  *
  * @param string|null             $name       The join field name — also the default `LET` variable
  *                                            name and the default parent key path.
@@ -104,32 +85,14 @@ function buildPolymorphicJoinVariable
 )
 : string
 {
-    if( empty( $name ) )
-    {
-        throw new UnexpectedValueException( __FUNCTION__ . ' failed, the name of the join attribute not must be null or empty.' ) ;
-    }
-
-    $map = $definition[ Arango::MAP ] ?? null ;
-    if( !is_array( $map ) || $map === [] )
-    {
-        throw new UnexpectedValueException( __FUNCTION__ . ' failed, a polymorphic join requires a non-empty Arango::MAP table.' ) ;
-    }
-
-    $discriminator = $definition[ Arango::DISCRIMINATOR ] ?? null ;
-    if( !is_string( $discriminator ) || $discriminator === '' )
-    {
-        throw new UnexpectedValueException( __FUNCTION__ . ' failed, a polymorphic join requires a non-empty Arango::DISCRIMINATOR field.' ) ;
-    }
-
-    $varName    = $definition[ Arango::UNIQUE   ] ?? $name ;
-    $keyPath    = $definition[ Arango::PROPERTY ] ?? $name ; // shared parent key path
-    $sharedKey  = $definition[ Arango::KEY      ] ?? null ;  // shared foreign key attribute
-
-    $discriminatorRef = key( $discriminator , $docRef ) ;    // e.g. doc.selector.areaScope
+    $keyPath   = $definition[ Arango::PROPERTY ] ?? $name ; // shared parent key path
+    $sharedKey = $definition[ Arango::KEY      ] ?? null ;  // shared foreign key attribute
 
     // Builds one guarded branch sub-query, sharing the top-level foreign key
-    // attribute unless the branch overrides it.
-    $makeBranch = function( array $branch , string $guard ) use ( $sharedKey , $keyPath , $docRef , $container , $init , $isArray ) : string
+    // attribute unless the branch overrides it. buildJoinSubquery returns an
+    // unparenthesized body, so we wrap it here.
+    $buildBranch = function( array $branch , string $guard )
+        use ( $sharedKey , $keyPath , $docRef , $container , $init , $isArray ) : string
     {
         if( $sharedKey !== null && !isset( $branch[ Arango::KEY ] ) )
         {
@@ -142,71 +105,5 @@ function buildPolymorphicJoinVariable
         ) ;
     } ;
 
-    $subqueries = [] ;
-
-    foreach( $map as $type => $branch )
-    {
-        if( !is_array( $branch ) )
-        {
-            throw new UnexpectedValueException
-            (
-                __FUNCTION__ . ' failed, the Arango::MAP branch "' . $type . '" must be a join definition array.'
-            ) ;
-        }
-
-        // Per-branch permission gate (fail-closed): a denied branch is dropped
-        // from the union — its collection is never queried, so neither a value
-        // nor an existence bit of the hidden type can leak. It composes (AND)
-        // with the field- / definition-level gates applied to the whole join.
-        if( !isAuthorized( $branch , $init ) )
-        {
-            continue ;
-        }
-
-        // Guard: only the branch whose discriminator value matches yields rows.
-        $guard = equal( $discriminatorRef , betweenDoubleQuotes( (string) $type ) ) ;
-
-        $subqueries[] = $makeBranch( $branch , $guard ) ;
-    }
-
-    // Optional fallback branch — used when the discriminator value matches none
-    // of the DECLARED types (all map keys, gated or not: a denied type routes to
-    // nothing, never to the fallback).
-    $fallback = $definition[ Arango::FALLBACK ] ?? null ;
-    if( $fallback !== null )
-    {
-        if( !is_array( $fallback ) )
-        {
-            throw new UnexpectedValueException
-            (
-                __FUNCTION__ . ' failed, Arango::FALLBACK must be a join definition array or null.'
-            ) ;
-        }
-
-        if( isAuthorized( $fallback , $init ) )
-        {
-            $knownTypes    = array_map( fn( $type ) => betweenDoubleQuotes( (string) $type ) , array_keys( $map ) ) ;
-            $fallbackGuard = notIn( $discriminatorRef , '[' . implode( ',' , $knownTypes ) . ']' ) ;
-
-            $subqueries[] = $makeBranch( $fallback , $fallbackGuard ) ;
-        }
-    }
-
-    // Every branch gated out — emit an empty array so the projection resolves to
-    // null (Filter::JOIN) / [] (Filter::JOINS), never a broken `LET`.
-    if( $subqueries === [] )
-    {
-        return aqlLet( $varName , aqlArray() ) ;
-    }
-
-    // Concatenate the branch arrays: only the matching branch is non-empty, so
-    // the projection's FIRST() (Filter::JOIN) or the whole array (Filter::JOINS)
-    // resolves to the right document(s).
-    $combined = array_shift( $subqueries ) ;
-    foreach( $subqueries as $subquery )
-    {
-        $combined = append( $combined , $subquery ) ;
-    }
-
-    return aqlLet( $varName , $combined ) ;
+    return buildPolymorphicRelationVariable( $name , $definition , $docRef , $init , $buildBranch ) ;
 }

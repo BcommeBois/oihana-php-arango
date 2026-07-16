@@ -151,6 +151,85 @@ final class BuildPolymorphicEdgeVariableTest extends TestCase
         $this->assertStringContainsString( 'FILTER parent.selector.kind == "warehouse"' , $result ) ;
     }
 
+    // ---- per-branch gating + fallback (lot 2, via the shared assembler) --
+
+    public function testDeniedBranchIsDroppedFromAppend() :void
+    {
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           =>
+            [
+                'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , AQL::REQUIRES => 'warehouse:read' , Arango::PROPERTY => 'name' ] ,
+                'company'   => [ AQL::MODEL => new MockEdges( 'company_edges'   ) , Arango::PROPERTY => 'name' ] ,
+            ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn( string $s ) => $s !== 'warehouse:read' ] ) ) ;
+
+        $this->assertSame
+        (
+            'LET area = (FOR vertex, edge IN OUTBOUND doc company_edges ' . self::OPTIONS . ' ' .
+            'FILTER doc.kind == "company" SORT edge.created DESC RETURN vertex.name)' ,
+            $result
+        ) ;
+    }
+
+    public function testAllBranchesDeniedEmitsEmptyArray() :void
+    {
+        $result = buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           =>
+            [
+                'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , AQL::REQUIRES => 'x' ] ,
+                'company'   => [ AQL::MODEL => new MockEdges( 'company_edges'   ) , AQL::REQUIRES => 'y' ] ,
+            ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertSame( 'LET area = []' , $result ) ;
+    }
+
+    public function testFallbackBranchIsGuardedByNotInKnownTypes() :void
+    {
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           =>
+            [
+                'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ,
+                'company'   => [ AQL::MODEL => new MockEdges( 'company_edges'   ) , Arango::PROPERTY => 'name' ] ,
+            ] ,
+            Arango::FALLBACK      => [ AQL::MODEL => new MockEdges( 'region_edges' ) , Arango::PROPERTY => 'name' ] ,
+        ]) ) ;
+
+        $this->assertStringContainsString( 'IN OUTBOUND doc region_edges' , $result ) ;
+        $this->assertStringContainsString( 'FILTER doc.kind NOT IN ["warehouse","company"]' , $result ) ;
+    }
+
+    public function testFallbackBranchDeniedIsDropped() :void
+    {
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           => [ 'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ] ,
+            Arango::FALLBACK      => [ AQL::MODEL => new MockEdges( 'region_edges' ) , AQL::REQUIRES => 'region:read' , Arango::PROPERTY => 'name' ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ) ;
+
+        $this->assertStringNotContainsString( 'region_edges' , $result ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND doc warehouse_edges' , $result ) ;
+    }
+
+    public function testThrowsWhenFallbackIsNotAnArray() :void
+    {
+        $this->expectException( UnexpectedValueException::class ) ;
+
+        buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           => [ 'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ] ,
+            Arango::FALLBACK      => 'not-a-branch' ,
+        ]) ;
+    }
+
     /**
      * Normalizes the random `vertex_<n>` / `edge_<n>` loop refs to stable tokens.
      *

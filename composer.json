@@ -420,6 +420,7 @@
             "src/oihana/arango/models/helpers/buildInlineFilterCondition.php",
             "src/oihana/arango/models/helpers/buildTree.php",
             "src/oihana/arango/models/helpers/buildTreeAlter.php",
+            "src/oihana/arango/models/helpers/buildPolymorphicRelationVariable.php",
             "src/oihana/arango/models/helpers/buildVariables.php",
             "src/oihana/arango/models/helpers/isPolymorphic.php",
             "src/oihana/arango/models/helpers/prepareRelationDefinition.php",
