@@ -52,6 +52,8 @@ class CollectIntegrationTest extends IntegrationTestCase
     {
         $stub = new ListQueryTraitStub() ;
         $stub->collection = self::COLLECTION ;
+        // Fail-closed whitelist: high-level Arango::GROUP only groups on declared dimensions.
+        $stub->groupable  = [ 'category' => 'category' ] ;
         return $stub ;
     }
 

@@ -398,7 +398,7 @@ class FacetIntegrationTest extends IntegrationTestCase
     {
         // avg comment score per post >= 3 : p1 (5,1 => 3), p3 (3) ; p2 (2) excluded.
         $binds  = [] ;
-        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' ] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' , AQL::FIELDS => 'score' ] ;
         $value  = [ 'agg' => 'avg' , 'field' => 'score' , 'op' => 'ge' , 'val' => 3 ] ;
         $filter = $this->stub()->callJoinAggregate( 'comments' , $value , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'p1' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
@@ -418,7 +418,7 @@ class FacetIntegrationTest extends IntegrationTestCase
     {
         // worst comment score per post >= 2 : p2 (2), p3 (3) ; p1 (min 1) excluded.
         $binds  = [] ;
-        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' ] ;
+        $facet  = [ AQL::COLLECTION => 'comments' , AQL::KEY => 'postId' , Facet::PROPERTY => '_key' , AQL::FIELDS => 'score' ] ;
         $value  = [ 'agg' => 'min' , 'field' => 'score' , 'op' => 'ge' , 'val' => 2 ] ;
         $filter = $this->stub()->callJoinAggregate( 'comments' , $value , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'p2' , 'p3' ] , $this->keys( 'posts' , $filter , $binds ) ) ;
@@ -430,7 +430,7 @@ class FacetIntegrationTest extends IntegrationTestCase
     {
         // avg revenue of linked balance sheets >= 1M : o1 (1.05M). o2 (200k) & o3/o4 (none) excluded.
         $binds  = [] ;
-        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ;
         $value  = [ 'agg' => 'avg' , 'field' => 'revenue' , 'op' => 'ge' , 'val' => 1000000 ] ;
         $filter = $this->stub()->callEdgeAggregate( 'balanceSheets' , $value , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'o1' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
@@ -440,7 +440,7 @@ class FacetIntegrationTest extends IntegrationTestCase
     {
         // cumulative revenue >= 2M : o1 (2.1M) only.
         $binds  = [] ;
-        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ;
         $value  = [ 'agg' => 'sum' , 'field' => 'revenue' , 'op' => 'ge' , 'val' => 2000000 ] ;
         $filter = $this->stub()->callEdgeAggregate( 'balanceSheets' , $value , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'o1' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
@@ -450,7 +450,7 @@ class FacetIntegrationTest extends IntegrationTestCase
     {
         // floor revenue < 500k : o2 (200k). o1 (min 900k) and o3/o4 (no sheets) excluded.
         $binds  = [] ;
-        $facet  = [ AQL::EDGE => 'balance_edges' ] ;
+        $facet  = [ AQL::EDGE => 'balance_edges' , AQL::FIELDS => 'revenue' ] ;
         $value  = [ 'agg' => 'min' , 'field' => 'revenue' , 'op' => 'lt' , 'val' => 500000 ] ;
         $filter = $this->stub()->callEdgeAggregate( 'balanceSheets' , $value , $binds , $facet , AQL::DOC ) ;
         $this->assertSame( [ 'o2' ] , $this->keys( 'orgs' , $filter , $binds ) ) ;
