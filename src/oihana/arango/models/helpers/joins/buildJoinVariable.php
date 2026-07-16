@@ -48,7 +48,10 @@ use function oihana\arango\db\operations\aqlLet;
  * - `AQL::JOINS` (array)           Array of nested join definitions.
  * - `AQL::SKIN` (string|null)      Optional 'skin' name for field selection.
  * - `Arango::KEY` (string)         The key property of the document to match (default Schema::_KEY).
- * - `Arango::PROPERTY` (string|array|null) Optional property of the main document used as the join key.
+ * - `Arango::SOURCE` (string|null) Optional absolute key path, read from the main document, that anchors
+ *                                  the join match (e.g. `selector.providerId` → `doc.selector.providerId`).
+ *                                  Decoupled from the output field name; defaults to `$name`.
+ * - `Arango::PROPERTY` (string|array|null) Optional property appended, relative to the key path, to the join key.
  * - `Arango::SORT` (string|array|null) Optional sort definition when $isArray is true.
  * - `Arango::CONDITIONS` (callable|array|null) Optional filter conditions:
  *       - If array, it must be a list of AQL filter expressions.
@@ -84,10 +87,15 @@ function buildJoinVariable
 {
     $varName = $definition[ Arango::UNIQUE ] ?? $name ;
 
+    // Arango::SOURCE anchors the join key at an absolute path in the document,
+    // decoupled from the output field name ($name). Absent → $keyPath stays null
+    // and buildJoinSubquery falls back on $name (historical behaviour).
+    $keyPath = $definition[ Arango::SOURCE ] ?? null ;
+
     return aqlLet
     (
         $varName ,
-        buildJoinSubquery( $name , $definition , $docRef , $container , $init , $isArray ) ,
+        buildJoinSubquery( $name , $definition , $docRef , $container , $init , $isArray , [] , $keyPath ) ,
         true
     ) ;
 }

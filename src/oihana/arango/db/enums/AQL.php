@@ -98,6 +98,7 @@ class AQL
     public const string SEARCH          = 'search' ;
     public const string SEARCHABLE      = 'searchable' ;
     public const string SEARCH_OPTIONS  = 'searchOptions' ;
+    public const string SOURCE          = 'source' ;
     public const string SKIN            = 'skin' ;
     public const string SKIN_FIELDS     = 'skinFields' ;
     public const string SORT            = 'sort' ;

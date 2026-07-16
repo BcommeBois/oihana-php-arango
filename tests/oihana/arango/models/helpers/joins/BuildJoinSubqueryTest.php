@@ -56,6 +56,38 @@ final class BuildJoinSubqueryTest extends TestCase
         ) ;
     }
 
+    public function testKeyPathAnchorsTheMatchWhileNameStaysTheNestingPrefix() :void
+    {
+        // $keyPath overrides the match root (doc.selector.providerId), decoupled
+        // from $name which keeps prefixing nested-relation variable names.
+        $result = $this->normalize( buildJoinSubquery
+        (
+            'provider' ,
+            [ AQL::MODEL => new MockDocuments( 'providers' ) ] ,
+            AQL::DOC ,
+            null ,
+            [] ,
+            false ,
+            [] ,
+            'selector.providerId' // $keyPath
+        ) ) ;
+
+        $this->assertSame
+        (
+            'FOR doc_join IN providers FILTER doc_join._key == doc.selector.providerId RETURN doc_join' ,
+            $result
+        ) ;
+    }
+
+    public function testNullKeyPathFallsBackOnNameByteIdentically() :void
+    {
+        $with    = $this->normalize( buildJoinSubquery( 'role' , [ AQL::MODEL => new MockDocuments( 'roles' ) ] , AQL::DOC , null , [] , false , [] , null ) ) ;
+        $without = $this->normalize( buildJoinSubquery( 'role' , [ AQL::MODEL => new MockDocuments( 'roles' ) ] ) ) ;
+
+        $this->assertSame( $without , $with ) ;
+        $this->assertSame( 'FOR doc_join IN roles FILTER doc_join._key == doc.role RETURN doc_join' , $with ) ;
+    }
+
     /**
      * Normalizes the random `doc_join_<n>` loop ref to a stable token.
      *

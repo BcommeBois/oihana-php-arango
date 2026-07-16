@@ -54,9 +54,10 @@ use function oihana\core\strings\randomKey;
  * historical logic is `$extraConditions`, a list of ready-made AQL predicates
  * (typically the discriminator guard) prepended to the branch filter.
  *
- * @param string|null            $name       The parent key path used to match the join (e.g. `role`
- *                                            → `doc.role`). For a polymorphic branch this is the shared
- *                                            key path (e.g. `selector.areaServed`).
+ * @param string|null            $name       The logical name of the join relation — used to skin the
+ *                                            projection and to prefix the generated variable names of
+ *                                            nested relations. Also the default parent key path when
+ *                                            `$keyPath` is null.
  * @param array                  $definition Configuration array for the join — same keys as
  *                                           {@see buildJoinVariable()} (`AQL::MODEL`, `AQL::FIELDS`,
  *                                           `Arango::KEY`, `Arango::PROPERTY`, `Arango::CONDITIONS`, …).
@@ -67,6 +68,13 @@ use function oihana\core\strings\randomKey;
  * @param array                  $extraConditions Ready-made AQL predicate strings prepended to the
  *                                                 branch filter, right after the key match (e.g. the
  *                                                 discriminator guard of a polymorphic join).
+ * @param string|null            $keyPath    The parent key path used to match the join, absolute from
+ *                                            `$docRef` (e.g. `selector.providerId` → `doc.selector.providerId`).
+ *                                            Null falls back on `$name`, keeping the historical
+ *                                            "output name = key path" behaviour. Decoupling it from
+ *                                            `$name` lets `Arango::SOURCE` anchor the key elsewhere and
+ *                                            keeps nested-variable prefixes free of the (possibly dotted)
+ *                                            key path. A polymorphic branch passes the shared key path here.
  *
  * @return string The compiled join sub-query body (no `LET`, no enclosing parentheses).
  *
@@ -86,6 +94,7 @@ function buildJoinSubquery
     array               $init            = [] ,
     bool                $isArray         = false ,
     array               $extraConditions = [] ,
+    ?string             $keyPath         = null ,
 )
 : string
 {
@@ -118,7 +127,13 @@ function buildJoinSubquery
     $subVariables = [] ;
 
     $docJoin = randomKey( AQL::DOC_JOIN ) ;
-    $docKey  = key( $name , $docRef ) ;
+
+    // The key path (racine of the match) is decoupled from $name: $name still
+    // prefixes the nested-relation variable names below (prepareQueryFields),
+    // while $keyPath — when supplied by Arango::SOURCE or a polymorphic branch —
+    // anchors the match elsewhere in the document. Null keeps the historical
+    // "output name = key path" behaviour (doc.<name>).
+    $docKey  = key( $keyPath ?? $name , $docRef ) ;
 
     if ( $property !== null )
     {

@@ -395,6 +395,16 @@ class Arango
     public const string SKIP = 'skip' ;
 
     /**
+     * The 'source' parameter.
+     * Absolute key path, read from the main document, where a relation reads its
+     * anchor — decoupled from the output field name. For a join it holds the
+     * foreign key value matched against `doc_join._key`; for an edge it holds the
+     * start-vertex `_id` of the traversal. Optional: absent, the anchor is derived
+     * from the field name as before.
+     */
+    public const string SOURCE = 'source' ;
+
+    /**
      * The 'to' parameter.
      */
     public const string TO = 'to' ;

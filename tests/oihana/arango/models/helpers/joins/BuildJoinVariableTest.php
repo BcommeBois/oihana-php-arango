@@ -156,6 +156,86 @@ final class BuildJoinVariableTest extends TestCase
         $this->assertStringContainsString( 'RETURN {' , $result ) ;
     }
 
+    public function testSourceAnchorsTheKeyAtAnAbsolutePathDecoupledFromTheOutputName() :void
+    {
+        // Output field "provider" but the foreign key value lives elsewhere in
+        // the document (doc.selector.providerId), decoupled from the field name.
+        $result = $this->normalize
+        (
+            buildJoinVariable( 'provider' ,
+            [
+                AQL::MODEL     => new MockDocuments( 'providers' ) ,
+                Arango::SOURCE => 'selector.providerId' ,
+            ] )
+        ) ;
+
+        $this->assertSame
+        (
+            'LET provider = (FOR doc_join IN providers FILTER doc_join._key == doc.selector.providerId RETURN doc_join)' ,
+            $result
+        ) ;
+    }
+
+    public function testSourceComposesWithPropertyAsARelativeSuffix() :void
+    {
+        // SOURCE fixes the root, PROPERTY still appends relative to it.
+        $result = $this->normalize
+        (
+            buildJoinVariable( 'provider' ,
+            [
+                AQL::MODEL       => new MockDocuments( 'providers' ) ,
+                Arango::SOURCE   => 'selector.provider' ,
+                Arango::PROPERTY => 'id' ,
+            ] )
+        ) ;
+
+        $this->assertStringContainsString
+        (
+            'FILTER doc_join._key == doc.selector.provider.id' ,
+            $result
+        ) ;
+    }
+
+    public function testSourceIsHonoredOnTheArrayInFilter() :void
+    {
+        $result = $this->normalize
+        (
+            buildJoinVariable( 'providers' ,
+            [
+                AQL::MODEL     => new MockDocuments( 'providers' ) ,
+                Arango::SOURCE => 'selector.providerIds' ,
+            ] , AQL::DOC , null , [] , true )
+        ) ;
+
+        $this->assertStringContainsString
+        (
+            'FILTER doc_join._key IN (IS_ARRAY(doc.selector.providerIds) ? doc.selector.providerIds : [])' ,
+            $result
+        ) ;
+    }
+
+    public function testSourceHonorsUniqueNameAndCustomKeyAndDocRef() :void
+    {
+        // The output/LET name (via UNIQUE), the foreign attribute (via KEY) and
+        // the anchor path (via SOURCE) are all independent.
+        $result = $this->normalize
+        (
+            buildJoinVariable( 'provider' ,
+            [
+                AQL::MODEL     => new MockDocuments( 'providers' ) ,
+                Arango::UNIQUE => 'p' ,
+                Arango::KEY    => 'code' ,
+                Arango::SOURCE => 'selector.providerCode' ,
+            ] , 'parent' )
+        ) ;
+
+        $this->assertSame
+        (
+            'LET p = (FOR doc_join IN providers FILTER doc_join.code == parent.selector.providerCode RETURN doc_join)' ,
+            $result
+        ) ;
+    }
+
     /**
      * Normalizes the random `doc_join_<n>` loop ref to a stable token.
      *
