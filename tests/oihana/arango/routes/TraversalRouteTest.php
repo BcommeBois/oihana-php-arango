@@ -40,10 +40,10 @@ final class TraversalRouteTest extends TestCase
 
         $controller = new class
         {
-            public function getParent()      {}
-            public function getChildren()    {}
-            public function getAncestors()   {}
-            public function getDescendants() {}
+            public function getParent()      { return TraversalController::GET_PARENT      ; }
+            public function getChildren()    { return TraversalController::GET_CHILDREN    ; }
+            public function getAncestors()   { return TraversalController::GET_ANCESTORS   ; }
+            public function getDescendants() { return TraversalController::GET_DESCENDANTS ; }
         } ;
         $container->set( 'categories.traversal' , $controller ) ;
 
@@ -62,7 +62,7 @@ final class TraversalRouteTest extends TestCase
             $this->assertSame( [ 'GET' ] , $route->getMethods() ) ;
             $pattern = $route->getPattern() ;
             $suffix  = substr( $pattern , (int) strrpos( $pattern , '/' ) + 1 ) ;
-            $bySuffix[ $suffix ] = $route->getCallable()[ 1 ] ;
+            $bySuffix[ $suffix ] = ( $route->getCallable() )() ;
         }
 
         $this->assertSame( TraversalController::GET_PARENT      , $bySuffix[ TraversalRoute::PARENT      ] ) ;

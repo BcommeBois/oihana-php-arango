@@ -40,10 +40,10 @@ final class ArrayPropertyRouteTest extends TestCase
 
         $controller = new class
         {
-            public function addItem()    {}
-            public function removeItem() {}
-            public function moveItem()   {}
-            public function hasItem()    {}
+            public function addItem()    { return ArrayPropertyController::ADD_ITEM    ; }
+            public function removeItem() { return ArrayPropertyController::REMOVE_ITEM ; }
+            public function moveItem()   { return ArrayPropertyController::MOVE_ITEM   ; }
+            public function hasItem()    { return ArrayPropertyController::HAS_ITEM    ; }
         } ;
         $container->set( 'playlist.tracks' , $controller ) ;
 
@@ -59,7 +59,7 @@ final class ArrayPropertyRouteTest extends TestCase
         $map = [] ;
         foreach ( $registered as $route )
         {
-            $map[ implode( ',' , $route->getMethods() ) . ' ' . $route->getPattern() ] = $route->getCallable()[ 1 ] ;
+            $map[ implode( ',' , $route->getMethods() ) . ' ' . $route->getPattern() ] = ( $route->getCallable() )() ;
         }
 
         $this->assertSame( ArrayPropertyController::ADD_ITEM    , $map[ 'POST /playlists/{id}/tracks' ] ) ;

@@ -39,7 +39,7 @@ final class SearchRouteTest extends TestCase
 
         $controller = new class
         {
-            public function search() {}
+            public function search() { return SearchRoute::INTERNAL_METHOD ; }
         } ;
         $container->set( 'search.controller' , $controller ) ;
 
@@ -55,7 +55,7 @@ final class SearchRouteTest extends TestCase
         $route = $registered[ array_key_first( $registered ) ] ;
         $this->assertSame( [ 'GET' ] , $route->getMethods() ) ;
         $this->assertSame( '/search' , $route->getPattern() ) ;
-        $this->assertSame( SearchRoute::INTERNAL_METHOD , $route->getCallable()[ 1 ] ) ;
+        $this->assertSame( SearchRoute::INTERNAL_METHOD , ( $route->getCallable() )() ) ;
     }
 
     public function testDefaultsToTheSearchMethod() :void
