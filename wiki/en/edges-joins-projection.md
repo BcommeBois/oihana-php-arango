@@ -9,7 +9,8 @@ This page describes the projection of the **relations**: following an edge, reso
 3. [Projecting edge properties — `Field::SCOPE`](#projecting-edge-properties--fieldscope)
 4. [Wrapping the reference under a key — `Filter::WRAP`](#wrapping-the-reference-under-a-key--filterwrap)
 5. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
-6. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
+6. [Polymorphic join — target collection from a discriminator field](#polymorphic-join--target-collection-from-a-discriminator-field)
+7. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
 
 ## Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition
 
@@ -400,6 +401,77 @@ LET tracks = (
 Useful options on the join definition: `Arango::KEY` (join attribute, default `_key`), `Arango::PROPERTY` (point at a nested parent property as the key), `Arango::CONDITIONS` (extra filters), nested `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN` / `AQL::SKIN_FIELDS` (the joined projection varies with `?skin=`), `AQL::REQUIRES` ([permission gating](projection.md#permission-gated-edges-and-joins--aqlrequires)).
 
 > Natural combination with [embedded array fields](db/arrays.md): a `tracks` field (an array of ids mutated element-by-element via `ArrayPropertyController`) can **at the same time** be projected as sorted joined documents in the `GET` via `Filter::JOINS` — no duplication.
+
+## Polymorphic join — target collection from a discriminator field
+
+A regular join targets **one** fixed collection (`AQL::MODEL`). A **polymorphic join** picks its target collection **at query time**, from a value of the parent document itself. The typical case: a `PricingConditionSelector` carrying an `areaScope` (the zone *type*) and an `areaServed` (the *key*), which must resolve into `warehouses` when the scope is `#Warehouse`, into `subsidiaries` when it is `#Company`.
+
+```json
+"selector": {
+    "areaScope":  "https://schema.oihana.xyz/PricingAreaScope#Warehouse",
+    "areaServed": "w1"
+}
+```
+
+The definition replaces `AQL::MODEL` with three keys:
+
+- **`Arango::DISCRIMINATOR`** — the parent field that decides (a scalar path, e.g. `selector.areaScope`).
+- **`Arango::MAP`** — the `type => join-definition` table, one branch per value; each branch is **a regular join definition** (with its own `AQL::MODEL`, projection, sort…).
+- **`Arango::FALLBACK`** — (optional) the branch used when the value matches **none** of the declared types; `null` = none.
+
+The field stays declared as `Filter::JOIN` (single) or `Filter::JOINS` (list) in `AQL::FIELDS` — **no new marker**: it is the presence of `Arango::MAP` + `Arango::DISCRIMINATOR` in the definition that switches to polymorphic mode.
+
+```php
+AQL::FIELDS =>
+[
+    'area' => Filter::JOIN ,                     // single document (JOINS for a list)
+],
+AQL::JOINS =>
+[
+    'area' =>
+    [
+        Arango::DISCRIMINATOR => 'selector.areaScope' ,   // the parent field that decides
+        Arango::PROPERTY      => 'selector.areaServed' ,  // the parent key (shared by branches)
+        Arango::MAP           =>
+        [
+            'https://schema.oihana.xyz/PricingAreaScope#Warehouse' =>
+            [
+                AQL::MODEL  => Models::WAREHOUSE ,
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+            'https://schema.oihana.xyz/PricingAreaScope#Company' =>
+            [
+                AQL::MODEL  => Models::SUBSIDIARY ,
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+        ] ,
+        Arango::FALLBACK => null ,                          // unknown type → null (JOIN) / [] (JOINS)
+    ],
+],
+```
+
+AQL forbids a computed collection in a `FOR … IN …`, so the join is compiled as an **`APPEND` of guarded static branches**: one join sub-query per branch, each guarded by an equality on the discriminator, so only one branch yields rows. The generated AQL (simplified):
+
+```aql
+LET area = APPEND(
+    ( FOR doc_join IN @@warehouse
+        FILTER doc_join._key == doc.selector.areaServed
+           && doc.selector.areaScope == "https://schema.oihana.xyz/PricingAreaScope#Warehouse"
+        RETURN { _key: doc_join._key, name: doc_join.name } ) ,
+    ( FOR doc_join IN @@subsidiary
+        FILTER doc_join._key == doc.selector.areaServed
+           && doc.selector.areaScope == "https://schema.oihana.xyz/PricingAreaScope#Company"
+        RETURN { _key: doc_join._key, name: doc_join.name } )
+)
+```
+
+> **The `LET` holds an array, like any join.** Only one branch is non-empty (the guards are exclusive); the projection then unwraps that array **exactly like a regular join** — `FIRST()` for `Filter::JOIN`, the whole array for `Filter::JOINS`. Nothing to change on the projection side.
+
+> **Each branch is gated on its own.** A `Field::REQUIRES` / `AQL::REQUIRES` on a branch makes it **disappear from the `APPEND`** when the permission is denied — its collection is never queried, so neither a value nor an existence bit of the hidden type can leak (fail-closed). This gate **composes** (logical AND) with the field- / definition-level gates that guard the whole join.
+
+> **The fallback never catches a denied type.** The `Arango::FALLBACK` branch is guarded by `NOT IN [ …every declared type… ]` — including types whose branch was denied. A document of a denied type therefore routes to **nothing**, never to the fallback: no oracle. When every branch is dropped the `LET` holds `[]` (projection → `null` / `[]`), never a broken clause.
+
+Useful options: the parent key (`Arango::PROPERTY`, default the field name) and the join attribute (`Arango::KEY`, default `_key`) declared at the top level are **shared** as defaults across branches; a branch may override its own key. Each branch also accepts the whole vocabulary of a regular join (`Arango::CONDITIONS`, `Arango::SORT`, nested `AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN`).
 
 ## Breaking an INBOUND cycle with `AQL::SKIN`
 

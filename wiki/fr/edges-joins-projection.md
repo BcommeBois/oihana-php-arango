@@ -9,7 +9,8 @@ Cette page décrit la projection des **relations** : suivre une arête (edge), r
 3. [Projeter les propriétés de l'edge — `Field::SCOPE`](#projeter-les-propriétés-de-ledge--fieldscope)
 4. [Envelopper la référence sous une clé — `Filter::WRAP`](#envelopper-la-référence-sous-une-clé--filterwrap)
 5. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
-6. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+6. [Jointure polymorphe — collection cible selon un champ discriminant](#jointure-polymorphe--collection-cible-selon-un-champ-discriminant)
+7. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
 
 ## Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge
 
@@ -400,6 +401,77 @@ LET tracks = (
 Options utiles sur la définition de join : `Arango::KEY` (attribut de jointure, défaut `_key`), `Arango::PROPERTY` (pointer une propriété imbriquée du parent comme clé), `Arango::CONDITIONS` (filtres supplémentaires), `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS` imbriqués, `AQL::SKIN` / `AQL::SKIN_FIELDS` (la projection jointe varie avec `?skin=`), `AQL::REQUIRES` ([gating par permission](projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)).
 
 > Combinaison naturelle avec les [champs-tableaux embarqués](db/arrays.md) : un champ `tracks` (tableau d'ids muté élément par élément via `ArrayPropertyController`) peut **en même temps** être projeté en documents joints triés dans le `GET` via `Filter::JOINS` — aucune duplication.
+
+## Jointure polymorphe — collection cible selon un champ discriminant
+
+Un join ordinaire vise **une** collection figée (`AQL::MODEL`). Une **jointure polymorphe** choisit sa collection cible **à l'exécution**, d'après la valeur d'un champ du document parent lui-même. Le cas typique : un `PricingConditionSelector` qui porte un `areaScope` (le *type* de zone) et un `areaServed` (la *clé*), et doit résoudre la fiche dans `warehouses` si le scope est `#Warehouse`, dans `subsidiaries` si le scope est `#Company`.
+
+```json
+"selector": {
+    "areaScope":  "https://schema.oihana.xyz/PricingAreaScope#Warehouse",
+    "areaServed": "w1"
+}
+```
+
+La définition remplace `AQL::MODEL` par trois clés :
+
+- **`Arango::DISCRIMINATOR`** — le champ du parent qui décide (chemin scalaire, ex. `selector.areaScope`).
+- **`Arango::MAP`** — la table `type => définition de join`, une branche par valeur ; chaque branche est **une définition de join classique** (avec son `AQL::MODEL`, sa projection, son tri…).
+- **`Arango::FALLBACK`** — (optionnel) la branche utilisée quand la valeur ne correspond à **aucun** type déclaré ; `null` = aucune.
+
+Le champ reste déclaré `Filter::JOIN` (fiche unique) ou `Filter::JOINS` (liste) dans `AQL::FIELDS` — **aucun nouveau marqueur** : c'est la présence de `Arango::MAP` + `Arango::DISCRIMINATOR` dans la définition qui bascule en mode polymorphe.
+
+```php
+AQL::FIELDS =>
+[
+    'area' => Filter::JOIN , // fiche unique (JOINS pour une liste)
+],
+AQL::JOINS =>
+[
+    'area' =>
+    [
+        Arango::DISCRIMINATOR => 'selector.areaScope' ,   // le champ du parent qui décide
+        Arango::PROPERTY      => 'selector.areaServed' ,  // la clé du parent (partagée par les branches)
+        Arango::MAP           =>
+        [
+            'https://schema.oihana.xyz/PricingAreaScope#Warehouse' =>
+            [
+                AQL::MODEL  => Models::WAREHOUSE ,
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+            'https://schema.oihana.xyz/PricingAreaScope#Company' =>
+            [
+                AQL::MODEL  => Models::SUBSIDIARY ,
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+        ] ,
+        Arango::FALLBACK => null , // type inconnu → null (JOIN) / [] (JOINS)
+    ],
+],
+```
+
+AQL interdit une collection calculée dans un `FOR … IN …`, la jointure est compilée comme un **`APPEND` de branches statiques gardées** : une sous-requête de join par branche, chacune gardée par une égalité sur le discriminateur, de sorte qu'une seule branche renvoie des lignes. L'AQL généré (simplifié) :
+
+```aql
+LET area = APPEND(
+    ( FOR doc_join IN @@warehouse
+        FILTER doc_join._key == doc.selector.areaServed
+           && doc.selector.areaScope == "https://schema.oihana.xyz/PricingAreaScope#Warehouse"
+        RETURN { _key: doc_join._key, name: doc_join.name } ) ,
+    ( FOR doc_join IN @@subsidiary
+        FILTER doc_join._key == doc.selector.areaServed
+           && doc.selector.areaScope == "https://schema.oihana.xyz/PricingAreaScope#Company"
+        RETURN { _key: doc_join._key, name: doc_join.name } )
+)
+```
+
+> **Le `LET` contient un tableau, comme n'importe quel join.** Une seule branche est non vide (les gardes sont exclusives) ; la projection déplie ensuite ce tableau **exactement comme un join ordinaire** — `FIRST()` pour `Filter::JOIN`, le tableau entier pour `Filter::JOINS`. Rien à changer côté projection.
+
+> **Chaque branche est verrouillée séparément.** Un `Field::REQUIRES` / `AQL::REQUIRES` posé sur une branche la fait **disparaître de l'`APPEND`** si la permission est refusée — sa collection n'est jamais interrogée, donc ni une valeur ni un simple bit d'existence du type caché ne fuite (fail-closed). Ce verrou **se compose** (ET logique) avec les gardes de champ / de définition qui protègent le join entier.
+
+> **Le repli ne récupère jamais un type refusé.** La branche `Arango::FALLBACK` est gardée par `NOT IN [ …tous les types déclarés… ]` — y compris les types dont la branche a été refusée. Un document d'un type refusé route donc vers **rien**, jamais vers le repli : pas d'oracle. Quand toutes les branches sont écartées, le `LET` vaut `[]` (projection → `null` / `[]`), jamais une clause cassée.
+
+Options utiles : la clé du parent (`Arango::PROPERTY`, défaut le nom du champ) et l'attribut de jointure (`Arango::KEY`, défaut `_key`) déclarés au niveau du haut sont **partagés** comme défauts par les branches ; une branche peut surcharger sa propre clé. Chaque branche accepte aussi tout le vocabulaire d'un join classique (`Arango::CONDITIONS`, `Arango::SORT`, sous-`AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN`).
 
 ## Couper un cycle INBOUND avec `AQL::SKIN`
 
