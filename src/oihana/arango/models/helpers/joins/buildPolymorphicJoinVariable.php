@@ -91,8 +91,14 @@ function buildPolymorphicJoinVariable
     // Builds one guarded branch sub-query, sharing the top-level foreign key
     // attribute unless the branch overrides it. buildJoinSubquery returns an
     // unparenthesized body, so we wrap it here.
+    //
+    // The shared key path is passed through the dedicated $keyPath argument (last
+    // param), NOT as $name: $name stays the relation name so it keeps prefixing
+    // the nested-relation variable names. Feeding a dotted key path (e.g.
+    // selector.areaServed) as $name used to leak a dot into generated AQL
+    // variable names whenever a branch carried sub-edges/joins — now fixed.
     $buildBranch = function( array $branch , string $guard )
-        use ( $sharedKey , $keyPath , $docRef , $container , $init , $isArray ) : string
+        use ( $name , $sharedKey , $keyPath , $docRef , $container , $init , $isArray ) : string
     {
         if( $sharedKey !== null && !isset( $branch[ Arango::KEY ] ) )
         {
@@ -101,7 +107,7 @@ function buildPolymorphicJoinVariable
 
         return betweenParentheses
         (
-            buildJoinSubquery( $keyPath , $branch , $docRef , $container , $init , $isArray , [ $guard ] )
+            buildJoinSubquery( $name , $branch , $docRef , $container , $init , $isArray , [ $guard ] , $keyPath )
         ) ;
     } ;
 

@@ -6,6 +6,8 @@ use UnexpectedValueException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
+use oihana\arango\enums\Filter;
 
 use PHPUnit\Framework\TestCase;
 
@@ -281,6 +283,33 @@ final class BuildPolymorphicJoinVariableTest extends TestCase
         // fallback guard, so a "W" document routes to nothing (never the fallback).
         $this->assertStringNotContainsString( 'IN warehouses' , $result ) ;
         $this->assertStringContainsString( 'NOT IN ["W","C"]' , $result ) ;
+    }
+
+    public function testDottedKeyPathDoesNotLeakIntoNestedVariableNames() :void
+    {
+        // A branch with a nested join: its generated LET variable name is
+        // prefixed by the relation name ($name = "area"), NOT by the dotted
+        // shared key path ("selector.areaServed"). Feeding the key path as the
+        // nesting prefix used to produce dotted — invalid — AQL variable names.
+        $result = $this->normalize( buildPolymorphicJoinVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'selector.areaScope' ,
+            Arango::PROPERTY      => 'selector.areaServed' ,
+            Arango::MAP           =>
+            [
+                'W' =>
+                [
+                    AQL::MODEL    => new MockDocuments( 'warehouses' ) ,
+                    AQL::FIELDS   => [ 'manager' => [ Field::FILTER => Filter::JOIN ] ] ,
+                    Arango::JOINS => [ 'manager' => [ AQL::MODEL => new MockDocuments( 'people' ) ] ] ,
+                ] ,
+            ] ,
+        ]) ) ;
+
+        // No dotted prefix leaks anywhere (the exact bug signature).
+        $this->assertStringNotContainsString( 'selector.areaServed_' , $result ) ;
+        // The nested join variable is prefixed by the clean relation name.
+        $this->assertMatchesRegularExpression( '/LET area_manager\w* = /' , $result ) ;
     }
 
     public function testThrowsWhenFallbackIsNotAnArray() :void
