@@ -11,8 +11,10 @@ use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
 
 use function oihana\arango\models\helpers\buildPolymorphicRelationVariable;
+use function oihana\core\strings\key;
 
 /**
  * Builds a single AQL 'LET' subquery for a *polymorphic* edge — an edge whose
@@ -48,6 +50,9 @@ use function oihana\arango\models\helpers\buildPolymorphicRelationVariable;
  * - `Arango::DISCRIMINATOR` (string)  Start-vertex field path deciding the branch (required).
  * - `Arango::MAP` (array)             Non-empty `type => edge-definition` table (required).
  * - `Arango::UNIQUE` (string|null)    Optional `LET` variable name, overrides `$name`.
+ * - `Arango::SOURCE` (string|null)    Optional absolute path holding the traversal start-vertex `_id`; the
+ *                                     traversal then departs from `doc.<source>` while the discriminator
+ *                                     STAYS resolved on the parent document (`doc.<discriminator>`).
  * - `Arango::FALLBACK` (array|null)   Edge definition for unmatched discriminator values (`null` = none).
  * @param string                  $startVertex The AQL variable name of the start vertex.
  * @param ContainerInterface|null $container   Optional DI container used to resolve branch models.
@@ -76,9 +81,17 @@ function buildPolymorphicEdgeVariable
 )
 : string
 {
+    // Arango::SOURCE moves the traversal start vertex to an absolute path
+    // (`doc.<source>`, which must hold a full `_id`), while the discriminator
+    // guard STAYS resolved on the parent document ($startVertex, passed as $ref
+    // to the shared assembler below). The two references are intentionally
+    // distinct: the parent chooses the branch, the source vertex is traversed.
+    $source = $definition[ Arango::SOURCE ] ?? null ;
+    $start  = $source !== null ? key( $source , $startVertex ) : $startVertex ;
+
     // buildEdgeSubquery already returns a parenthesized traversal.
     $buildBranch = fn( array $branch , string $guard ) : string
-        => buildEdgeSubquery( $name , $branch , $startVertex , $container , $init , [ $guard ] ) ;
+        => buildEdgeSubquery( $name , $branch , $start , $container , $init , [ $guard ] ) ;
 
     return buildPolymorphicRelationVariable( $name , $definition , $startVertex , $init , $buildBranch ) ;
 }

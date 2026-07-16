@@ -119,6 +119,32 @@ final class BuildPolymorphicEdgeVariableTest extends TestCase
         $this->assertStringStartsWith( 'LET zone = ' , $result ) ;
     }
 
+    public function testSourceMovesTheTraversalStartWhileDiscriminatorStaysOnTheParent() :void
+    {
+        // Arango::SOURCE moves the traversal start vertex to doc.selector.providerId,
+        // but the discriminator guard STAYS resolved on the parent document (doc.kind).
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::SOURCE        => 'selector.providerId' ,
+            Arango::MAP           =>
+            [
+                'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ,
+                'company'   => [ AQL::MODEL => new MockEdges( 'company_edges'   ) , Arango::PROPERTY => 'name' ] ,
+            ] ,
+        ]) ) ;
+
+        $this->assertSame
+        (
+            'LET area = APPEND(' .
+            '(FOR vertex, edge IN OUTBOUND doc.selector.providerId warehouse_edges ' . self::OPTIONS . ' ' .
+            'FILTER doc.kind == "warehouse" SORT edge.created DESC RETURN vertex.name),' .
+            '(FOR vertex, edge IN OUTBOUND doc.selector.providerId company_edges ' . self::OPTIONS . ' ' .
+            'FILTER doc.kind == "company" SORT edge.created DESC RETURN vertex.name))' ,
+            $result
+        ) ;
+    }
+
     public function testDirectionCanVaryPerBranch() :void
     {
         $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,

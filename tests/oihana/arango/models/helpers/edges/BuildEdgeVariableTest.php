@@ -625,6 +625,47 @@ final class BuildEdgeVariableTest extends TestCase
         $this->assertStringContainsString( 'IN OUTBOUND parent user_has_roles' , $result ) ;
     }
 
+    public function testSourceMovesTheTraversalStartVertexToAnAbsolutePath() :void
+    {
+        $edges = new MockEdges( 'supplier_edges' ) ;
+
+        // The traversal departs from the vertex whose _id is stored at
+        // doc.selector.providerId, instead of the current document.
+        $result = $this->normalize( buildEdgeVariable( 'supplier' ,
+        [
+            AQL::MODEL     => $edges ,
+            Arango::SOURCE => 'selector.providerId' ,
+            Arango::PROPERTY => 'name' ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( 'IN OUTBOUND doc.selector.providerId supplier_edges' , $result ) ;
+    }
+
+    public function testSourceComposesWithACustomStartVertex() :void
+    {
+        $edges = new MockEdges( 'supplier_edges' ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'supplier' ,
+        [
+            AQL::MODEL       => $edges ,
+            Arango::SOURCE   => 'selector.providerId' ,
+            Arango::PROPERTY => 'name' ,
+        ] , 'parent' ) ) ;
+
+        $this->assertStringContainsString( 'IN OUTBOUND parent.selector.providerId supplier_edges' , $result ) ;
+    }
+
+    public function testAbsentSourceKeepsDocAsTheStartVertex() :void
+    {
+        $edges = new MockEdges( 'supplier_edges' ) ;
+
+        $result = $this->normalize( buildEdgeVariable( 'supplier' , [ AQL::MODEL => $edges , Arango::PROPERTY => 'name' ] ) ) ;
+
+        // Byte-identical to the historical behaviour: the traversal starts from doc.
+        $this->assertStringContainsString( 'IN OUTBOUND doc supplier_edges' , $result ) ;
+        $this->assertStringNotContainsString( 'doc.' , $result ) ;
+    }
+
     /**
      * A {@see MockEdges} with a wired `to` vertex model whose delete signals
      * are initialized (otherwise the Edges destructor disconnects a null signal).

@@ -14,6 +14,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 
 use function oihana\arango\db\operations\aqlLet;
+use function oihana\core\strings\key;
 
 /**
  * Builds a single AQL 'LET' subquery string for a specific edge relation.
@@ -39,6 +40,10 @@ use function oihana\arango\db\operations\aqlLet;
  * - `AQL::JOINS`: (array) Join definitions for the target model.
  * - `AQL::SKIN`: (string|null) A 'skin' name to select specific fields.
  * - `AQL::SORT`: (string|array|null) Sort definition (see getSortEdgeVariableExpression).
+ * - `Arango::SOURCE`: (string|null) Optional absolute path, read from the start vertex, holding the
+ *                     traversal start-vertex `_id` — the traversal then departs from `doc.<source>`
+ *                     instead of `doc`. The value MUST be a full document `_id` (e.g. `providers/123`),
+ *                     not a bare `_key`.
  *
  * @param string              $startVertex  The AQL variable name of the starting vertex (default 'doc').
  * @param ?ContainerInterface $container    The DI Container reference.
@@ -64,5 +69,11 @@ function buildEdgeVariable
 {
     $varName = $definition[ Arango::UNIQUE ] ?? $name ;
 
-    return aqlLet( $varName , buildEdgeSubquery( $name , $definition , $startVertex , $container , $init ) ) ;
+    // Arango::SOURCE moves the traversal start vertex from `doc` to an absolute
+    // path in the document (`doc.<source>`, which must hold a full `_id`). Absent
+    // → the traversal departs from the current vertex, unchanged.
+    $source = $definition[ Arango::SOURCE ] ?? null ;
+    $start  = $source !== null ? key( $source , $startVertex ) : $startVertex ;
+
+    return aqlLet( $varName , buildEdgeSubquery( $name , $definition , $start , $container , $init ) ) ;
 }
