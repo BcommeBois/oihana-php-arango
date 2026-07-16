@@ -238,15 +238,13 @@ trait BoundsQueryTrait
      * - a **keyed definition** (`'price' => [ Bound::PROPERTY => '…' ]`) → itself
      *   (a non-array value, e.g. `'width' => true`, becomes an empty definition).
      *
+     * The sole caller ({@see buildBoundsQuery()}) already guarantees `$this->bounds`
+     * is an array, so no defensive `is_array` guard is needed here.
+     *
      * @return array<string,array> The normalized whitelist (empty when nothing boundable).
      */
     private function normalizeBounds() :array
     {
-        if ( !is_array( $this->bounds ) )
-        {
-            return [] ;
-        }
-
         $whitelist = [] ;
         foreach ( $this->bounds as $key => $value )
         {

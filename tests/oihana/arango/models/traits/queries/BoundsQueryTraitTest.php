@@ -134,6 +134,17 @@ class BoundsQueryTraitTest extends TestCase
         $this->assertSame( '' , $stub->buildBoundsQuery( [] , $binds ) ) ;
     }
 
+    public function testFailClosedWhenWhitelistNormalizesToEmpty() :void
+    {
+        // $bounds is a non-empty array, but no entry is normalizable (a numeric
+        // key with a non-string value) → the whitelist is empty → empty query.
+        $stub  = $this->stub() ;
+        $stub->bounds = [ 42 ] ;
+        $binds = [] ;
+
+        $this->assertSame( '' , $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width' ] , $binds ) ) ;
+    }
+
     public function testAcceptsAnArrayOfFields() :void
     {
         $stub  = $this->stub() ;
