@@ -10,7 +10,8 @@ This page describes the projection of the **relations**: following an edge, reso
 4. [Wrapping the reference under a key — `Filter::WRAP`](#wrapping-the-reference-under-a-key--filterwrap)
 5. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
 6. [Polymorphic join — target collection from a discriminator field](#polymorphic-join--target-collection-from-a-discriminator-field)
-7. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
+7. [Polymorphic edge — target edge from a discriminator field](#polymorphic-edge--target-edge-from-a-discriminator-field)
+8. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
 
 ## Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition
 
@@ -472,6 +473,67 @@ LET area = APPEND(
 > **The fallback never catches a denied type.** The `Arango::FALLBACK` branch is guarded by `NOT IN [ …every declared type… ]` — including types whose branch was denied. A document of a denied type therefore routes to **nothing**, never to the fallback: no oracle. When every branch is dropped the `LET` holds `[]` (projection → `null` / `[]`), never a broken clause.
 
 Useful options: the parent key (`Arango::PROPERTY`, default the field name) and the join attribute (`Arango::KEY`, default `_key`) declared at the top level are **shared** as defaults across branches; a branch may override its own key. Each branch also accepts the whole vocabulary of a regular join (`Arango::CONDITIONS`, `Arango::SORT`, nested `AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN`).
+
+## Polymorphic edge — target edge from a discriminator field
+
+The **edge** counterpart of the [polymorphic join](#polymorphic-join--target-collection-from-a-discriminator-field). Where a regular edge traverses **one** fixed edge collection (`AQL::MODEL`), a **polymorphic edge** picks the edge (and hence the target vertex) to traverse **at query time**, from a value of the **start vertex** (the source document). Example: a node carries a `kind` field, and you want to follow `warehouse_edges` when `kind == "warehouse"`, `company_edges` when `kind == "company"`.
+
+The definition replaces `AQL::MODEL` with the same three keys as the polymorphic join:
+
+- **`Arango::DISCRIMINATOR`** — the **start-vertex** field that decides (a scalar path, e.g. `kind`).
+- **`Arango::MAP`** — the `type => edge-definition` table, one branch per value; each branch is **a regular edge definition** (its own `AQL::MODEL`, `AQL::DIRECTION`, projection, depth…).
+- **`Arango::FALLBACK`** — (optional) the branch for a value matching **none** of the declared types; `null` = none.
+
+The field stays declared as `Filter::EDGE` (single) or `Filter::EDGES` (list) in `AQL::FIELDS` — **no new marker**: the presence of `Arango::MAP` + `Arango::DISCRIMINATOR` switches to polymorphic mode (shared `isPolymorphic` detection, common to joins and edges).
+
+```php
+AQL::FIELDS =>
+[
+    'area' => Filter::EDGE ,                      // single vertex (EDGES for a list)
+],
+AQL::EDGES =>
+[
+    'area' =>
+    [
+        Arango::DISCRIMINATOR => 'kind' ,          // the start-vertex field that decides
+        Arango::MAP           =>
+        [
+            'warehouse' =>
+            [
+                AQL::MODEL  => Edges::WAREHOUSE ,   // source edge → warehouses
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+            'company' =>
+            [
+                AQL::MODEL  => Edges::COMPANY ,     // source edge → subsidiaries
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+        ] ,
+        Arango::FALLBACK => null ,                  // unknown type → null (EDGE) / [] (EDGES)
+    ],
+],
+```
+
+AQL forbids a computed collection in a `FOR … IN <dir> … <collection>`, so the edge is compiled as an **`APPEND` of guarded static traversals**: one traversal per branch, each guarded by an equality on the discriminator, so only one branch yields rows. The generated AQL (simplified):
+
+```aql
+LET area = APPEND(
+    ( FOR vertex, edge IN OUTBOUND doc warehouse_edges
+        FILTER doc.kind == "warehouse"
+        RETURN { _key: vertex._key, name: vertex.name } ) ,
+    ( FOR vertex, edge IN OUTBOUND doc company_edges
+        FILTER doc.kind == "company"
+        RETURN { _key: vertex._key, name: vertex.name } )
+)
+```
+
+> **The `LET` holds an array, like any edge.** Only one branch is non-empty; the projection then unwraps it **exactly like a regular edge** — `FIRST()` for `Filter::EDGE`, the whole array for `Filter::EDGES`. Nothing to change on the projection side.
+
+> **Each branch is a full edge definition**: it may declare its own `AQL::DIRECTION` (OUTBOUND/INBOUND), depth (`AQL::MAX_DEPTH`), etc. Homogeneous projections across branches are recommended.
+
+> **Security — identical to the polymorphic join.** A branch denied by permission (`Field::REQUIRES` / `AQL::REQUIRES`) is **dropped from the `APPEND`** (fail-closed: its collection is never traversed). The `Arango::FALLBACK` branch is guarded by `NOT IN [ …every declared type… ]`, including denied types — a document of a denied type routes to **nothing**, never to the fallback (no oracle). Every branch dropped ⇒ the `LET` holds `[]`. The anti-oracle logic is **shared** with the join (a single `buildPolymorphicRelationVariable` assembler).
+
+> ⚠️ **Polymorphic `Filter::EDGES_COUNT`: unsupported (v1).** Counting uses `LENGTH(traversal)`, incompatible with the `APPEND`-of-branches pattern. A count entry stays counted on the model's fixed edge collection (classic behaviour).
 
 ## Breaking an INBOUND cycle with `AQL::SKIN`
 

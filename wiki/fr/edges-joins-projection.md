@@ -10,7 +10,8 @@ Cette page décrit la projection des **relations** : suivre une arête (edge), r
 4. [Envelopper la référence sous une clé — `Filter::WRAP`](#envelopper-la-référence-sous-une-clé--filterwrap)
 5. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
 6. [Jointure polymorphe — collection cible selon un champ discriminant](#jointure-polymorphe--collection-cible-selon-un-champ-discriminant)
-7. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+7. [Edge polymorphe — arête cible selon un champ discriminant](#edge-polymorphe--arête-cible-selon-un-champ-discriminant)
+8. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
 
 ## Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge
 
@@ -472,6 +473,67 @@ LET area = APPEND(
 > **Le repli ne récupère jamais un type refusé.** La branche `Arango::FALLBACK` est gardée par `NOT IN [ …tous les types déclarés… ]` — y compris les types dont la branche a été refusée. Un document d'un type refusé route donc vers **rien**, jamais vers le repli : pas d'oracle. Quand toutes les branches sont écartées, le `LET` vaut `[]` (projection → `null` / `[]`), jamais une clause cassée.
 
 Options utiles : la clé du parent (`Arango::PROPERTY`, défaut le nom du champ) et l'attribut de jointure (`Arango::KEY`, défaut `_key`) déclarés au niveau du haut sont **partagés** comme défauts par les branches ; une branche peut surcharger sa propre clé. Chaque branche accepte aussi tout le vocabulaire d'un join classique (`Arango::CONDITIONS`, `Arango::SORT`, sous-`AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN`).
+
+## Edge polymorphe — arête cible selon un champ discriminant
+
+Le pendant, côté **edges**, de la [jointure polymorphe](#jointure-polymorphe--collection-cible-selon-un-champ-discriminant). Là où un edge ordinaire traverse **une** collection d'arêtes figée (`AQL::MODEL`), un **edge polymorphe** choisit **à l'exécution** l'arête (et donc le sommet cible) à traverser, d'après la valeur d'un champ du **vecteur de départ** (le document source). Exemple : un nœud porte un champ `kind`, et l'on veut suivre `warehouse_edges` si `kind == "warehouse"`, `company_edges` si `kind == "company"`.
+
+La définition remplace `AQL::MODEL` par les mêmes trois clés que la jointure polymorphe :
+
+- **`Arango::DISCRIMINATOR`** — le champ du **vecteur de départ** qui décide (chemin scalaire, ex. `kind`).
+- **`Arango::MAP`** — la table `type => définition d'edge`, une branche par valeur ; chaque branche est **une définition d'edge classique** (son `AQL::MODEL`, sa `AQL::DIRECTION`, sa projection, sa profondeur…).
+- **`Arango::FALLBACK`** — (optionnel) la branche pour une valeur ne correspondant à **aucun** type déclaré ; `null` = aucune.
+
+Le champ reste déclaré `Filter::EDGE` (unique) ou `Filter::EDGES` (liste) dans `AQL::FIELDS` — **aucun nouveau marqueur** : c'est la présence de `Arango::MAP` + `Arango::DISCRIMINATOR` qui bascule en mode polymorphe (détection partagée `isPolymorphic`, commune aux joins et aux edges).
+
+```php
+AQL::FIELDS =>
+[
+    'area' => Filter::EDGE ,                      // sommet unique (EDGES pour une liste)
+],
+AQL::EDGES =>
+[
+    'area' =>
+    [
+        Arango::DISCRIMINATOR => 'kind' ,          // le champ du vecteur de départ qui décide
+        Arango::MAP           =>
+        [
+            'warehouse' =>
+            [
+                AQL::MODEL  => Edges::WAREHOUSE ,   // arête source → warehouses
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+            'company' =>
+            [
+                AQL::MODEL  => Edges::COMPANY ,     // arête source → subsidiaries
+                AQL::FIELDS => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+            ] ,
+        ] ,
+        Arango::FALLBACK => null ,                  // type inconnu → null (EDGE) / [] (EDGES)
+    ],
+],
+```
+
+AQL interdisant une collection calculée dans un `FOR … IN <sens> … <collection>`, l'edge est compilé comme un **`APPEND` de traversées statiques gardées** : une traversée par branche, gardée par une égalité sur le discriminateur, de sorte qu'une seule branche renvoie des lignes. L'AQL généré (simplifié) :
+
+```aql
+LET area = APPEND(
+    ( FOR vertex, edge IN OUTBOUND doc warehouse_edges
+        FILTER doc.kind == "warehouse"
+        RETURN { _key: vertex._key, name: vertex.name } ) ,
+    ( FOR vertex, edge IN OUTBOUND doc company_edges
+        FILTER doc.kind == "company"
+        RETURN { _key: vertex._key, name: vertex.name } )
+)
+```
+
+> **Le `LET` contient un tableau, comme n'importe quel edge.** Une seule branche est non vide ; la projection déplie ensuite ce tableau **exactement comme un edge ordinaire** — `FIRST()` pour `Filter::EDGE`, le tableau entier pour `Filter::EDGES`. Rien à changer côté projection.
+
+> **Chaque branche est une définition d'edge complète** : elle peut déclarer son propre `AQL::DIRECTION` (OUTBOUND/INBOUND), sa profondeur (`AQL::MAX_DEPTH`), etc. Projections homogènes recommandées entre branches.
+
+> **Sécurité — identique à la jointure polymorphe.** Une branche refusée par permission (`Field::REQUIRES` / `AQL::REQUIRES`) est **retirée de l'`APPEND`** (fail-closed : sa collection n'est jamais traversée). Le repli `Arango::FALLBACK` est gardé par `NOT IN [ …tous les types déclarés… ]`, y compris les types refusés — un document d'un type refusé route vers **rien**, jamais vers le repli (pas d'oracle). Toutes branches écartées ⇒ `LET` vaut `[]`. La logique anti-oracle est **partagée** avec la jointure (un seul assembleur `buildPolymorphicRelationVariable`).
+
+> ⚠️ **`Filter::EDGES_COUNT` polymorphe : non supporté (v1).** Le comptage passe par `LENGTH(traversal)`, incompatible avec le patron `APPEND` de branches. Une entrée de type count reste comptée sur la collection d'arête figée du modèle (comportement classique).
 
 ## Couper un cycle INBOUND avec `AQL::SKIN`
 
