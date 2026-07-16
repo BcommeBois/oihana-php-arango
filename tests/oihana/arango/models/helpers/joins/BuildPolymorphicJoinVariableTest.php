@@ -190,6 +190,111 @@ final class BuildPolymorphicJoinVariableTest extends TestCase
         ) ;
     }
 
+    // ---- per-branch gating + fallback (lot 2) ---------------------------
+
+    public function testDeniedBranchIsDroppedFromAppend() :void
+    {
+        $result = $this->normalize( buildPolymorphicJoinVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'selector.areaScope' ,
+            Arango::PROPERTY      => 'selector.areaServed' ,
+            Arango::MAP           =>
+            [
+                'W' => [ AQL::MODEL => new MockDocuments( 'warehouses'   ) , AQL::REQUIRES => 'warehouses:read' ] ,
+                'C' => [ AQL::MODEL => new MockDocuments( 'subsidiaries' ) ] ,
+            ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn( string $s ) => $s !== 'warehouses:read' ] ) ) ;
+
+        // W is denied → only C survives → no APPEND, and no warehouses branch.
+        $this->assertSame
+        (
+            'LET area = (FOR doc_join IN subsidiaries FILTER doc_join._key == doc.selector.areaServed ' .
+            '&& doc.selector.areaScope == "C" RETURN doc_join)' ,
+            $result
+        ) ;
+    }
+
+    public function testAllBranchesDeniedEmitsEmptyArray() :void
+    {
+        $result = $this->normalize( buildPolymorphicJoinVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'selector.areaScope' ,
+            Arango::MAP           =>
+            [
+                'W' => [ AQL::MODEL => new MockDocuments( 'warehouses'   ) , AQL::REQUIRES => 'x' ] ,
+                'C' => [ AQL::MODEL => new MockDocuments( 'subsidiaries' ) , AQL::REQUIRES => 'y' ] ,
+            ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ) ;
+
+        $this->assertSame( 'LET area = []' , $result ) ;
+    }
+
+    public function testFallbackBranchIsGuardedByNotInKnownTypes() :void
+    {
+        $result = $this->normalize( buildPolymorphicJoinVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'selector.areaScope' ,
+            Arango::PROPERTY      => 'selector.areaServed' ,
+            Arango::MAP           =>
+            [
+                'W' => [ AQL::MODEL => new MockDocuments( 'warehouses'   ) ] ,
+                'C' => [ AQL::MODEL => new MockDocuments( 'subsidiaries' ) ] ,
+            ] ,
+            Arango::FALLBACK      => [ AQL::MODEL => new MockDocuments( 'regions' ) ] ,
+        ]) ) ;
+
+        $this->assertStringContainsString
+        (
+            '(FOR doc_join IN regions FILTER doc_join._key == doc.selector.areaServed ' .
+            '&& doc.selector.areaScope NOT IN ["W","C"] RETURN doc_join)' ,
+            $result
+        ) ;
+    }
+
+    public function testFallbackBranchDeniedIsDropped() :void
+    {
+        $result = $this->normalize( buildPolymorphicJoinVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'selector.areaScope' ,
+            Arango::MAP           => [ 'W' => [ AQL::MODEL => new MockDocuments( 'warehouses' ) ] ] ,
+            Arango::FALLBACK      => [ AQL::MODEL => new MockDocuments( 'regions' ) , AQL::REQUIRES => 'regions:read' ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ) ;
+
+        $this->assertStringNotContainsString( 'regions' , $result ) ;
+        $this->assertStringContainsString( 'IN warehouses' , $result ) ;
+    }
+
+    public function testDeniedBranchTypeStaysExcludedFromFallback() :void
+    {
+        $result = $this->normalize( buildPolymorphicJoinVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'selector.areaScope' ,
+            Arango::MAP           =>
+            [
+                'W' => [ AQL::MODEL => new MockDocuments( 'warehouses'   ) , AQL::REQUIRES => 'warehouses:read' ] ,
+                'C' => [ AQL::MODEL => new MockDocuments( 'subsidiaries' ) ] ,
+            ] ,
+            Arango::FALLBACK      => [ AQL::MODEL => new MockDocuments( 'regions' ) ] ,
+        ] , AQL::DOC , null , [ Arango::AUTHORIZER => fn( string $s ) => $s !== 'warehouses:read' ] ) ) ;
+
+        // The denied type "W" is dropped as a branch but STILL excluded from the
+        // fallback guard, so a "W" document routes to nothing (never the fallback).
+        $this->assertStringNotContainsString( 'IN warehouses' , $result ) ;
+        $this->assertStringContainsString( 'NOT IN ["W","C"]' , $result ) ;
+    }
+
+    public function testThrowsWhenFallbackIsNotAnArray() :void
+    {
+        $this->expectException( UnexpectedValueException::class ) ;
+
+        buildPolymorphicJoinVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'type' ,
+            Arango::MAP           => [ 'W' => [ AQL::MODEL => new MockDocuments( 'warehouses' ) ] ] ,
+            Arango::FALLBACK      => 'not-a-branch' ,
+        ]) ;
+    }
+
     /**
      * Normalizes the random `doc_join_<n>` loop ref to a stable token.
      *
