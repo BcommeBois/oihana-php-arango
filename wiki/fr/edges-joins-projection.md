@@ -11,7 +11,8 @@ Cette page décrit la projection des **relations** : suivre une arête (edge), r
 5. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
 6. [Jointure polymorphe — collection cible selon un champ discriminant](#jointure-polymorphe--collection-cible-selon-un-champ-discriminant)
 7. [Edge polymorphe — arête cible selon un champ discriminant](#edge-polymorphe--arête-cible-selon-un-champ-discriminant)
-8. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+8. [Ancrer une relation ailleurs — `Arango::SOURCE`](#ancrer-une-relation-ailleurs--arangosource)
+9. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
 
 ## Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge
 
@@ -534,6 +535,80 @@ LET area = APPEND(
 > **Sécurité — identique à la jointure polymorphe.** Une branche refusée par permission (`Field::REQUIRES` / `AQL::REQUIRES`) est **retirée de l'`APPEND`** (fail-closed : sa collection n'est jamais traversée). Le repli `Arango::FALLBACK` est gardé par `NOT IN [ …tous les types déclarés… ]`, y compris les types refusés — un document d'un type refusé route vers **rien**, jamais vers le repli (pas d'oracle). Toutes branches écartées ⇒ `LET` vaut `[]`. La logique anti-oracle est **partagée** avec la jointure (un seul assembleur `buildPolymorphicRelationVariable`).
 
 > ⚠️ **`Filter::EDGES_COUNT` polymorphe : non supporté (v1).** Le comptage passe par `LENGTH(traversal)`, incompatible avec le patron `APPEND` de branches. Une entrée de type count reste comptée sur la collection d'arête figée du modèle (comportement classique).
+
+## Ancrer une relation ailleurs — `Arango::SOURCE`
+
+Par défaut, une relation lit son point d'ancrage **d'après son nom de sortie** : une jointure nommée `provider` va chercher sa clé étrangère dans `doc.provider`, un edge nommé `supplier` part de `doc` lui-même. Le libellé de sortie et l'endroit où vit vraiment la donnée sont soudés l'un à l'autre.
+
+`Arango::SOURCE` **les dessoude** : il déclare, sous forme de **chemin absolu depuis `doc`**, *où* la relation lit son ancre — indépendamment du nom du champ de sortie. C'est **optionnel** : absent, l'AQL est identique au bit près.
+
+La *nature* de l'ancre diffère selon le type de relation — les deux mécanismes ne s'accrochent pas à la même chose :
+
+- **Jointure** — l'ancre est la **valeur de clé étrangère** comparée à `doc_join._key`. `SOURCE` déplace le match : `FILTER doc_join._key == doc.<source>`.
+- **Edge** — l'ancre est le **sommet de départ** du traversal. `SOURCE` déplace le point de départ : `FOR … IN OUTBOUND doc.<source> …`.
+
+### Sur une jointure
+
+**La situation.** Un document `offer` range l'identifiant de son fournisseur dans un sous-objet `selector`, mais on veut l'exposer à plat sous le champ `provider`.
+
+```php
+AQL::FIELDS =>
+[
+    'provider' => Filter::JOIN ,
+],
+AQL::JOINS =>
+[
+    'provider' =>
+    [
+        AQL::MODEL     => Models::PROVIDER ,
+        Arango::SOURCE => 'selector.providerId' ,   // chemin absolu, découplé de « provider »
+        AQL::FIELDS    => [ '_key' => Filter::DEFAULT , 'name' => Filter::DEFAULT ] ,
+    ],
+],
+```
+
+AQL généré (simplifié) :
+
+```aql
+LET provider = (
+    FOR doc_join IN @@provider
+        FILTER doc_join._key == doc.selector.providerId
+        RETURN { _key: doc_join._key, name: doc_join.name }
+)
+```
+
+Sans `SOURCE`, la jointure viserait `doc.provider` — qui n'existe pas → jointure vide.
+
+### Sur un edge
+
+**La situation.** On veut suivre les arêtes `supplied_by` non pas depuis le document courant, mais depuis le sommet dont l'identifiant est rangé dans `doc.selector.providerId`.
+
+```php
+AQL::EDGES =>
+[
+    'supplier' =>
+    [
+        AQL::MODEL     => EdgesDefinition::SUPPLIED_BY ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        Arango::SOURCE => 'selector.providerId' ,   // le sommet de départ du traversal
+    ],
+],
+```
+
+AQL généré (simplifié) :
+
+```aql
+LET supplier = (
+    FOR vertex, edge IN OUTBOUND doc.selector.providerId supplied_by
+        RETURN vertex
+)
+```
+
+> ⚠️ **Sur un edge, `doc.<source>` doit contenir un `_id` complet** (`"providers/123"`), pas un simple `_key` : ArangoDB démarre un traversal depuis un `_id` de sommet. Sur une jointure, `doc.<source>` porte la clé comparée à `doc_join._key`. Même idée unifiante — *où lire l'ancre sur le parent* — mais nature d'ancre différente.
+
+> **`SOURCE` se compose avec `PROPERTY`.** `SOURCE` fixe la racine, `PROPERTY` reste un suffixe relatif : `Arango::SOURCE => 'selector.provider'` + `Arango::PROPERTY => 'id'` → `doc.selector.provider.id`. Le patron historique `substitutesSegment` (`PROPERTY` seul, sans `SOURCE`) ne change pas.
+
+> **Sur une relation polymorphe, seule l'ancre bouge.** Pour un edge polymorphe, `SOURCE` déplace le départ du traversal (`OUTBOUND doc.<source>`) tandis que le **discriminateur reste résolu sur le document parent** (`doc.<discriminator>` choisit toujours la collection d'arête) — les deux références sont volontairement distinctes.
 
 ## Couper un cycle INBOUND avec `AQL::SKIN`
 
