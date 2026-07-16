@@ -300,6 +300,55 @@ final class BuildVariablesTest extends TestCase
         $this->assertSame( [] , $variables ) ;
     }
 
+    // ---- polymorphic joins ---------------------------------------------
+
+    public function testPolymorphicJoinRoutesToThePolymorphicBuilder() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'area' => [ Field::FILTER => Filter::JOIN ] ] ,
+            [] ,
+            [ 'area' =>
+            [
+                Arango::DISCRIMINATOR => 'selector.areaScope' ,
+                Arango::PROPERTY      => 'selector.areaServed' ,
+                Arango::MAP           =>
+                [
+                    'W' => [ AQL::MODEL => new MockDocuments( 'warehouses'   ) ] ,
+                    'C' => [ AQL::MODEL => new MockDocuments( 'subsidiaries' ) ] ,
+                ] ,
+            ] ]
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringStartsWith( 'LET area = APPEND(' , $this->normalize( $variables[ 0 ] ) ) ;
+        $this->assertStringContainsString( 'IN warehouses'   , $this->normalize( $variables[ 0 ] ) ) ;
+        $this->assertStringContainsString( 'IN subsidiaries' , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
+    public function testPolymorphicJoinDeniedByGatingIsSkipped() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'area' => [ Field::FILTER => Filter::JOIN , Field::REQUIRES => 'pricing:read' ] ] ,
+            [] ,
+            [ 'area' =>
+            [
+                Arango::DISCRIMINATOR => 'selector.areaScope' ,
+                Arango::MAP           => [ 'W' => [ AQL::MODEL => new MockDocuments( 'warehouses' ) ] ] ,
+            ] ] ,
+            null ,
+            AQL::DOC ,
+            [ Arango::AUTHORIZER => fn() => false ]
+        ) ;
+
+        $this->assertSame( [] , $variables ) ;
+    }
+
     // ---- wrap -----------------------------------------------------------
 
     public function testWrapRecursesIntoItsEdges() :void

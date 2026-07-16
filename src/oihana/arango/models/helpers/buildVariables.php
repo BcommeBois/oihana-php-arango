@@ -17,6 +17,8 @@ use Psr\Container\NotFoundExceptionInterface;
 use function oihana\arango\models\helpers\edges\buildEdgeCountVariable;
 use function oihana\arango\models\helpers\edges\buildEdgeVariable;
 use function oihana\arango\models\helpers\joins\buildJoinVariable;
+use function oihana\arango\models\helpers\joins\buildPolymorphicJoinVariable;
+use function oihana\arango\models\helpers\joins\isPolymorphicJoin;
 use function oihana\core\strings\key;
 
 /**
@@ -207,15 +209,13 @@ function buildVariables
 
                 $definition[ Field::UNIQUE ] = $unique ;
 
-                $variables[] = buildJoinVariable
-                (
-                    $key ,
-                    $definition ,
-                    $docRef ,
-                    $container ,
-                    $init ,
-                    $filter == Filter::JOINS
-                ) ;
+                // A polymorphic join (Arango::MAP + Arango::DISCRIMINATOR) picks
+                // its target collection from a discriminator field of the parent,
+                // so it routes to a dedicated builder; a regular join keeps its
+                // single fixed collection.
+                $variables[] = isPolymorphicJoin( $definition )
+                             ? buildPolymorphicJoinVariable( $key , $definition , $docRef , $container , $init , $filter == Filter::JOINS )
+                             : buildJoinVariable           ( $key , $definition , $docRef , $container , $init , $filter == Filter::JOINS ) ;
                 break ;
             }
         }

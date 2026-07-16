@@ -133,6 +133,12 @@ class Arango
     public const string DIRECTION = 'direction' ;
 
     /**
+     * The 'discriminator' parameter — the parent field path selecting the branch
+     * of a polymorphic join (see {@see MAP} / {@see FALLBACK}).
+     */
+    public const string DISCRIMINATOR = 'discriminator' ;
+
+    /**
      * The 'doc' parameter.
      */
     public const string DOC = 'doc' ;
@@ -193,6 +199,12 @@ class Arango
      * counts, not the documents.
      */
     public const string FACETS_ONLY = 'facetsOnly' ;
+
+    /**
+     * The 'fallback' parameter — the branch of a polymorphic join used when the
+     * discriminator value matches no {@see MAP} key (`null` = no fallback).
+     */
+    public const string FALLBACK = 'fallback' ;
 
     /**
      * The 'field' parameter.
@@ -258,6 +270,12 @@ class Arango
      * The 'lazy' parameter.
      */
     public const string LAZY = 'lazy' ;
+
+    /**
+     * The 'map' parameter — the `type => join-definition` table of a polymorphic
+     * join, one branch per discriminator value (see {@see DISCRIMINATOR} / {@see FALLBACK}).
+     */
+    public const string MAP = 'map' ;
 
     /**
      * The 'match' parameter.

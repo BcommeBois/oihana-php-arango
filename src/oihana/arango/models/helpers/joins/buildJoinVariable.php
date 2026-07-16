@@ -4,7 +4,6 @@ namespace oihana\arango\models\helpers\joins;
 
 use Exception;
 use ReflectionException;
-use ReflectionFunction;
 use UnexpectedValueException;
 
 use Psr\Container\ContainerInterface;
@@ -13,29 +12,8 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\enums\Arango;
 use oihana\arango\db\enums\AQL;
-use oihana\arango\models\Documents;
 
-use org\schema\constants\Schema;
-
-use function oihana\arango\db\functions\isArray;
-use function oihana\arango\db\helpers\aqlArray;
-use function oihana\arango\db\helpers\aqlFields;
-use function oihana\arango\db\helpers\resolveSkinFields;
-use function oihana\arango\db\operations\aqlFilter;
-use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
-use function oihana\arango\db\operations\aqlReturn;
-use function oihana\arango\db\operators\equal;
-use function oihana\arango\db\operators\in;
-use function oihana\arango\db\operators\ternary;
-use function oihana\arango\models\helpers\authorizeRelationFields;
-use function oihana\arango\models\helpers\buildVariables;
-use function oihana\arango\models\helpers\getDocuments;
-use function oihana\core\strings\betweenBraces;
-use function oihana\core\strings\betweenParentheses;
-use function oihana\core\strings\compile;
-use function oihana\core\strings\key;
-use function oihana\core\strings\randomKey;
 
 /**
  * Builds a single AQL 'LET' subquery string for a specific join relation.
@@ -46,6 +24,9 @@ use function oihana\core\strings\randomKey;
  * - Sorting (if $isArray is true)
  * - Nested edges and joins
  * - Field selection and skinning
+ *
+ * The subquery body itself is produced by {@see buildJoinSubquery()}; this
+ * wrapper only resolves the `LET` variable name and parenthesizes the body.
  *
  * Example output:
  * ```
@@ -101,130 +82,12 @@ function buildJoinVariable
 )
 : string
 {
-    if( empty( $name ) )
-    {
-        throw new UnexpectedValueException( __METHOD__ . ' failed, the name of the join attribute not must be null or empty.' ) ;
-    }
-
-    $documents = getDocuments( $definition[ AQL::MODEL ] ?? null , $container ) ;
-    if( !( $documents instanceof Documents ) )
-    {
-        throw new UnexpectedValueException( __METHOD__ . ' failed, the model reference must be an instance of Documents.' ) ;
-    }
-
-    $collection = $documents->collection ;
-    if( empty( $collection ) )
-    {
-        throw new UnexpectedValueException( __METHOD__ . ' failed, the edge collection not must be null or empty.' ) ;
-    }
-
-    $edges      = $definition[ Arango::EDGES      ] ?? [] ;
-    $joins      = $definition[ Arango::JOINS      ] ?? [] ;
-    $key        = $definition[ Arango::KEY        ] ?? Schema::_KEY ;
-    $property   = $definition[ Arango::PROPERTY   ] ?? null ; // string or array
-    // Fall back on the request-level skin from $init so a join projection
-    // can vary with `?skin=...` (sub-fields opt in via Field::SKINS).
-    $skin       = $definition[ Arango::SKIN       ] ?? $init[ Arango::SKIN ] ?? null ;
-    // Same SKIN_FIELDS resolution as edges — see buildEdgeVariable.
-    $fields     = resolveSkinFields( $definition , $skin ) ;
-    $varName    = $definition[ Arango::UNIQUE     ] ?? $name ;
-
-    $subVariables = [] ;
-
-    $docJoin = randomKey( AQL::DOC_JOIN ) ;
-    $docKey  = key( $name , $docRef ) ;
-
-    if ( $property !== null )
-    {
-        $docKey = key( $property , $docKey ) ;
-    }
-
-    $for = aqlFor([ AQL::DOC_REF => $docJoin , AQL::IN => $collection ]);
-
-    $conditions = [] ;
-
-    if ( isset($definition[ Arango::CONDITIONS ] ) )
-    {
-        $cond = $definition[ Arango::CONDITIONS ] ;
-        if ( is_callable( $cond ) )
-        {
-            $reflection = new ReflectionFunction( $cond );
-            $args       = $reflection->getNumberOfParameters() === 2 ? [ $docJoin , $docRef ] : [ $docJoin ] ;
-            $conditions = $cond( ...$args ) ;
-        }
-        else
-        {
-            $conditions = $cond ;
-        }
-
-        if ( !is_array( $conditions ) )
-        {
-            throw new UnexpectedValueException
-            (
-                __METHOD__ . ' expected $conditions to be an array, ' . gettype( $conditions ) . ' given'
-            ) ;
-        }
-    }
-
-    if( $isArray )
-    {
-        // FOR doc_join IN @@collection
-        // FILTER doc_join._key IN ( IS_ARRAY( doc_ref.name ) ? doc_ref.name : [] )
-        // RETURN doc_join
-        $filter = aqlFilter
-        ([
-            in
-            (
-                key( $key , $docJoin ) ,
-                betweenParentheses( ternary( isArray( $docKey ) , $docKey , aqlArray() ) ) ,
-            )
-            ,
-            ...$conditions
-        ]) ;
-    }
-    else
-    {
-        // FOR doc_join IN @@collection
-        // FILTER doc_join._key == doc_ref.name
-        // RETURN doc_join
-        $filter = aqlFilter
-        ([
-            equal( key( $key  , $docJoin ) , $docKey ) ,
-            ...$conditions
-        ]) ;
-    }
-
-    $fields = $documents->prepareQueryFields( $fields , $skin , $name ) ;
-    if( is_array( $fields ) && count( $fields ) > 0 )
-    {
-        // Definition-level gating: purge the relation markers whose nested
-        // definition is denied BEFORE the `LET` walk (buildVariables) and the
-        // projection walk (aqlFields), which share this fields array.
-        $fields = authorizeRelationFields( $fields , $edges , $joins , $init ) ;
-
-        buildVariables
-        (
-            $subVariables ,
-            $fields ,
-            $edges ,
-            $joins ,
-            $container ,
-            $docJoin ,
-            $init
-        ) ;
-        $return = aqlReturn( betweenBraces( aqlFields( $fields , $docJoin , $container , $init ) ) ) ;
-    }
-    else
-    {
-        $return = aqlReturn( $docJoin ) ;
-    }
-
-    $sort = $isArray ? sortJoinVariable( $definition , $docJoin ) : null ;
+    $varName = $definition[ Arango::UNIQUE ] ?? $name ;
 
     return aqlLet
     (
         $varName ,
-        compile( [ $for , $subVariables , $filter , $sort , $return ] ) ,
+        buildJoinSubquery( $name , $definition , $docRef , $container , $init , $isArray ) ,
         true
     ) ;
 }
