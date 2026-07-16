@@ -206,6 +206,78 @@ final class BuildVariablesTest extends TestCase
         $this->assertSame( [] , $variables ) ;
     }
 
+    // ---- polymorphic edges ---------------------------------------------
+
+    public function testPolymorphicEdgeRoutesToThePolymorphicBuilder() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'area' => [ Field::FILTER => Filter::EDGE ] ] ,
+            [ 'area' =>
+            [
+                Arango::DISCRIMINATOR => 'kind' ,
+                Arango::MAP           =>
+                [
+                    'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ,
+                    'company'   => [ AQL::MODEL => new MockEdges( 'company_edges'   ) , Arango::PROPERTY => 'name' ] ,
+                ] ,
+            ] ]
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringStartsWith( 'LET area = APPEND(' , $this->normalize( $variables[ 0 ] ) ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND doc warehouse_edges' , $this->normalize( $variables[ 0 ] ) ) ;
+        $this->assertStringContainsString( 'IN OUTBOUND doc company_edges'   , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
+    /**
+     * EDGES_COUNT is checked before the polymorphic dispatch, so a polymorphic
+     * definition on a count entry still routes to the count builder (polymorphic
+     * count is out of scope) — it emits LENGTH(...), never APPEND.
+     */
+    public function testPolymorphicEdgesCountStillUsesTheCountBuilder() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'roles' => [ Field::FILTER => Filter::EDGES_COUNT ] ] ,
+            [ 'roles' =>
+            [
+                AQL::MODEL            => new MockEdges( 'user_has_roles' ) ,
+                Arango::DISCRIMINATOR => 'kind' ,
+                Arango::MAP           => [ 'x' => [ AQL::MODEL => new MockEdges( 'user_has_roles' ) ] ] ,
+            ] ]
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
+        $this->assertStringContainsString( 'LENGTH(' , $this->normalize( $variables[ 0 ] ) ) ;
+        $this->assertStringNotContainsString( 'APPEND(' , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
+    public function testPolymorphicEdgeDeniedByGatingIsSkipped() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'area' => [ Field::FILTER => Filter::EDGE , Field::REQUIRES => 'area:read' ] ] ,
+            [ 'area' =>
+            [
+                Arango::DISCRIMINATOR => 'kind' ,
+                Arango::MAP           => [ 'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ] ,
+            ] ] ,
+            [] ,
+            null ,
+            AQL::DOC ,
+            [ Arango::AUTHORIZER => fn() => false ]
+        ) ;
+
+        $this->assertSame( [] , $variables ) ;
+    }
+
     // ---- joins ----------------------------------------------------------
 
     public function testJoinFilterBuildsAScalarJoinVariable() :void

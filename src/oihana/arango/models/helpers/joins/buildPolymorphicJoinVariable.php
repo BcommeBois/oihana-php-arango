@@ -196,7 +196,7 @@ function buildPolymorphicJoinVariable
     // null (Filter::JOIN) / [] (Filter::JOINS), never a broken `LET`.
     if( $subqueries === [] )
     {
-        return aqlLet( $varName , aqlArray() , false ) ;
+        return aqlLet( $varName , aqlArray() ) ;
     }
 
     // Concatenate the branch arrays: only the matching branch is non-empty, so
@@ -208,5 +208,5 @@ function buildPolymorphicJoinVariable
         $combined = append( $combined , $subquery ) ;
     }
 
-    return aqlLet( $varName , $combined , false ) ;
+    return aqlLet( $varName , $combined ) ;
 }

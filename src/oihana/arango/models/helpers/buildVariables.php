@@ -16,9 +16,9 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use function oihana\arango\models\helpers\edges\buildEdgeCountVariable;
 use function oihana\arango\models\helpers\edges\buildEdgeVariable;
+use function oihana\arango\models\helpers\edges\buildPolymorphicEdgeVariable;
 use function oihana\arango\models\helpers\joins\buildJoinVariable;
 use function oihana\arango\models\helpers\joins\buildPolymorphicJoinVariable;
-use function oihana\arango\models\helpers\joins\isPolymorphicJoin;
 use function oihana\core\strings\key;
 
 /**
@@ -140,32 +140,11 @@ function buildVariables
             case Filter::EDGE        :
             case Filter::EDGES_COUNT :
             {
-                $definition = $edges[ $key ] ?? null ;
-                if( is_string( $definition ) )
-                {
-                    // shortcut reference -> use an other edges definition
-                    $definition = $edges[ $definition ] ?? null ;
-                }
-
-                if( !isset( $definition ) )
+                $definition = prepareRelationDefinition( $edges , $key , $field , $unique , $init ) ;
+                if( $definition === null )
                 {
                     break ;
                 }
-
-                // Two composable gates: `Field::REQUIRES` on the FIELDS entry
-                // (this projection of the relation) and `AQL::REQUIRES` on the
-                // edge definition itself (the relation wherever it is used).
-                // Either level can drop the `LET`. A `Filter::EDGES_COUNT` is
-                // therefore gated only when the count entry (or the shared
-                // definition) declares a requirement; without it, the count is
-                // always visible (default behavior, since knowing the
-                // cardinality is rarely a leak).
-                if( !isAuthorized( $field , $init ) || !isAuthorized( $definition , $init ) )
-                {
-                    break ;
-                }
-
-                $definition[ Field::UNIQUE ] = $unique ;
 
                 $property = $field[ Field::PROPERTY ] ?? null ;
                 if( isset( $property ) )
@@ -173,9 +152,16 @@ function buildVariables
                     $definition[ Field::PROPERTY ] = $property ; // special property case
                 }
 
+                // A polymorphic edge (Arango::MAP + Arango::DISCRIMINATOR) picks
+                // its traversed collection from a discriminator field of the start
+                // vertex, so it routes to a dedicated builder; a regular edge keeps
+                // its single fixed collection. EDGES_COUNT stays on the count
+                // builder (polymorphic count is not supported yet).
                 $variables[] = $filter == Filter::EDGES_COUNT
-                    ? buildEdgeCountVariable ( $key , $definition , $docRef , $container )
-                    : buildEdgeVariable      ( $key , $definition , $docRef , $container , $init ) ;
+                             ? buildEdgeCountVariable( $key , $definition , $docRef , $container )
+                             : ( isPolymorphic( $definition )
+                                 ? buildPolymorphicEdgeVariable( $key , $definition , $docRef , $container , $init )
+                                 : buildEdgeVariable( $key , $definition , $docRef , $container , $init ) ) ;
                 break ;
             }
 
@@ -183,37 +169,17 @@ function buildVariables
             case Filter::JOINS :
             // case Filter::JOINS_COUNT :
             {
-                $definition = $joins[ $key ] ?? null ;
-
-                if( is_string( $definition ) )
-                {
-                    // shortcut reference -> use an other joins definition
-                    $definition = $joins[ $definition ] ?? null ;
-                }
-
-                if( !isset( $definition ) )
+                $definition = prepareRelationDefinition( $joins , $key , $field , $unique , $init ) ;
+                if( $definition === null )
                 {
                     break ;
                 }
-
-                // Same two composable gates as the edge branch above:
-                // `Field::REQUIRES` on the FIELDS entry and `AQL::REQUIRES`
-                // on the join definition. A denied projection skips both
-                // the `LET` emission and the matching key in `aqlFields`,
-                // so the join is fully dropped from the response (key
-                // absent — not null, not empty array).
-                if( !isAuthorized( $field , $init ) || !isAuthorized( $definition , $init ) )
-                {
-                    break ;
-                }
-
-                $definition[ Field::UNIQUE ] = $unique ;
 
                 // A polymorphic join (Arango::MAP + Arango::DISCRIMINATOR) picks
                 // its target collection from a discriminator field of the parent,
                 // so it routes to a dedicated builder; a regular join keeps its
                 // single fixed collection.
-                $variables[] = isPolymorphicJoin( $definition )
+                $variables[] = isPolymorphic( $definition )
                              ? buildPolymorphicJoinVariable( $key , $definition , $docRef , $container , $init , $filter == Filter::JOINS )
                              : buildJoinVariable           ( $key , $definition , $docRef , $container , $init , $filter == Filter::JOINS ) ;
                 break ;

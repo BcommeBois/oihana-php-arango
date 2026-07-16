@@ -42,7 +42,7 @@ use function oihana\init\initConfig;
  *                                        --(join)--> regions       (fallback, any other value)
  * ```
  *
- * The real {@see buildVariables()} dispatch (`isPolymorphicJoin` → the polymorphic
+ * The real {@see buildVariables()} dispatch (`isPolymorphic` → the polymorphic
  * builder → `APPEND` of guarded branches) is driven against a seeded, disposable
  * database, wrapped in a minimal `FOR doc IN pricingConditions … RETURN` query.
  * A correct result proves the generated `APPEND( ( FOR … ) , ( FOR … ) )` — a
