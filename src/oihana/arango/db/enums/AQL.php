@@ -3,6 +3,7 @@
 namespace oihana\arango\db\enums;
 
 use oihana\reflect\traits\ConstantsTrait;
+
 use xyz\oihana\schema\constants\traits\PaginationTrait;
 
 class AQL
@@ -30,6 +31,7 @@ class AQL
     public const string COUNT           = 'count' ;
     public const string DATABASE        = 'database' ;
     public const string DEFAULT         = 'default' ;
+    public const string DISCRIMINATOR   = 'discriminator' ;
     public const string DIRECTION       = 'direction' ;
     public const string DOC             = 'doc' ;
     public const string DOC_JOIN        = 'doc_join' ;
@@ -43,6 +45,8 @@ class AQL
     public const string EXCLUDES        = 'excludes' ;
     public const string EXPRESSION      = 'expression' ;
     public const string FACETS          = 'facets' ;
+    public const string FALLBACK        = 'fallback' ;
+    public const string FIELD           = 'field' ;
     public const string FIELDS          = 'fields' ;
     public const string FILTER          = 'filter' ;
     public const string FILTERS         = 'filters' ;
@@ -65,6 +69,7 @@ class AQL
     public const string LAZY            = 'lazy' ;
     public const string LEAF            = 'leaf' ;
     public const string LENGTH          = 'length' ;
+    public const string MAP             = 'map' ;
     public const string METHOD          = 'method' ;
     public const string MAX_DEPTH       = 'maxDepth' ;
     public const string MIN_DEPTH       = 'minDepth' ;
