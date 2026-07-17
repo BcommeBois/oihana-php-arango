@@ -2,11 +2,10 @@
 
 namespace oihana\arango\controllers\traits\inject;
 
-use Casbin\Exceptions\CasbinException;
 use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\models\enums\filters\FilterLogic;
 use oihana\arango\models\enums\filters\FilterParam;
 
-use oihana\exceptions\http\Error403;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 /**
@@ -113,13 +112,22 @@ trait InjectFilterTrait
      * URL filters are processed normally (stored in $params for URL display).
      * Injected filters are appended transparently (NOT stored in $params).
      *
+     * The URL filter always enters the merge as a SINGLE operand of an explicit
+     * `and` group, never spliced into it. A filter carries three shapes — a single
+     * filter (`{key,op,val}`), a plain list (an implicit `and`), and a logic group
+     * (`['or', …]`) — and splicing a group would leave its operator in head
+     * position, absorbing the injected filters into the caller's own logic: a
+     * server-side restriction would silently degrade into an alternative
+     * (`a || b || scope` instead of `(a || b) && scope`), which is a scope bypass
+     * on every surface that injects a permission scope. Wrapping is shape-agnostic
+     * — the filter parser recurses, so the URL filter is resolved whole, in its own
+     * parentheses, and never meets the injected ones.
+     *
      * @param Request|null $request The PSR-7 request.
      * @param array $args The init/args array (may contain INJECTED_FILTERS).
      * @param array|null $params Reference to params array for URL generation.
      *
      * @return array|null The merged filter array or null.
-     * @throws CasbinException
-     * @throws Error403
      */
     protected function prepareFilter( ?Request $request , array $args = [] , ?array &$params = null ) :?array
     {
@@ -141,11 +149,7 @@ trait InjectFilterTrait
             return count( $injected ) === 1 ? $injected[0] : $injected ;
         }
 
-        // URL filter exists — combine
-        $urlFilters = isset( $urlFilter[ FilterParam::KEY ] )
-                    ? [ $urlFilter ]    // Single URL filter → wrap in array
-                    : $urlFilter ;      // Already an array of filters
-
-        return [ ...$urlFilters , ...$injected ] ;
+        // URL filter exists — combine it as one operand, whatever its shape.
+        return [ FilterLogic::AND , $urlFilter , ...$injected ] ;
     }
 }

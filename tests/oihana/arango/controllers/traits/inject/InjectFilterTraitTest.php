@@ -4,6 +4,7 @@ namespace tests\oihana\arango\controllers\traits\inject;
 
 use oihana\arango\controllers\traits\inject\InjectFilterTrait;
 use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\models\enums\filters\FilterLogic;
 use oihana\arango\models\enums\filters\FilterParam;
 
 use PHPUnit\Framework\Attributes\CoversTrait;
@@ -116,9 +117,11 @@ class InjectFilterTraitTest extends TestCase
 
         $result = $host->callPrepareFilter( $init ) ;
 
-        $this->assertCount( 2 , $result ) ;
-        $this->assertSame( 'status' , $result[ 0 ][ FilterParam::KEY ] ) ;
-        $this->assertSame( 'userId' , $result[ 1 ][ FilterParam::KEY ] ) ;
+        // [ 'and' , {status} , {userId} ] — an explicit and-group, the URL filter untouched.
+        $this->assertCount( 3 , $result ) ;
+        $this->assertSame( FilterLogic::AND , $result[ 0 ] ) ;
+        $this->assertSame( 'status' , $result[ 1 ][ FilterParam::KEY ] ) ;
+        $this->assertSame( 'userId' , $result[ 2 ][ FilterParam::KEY ] ) ;
     }
 
     public function testPrepareFilterMergesUrlFilterArrayWithInjected() :void
@@ -136,7 +139,88 @@ class InjectFilterTraitTest extends TestCase
 
         $result = $host->callPrepareFilter( $init ) ;
 
+        // [ 'and' , [ {a} , {b} ] , {userId} ] — the URL list enters whole, as one operand.
         $this->assertCount( 3 , $result ) ;
+        $this->assertSame( FilterLogic::AND , $result[ 0 ] ) ;
+        $this->assertCount( 2 , $result[ 1 ] ) ;
         $this->assertSame( 'userId' , $result[ 2 ][ FilterParam::KEY ] ) ;
+    }
+
+    // ---- the injected filters must never fall inside the caller's own logic ----
+
+    public function testPrepareFilterKeepsInjectedOutOfAUrlFilterGroup() :void
+    {
+        $host = new InjectFilterHost() ;
+
+        // A logic group : its operator must never reach the injected filter, or the
+        // server-side scope would become an alternative instead of a restriction.
+        $host->urlFilterStub =
+        [
+            FilterLogic::OR ,
+            [ FilterParam::KEY => 'name' , FilterParam::VAL => 'a' ] ,
+            [ FilterParam::KEY => 'name' , FilterParam::VAL => 'b' ] ,
+        ] ;
+
+        $init = [] ;
+        $host->callInjectFilter( $init , 'seller._key' , 's1' ) ;
+
+        $result = $host->callPrepareFilter( $init ) ;
+
+        // [ 'and' , [ 'or' , {a} , {b} ] , {seller._key} ]
+        // NOT   [ 'or' , {a} , {b} , {seller._key} ] — which would OR the scope away.
+        $this->assertCount( 3 , $result ) ;
+        $this->assertSame( FilterLogic::AND , $result[ 0 ] ) ;
+        $this->assertSame( FilterLogic::OR  , $result[ 1 ][ 0 ] ) ;
+        $this->assertSame( 'seller._key' , $result[ 2 ][ FilterParam::KEY ] ) ;
+    }
+
+    public function testPrepareFilterKeepsInjectedOutOfAUrlFilterNegation() :void
+    {
+        $host = new InjectFilterHost() ;
+
+        // A negation group : splicing would push the injected filter under the `not`,
+        // breaking both the negation and the scope.
+        $host->urlFilterStub =
+        [
+            FilterLogic::NOT ,
+            [ FilterParam::KEY => 'status' , FilterParam::VAL => 'archived' ] ,
+        ] ;
+
+        $init = [] ;
+        $host->callInjectFilter( $init , 'seller._key' , 's1' ) ;
+
+        $result = $host->callPrepareFilter( $init ) ;
+
+        // [ 'and' , [ 'not' , {status} ] , {seller._key} ]
+        $this->assertCount( 3 , $result ) ;
+        $this->assertSame( FilterLogic::AND , $result[ 0 ] ) ;
+        $this->assertSame( FilterLogic::NOT , $result[ 1 ][ 0 ] ) ;
+        $this->assertCount( 2 , $result[ 1 ] ) ; // the negation keeps its single operand
+        $this->assertSame( 'seller._key' , $result[ 2 ][ FilterParam::KEY ] ) ;
+    }
+
+    public function testPrepareFilterKeepsInjectedOutOfAUrlFilterGroupWithMultipleInjected() :void
+    {
+        $host = new InjectFilterHost() ;
+        $host->urlFilterStub =
+        [
+            FilterLogic::OR ,
+            [ FilterParam::KEY => 'name' , FilterParam::VAL => 'a' ] ,
+            [ FilterParam::KEY => 'name' , FilterParam::VAL => 'b' ] ,
+        ] ;
+
+        $init = [] ;
+        $host->callInjectFilter( $init , 'seller._key' , 's1' ) ;
+        $host->callInjectFilter( $init , 'active' , true ) ;
+
+        $result = $host->callPrepareFilter( $init ) ;
+
+        // [ 'and' , [ 'or' , … ] , {seller._key} , {active} ] — every injected filter
+        // stays a sibling of the and-group, never an operand of the caller's `or`.
+        $this->assertCount( 4 , $result ) ;
+        $this->assertSame( FilterLogic::AND , $result[ 0 ] ) ;
+        $this->assertSame( FilterLogic::OR  , $result[ 1 ][ 0 ] ) ;
+        $this->assertSame( 'seller._key' , $result[ 2 ][ FilterParam::KEY ] ) ;
+        $this->assertSame( 'active' , $result[ 3 ][ FilterParam::KEY ] ) ;
     }
 }
