@@ -72,6 +72,118 @@ class InjectFilterTraitTest extends TestCase
         $this->assertSame( FilterComparator::NE , $filters[ 1 ][ FilterParam::OP ] ) ;
     }
 
+    // ---- injectFilterGroup ----------------------------------------------
+
+    public function testInjectFilterGroupStoresTheGroupAsOneEntry() :void
+    {
+        $host = new InjectFilterHost() ;
+        $init = [] ;
+
+        $host->callInjectFilterGroup( $init , FilterLogic::OR ,
+        [
+            [ FilterParam::KEY => 'ownerId' , FilterParam::VAL => 'u1'  ] ,
+            [ FilterParam::KEY => 'public'  , FilterParam::VAL => true  ] ,
+        ]) ;
+
+        // ONE entry — a sibling of the other injected filters, not two of them.
+        $this->assertSame
+        (
+            [ [
+                FilterLogic::OR ,
+                [ FilterParam::KEY => 'ownerId' , FilterParam::VAL => 'u1'  ] ,
+                [ FilterParam::KEY => 'public'  , FilterParam::VAL => true  ] ,
+            ] ] ,
+            $init[ $host->injectedKey() ]
+        ) ;
+    }
+
+    public function testInjectFilterGroupInjectsNothingWhenEmpty() :void
+    {
+        $host = new InjectFilterHost() ;
+        $init = [] ;
+
+        $host->callInjectFilterGroup( $init , FilterLogic::OR , [] ) ;
+
+        // An operand-less group would widen the set to everything — never a scope.
+        $this->assertArrayNotHasKey( $host->injectedKey() , $init ) ;
+    }
+
+    public function testInjectFilterGroupStacksBesideAPlainInjectedFilter() :void
+    {
+        $host = new InjectFilterHost() ;
+        $init = [] ;
+
+        $host->callInjectFilter( $init , 'active' , true ) ;
+        $host->callInjectFilterGroup( $init , FilterLogic::OR ,
+        [
+            [ FilterParam::KEY => 'ownerId' , FilterParam::VAL => 'u1' ] ,
+            [ FilterParam::KEY => 'public'  , FilterParam::VAL => true ] ,
+        ]) ;
+
+        $filters = $init[ $host->injectedKey() ] ;
+
+        $this->assertCount( 2 , $filters ) ;
+        $this->assertSame( 'active' , $filters[ 0 ][ FilterParam::KEY ] ) ;
+        $this->assertSame( FilterLogic::OR , $filters[ 1 ][ 0 ] ) ;
+    }
+
+    public function testInjectFilterGroupAcceptsANestedGroup() :void
+    {
+        $host = new InjectFilterHost() ;
+        $init = [] ;
+
+        $host->callInjectFilterGroup( $init , FilterLogic::AND ,
+        [
+            [ FilterParam::KEY => 'active' , FilterParam::VAL => true ] ,
+            [ FilterLogic::OR , [ FilterParam::KEY => 'a' , FilterParam::VAL => 1 ] , [ FilterParam::KEY => 'b' , FilterParam::VAL => 2 ] ] ,
+        ]) ;
+
+        $group = $init[ $host->injectedKey() ][ 0 ] ;
+
+        $this->assertSame( FilterLogic::AND , $group[ 0 ] ) ;
+        $this->assertSame( FilterLogic::OR  , $group[ 2 ][ 0 ] ) ;
+    }
+
+    public function testPrepareFilterMergesAnInjectedGroupAsOneOperand() :void
+    {
+        $host = new InjectFilterHost() ;
+        $host->urlFilterStub = [ FilterParam::KEY => 'status' , FilterParam::VAL => 'active' ] ;
+
+        $init = [] ;
+        $host->callInjectFilterGroup( $init , FilterLogic::OR ,
+        [
+            [ FilterParam::KEY => 'ownerId' , FilterParam::VAL => 'u1' ] ,
+            [ FilterParam::KEY => 'public'  , FilterParam::VAL => true ] ,
+        ]) ;
+
+        $result = $host->callPrepareFilter( $init ) ;
+
+        // [ 'and' , {status} , [ 'or' , {ownerId} , {public} ] ]
+        //   → (status && (ownerId || public)) — the scope restricts, never widens.
+        $this->assertCount( 3 , $result ) ;
+        $this->assertSame( FilterLogic::AND , $result[ 0 ] ) ;
+        $this->assertSame( 'status' , $result[ 1 ][ FilterParam::KEY ] ) ;
+        $this->assertSame( FilterLogic::OR , $result[ 2 ][ 0 ] ) ;
+    }
+
+    public function testPrepareFilterReturnsALoneInjectedGroupUnwrapped() :void
+    {
+        $host = new InjectFilterHost() ; // urlFilterStub null
+
+        $init = [] ;
+        $host->callInjectFilterGroup( $init , FilterLogic::OR ,
+        [
+            [ FilterParam::KEY => 'ownerId' , FilterParam::VAL => 'u1' ] ,
+            [ FilterParam::KEY => 'public'  , FilterParam::VAL => true ] ,
+        ]) ;
+
+        $result = $host->callPrepareFilter( $init ) ;
+
+        // No URL filter — the group is the whole filter, as a top-level or-group.
+        $this->assertSame( FilterLogic::OR , $result[ 0 ] ) ;
+        $this->assertSame( 'ownerId' , $result[ 1 ][ FilterParam::KEY ] ) ;
+    }
+
     // ---- prepareFilter override -----------------------------------------
 
     public function testPrepareFilterReturnsUrlFilterWhenNothingInjected() :void

@@ -72,6 +72,47 @@ trait InjectFilterTrait
     }
 
     /**
+     * Injects a logic group into the `$init` array — modified in place.
+     *
+     * Injected filters stack as siblings, and siblings combine with AND — so
+     * `injectFilter()` cannot express a **disjunctive** scope ("targeted at me OR
+     * at everyone", "mine OR public"). This does: the group is stored as a single
+     * injected entry, so `prepareFilter()` merges it as ONE operand and yields
+     * `(a || b) && <the caller's filter>`, never `a || b || <the caller's filter>` —
+     * which would degrade a server-side restriction into an alternative.
+     *
+     * ```php
+     * $this->injectFilterGroup( $init , FilterLogic::OR ,
+     * [
+     *     [ FilterParam::KEY => 'ownerId' , FilterParam::VAL => $userKey ] ,
+     *     [ FilterParam::KEY => 'public'  , FilterParam::VAL => true     ] ,
+     * ]) ;
+     * // -> FILTER ( ( doc.ownerId == @a || doc.public == true ) && <url filter> )
+     * ```
+     *
+     * Operands are filter definitions ({@see FilterParam} keys) or nested groups,
+     * so an arbitrary tree can be built. An empty `$filters` injects nothing —
+     * a group with no operand would otherwise widen the result set to everything,
+     * which is never what a scope means.
+     *
+     * @param array  $init    The init array to enrich (passed by reference).
+     * @param string $logic   A {@see FilterLogic} operator (`and` / `or` / `not`).
+     * @param array  $filters The group's operands: filter definitions, or nested groups.
+     *
+     * @return void
+     */
+    protected function injectFilterGroup( array &$init , string $logic , array $filters ) :void
+    {
+        if( empty( $filters ) )
+        {
+            return ;
+        }
+
+        $init[ self::INJECTED_FILTERS ]   = $init[ self::INJECTED_FILTERS ] ?? [] ;
+        $init[ self::INJECTED_FILTERS ][] = [ $logic , ...$filters ] ;
+    }
+
+    /**
      * Injects multiple filters into the `$init` array at once — modified in place.
      *
      * Each filter is an array with keys from FilterParam (KEY, VAL, OP, ALT).

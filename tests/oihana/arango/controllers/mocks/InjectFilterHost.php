@@ -73,6 +73,20 @@ class InjectFilterHost extends InjectFilterParent
     }
 
     /**
+     * Public proxy for {@see InjectFilterTrait::injectFilterGroup()}.
+     *
+     * @param array  $init
+     * @param string $logic
+     * @param array  $filters
+     *
+     * @return void
+     */
+    public function callInjectFilterGroup( array &$init , string $logic , array $filters ) :void
+    {
+        $this->injectFilterGroup( $init , $logic , $filters ) ;
+    }
+
+    /**
      * Public proxy for {@see InjectFilterTrait::injectFilters()}.
      *
      * @param array $init
