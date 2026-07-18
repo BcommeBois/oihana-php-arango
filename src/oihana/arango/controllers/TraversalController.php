@@ -258,7 +258,10 @@ class TraversalController extends Controller
 
         $vertices = is_array( $vertices ) ? $vertices : [] ;
 
-        return $this->success( $request , $response , $vertices , [ Output::COUNT => count( $vertices ) ] ) ;
+        // Not paginated : all traversed vertices ship in one response, so count == total.
+        $total = count( $vertices ) ;
+
+        return $this->success( $request , $response , $vertices , [ Output::COUNT => $total , Output::TOTAL => $total ] ) ;
     }
 
     /**

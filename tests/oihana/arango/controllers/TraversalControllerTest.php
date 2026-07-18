@@ -9,6 +9,8 @@ use oihana\arango\db\enums\AQL;
 
 use oihana\controllers\enums\ControllerParam;
 
+use oihana\enums\Output;
+
 use org\schema\constants\Schema;
 
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -184,5 +186,24 @@ final class TraversalControllerTest extends ControllerTestCase
     public function testSingleWithoutEdgeReturnsNull() :void
     {
         $this->assertNull( $this->makeControllerWithoutEdge()->getParent( null , null , [ Schema::ID => '5' ] ) ) ;
+    }
+
+    // ---- response envelope ----------------------------------------------
+
+    public function testManyEnvelopeCarriesCountAndTotal() :void
+    {
+        $children = [ [ '_key' => 'a' ] , [ '_key' => 'b' ] , [ '_key' => 'c' ] ] ;
+
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound = $children ;
+
+        $result  = $this->makeController( $edges )
+            ->getChildren( $this->makeRequest() , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+
+        $payload = json_decode( (string) $result->getBody() , true ) ;
+
+        // Not paginated : count == total == the number of traversed vertices.
+        $this->assertSame( 3 , $payload[ Output::COUNT ] ) ;
+        $this->assertSame( 3 , $payload[ Output::TOTAL ] ) ;
     }
 }

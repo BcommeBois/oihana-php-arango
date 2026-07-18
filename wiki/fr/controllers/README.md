@@ -366,6 +366,8 @@ Navigue une arête **auto-référente** — un graphe dont les deux bouts ciblen
 
 Les méthodes transitives acceptent un paramètre `?depth=N`, borné par `TraversalController::DEFAULT_MAX_DEPTH` (défaut : le sous-arbre complet). Les sommets sont hydratés via le modèle cible de l'arête (`Edges::get*Vertices()`), donc un **champ projeté en requête survit à la traversée**.
 
+L'enveloppe des méthodes plurielles (enfants, ancêtres, descendants) porte `count` **et** `total`, tous deux égaux au nombre de sommets traversés : la traversée n'est pas paginée, donc `count == total`.
+
 ### Câblage complet (arête + contrôleur + routes)
 
 Les quatre sous-routes sont déclarées en une seule entrée avec [`TraversalRoute`](../../../src/oihana/arango/routes/TraversalRoute.php), qui mappe chaque suffixe vers la méthode correspondante (via `Route::METHOD`, sans magic string) — le jumeau d'`ArrayPropertyRoute`.
@@ -431,6 +433,8 @@ Routes::CATEGORIES_SCHEME => fn( Container $c ) => new GetRoute( $c ,
 ```
 
 Renvoie `{ "@type": "ConceptScheme", "name": "Product categories", "hasTopConcept": [ … racines … ] }`.
+
+L'enveloppe de réponse porte aussi `count` **et** `total`, tous deux égaux au nombre de top-concepts (`count(hasTopConcept)`). Le `/scheme` n'est pas paginé — chaque racine est renvoyée —, donc `count == total` et il n'y a ni `limit` ni `offset`. Pratique pour afficher « N grandes familles » sans recompter côté UI.
 
 ## `PayloadsTrait`
 

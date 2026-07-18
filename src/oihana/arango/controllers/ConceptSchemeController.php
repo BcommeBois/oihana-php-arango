@@ -19,6 +19,7 @@ use oihana\controllers\traits\prepare\PrepareSort;
 
 use oihana\enums\Char;
 use oihana\enums\http\HttpStatusCode;
+use oihana\enums\Output;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
@@ -180,6 +181,14 @@ class ConceptSchemeController extends Controller
             ConceptScheme::HAS_TOP_CONCEPT => $roots ,
         ]) ;
 
-        return $this->success( $request , $response , $scheme ) ;
+        // The scheme is not paginated : every root ships in `hasTopConcept`, so
+        // count == total == the number of top concepts (the "N families" the UI shows).
+        $total = count( $roots ) ;
+
+        return $this->success( $request , $response , $scheme ,
+        [
+            Output::COUNT => $total ,
+            Output::TOTAL => $total ,
+        ]) ;
     }
 }

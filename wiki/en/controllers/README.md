@@ -366,6 +366,8 @@ Navigates a **self-referential** edge — a graph whose two ends target the same
 
 The transitive methods accept a `?depth=N` query parameter, clamped to `TraversalController::DEFAULT_MAX_DEPTH` (default: the full sub-tree). Vertices hydrate through the edge's target model (`Edges::get*Vertices()`), so a **query-projected field survives the traversal**.
 
+The plural methods' envelope (children, ancestors, descendants) carries `count` **and** `total`, both equal to the number of traversed vertices: the traversal is not paginated, so `count == total`.
+
 ### Full wiring (edge + controller + routes)
 
 The four sub-routes are declared in one entry with [`TraversalRoute`](../../../src/oihana/arango/routes/TraversalRoute.php), which maps each suffix to the matching controller method (via `Route::METHOD`, no magic strings) — the twin of `ArrayPropertyRoute`.
@@ -431,6 +433,8 @@ Routes::CATEGORIES_SCHEME => fn( Container $c ) => new GetRoute( $c ,
 ```
 
 Returns `{ "@type": "ConceptScheme", "name": "Product categories", "hasTopConcept": [ … roots … ] }`.
+
+The response envelope also carries `count` **and** `total`, both equal to the number of top concepts (`count(hasTopConcept)`). The `/scheme` is not paginated — every root ships — so `count == total` and there is no `limit` / `offset`. Handy to show "N families" without recounting on the UI side.
 
 ## `PayloadsTrait`
 

@@ -11,6 +11,8 @@ use oihana\arango\models\enums\filters\FilterQuantifier;
 
 use oihana\controllers\enums\ControllerParam;
 
+use oihana\enums\Output;
+
 use org\schema\constants\Schema;
 
 use xyz\oihana\schema\constants\Oihana;
@@ -108,6 +110,20 @@ final class ConceptSchemeControllerTest extends ControllerTestCase
         $this->makeController( $model , [ ConceptSchemeController::RELATION => 'parentOf' ] )->get() ;
 
         $this->assertSame( 'parentOf' , $model->listInit[ Arango::FILTER ][ FilterParam::KEY ] ?? null ) ;
+    }
+
+    public function testEnvelopeCarriesCountAndTotalOfTheTopConcepts() :void
+    {
+        $roots = [ [ '_key' => '1' ] , [ '_key' => '5' ] , [ '_key' => '9' ] ] ;
+
+        $result  = $this->makeController( $this->model( $roots ) )
+            ->get( $this->makeRequest() , $this->makeResponse() ) ;
+
+        $payload = json_decode( (string) $result->getBody() , true ) ;
+
+        // The scheme is not paginated : count == total == the number of top concepts.
+        $this->assertSame( 3 , $payload[ Output::COUNT ] ) ;
+        $this->assertSame( 3 , $payload[ Output::TOTAL ] ) ;
     }
 
     public function testEmptyRootsYieldAnEmptyHasTopConcept() :void
