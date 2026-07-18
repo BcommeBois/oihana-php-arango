@@ -13,10 +13,9 @@ pas. La bibliothèque est versionnée par *tags* git (pas de champ `version` dan
 
 ## Où en est-on
 
-À la version **1.4.0** (publiée le 2026-06-21), avec des ajouts supplémentaires
-cumulés sous `[Unreleased]`, la bibliothèque couvre l'essentiel de la surface
-AQL, une chaîne d'outils opérationnelle complète et un moteur de recherche
-fédérée :
+À la version **1.5.0** (publiée le 2026-07-18), la bibliothèque couvre
+l'essentiel de la surface AQL, une chaîne d'outils opérationnelle complète et un
+moteur de recherche fédérée :
 
 - **Les 22 opérations haut-niveau** (`FOR`, `FILTER`, `SORT`, `LIMIT`, `LET`,
   `COLLECT`, `WINDOW`, `RETURN`, `INSERT`, `UPDATE`, `REPLACE`, `UPSERT`,
@@ -44,6 +43,20 @@ fédérée :
   commandes de maintenance (`views`, `doctor`, `migrate`) et le cycle de vie des
   analyzers personnalisés (`analyzers` : diff / sync / fix / prune, intégré à
   `doctor`).
+- **Relations polymorphes & contrôle d'accès en profondeur** : jointures et
+  arêtes dont la collection cible est choisie à la volée selon un champ
+  discriminant du document (`Arango::DISCRIMINATOR` / `MAP` / `FALLBACK`, gating
+  *fail-closed* par branche), ancrage d'une relation à un chemin absolu
+  (`Arango::SOURCE`, découplé du nom de sortie), un scope serveur qui peut être
+  une disjonction (`injectFilterGroup()`), et un verrouillage de permissions
+  *fail-closed* descendu au **sous-champ exact** sur `?filter=` / `?sort=` /
+  `?facets=` / `?groupBy=`.
+- **Thésaurus & hiérarchies** : projection d'une relation auto-référente à
+  **profondeur variable** (`AQL::MIN_DEPTH` / `MAX_DEPTH`), métadonnées de chemin
+  (`_parent` / `_depth` via `AQL::WITH_PATH`), reconstruction d'arbre
+  `buildTree()`, et deux contrôleurs HTTP génériques — navigation d'arête
+  auto-référente (`TraversalController`) et exposition SKOS `ConceptScheme`
+  (`ConceptSchemeController`), tous deux avec enveloppe `count` / `total`.
 - **Transactions**, **18+ types d'index** (dont un index vectoriel), le moteur
   complet de filtres / facettes / regroupement (y compris les quantificateurs
   `quant` de tableaux **et** de relations — `any` / `all` / `none` / `n` — sur
@@ -56,7 +69,9 @@ fédérée :
 La `1.0.0` est sortie avec toutes les opérations AQL haut-niveau prises en charge
 et une API publique stable. Tout ce qui a suivi est **additif** — nouvelles
 fonctions, opérations, clients et outillage sont non cassants et sortent en
-versions **mineures**.
+versions **mineures**. Seule exception : un durcissement de sécurité peut changer
+un défaut (ainsi le passage de `?sort=` en liste blanche *fail-closed* en
+`1.5.0`) — ces cas sont signalés `(BREAKING)` dans le `CHANGELOG`.
 
 - **`1.0.0`** — publiée le 2026-06-09 (toutes les opérations AQL haut-niveau).
 - **`1.1.0`** — publiée le 2026-06-10 (vectoriel/ANN, analyse de requête,
@@ -68,10 +83,18 @@ versions **mineures**.
   `search-alias`, recherche fédérée).
 - **`1.4.0`** — publiée le 2026-06-21 (quantificateurs `quant` de relations sur
   les filtres d'arêtes et de jointures).
-- **Prochaine mineure** — cumulée sous `[Unreleased]` : champs de recherche sur
-  tableaux d'objets (`[*]`), le type d'analyzer `ngram`, plusieurs analyzers par
-  champ (autocomplétion), et recherche n-gram précise par seuil de similarité
-  (`Search::NGRAM` → `NGRAM_MATCH`). Coupée quand Marc le décide.
+- **`1.5.0`** — publiée le 2026-07-18 (jointures & arêtes **polymorphes** ;
+  ancrage de relation `Arango::SOURCE` ; verrouillage de permissions
+  *fail-closed* généralisé sur `?filter=` / `?sort=` / `?facets=` / `?groupBy=`,
+  descendu au sous-champ exact — le passage de `?sort=` en liste blanche stricte
+  est **cassant** ; traversées hiérarchiques à profondeur variable + `buildTree()`
+  et métadonnées de chemin ; contrôleurs génériques `TraversalController` /
+  `ConceptSchemeController` ; scope serveur disjonctif `injectFilterGroup()` ;
+  `PipelineAnalyzer` typé ; champs de recherche sur tableaux d'objets (`[*]`),
+  type d'analyzer `ngram`, plusieurs analyzers par champ, et recherche n-gram par
+  seuil de similarité).
+- **Prochaine mineure** — rien n'est encore cumulé sous `[Unreleased]` ; les
+  prochains ajouts y seront regroupés. Coupée quand Marc le décide.
 
 ## Backlog (à trier)
 
@@ -89,19 +112,6 @@ versions **mineures**.
   et l'appartenance par clé sur une relation ne sont **volontairement pas** dans
   ce périmètre — elles vivent déjà dans `?facets` (`EDGE_AGGREGATE` /
   `JOIN_AGGREGATE`, et la négation `"-key"`).
-- **Traversées hiérarchiques (profondeur variable) sur une projection de
-  relation** (effort **S→M**, *en cours*) — un champ `Filter::EDGES` ne projette
-  aujourd'hui que la profondeur 1. Trois lots : **(A)** lire `AQL::MIN_DEPTH` /
-  `AQL::MAX_DEPTH` sur une définition d'arête pour qu'une relation auto-référente
-  (ex. un thésaurus) projette une **liste à plat** des descendants/ancêtres
-  jusqu'à la profondeur N en une seule traversée (défaut inchangé → profondeur 1) ;
-  **(B)** métadonnées de chemin optionnelles, injectant `_parent` / `_depth`
-  depuis le chemin pour les nœuds qui ne stockent pas leur parent ; **(C)** un
-  helper `buildTree()` (plat → `children[]` imbriqué, source du parent
-  paramétrable) câblé via `Alter::MAP` pour livrer l'arbre de façon transparente.
-  **Homogène (auto-référent) uniquement** — l'hétérogène `Type1→Type2→Type3` est
-  déjà couvert par les arêtes imbriquées déclarées. Un champ « range » exige un
-  `MAX_DEPTH` borné (garde-fou cycle).
 
 ### Recherche fédérée & ArangoSearch
 
