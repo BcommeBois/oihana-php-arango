@@ -567,8 +567,8 @@ final class FederatedSearchTest extends TestCase
     {
         $arango    = $this->createMock( ArangoDB::class ) ;
         $container = $this->createMock( Container::class ) ;
-        $container->method( 'has' )->with( 'db.arango' )->willReturn( true ) ;
-        $container->method( 'get' )->with( 'db.arango' )->willReturn( $arango ) ;
+        $container->expects( $this->once() )->method( 'has' )->with( 'db.arango' )->willReturn( true ) ;
+        $container->expects( $this->once() )->method( 'get' )->with( 'db.arango' )->willReturn( $arango ) ;
 
         $engine = new FederatedSearch( $container , [ Arango::DATABASE => 'db.arango' ] ) ;
 

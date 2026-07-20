@@ -95,7 +95,7 @@ class ArangoDBTest extends ArangoDBTestCase
     public function testLoginDelegatesToClient() :void
     {
         $client = $this->createMock( ArangoClient::class ) ;
-        $client->method( 'login' )->with( 'root' , 'secret' )->willReturn( 'jwt-token' ) ;
+        $client->expects( $this->once() )->method( 'login' )->with( 'root' , 'secret' )->willReturn( 'jwt-token' ) ;
 
         $this->assertSame( 'jwt-token' , $this->newArangoDB( null , $client )->login( 'root' , 'secret' ) ) ;
     }

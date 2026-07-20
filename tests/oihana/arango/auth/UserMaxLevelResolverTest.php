@@ -340,7 +340,7 @@ class UserMaxLevelResolverTest extends TestCase
 
         $usersModel->collection = 'users' ;
 
-        $usersModel->expects( $this->any() )->method( 'getResult' )->willReturnCallback
+        $usersModel->method( 'getResult' )->willReturnCallback
         (
             function( string $query , array $binds = [] ) use ( $resultRows , $throwOnResult ) :array
             {
