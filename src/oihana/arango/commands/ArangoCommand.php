@@ -151,7 +151,7 @@ class ArangoCommand extends Kernel
     {
         $this->initializeConsoleLogger( $output ) ;
 
-        clearConsole( $input->getOption( CommandOption::CLEAR ) ?? $this->commandOptions?->clearable ?? false ) ;
+        clearConsole( $input->getOption( CommandOption::CLEAR ) ?? $this->commandOptions?->clear ?? false ) ;
 
         $this->action = $input->getArgument(CommandArg::ACTION ) ?? Char::EMPTY ;
 

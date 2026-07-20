@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The config-level `clear` console setting was never honored (and warned on PHP 8.4).** `ArangoCommand` and `DocumentsCommand` read `$this->commandOptions?->clearable`, but `CommandOptions` has no `clearable` property — the actual flag is `$clear` (`clearable` only exists as an option *name* constant and as `clearConsole()`'s parameter name). So the fallback always resolved to `null` (the terminal was cleared only when the `--clear` CLI option was passed, never from the command's configured options), and reading the undefined property emitted a PHP 8.4 warning whenever `commandOptions` was set. Both call sites now read `$this->commandOptions?->clear`.
+
 - **Three static-analysis findings surfaced by the new PHPStan pass.** `Collection::__construct` is annotated `@final`, making `rename()`'s `new static( $database, $name )` provably safe while keeping `EdgeCollection`'s covariant return (a `new self()` would have downcast it). `DocumentsControllerUpdateTrait` now composes `ModelCallTrait`, so its `beforeModelCall()` / `afterModelCall()` hooks resolve from the trait itself instead of the host class: `PropertyController` pulls this trait (via `PropertyControllerPatchTrait`) without extending `DocumentsController`, so its inherited `update()` used to reference undefined hooks. Behaviour is unchanged — `DocumentsController`'s own hook override still wins over the trait default.
 
 ## [1.5.0] - 2026-07-18

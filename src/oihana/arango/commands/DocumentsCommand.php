@@ -213,7 +213,7 @@ class DocumentsCommand extends Kernel
     {
         if( $input->hasOption( CommandOption::CLEAR ) )
         {
-            clearConsole( $input->getOption( CommandOption::CLEAR ) ?? $this->commandOptions?->clearable ?? false ) ;
+            clearConsole( $input->getOption( CommandOption::CLEAR ) ?? $this->commandOptions?->clear ?? false ) ;
         }
 
         $this->initializeConsoleLogger( $output ) ;
