@@ -40,5 +40,8 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction --no-plugins
 
+      - name: Static analysis (PHPStan)
+        run: vendor/bin/phpstan analyse --no-progress
+
       - name: Run test suite
         run: vendor/bin/phpunit

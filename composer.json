@@ -35,6 +35,7 @@
     },
     "scripts": {
         "doc": "rm -rf docs && ./vendor/bin/phpdoc -c phpdoc.xml -v",
+        "analyse": "./vendor/bin/phpstan analyse",
         "test": "./vendor/bin/phpunit",
         "test:integration": "./vendor/bin/phpunit -c phpunit-integration.xml",
         "coverage": "XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-text --coverage-clover build/coverage/clover.xml --coverage-html build/coverage/html",
@@ -54,6 +55,7 @@
     },
     "scripts-descriptions": {
         "doc": "Generate the phpDocumentor API documentation under docs/.",
+        "analyse": "Run the PHPStan static analysis (level 0) over src/.",
         "test": "Run the PHPUnit test suite.",
         "test:integration": "Run the live integration suite (group `integration`) against a real arangod — skips green when no server is reachable (configs/config.toml).",
         "coverage": "Run the suite with code coverage (text + Clover + HTML under build/coverage/). Requires Xdebug or PCOV.",
@@ -498,7 +500,8 @@
     "require-dev": {
         "phpunit/phpunit": "^13",
         "nunomaduro/collision": "^8.8",
-        "phpdocumentor/shim": "^3.8"
+        "phpdocumentor/shim": "^3.8",
+        "phpstan/phpstan": "^2.2"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
