@@ -10,6 +10,8 @@ use oihana\enums\Char;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
+use oihana\arango\db\binds\AqlBindReference;
+
 use function oihana\arango\db\functions\toBool;
 use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\aqlValue;
@@ -31,10 +33,16 @@ use function oihana\core\strings\key;
  *
  * The compared attribute (left) and the value (right) may be wrapped by an `alt`
  * chain — same `"lower"` / `{ key, val }` / `{ key, val:true }` mirror vocabulary as
- * the flat filters (resolved by {@see resolveAltSides()}). The value is **inlined**
- * via {@see aqlValue()} (the projection layer carries no bind variables; a `WHEN`
- * value is developer-declared static configuration, never user input). The attribute
- * is validated by {@see assertAttributeName()}.
+ * the flat filters (resolved by {@see resolveAltSides()}). A `WHEN` value is a
+ * developer-declared static literal, **inlined** via {@see aqlValue()}, and the
+ * attribute is validated by {@see assertAttributeName()}.
+ *
+ * Either side may instead be an {@see AqlBindReference} (built with
+ * {@see \oihana\arango\db\binds\aqlBindRef()}): it renders as its `@name` token
+ * — never inlined, never prefixed with the document reference — and its value is
+ * supplied at query time through the top-level bind mechanism (`AQL::BINDS`).
+ * This is what lets `Field::WHERE` compare an array element against a runtime
+ * bind (e.g. `item.region IN @allowedRegions`).
  *
  * Only the **infix** comparators (`eq`, `ne`, `ge`, `gt`, `le`, `lt`, `in`, `nin`,
  * `like`, `nlike`, `match`, `nmatch`) are supported; a function-form operator
@@ -78,14 +86,33 @@ function buildWhenLeaf( array $leaf , string $doc = AQL::DOC ): string
         $value  = $leaf[ FilterParam::VAL ] ?? null ;
     }
 
-    assertAttributeName( $attr ) ;
-
     [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
-    $left = alterExpression( key( $attr , $doc ) , $keyChain ) ;
 
-    if ( $truthy )
+    // The compared attribute (left) may be an AqlBindReference — a value supplied
+    // at query time — instead of a document attribute. A bind reference renders as
+    // its `@name` token: it is never prefixed with the document reference and never
+    // goes through `assertAttributeName` (a bind name is validated when the
+    // reference is built). A plain attribute keeps the existing guard and the
+    // `<doc>.<attr>` access.
+    if ( $attr instanceof AqlBindReference )
     {
-        return toBool( $left ) ;
+        // A bound boolean used on its own (`[ aqlBindRef('unrestricted') ]`) is
+        // already a boolean: emit the bare token, no `TO_BOOL` wrapping.
+        if ( $truthy )
+        {
+            return $attr->toAql() ;
+        }
+        $left = alterExpression( $attr->toAql() , $keyChain ) ;
+    }
+    else
+    {
+        assertAttributeName( $attr ) ;
+        $left = alterExpression( key( $attr , $doc ) , $keyChain ) ;
+
+        if ( $truthy )
+        {
+            return toBool( $left ) ;
+        }
     }
 
     $aqlOperator = FilterComparator::getAlias( $op ) ;
@@ -94,7 +121,11 @@ function buildWhenLeaf( array $leaf , string $doc = AQL::DOC ): string
         throw new UnsupportedOperationException( __FUNCTION__ . " failed, the operator '" . $op . "' is not supported in Field::WHEN (infix comparators only — use the flat ?filter= for function-form operators)." ) ;
     }
 
-    $right = alterExpression( aqlValue( $value ) , $valChain ) ;
+    // The compared value (right) may itself be an AqlBindReference — rendered as
+    // its `@name` token, never inlined — otherwise it is a developer-declared
+    // static literal, inlined via aqlValue().
+    $rendered = $value instanceof AqlBindReference ? $value->toAql() : aqlValue( $value ) ;
+    $right    = alterExpression( $rendered , $valChain ) ;
 
     return $left . Char::SPACE . $aqlOperator . Char::SPACE . $right ;
 }

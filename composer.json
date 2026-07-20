@@ -81,6 +81,7 @@
             "src/oihana/arango/clients/helpers/unwrapField.php",
             "src/oihana/arango/db/binds/aqlBind.php",
             "src/oihana/arango/db/binds/aqlBindCollection.php",
+            "src/oihana/arango/db/binds/aqlBindRef.php",
             "src/oihana/arango/db/binds/assertBindVariable.php",
             "src/oihana/arango/db/binds/formatBindVariable.php",
             "src/oihana/arango/db/binds/isBindVariable.php",

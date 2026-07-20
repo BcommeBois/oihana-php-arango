@@ -5,6 +5,12 @@ All notable changes to **oihana/php-arango** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`aqlBindRef()` / `AqlBindReference` — reference an AQL bind by name from a static definition, without inlining a value.** Where `aqlValue()` writes a value straight into the query text, `aqlBindRef('name')` returns a validated value object rendered as the `@name` token only; the value is contributed by the caller through the existing top-level bind mechanism (`AQL::BINDS`), which merges into the query's single `bindVars` map. A dedicated `instanceof` marker (not a marker string) is used because on the value side a plain string is already a legitimate literal — a value may start with `@` — so a string convention would be ambiguous. `buildWhenLeaf()` honors a bind reference on **both** the value (right) and the attribute/truthy (left) side, so a bound boolean like `[ aqlBindRef('unrestricted') ]` compiles to a bare `@unrestricted`. The bind name is validated by `assertBindVariable()` (an invalid name throws `BindException`).
+
 ## [1.5.0] - 2026-07-18
 
 ### Added
