@@ -10,6 +10,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use oihana\arango\controllers\traits\PayloadsTrait;
 use oihana\arango\enums\Arango;
 
+use oihana\controllers\traits\ModelCallTrait;
 use oihana\controllers\traits\prepare\PrepareLang;
 use oihana\controllers\traits\prepare\PrepareSkin;
 use oihana\controllers\traits\StatusTrait;
@@ -39,7 +40,8 @@ use function oihana\core\accessors\deleteKeyValue;
  */
 trait DocumentsControllerUpdateTrait
 {
-    use ModelTrait ,
+    use ModelCallTrait ,
+        ModelTrait ,
         PayloadsTrait ,
         PrepareLang ,
         PrepareSkin ,

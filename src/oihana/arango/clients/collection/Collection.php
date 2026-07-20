@@ -61,6 +61,9 @@ readonly class Collection
     /**
      * @param Database $database Parent database (provides the shared HTTP transport).
      * @param string   $name     Name of the target collection on the server.
+     *
+     * @final Subclasses (e.g. {@see EdgeCollection}) inherit this signature unchanged,
+     *        so {@see self::rename()} can safely return `new static( $database, $name )`.
      */
     public function __construct( public Database $database , public string $name ) {}
 

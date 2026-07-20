@@ -28,7 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `UserMaxLevelResolverTest` — the shared `getResult()` mock dropped its `->expects($this->any())` invocation expectation and is now a plain stub (`->method('getResult')`), clearing the *"any() invoked count expectation is deprecated"* notice across all 17 tests that use it.
   - `ArangoDBTest` / `FederatedSearchTest` — `with*()` argument matchers previously used without `expects()` now declare an explicit `->expects($this->once())` expectation, resolving *"Using with*() without expects() is deprecated"*.
 
+- **PHPStan wired into the toolchain (level 0).** `phpstan/phpstan ^2.2` added as a dev dependency with a `phpstan.neon.dist` pinned at level 0 over `src/`, a `composer analyse` script, and a static-analysis step in CI (before the test suite). Level 0 is green across the 772 source files; stricter levels are left for a later incremental pass.
+
 - **`aqlBindRef()` / `AqlBindReference` — reference an AQL bind by name from a static definition, without inlining a value.** Where `aqlValue()` writes a value straight into the query text, `aqlBindRef('name')` returns a validated value object rendered as the `@name` token only; the value is contributed by the caller through the existing top-level bind mechanism (`AQL::BINDS`), which merges into the query's single `bindVars` map. A dedicated `instanceof` marker (not a marker string) is used because on the value side a plain string is already a legitimate literal — a value may start with `@` — so a string convention would be ambiguous. `buildWhenLeaf()` honors a bind reference on **both** the value (right) and the attribute/truthy (left) side, so a bound boolean like `[ aqlBindRef('unrestricted') ]` compiles to a bare `@unrestricted`. The bind name is validated by `assertBindVariable()` (an invalid name throws `BindException`).
+
+### Fixed
+
+- **Three static-analysis findings surfaced by the new PHPStan pass.** `Collection::__construct` is annotated `@final`, making `rename()`'s `new static( $database, $name )` provably safe while keeping `EdgeCollection`'s covariant return (a `new self()` would have downcast it). `DocumentsControllerUpdateTrait` now composes `ModelCallTrait`, so its `beforeModelCall()` / `afterModelCall()` hooks resolve from the trait itself instead of the host class: `PropertyController` pulls this trait (via `PropertyControllerPatchTrait`) without extending `DocumentsController`, so its inherited `update()` used to reference undefined hooks. Behaviour is unchanged — `DocumentsController`'s own hook override still wins over the trait default.
 
 ## [1.5.0] - 2026-07-18
 
