@@ -151,8 +151,7 @@ use function oihana\core\strings\compile;
  *    maxDepth?: int|null                 , // Maximum traversal depth. Default: 1.
  *    prune?: string|array|null           , // Condition to stop traversal early (PRUNE clause).
  *    options?: array|object|string|null    // Traversal options hydrated via TraversalOptions.
- * }
- * $init Configuration for the traversal expression.
+ * } $init Configuration for the traversal expression.
  *
  * @param array|null $binds Optional reference to a bind variable array; used for safe variable substitution.
  *

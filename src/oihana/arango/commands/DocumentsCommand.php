@@ -44,7 +44,6 @@ use function oihana\commands\helpers\clearConsole;
  * directly from the command line.
  *
  * @package oihana\commands\documents
- * @extends Kernel
  *
  * @example
  * ### Set the IoC definition of the places command
