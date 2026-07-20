@@ -10,13 +10,19 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use PHPUnit\Framework\TestCase;
 
+use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\ArangoDB;
+use oihana\arango\db\binds\AqlBindReference;
 use oihana\arango\db\options\indexes\IndexOptions;
 use oihana\arango\db\options\indexes\PersistentIndexOptions;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
+use oihana\arango\enums\Filter;
 use oihana\arango\models\traits\ArangoTrait;
 
 use oihana\models\enums\Alter;
+
+use function oihana\arango\db\binds\aqlBindRef;
 
 /**
  * Bare host exposing {@see ArangoTrait} for isolated testing. The protected
@@ -26,6 +32,10 @@ use oihana\models\enums\Alter;
 class ArangoTraitHost
 {
     use ArangoTrait ;
+
+    /** Mirrors the FieldsTrait properties the optional-bind derivation reads. */
+    public array $fields     = [] ;
+    public array $skinFields = [] ;
 
     public function __construct( ?ArangoDB $db = null , ?string $collection = null )
     {
@@ -235,6 +245,216 @@ class ArangoTraitTest extends TestCase
         $host = new ArangoTraitHost( $this->makeArango() ) ;
 
         $this->assertSame( $host , $host->prepareAndExecute( 'FOR d IN c RETURN d' , [ 'k' => 1 ] ) ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareAndExecute : optional binds
+
+    /**
+     * Builds a mock ArangoDB whose `prepare()` records the bind variables it
+     * receives (into `$captured`) and whose `prepare()/execute()` chain returns
+     * the mock itself, so the final bindVars can be asserted after execution.
+     */
+    private function makeBindCapturingArango( ?array &$captured ) :ArangoDB
+    {
+        $db = $this->getMockBuilder( ArangoDB::class )
+            ->disableOriginalConstructor()
+            ->onlyMethods( [ 'prepare' , 'execute' ] )
+            ->getMock() ;
+
+        $db->method( 'prepare' )->willReturnCallback( function ( array $params ) use ( &$captured , $db ) : ArangoDB
+        {
+            $captured = $params[ CursorField::BIND_VARS ] ?? null ;
+            return $db ;
+        } ) ;
+        $db->method( 'execute' )->willReturnSelf() ;
+
+        return $db ;
+    }
+
+    public function testOptionalBindReferencedByTheQueryIsKept() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c FILTER d.region IN @allowed RETURN d' ,
+            [ 'allowed' => [ 'eu' , 'us' ] ] ,
+            [] ,
+            [ 'allowed' ] // explicit optional list
+        ) ;
+
+        $this->assertSame( [ 'allowed' => [ 'eu' , 'us' ] ] , $captured ) ;
+    }
+
+    public function testOptionalBindAbsentFromTheQueryIsDropped() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        // The carrying field was skinned out, so @allowed never made it into the query.
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN d' ,
+            [ 'allowed' => [ 'eu' , 'us' ] ] ,
+            [] ,
+            [ 'allowed' ]
+        ) ;
+
+        $this->assertSame( [] , $captured ) ;
+    }
+
+    public function testNonOptionalBindIsNeverTouchedEvenWhenUnreferenced() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        // 'k' is not declared optional : the pruning must leave it strictly alone,
+        // even though the query does not reference it (bounded, opt-in behaviour).
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN d' ,
+            [ 'k' => 1 ] ,
+            [] ,
+            [ 'allowed' ]
+        ) ;
+
+        $this->assertSame( [ 'k' => 1 ] , $captured ) ;
+    }
+
+    public function testOptionalBindIsNotKeptByAPrefixCollision() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        // '@offersScope' must NOT keep the optional bind 'offers' : the token match
+        // is word-boundary aware.
+        $host->prepareAndExecute
+        (
+            'FOR d IN c FILTER d.scope IN @offersScope RETURN d' ,
+            [ 'offers' => [ 1 ] , 'offersScope' => [ 2 ] ] ,
+            [] ,
+            [ 'offers' , 'offersScope' ]
+        ) ;
+
+        $this->assertSame( [ 'offersScope' => [ 2 ] ] , $captured ) ;
+    }
+
+    public function testCollectionBindIsUntouchedWhenNotDeclaredOptional() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        // A '@@col' collection bind (key '@col') is never in the optional list, so it
+        // is always kept — the '@@' reference is not a value-bind match anyway.
+        $host->prepareAndExecute
+        (
+            'FOR d IN @@col FILTER d.region IN @allowed RETURN d' ,
+            [ '@col' => 'things' , 'allowed' => [ 'eu' ] ] ,
+            [] ,
+            [ 'allowed' ]
+        ) ;
+
+        $this->assertSame( [ '@col' => 'things' , 'allowed' => [ 'eu' ] ] , $captured ) ;
+    }
+
+    public function testOptionalBindsAreDerivedFromFieldDefinitionsWhenNull() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        // The model declares an aqlBindRef('allowed') inside a Field::WHERE ; with the
+        // carrying field skinned out (@allowed absent from the query) and no explicit
+        // list, the derivation must find 'allowed' and drop the leftover bind.
+        $host->fields =
+        [
+            'items' =>
+            [
+                Field::FILTER => Filter::MAP ,
+                Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'allowed' ) ] ,
+                Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+            ],
+        ] ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN d' ,
+            [ 'allowed' => [ 'eu' ] ] ,
+        ) ;
+
+        $this->assertSame( [] , $captured ) ;
+    }
+
+    public function testOptionalBindsAreDerivedFromSkinFieldsToo() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        $host->skinFields =
+        [
+            'full' =>
+            [
+                'items' =>
+                [
+                    Field::FILTER => Filter::MAP ,
+                    Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'scoped' ) ] ,
+                    Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+                ],
+            ],
+        ] ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN d' ,
+            [ 'scoped' => [ 'eu' ] ] ,
+        ) ;
+
+        $this->assertSame( [] , $captured ) ;
+    }
+
+    public function testExplicitEmptyOptionalListDisablesPruning() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        // Even though the derivation WOULD flag 'allowed', an explicit [] disables the
+        // pruning entirely, so the (leftover) bind is kept verbatim.
+        $host->fields =
+        [
+            'items' =>
+            [
+                Field::FILTER => Filter::MAP ,
+                Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'allowed' ) ] ,
+                Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+            ],
+        ] ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN d' ,
+            [ 'allowed' => [ 'eu' ] ] ,
+            [] ,
+            [] // explicit disable
+        ) ;
+
+        $this->assertSame( [ 'allowed' => [ 'eu' ] ] , $captured ) ;
+    }
+
+    public function testDerivedOptionalBindStillKeptWhenReferenced() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        // Same declaration, but this time the field IS projected : @allowed appears in
+        // the query, so the derived-optional bind is kept and stays usable.
+        $host->fields =
+        [
+            'items' =>
+            [
+                Field::FILTER => Filter::MAP ,
+                Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'allowed' ) ] ,
+                Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+            ],
+        ] ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN ( FOR i IN d.items FILTER i.region IN @allowed RETURN i )' ,
+            [ 'allowed' => [ 'eu' ] ] ,
+        ) ;
+
+        $this->assertSame( [ 'allowed' => [ 'eu' ] ] , $captured ) ;
     }
 
     public function testRegisterPropertyAppendsBindAndValueExpression() :void

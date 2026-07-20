@@ -212,6 +212,39 @@ Out-of-scope elements are **never read** from the database: filter, sort and fac
 therefore infer nothing from them. The application wiring (resolving the list, injecting the
 binds) happens **outside** the library, in the consumer project.
 
+### Skinned field: the orphan bind is pruned automatically
+
+The situation. The field carrying the `Field::WHERE` is **projected conditionally**: depending
+on the active skin (or an explicit `?fields`), it may **not** be rendered. Yet the caller has
+already supplied the bind value through `AQL::BINDS` — it cannot reasonably know *in advance*
+whether the field will survive. As a result the final query contains **no** `@myBind`
+reference, even though the bind is declared. ArangoDB rejects it:
+
+```
+bind parameter 'myBind' was not declared in the query
+```
+
+The responsibility therefore falls on the layer that executes the query. Right before
+execution (`prepareAndExecute()`, the **single** chokepoint every query flows through —
+`get()`, `list()`, `count()`, `exist()`, edges…), the library **drops the binds the query
+text does not actually reference**. The orphan bind disappears and the query runs.
+
+This pruning is **bounded and safe**:
+
+- it touches **only** the binds declared "optional" — that is, the `aqlBindRef` names
+  discovered in the field definitions (`$fields` / `$skinFields`). A bind that is not a field
+  `aqlBindRef` is **never** removed;
+- an optional bind is dropped **only** when it is absent from the text; if it is referenced it
+  is kept (the name is matched against the **whole token**, so `@offers` does not match inside
+  `@offersScope`);
+- it only ever **removes surplus**: a bind that is referenced-but-missing from the values still
+  fails exactly as before. The only thing lost is ArangoDB's protection against "extra" binds —
+  pointless for library-built queries.
+
+Nothing to wire on the host side: the source of truth is the `aqlBindRef` you already wrote in
+the field. The `prepareAndExecute( …, $optionalBinds )` parameter (4th position) remains
+available to **force** the list, or to **disable** the pruning by passing `[]`.
+
 ## Security
 
 A `Field::WHEN` condition is compiled **inline**; a `Field::WHERE` one may additionally

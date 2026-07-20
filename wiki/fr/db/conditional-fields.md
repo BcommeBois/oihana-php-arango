@@ -223,6 +223,39 @@ Les éléments hors périmètre ne sont **jamais lus** en base : filtre, tri et 
 peuvent donc rien en inférer. Le câblage applicatif (résoudre la liste, injecter les binds)
 se fait **hors** de la librairie, dans le projet consommateur.
 
+### Champ skinné : le bind orphelin est élagué automatiquement
+
+La situation. Le champ qui porte le `Field::WHERE` est **projeté conditionnellement** : selon
+le skin actif (ou un `?fields` explicite), il peut **ne pas** être rendu. Or l'appelant, lui,
+a déjà fourni la valeur du bind dans `AQL::BINDS` — il ne peut pas raisonnablement savoir *à
+l'avance* si le champ survivra. Résultat : la requête finale ne contient **aucune** référence
+`@monBind`, alors que le bind est déclaré. ArangoDB rejette :
+
+```
+bind parameter 'monBind' was not declared in the query
+```
+
+La responsabilité revient donc à la couche qui exécute la requête. Juste avant l'exécution
+(`prepareAndExecute()`, le point de passage **unique** de toutes les requêtes — `get()`,
+`list()`, `count()`, `exist()`, edges…), la librairie **retire les binds réellement inutilisés
+par le texte de la requête**. Le bind orphelin disparaît, la requête passe.
+
+Ce tri est **borné et sûr** :
+
+- il ne touche **que** les binds déclarés « optionnels » — c'est-à-dire les noms d'`aqlBindRef`
+  découverts dans les définitions de champs (`$fields` / `$skinFields`). Un bind qui n'est pas
+  un `aqlBindRef` de champ n'est **jamais** retiré ;
+- un bind optionnel n'est retiré **que** s'il est absent du texte ; s'il est référencé, il est
+  gardé (le nom est comparé au **jeton complet**, donc `@offers` ne matche pas dans
+  `@offersScope`) ;
+- il ne fait que **retirer du surplus** : un bind référencé-mais-absent des valeurs échoue
+  toujours comme avant. On ne perd donc que la protection d'ArangoDB contre les binds « en
+  trop » — sans intérêt pour des requêtes construites par la librairie.
+
+Rien à câbler côté hôte : la source de vérité est le `aqlBindRef` que tu as déjà écrit dans le
+champ. Le paramètre `prepareAndExecute( …, $optionalBinds )` (4ᵉ position) reste disponible
+pour **forcer** la liste, ou pour **désactiver** le tri en passant `[]`.
+
 ## Sécurité
 
 La condition d'un `Field::WHEN` est compilée **inline** ; celle d'un `Field::WHERE` peut en

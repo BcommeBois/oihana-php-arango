@@ -21,6 +21,7 @@ use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\ArangoDB;
+use oihana\arango\db\binds\AqlBindReference;
 use oihana\arango\db\options\indexes\IndexOptions;
 use oihana\arango\db\results\ExecutionStats;
 use oihana\arango\db\results\ExplainResult;
@@ -516,9 +517,37 @@ trait ArangoTrait
     /**
      * Prepare and execute an ArangoDB AQL query.
      *
-     * @param string $query
-     * @param array $bindVars
-     * @param array $options
+     * A bind variable may be *optional* : supplied by the caller (through
+     * `Arango::BINDS`) yet not guaranteed to appear in the final query text. This
+     * happens with a conditional projection — e.g. an `aqlBindRef()` inside a
+     * `Field::WHERE` / `Field::WHEN` carried by a field that the active skin (or an
+     * explicit `?fields`) does not project. ArangoDB rejects a query that declares
+     * a bind it never references (*"bind parameter 'x' was not declared in the
+     * query"*), so such a leftover bind must be dropped before execution.
+     *
+     * `$optionalBinds` names the binds that are *allowed* to be absent :
+     * - it is **opt-in and bounded** — a bind whose name is not listed is *never*
+     *   touched, so a query that uses no conditional bind behaves exactly as before ;
+     * - a listed bind is kept only when the query actually references it
+     *   (`@name`, word-boundary matched to avoid a prefix collision such as
+     *   `@offers` matching inside `@offersScope`) ;
+     * - passing `[]` disables the pruning explicitly.
+     *
+     * When `$optionalBinds` is `null` (the default), the list is **derived from the
+     * model's own field definitions** — every `AqlBindReference` declared anywhere
+     * in `$this->fields` / `$this->skinFields` (see {@see collectOptionalBindNames()}).
+     * The source of truth is the same `aqlBindRef()` that declared the conditional
+     * bind, so no host wiring is required, and over-listing a bind that turns out to
+     * be always present is inert (a referenced bind is always kept). Because this
+     * runs at the single execution chokepoint, it protects every query method
+     * (`get()`, `list()`, `count()`, `exist()`, edges…) uniformly.
+     *
+     * @param string     $query         The AQL query string to execute.
+     * @param array      $bindVars      Optional bind variables for the query.
+     * @param array      $options       Optional execution options.
+     * @param array|null $optionalBinds Names of binds allowed to be absent from the query.
+     *                                  `null` derives the list from the model field
+     *                                  definitions ; `[]` disables the pruning.
      *
      * @return static
      *
@@ -526,12 +555,38 @@ trait ArangoTrait
      */
     public function prepareAndExecute
     (
-        string $query ,
-        array  $bindVars = [] ,
-        array  $options  = []
+        string     $query         ,
+        array      $bindVars      = [] ,
+        array      $options       = [] ,
+        ?array     $optionalBinds = null
     )
     :static
     {
+        $optionalBinds ??= $this->collectOptionalBindNames( $this->fields ?? [] , $this->skinFields ?? [] ) ;
+
+        if ( $optionalBinds !== [] )
+        {
+            $bindVars = array_filter
+            (
+                $bindVars ,
+                function ( mixed $value , int|string $key ) use ( $query , $optionalBinds ) :bool
+                {
+                    // A bind that is not declared optional is always kept (bounded, opt-in pruning).
+                    if ( !in_array( (string) $key , $optionalBinds , true ) )
+                    {
+                        return true ;
+                    }
+
+                    // An optional bind is kept only when the query really references it. The
+                    // '@key' token is word-boundary matched so '@offers' is not seen inside
+                    // '@offersScope', and the negative lookbehind avoids matching a '@@key'
+                    // collection reference (optional binds are always value binds).
+                    return preg_match( '/(?<!@)@' . preg_quote( (string) $key , '/' ) . '(?![A-Za-z0-9_])/' , $query ) === 1 ;
+                } ,
+                ARRAY_FILTER_USE_BOTH
+            ) ;
+        }
+
         $this->arangodb->prepare
         ([
             CursorField::QUERY     => $query ,
@@ -540,6 +595,41 @@ trait ArangoTrait
         ])->execute() ;
 
         return $this ;
+    }
+
+    /**
+     * Collects every {@see AqlBindReference} name declared anywhere in one or more
+     * field-definition trees (typically inside a `Field::WHERE` / `Field::WHEN`
+     * condition). These are the *optional* binds : a skin (or an explicit `?fields`)
+     * can drop the carrying field from the projection, so the declared bind may not
+     * reach the final query text.
+     *
+     * The walk is recursive and depth-agnostic : it descends into `Field::FIELDS`,
+     * edges and joins sub-definitions, and picks up a bind reference wherever it
+     * sits. Collecting the *raw* (un-skinned) definitions is intentional — the
+     * superset of all possibly-optional binds is exactly what the execution layer
+     * must be allowed to prune.
+     *
+     * @param array ...$trees One or more field-definition arrays to scan.
+     *
+     * @return array<int,string> The de-duplicated list of bind names.
+     */
+    private function collectOptionalBindNames( array ...$trees ) :array
+    {
+        $names = [] ;
+
+        foreach ( $trees as $tree )
+        {
+            array_walk_recursive( $tree , function ( mixed $leaf ) use ( &$names ) :void
+            {
+                if ( $leaf instanceof AqlBindReference )
+                {
+                    $names[] = $leaf->name ;
+                }
+            } ) ;
+        }
+
+        return array_values( array_unique( $names ) ) ;
     }
 
     /**
