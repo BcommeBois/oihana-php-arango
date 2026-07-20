@@ -72,6 +72,10 @@ trait PrepareTraversalTrait
      *     docRef?:          string|null                          // Document variable name used in FOR (default: AQL::VERTEX).
      * } $init Optional reference to array of query initialization and configuration.
      *
+     * @param-out array<string,mixed> $init The init array stays an open map: the method only
+     *        adds keys by reference (direction, startVertex, edgeCollection), never removes any,
+     *        so callers keep reading their own keys (target, sort, return, …) after the call.
+     *
      * @return array{0: array<string,mixed>, 1: string|array|null, 2: string|null, 3: string|null, 4: string}
      *   Returns an array containing:
      *   0 => prepared bind variables,

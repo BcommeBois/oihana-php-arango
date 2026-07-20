@@ -2,6 +2,8 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
+use DI\DependencyException;
+use DI\NotFoundException;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
@@ -79,11 +81,13 @@ trait HasFacetAggregateConditions
      * @param string $docRef The related-document variable (e.g. `doc_comments`).
      * @param string $key The facet key, used to namespace the bind name.
      * @param array $binds The bind variables, populated by reference.
-     *
+     * @param array $init
      * @return string The AQL fragment, or an empty string when no threshold is supplied.
      *
      * @throws BindException
      * @throws ValidationException When the aggregator is unknown or a non-count aggregate has no valid field.
+     * @throws DependencyException
+     * @throws NotFoundException
      */
     protected function prepareAggregateConditions
     (
@@ -159,7 +163,7 @@ trait HasFacetAggregateConditions
             // refused field neutralises the facet. Absent AQL::MODEL → skipped (the
             // whitelist above already bounds the surface).
             $model = $facet[ AQL::MODEL ] ?? null ;
-            if( $model !== null && isset( $this->container ) && $this->container->has( $model ) )
+            if( $model !== null && $this->container->has( $model ) )
             {
                 if( !isPathAuthorized( (string) $field , $this->container->get( $model )->fields ?? null , $init ) )
                 {
