@@ -123,7 +123,9 @@ trait CasbinPolicySyncEdgeTrait
     {
         $edge = $payload->data ;
 
-        if( !$edge )
+        // The signal payload is `mixed`; an edge sync only makes sense for a
+        // document object carrying _from/_to (a bare string / null is a no-op).
+        if( !is_object( $edge ) )
         {
             return ;
         }

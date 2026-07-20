@@ -79,7 +79,11 @@ trait OnDeleteVertex
             return ;
         }
 
-        $vertex = normalize( is_array( $data ) ? array_map( fn( $doc ) => $doc?->_key ?? null , $data ) : $data?->_key ?? null ) ;
+        // $data is `mixed` (signal payload): read _key only from document objects;
+        // a bare string / scalar element resolves to null (filtered out below).
+        $vertex = normalize( is_array( $data )
+            ? array_map( fn( $doc ) => is_object( $doc ) ? ( $doc->_key ?? null ) : null , $data )
+            : ( is_object( $data ) ? ( $data->_key ?? null ) : null ) ) ;
 
         if( $vertex === null )
         {
