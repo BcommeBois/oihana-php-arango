@@ -3,6 +3,9 @@
 namespace oihana\arango\models\traits\documents;
 
 use oihana\arango\models\traits\queries\CountQueryTrait;
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
+use oihana\reflect\exceptions\ConstantException;
 use ReflectionException;
 
 use DI\DependencyException;
@@ -65,19 +68,21 @@ trait DocumentsCountTrait
      *
      * @throws ArangoException If there's an issue with the ArangoDB query execution.
      * @throws BindException If there's an error binding parameters to the AQL query.
-     * @throws ReflectionException If a reflection error occurs (e.g., during internal AQL building).
+     * @throws ContainerExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
-     * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
+     * @throws ReflectionException If a reflection error occurs (e.g., during internal AQL building).
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     * @throws ConstantException
      *
      * @example
-     * <code>
+     * ```php
      * $model->count() ;
      * $model->count( [ Arango::OPTIMIZED => true ] ) ;
      * $model->count( [ Arango::FACETS => [ ... ] , Arango::FILTER = [ ... ] ] ] ) ;
-     * </code>
-     *
+     * ```
      */
     public function count( array $init = [] ):int
     {
