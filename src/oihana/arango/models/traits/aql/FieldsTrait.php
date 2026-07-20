@@ -92,8 +92,10 @@ use function oihana\core\strings\randomKey;
  *      If string → treated as a single key, or a comma-separated list of keys (split and trimmed).
  *      If empty string or empty array → no fields are returned (`prepareQueryFields()` returns null).
  * - Normalization:
- *      Each field is converted to an array with keys:
- *      - Field::FILTER, Field::DEFAULT, Field::FORMAT, Field::NAME, Field::PATH, Field::PATHS, Field::PROPERTY, Field::QUOTED
+ *      Each field is converted to an array. Every declarative Field::* key is preserved as-is:
+ *      - Field::FILTER, Field::ALTERS, Field::DEFAULT, Field::ELSE, Field::FORMAT, Field::NAME,
+ *        Field::PATH, Field::PATHS, Field::PROPERTY, Field::QUOTED, Field::RAW, Field::REQUIRES,
+ *        Field::SCOPE, Field::WHEN, Field::WHERE
  *      - Field::FIELDS for DOCUMENT or MAP subfields
  *      - Field::UNIQUE for unique key generation for edges, joins, or unique names
  * - `returnFields()`:
@@ -607,6 +609,7 @@ trait FieldsTrait
             Field::REQUIRES => $options[ Field::REQUIRES ] ?? null ,
             Field::SCOPE    => $options[ Field::SCOPE    ] ?? null ,
             Field::WHEN     => $options[ Field::WHEN     ] ?? null ,
+            Field::WHERE    => $options[ Field::WHERE    ] ?? null ,
         ]
         , CleanFlag::NULLS );
 

@@ -6,10 +6,13 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
+use oihana\arango\db\binds\AqlBindReference;
 use oihana\arango\models\traits\aql\FieldsTrait;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+
+use function oihana\arango\db\binds\aqlBindRef;
 
 /**
  * Bare host exposing {@see FieldsTrait} for isolated testing.
@@ -306,6 +309,41 @@ class FieldsTraitTest extends TestCase
             ],
             $out ,
         ) ;
+    }
+
+    /**
+     * A Field::WHERE declared on a Filter::MAP field must survive the skin
+     * normalization : normalizeFieldDefinition() rebuilds each definition from a
+     * closed whitelist, and any key it omits is silently dropped before reaching
+     * aqlFieldMap(). Field::WHERE is read only by the MAP renderer (it inserts the
+     * FILTER restricting the projected elements), so if the whitelist forgets it,
+     * the FILTER vanishes — and a Field::WHERE that references a runtime bind
+     * (aqlBindRef) leaves that bind declared-but-unused, which ArangoDB rejects.
+     * This locks the key in place through the full prepareQueryFields() chain,
+     * including when a skin is requested.
+     */
+    public function testMapWhereSurvivesSkinNormalization() :void
+    {
+        $where = [ 'region' , 'in' , aqlBindRef( 'allowed' ) ] ;
+
+        $out = $this->stub()->prepareQueryFields
+        (
+            [
+                'items' =>
+                [
+                    Field::FILTER => Filter::MAP ,
+                    Field::SKINS  => [ 'full' ] ,
+                    Field::WHERE  => $where ,
+                    Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+                ],
+            ],
+            'full'
+        ) ;
+
+        $this->assertArrayHasKey( 'items' , $out ) ;
+        $this->assertArrayHasKey( Field::WHERE , $out[ 'items' ] ) ;
+        $this->assertSame( $where , $out[ 'items' ][ Field::WHERE ] ) ;
+        $this->assertInstanceOf( AqlBindReference::class , $out[ 'items' ][ Field::WHERE ][ 2 ] ) ;
     }
 
     public function testDocumentWithoutSubFieldsFallsBackToUniqueKey() :void
