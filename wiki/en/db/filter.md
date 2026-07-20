@@ -920,6 +920,25 @@ The filter **inherits** the permission of the homonymous field in `$fields`. Whe
 
 **Relations.** A relation locked at its definition (`AQL::REQUIRES` on the edge/join) cannot be filtered through: the whole traversal is neutralised. Both gates compose (logical AND).
 
+**On the filter definition itself.** The gate above *inherits* the projection's permission (the homonymous field in `$fields`). But sometimes the projection is guarded by **another mechanism** — or deliberately always displayed — and so carries no `Field::REQUIRES`: the filter would then stay open. You then declare the permission **directly on the filter definition**, exactly as a facet carries its own.
+
+**The situation.** `items` is always projected (no `Field::REQUIRES` on the `$fields` side), yet we only want holders of `items:filter` to filter through it.
+
+```php
+public array $filters =
+[
+    'items' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , Field::REQUIRES => 'items:filter' , AQL::FILTERS => [ 'ref' => FilterType::STRING ] ] ,
+] ;
+```
+
+The `Field::REQUIRES` is declared **at the root of the definition**, including for nested shapes (`AQL::TYPE` / `AQL::FILTERS`). When refused, the predicate is **neutralised to `false`** like the inherited gate — never dropped. Both gates compose (logical AND): a filter applies only if the projection **and** its own definition allow it.
+
+| User **with** `items:filter` | User **without** `items:filter` |
+|---|---|
+| `?filter=…items[*].ref…` → normal predicate | `?filter=…items[*].ref…` → **neutralised** |
+
+> A **string** definition (`FilterType::STRING`, …) or a **callable** carries no `Field::REQUIRES`: this gate does not apply to it (nothing to read). This is the **symmetry** with facets, which already read the `REQUIRES` of their own definition in addition to the one inherited from the projection.
+
 > **Fail-open.** No `Field::REQUIRES`, or no authorizer injected → the filter applies normally (the `fields` semantics). A field **not projected** (absent from `$fields`) stays freely filterable — the "filter on data you don't display" use case. See [Field projection](../projection.md) and [Sorting](sort.md#sort-permission).
 >
 > **Depth.** The gate descends to the **exact leaf field**, not only the root: a sub-field of a nested document (`address.city`), a leaf **across** an edge/join (`employee[*].salary` inherits the **target model's** `Field::REQUIRES`) and an object-array sub-field (`contactPoint[*].email`, including via `match`) are all gated. A refused leaf neutralises the **whole traversal** to `false` — even under the `all`/`none` quantifier (never turned into an existence oracle).

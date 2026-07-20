@@ -39,6 +39,7 @@ use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\models\helpers\isAttributeAuthorized;
+use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\callables\resolveCallable;
@@ -483,6 +484,17 @@ trait FilterTrait
             $rootSegment = str_replace( Operator::ARRAY_EXPANSION , Char::EMPTY , explode( Char::DOT , $key )[ 0 ] ) ;
 
             if ( property_exists( $this , 'fields' ) && !isAttributeAuthorized( $rootSegment , $this->fields , $auth ) )
+            {
+                return Boolean::FALSE ;
+            }
+
+            // Gate B — REQUIRES declared on the filter definition itself (symmetric to
+            // FacetTrait::isAuthorized($facet)). Lets a filter be gated independently
+            // of the projection, e.g. when the projection is guarded by another
+            // mechanism and carries no Field::REQUIRES. Neutralises, never drops.
+            $rootFilterDef = $this->filters[ $rootSegment ] ?? null ;
+
+            if ( is_array( $rootFilterDef ) && !isAuthorized( $rootFilterDef , $auth ) )
             {
                 return Boolean::FALSE ;
             }
