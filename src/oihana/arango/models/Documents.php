@@ -11,7 +11,7 @@ use oihana\arango\models\traits\AQLQueryTrait;
 use oihana\arango\models\traits\DoctorTrait;
 use oihana\arango\models\traits\documents\DocumentsMethodsTrait;
 use oihana\arango\models\traits\DocumentsArrayTrait;
-use oihana\models\interfaces\DocumentsModel;
+use oihana\arango\models\interfaces\ArangoDocumentsModel;
 use oihana\models\traits\BindsTrait;
 use oihana\models\traits\SchemaTrait;
 use oihana\traits\ConfigTrait;
@@ -77,9 +77,9 @@ use ReflectionException;
  *
  * @package oihana\arango\models
  *
- * @see DocumentsModel
+ * @see ArangoDocumentsModel
  */
-class Documents implements DocumentsModel
+class Documents implements ArangoDocumentsModel
 {
     /**
      * Creates a new Documents instance.

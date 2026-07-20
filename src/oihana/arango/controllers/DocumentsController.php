@@ -3,6 +3,7 @@
 namespace oihana\arango\controllers;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\models\interfaces\ArangoDocumentsModel;
 use ReflectionException;
 
 use DI\Container;
@@ -44,6 +45,10 @@ use oihana\controllers\traits\ModelCallTrait;
  * Capability-aware overrides (skin gating, filter key gating, ...) are bundled
  * in {@see DocumentsControllerCapabilitiesTrait}, opt-in through the
  * `ControllerParam::CAPABILITIES` init block.
+ *
+ * @property ArangoDocumentsModel $model The ArangoDB documents model (refines the
+ *           generic `?DocumentsModel` from ModelTrait), exposing foundRows(),
+ *           facetCounts() and bounds() used by the list flow.
  */
 class DocumentsController extends Controller
 {
