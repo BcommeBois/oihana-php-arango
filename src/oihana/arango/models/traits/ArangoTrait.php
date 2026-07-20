@@ -380,7 +380,7 @@ trait ArangoTrait
      * @param null|SchemaResolver|Closure|string $schema   The optional class name to map the document.
      * @param array                              $context  Optional opaque context forwarded to {@see AlterDocumentTrait::alter()} and thus to the `Alter::MAP` callbacks (e.g. the originating `$init`, a skin, a locale…). Default `[]`.
      *
-     * @return object|null
+     * @return array|null
      *
      * @throws ArangoException
      * @throws ContainerExceptionInterface

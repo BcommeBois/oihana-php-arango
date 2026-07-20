@@ -355,9 +355,9 @@ trait PayloadsTrait
     /**
      * Returns an associative array with a key/value definition based on the property name and the payload request object.
      *
-     * @param Request $request
-     * @param mixed   $property
-     * @param array   $relations
+     * @param Request     $request
+     * @param string|null $property
+     * @param array       $relations
      *
      * @return mixed
      */

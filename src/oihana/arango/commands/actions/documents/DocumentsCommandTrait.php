@@ -45,7 +45,7 @@ trait DocumentsCommandTrait
 
     /**
      * A list of properties to exclude during data manipulation operations like insert, update, replace, or upsert.
-     * @var array|mixed|null
+     * @var array|null
      */
     public ?array $excludes = null ;
 
@@ -57,7 +57,7 @@ trait DocumentsCommandTrait
 
     /**
      * A list of properties to remove during data manipulation operations like insert, update, replace, or upsert.
-     * @var array|mixed|null
+     * @var array|null
      */
     public ?array $removeKeys = null ;
 

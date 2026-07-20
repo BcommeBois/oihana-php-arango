@@ -59,7 +59,7 @@ trait HasFilterBoolean
      * Prepare the filter clause with a specific boolean value to evaluates.
      * @param array|null $init
      * @param array|null $binds
-     * @return mixed
+     * @return string
      * @throws BindException
      */
     protected function prepareFilterBooleanValue( ?array $init = [] , ?array &$binds = null ):string

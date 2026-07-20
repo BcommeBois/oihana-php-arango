@@ -13,7 +13,7 @@ trait DocumentsTruncateTrait
      * Truncates the collection.
      * Warning: the method removes all documents.
      *
-     * @param array{ collection:null|string } $init
+     * @param array{ collection?:null|string } $init
      *
      * @return bool
      */
