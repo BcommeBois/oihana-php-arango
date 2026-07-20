@@ -12,6 +12,7 @@ use oihana\arango\models\traits\DoctorTrait;
 use oihana\arango\models\traits\documents\DocumentsMethodsTrait;
 use oihana\arango\models\traits\DocumentsArrayTrait;
 use oihana\arango\models\interfaces\ArangoDocumentsModel;
+use oihana\exceptions\ValidationException;
 use oihana\models\traits\BindsTrait;
 use oihana\models\traits\SchemaTrait;
 use oihana\traits\ConfigTrait;
@@ -105,19 +106,20 @@ class Documents implements ArangoDocumentsModel
      *   <li>'sortable'   - Defines the sortable strategies for a map of specific properties.</li>
      *   <li>'type'       - Indicates the type of the collection - document (default) or edge.</li>
      * </ul>
-     * @param string $type The default type of the collection (Default {@seeollection::TYPE_DOCUMENT} -> 'document' [2] )T
+     * @param int $type The default type of the collection (Default {@seeollection::TYPE_DOCUMENT} -> 'document' [2] )T
      *
      * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
      * @throws DependencyException
      * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     public function __construct
     (
         Container $container ,
         array     $init = [] ,
-        string    $type = CollectionType::DOCUMENT
+        int       $type = CollectionType::DOCUMENT
     )
     {
         $this->container = $container  ;

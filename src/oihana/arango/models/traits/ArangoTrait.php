@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits;
 
 use Closure;
 use Generator;
+use oihana\arango\db\enums\AQL;
 use ReflectionException;
 use org\schema\helpers\SchemaResolver;
 
@@ -426,29 +427,28 @@ trait ArangoTrait
      *    - 'smartJoinAttribute'   : attribute name for smart joins (if not shard key).
      *    - 'schema'               : collection schema.
      *
-     * @param string $type
-     * The default type of the collection (Default {@seeollection::TYPE_DOCUMENT} -> 'document' [2] )
+     * @param int $type The default type of the collection (Default {@seeollection::TYPE_DOCUMENT} -> 'document' [2] )
      *
      * @return static
      *
-     * @throws ReflectionException
      * @throws ContainerExceptionInterface If an error occurs while reading the container `lazy` entry.
-     * @throws NotFoundExceptionInterface  If the container `lazy` entry vanishes between check and read.
+     * @throws NotFoundExceptionInterface If the container `lazy` entry vanishes between check and read.
+     * @throws ReflectionException
      */
     public function initializeCollection
     (
-        array  $init = [] ,
-        string $type = CollectionType::DOCUMENT
+        array $init = [] ,
+        int   $type = CollectionType::DOCUMENT
     )
     :static
     {
-        $this->collection = $init[ Arango::COLLECTION ] ?? null ;
-        $this->type       = $init[ Arango::TYPE       ] ?? $type ;
+        $this->collection = $init[ AQL::COLLECTION ] ?? null ;
+        $this->type       = $init[ AQL::TYPE       ] ?? $type ;
 
         $this->initializeIndexes( $init ) ;
 
         $lazy    = $this->initializeLazy( $init )->isLazy() ;
-        $options = $init[ Arango::OPTIONS ] ?? [] ;
+        $options = $init[ AQL::OPTIONS ] ?? [] ;
 
         if( $lazy && !empty( $this->collection ) && !$this->collectionExists( $this->collection ) )
         {
@@ -487,7 +487,7 @@ trait ArangoTrait
      */
     public function initializeIndexes( array $init = [] ) :static
     {
-        $indexes = $init[ Arango::INDEXES ] ?? $this->indexes ;
+        $indexes = $init[ AQL::INDEXES ] ?? $this->indexes ;
         $this->indexes = $indexes instanceof IndexOptions ? [ $indexes ] : $indexes ;
         return $this ;
     }
@@ -502,7 +502,7 @@ trait ArangoTrait
      */
     public function initializeDatabase( array $init = [] , ?ContainerInterface $container = null ):static
     {
-        $database = $init[ Arango::DATABASE ] ?? null ;
+        $database = $init[ AQL::DATABASE ] ?? null ;
 
         if( is_string( $database ) && $database != Char::EMPTY && $container?->has( $database ) )
         {
