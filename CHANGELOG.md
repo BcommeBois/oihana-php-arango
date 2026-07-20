@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Field::WHERE` — filter the elements of a projected array (`Filter::MAP`) by a condition, including against a runtime bind.** A `Filter::MAP` projection could map a nested array but never *restrict* its elements: `aqlFieldMap()` emitted no `FILTER`, and the projection layer carried no bind variables, so `Field::WHEN` conditions could only compare against a literal frozen in the model definition. `Field::WHERE` closes both gaps at once. It reuses the `Field::WHEN` condition grammar (leaves, `AND`/`OR`/`NOT` groups, `alt`), compiles it against the array element, and inserts a `FILTER` between the `FOR` and the `RETURN`:
+  ```php
+  'addresses' =>
+  [
+      Field::FILTER => Filter::MAP ,
+      Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'allowedRegions' ) ] ,
+      Field::FIELDS => [ 'street' => Filter::DEFAULT , 'city' => Filter::DEFAULT ] ,
+  ]
+  // addresses: ( FOR item IN doc.addresses FILTER item.region IN @allowedRegions RETURN { street: item.street, city: item.city } )
+  ```
+  It is **fail-closed**: a bind bound to `[]` yields `IN []` (no element); a bind missing from the final map fails the AQL query (never silently "no filter"). Out-of-scope elements are never read, so filter/sort/facet can infer nothing from them. `Field::WHERE` (which elements) stays distinct from `Field::WHEN` (a field's value), composes with `Field::REQUIRES`, and requires no change to the model query path — `get()` and `list()` already propagate `AQL::BINDS` into the final `bindVars`.
+  - **Tests:** new `Field::WHERE` cases in `AqlFieldMapTest` (bind reference, `OR` group with a boolean bind, inline literal, and the no-`WHERE` non-regression). FR/EN wiki `db/conditional-fields.md` gains a `Field::WHERE` section.
+
 - **`aqlBindRef()` / `AqlBindReference` — reference an AQL bind by name from a static definition, without inlining a value.** Where `aqlValue()` writes a value straight into the query text, `aqlBindRef('name')` returns a validated value object rendered as the `@name` token only; the value is contributed by the caller through the existing top-level bind mechanism (`AQL::BINDS`), which merges into the query's single `bindVars` map. A dedicated `instanceof` marker (not a marker string) is used because on the value side a plain string is already a legitimate literal — a value may start with `@` — so a string convention would be ambiguous. `buildWhenLeaf()` honors a bind reference on **both** the value (right) and the attribute/truthy (left) side, so a bound boolean like `[ aqlBindRef('unrestricted') ]` compiles to a bare `@unrestricted`. The bind name is validated by `assertBindVariable()` (an invalid name throws `BindException`).
 
 ## [1.5.0] - 2026-07-18

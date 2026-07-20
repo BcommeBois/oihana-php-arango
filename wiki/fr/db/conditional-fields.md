@@ -137,17 +137,107 @@ Sans `Field::ELSE`, le repli est `null`. Deux formes sinon :
   s'appliquent toujours — ils décident si le champ est présent du tout, avant que la
   condition soit évaluée.
 
+## Filtrer les éléments d'un tableau projeté — `Field::WHERE`
+
+`Field::WHEN` décide **la valeur** d'un champ scalaire. `Field::WHERE` décide **quels
+éléments** d'un tableau projeté (`Filter::MAP`) sont retournés — un `FILTER` posé dans la
+boucle imbriquée, **entre** le `FOR` et le `RETURN` :
+
+```aql
+addresses: ( FOR item IN doc.addresses
+             FILTER item.region IN @allowedRegions
+             RETURN { street: item.street, city: item.city } )
+```
+
+Ne pas les confondre :
+
+| Marqueur | Décide | Posé sur |
+|---|---|---|
+| `Field::WHEN` | la *valeur* d'un champ (ternaire) | projection scalaire par défaut |
+| `Field::WHERE` | *quels éléments* d'un tableau sont projetés (`FILTER`) | un `Filter::MAP` |
+
+`Field::WHERE` réutilise **exactement** la grammaire de condition de `Field::WHEN` (feuilles,
+groupes `AND` / `OR` / `NOT`, `alt`) — compilée contre **l'élément du tableau** (`item`), pas
+contre `doc`.
+
+### Comparer à une valeur connue seulement à l'exécution — `aqlBindRef()`
+
+**La situation.** Chaque `user` porte un tableau `addresses[]`, chaque adresse a une
+`region`. On veut qu'un appelant ne voie que les adresses de **ses** régions autorisées — et
+cette liste n'est connue **qu'à l'exécution**, pas à l'écriture du modèle.
+
+Une condition `WHEN` **inline** ses valeurs : de la configuration figée. Ici la valeur — la
+liste des régions — n'existe qu'à la requête. `aqlBindRef('nom')` déclare « cette valeur est
+une **variable liée** `@nom`, fournie ailleurs » : le nom est **validé** (règles de bind
+ArangoDB), **aucune valeur n'est inlinée**, seul le jeton `@nom` est émis.
+
+**1. Le modèle** (statique) :
+
+```php
+use function oihana\arango\db\binds\aqlBindRef ;
+
+'addresses' =>
+[
+    Field::FILTER => Filter::MAP ,
+    Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'allowedRegions' ) ] ,
+    Field::FIELDS => [ 'street' => Filter::DEFAULT , 'city' => Filter::DEFAULT ] ,
+]
+```
+
+**2. L'appelant fournit les valeurs** (par requête, via le mécanisme existant `AQL::BINDS`) :
+
+```php
+$init[ AQL::BINDS ] = [ 'allowedRegions' => [ 'eu-west' , 'eu-north' ] ] ;
+```
+
+**3. L'AQL produit** — le jeton `@allowedRegions`, jamais la liste inlinée ; sa valeur voyage
+dans la carte `bindVars` **unique** de la requête (fusionnée par `AQL::BINDS`). La projection
+n'a qu'à **nommer** le créneau ; l'hôte le **remplit**.
+
+### Le bind peut aussi être à gauche
+
+Un bind **booléen** peut occuper la position d'attribut — un interrupteur fourni à la
+requête. `[ aqlBindRef('unrestricted') ]` compile en `@unrestricted` (jeton nu, ni `doc.`, ni
+`TO_BOOL`). Utile pour « voit tout, **sauf si** restreint » :
+
+```php
+Field::WHERE =>
+[ 'or' ,
+    [ aqlBindRef( 'unrestricted' ) ] ,                    // → @unrestricted
+    [ 'region' , 'in' , aqlBindRef( 'allowedRegions' ) ] , // → item.region IN @allowedRegions
+]
+// FILTER (@unrestricted || item.region IN @allowedRegions)
+```
+
+### Fermé par défaut (*fail-closed*)
+
+Contrairement à `Field::REQUIRES` (ouvert en l'absence d'authorizer), `Field::WHERE`
+**ferme** :
+
+- bind lié à un tableau **vide** → `IN []` → **aucun élément** (comportement voulu) ;
+- bind **absent** de la carte finale → la requête AQL **échoue** (erreur ArangoDB) → aucune
+  donnée. Un bind manquant n'est **jamais** réinterprété en « pas de filtre » (ce serait
+  *fail-open*).
+
+Les éléments hors périmètre ne sont **jamais lus** en base : filtre, tri et facette ne
+peuvent donc rien en inférer. Le câblage applicatif (résoudre la liste, injecter les binds)
+se fait **hors** de la librairie, dans le projet consommateur.
+
 ## Sécurité
 
-La condition est compilée **inline** car la couche de projection ne transporte pas de
-variables de *bind*. C'est sûr par construction :
+La condition d'un `Field::WHEN` est compilée **inline** ; celle d'un `Field::WHERE` peut en
+plus **référencer un bind**. Les deux sont sûres par construction :
 
 - Les **noms d'attributs** (opérandes de condition et `else` valué par attribut) sont
   validés par `assertAttributeName()` — tout caractère capable de s'échapper d'un accesseur
   `doc.<attr>` est rejeté par une `ValidationException`.
-- Les **valeurs** sont des littéraux déclarés par le développeur dans la définition du champ
+- Les **valeurs littérales** sont déclarées par le développeur dans la définition du champ
   (jamais une entrée de requête — celles-ci passent par des binds dans `?filter=`), inlinées
   et échappées par `aqlValue()`.
+- Une **référence de bind** (`aqlBindRef('nom')`) n'inline rien : le **nom** est validé par
+  `assertBindVariable()`, et seul le jeton `@nom` est émis. La **valeur** est fournie à la
+  requête via `AQL::BINDS` — donc jamais concaténée dans le texte AQL, quel que soit son
+  contenu.
 
 ## AQL généré — référence
 

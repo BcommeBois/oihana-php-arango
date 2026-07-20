@@ -27,6 +27,7 @@ class Field
     public const string SKINS    = 'skins'    ;
     public const string UNIQUE   = 'unique'   ;
     public const string WHEN     = 'when'     ;
+    public const string WHERE    = 'where'    ;
 }
 
 
