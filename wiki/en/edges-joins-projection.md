@@ -2,6 +2,8 @@
 
 This page describes the projection of the **relations**: following an edge, resolving a stored reference (join), traversing a hierarchy, wrapping the result under a key. The transverse projection mechanisms — skins (`Field::SKINS`, `AQL::SKIN_FIELDS`), permissions (`AQL::REQUIRES`), transformations (`Field::ALTERS`) — are described in [Field projection](projection.md) and apply here identically.
 
+> **Programmatic traversals.** The permission gate also holds for the explicit `getVertices()` / `getOutboundVertices()` / `getInboundVertices()` / `getAnyVertices()` traversals: the **target model**'s projection inherits its `Field::REQUIRES` / `AQL::REQUIRES` — the request authorizer is propagated into the target's projection, so a field or relation hidden from reading stays hidden through the edge (no field oracle via an edge). Fail-open when no authorizer is injected.
+
 ## Table of contents
 
 1. [Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition](#composed-projection--aqlfields--aqledges-on-the-edge-definition)

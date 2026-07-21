@@ -540,6 +540,15 @@ trait EdgesGetTrait
      * );
      * ```
      *
+     * ### Permission
+     * When an `AQL::TARGET` (or a resolved `_to`/`_from`) `Documents` model projects
+     * the vertices, its `Field::REQUIRES` / `AQL::REQUIRES` gates are enforced: the
+     * request authorizer carried in `$init[ Arango::AUTHORIZER ]` is propagated into
+     * the target's `returnFields()`, so a field or relation hidden from reading stays
+     * hidden through the traversal (no field oracle via edges). Fail-open when no
+     * authorizer is injected. Only the authorizer is forwarded — the target keeps its
+     * own projection defaults.
+     *
      * @see PrepareTraversalTrait
      */
     public function getVertices
@@ -568,12 +577,12 @@ trait EdgesGetTrait
         // are inlined verbatim here (a raw SORT bypasses prepareSort()'s whitelist/permission gate).
         // They are server-only knobs — NEVER wire a client parameter into these keys. A client sort must travel
         // through `?sort=` (whitelisted + permission-gated by SortTrait), not this path.
-        $raw       = $init[ Arango::RAW       ] ?? false ;
-        $return    = $init[ Arango::RETURN    ] ?? null  ;
-        $schema    = $init[ Arango::SCHEMA    ] ?? null  ;
-        $sort      = $init[ Arango::SORT      ] ?? null  ;
+        $raw       = $init[ AQL::RAW          ] ?? false ;
+        $return    = $init[ AQL::RETURN       ] ?? null  ;
+        $schema    = $init[ AQL::SCHEMA       ] ?? null  ;
+        $sort      = $init[ AQL::SORT         ] ?? null  ;
         $variables = $init[ Arango::VARIABLES ] ?? [] ;
-        $vertexRef = $init[ Arango::DOC_REF   ] ?? AQL::VERTEX ;
+        $vertexRef = $init[ AQL::DOC_REF      ] ?? AQL::VERTEX ;
 
         $with   = $this->prepareTraversalWith( $direction , $from , $to , $init ) ;
         $for    = aqlTraversal ( $init , $bindVars ) ;
@@ -584,9 +593,28 @@ trait EdgesGetTrait
         if( !$raw && ( $target instanceof Documents ) )
         {
             $schema = $target->schema ;
-            $return = $return
-                    ? aqlReturn( $return )
-                    : $target->returnFields( [ Arango::DOC_REF => $vertexRef ] , $variables ) ;
+
+            if( $return )
+            {
+                $return = aqlReturn( $return ) ;
+            }
+            else
+            {
+                // Propagate the request authorizer into the target model's projection
+                // so its Field::REQUIRES / AQL::REQUIRES gates apply on this traversal
+                // path too (the SORT above already receives the full $init). Only the
+                // authorizer is forwarded — returnFields() also reads FIELDS/SKIN/IN/
+                // EDGES/JOINS/VAR_NAME from $init, which must stay the target's own
+                // defaults, so the whole $init is deliberately NOT spread in.
+                $targetInit = [ AQL::DOC_REF => $vertexRef ] ;
+
+                if( array_key_exists( Arango::AUTHORIZER , $init ) )
+                {
+                    $targetInit[ Arango::AUTHORIZER ] = $init[ Arango::AUTHORIZER ] ;
+                }
+
+                $return = $target->returnFields( $targetInit , $variables ) ;
+            }
         }
         else
         {

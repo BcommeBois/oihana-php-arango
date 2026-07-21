@@ -6,6 +6,8 @@ use InvalidArgumentException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
+use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 
 use PHPUnit\Framework\TestCase;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
@@ -132,6 +134,58 @@ final class EdgesGetTraitTest extends TestCase
         $edges->getVertices( Traversal::INBOUND , 'roles/2' , [ AQL::TARGET => $target , AQL::RETURN => 'vertex._key' ] ) ;
 
         $this->assertStringEndsWith( 'RETURN vertex._key' , $edges->lastQuery ) ;
+    }
+
+    // ---------------------------------------------------------------- target projection : inherited authorizer (T4)
+
+    /**
+     * Builds an edge whose traversal target is a Documents model projecting a
+     * masked `salary` field, then runs `getVertices` with the given authorizer.
+     */
+    private function traversalWithGatedTarget( ?callable $authorizer ) :MockEdges
+    {
+        $target = new MockDocuments( 'people' ) ;
+        $target->schema = null ;
+        $target->fields = [ 'name' => [] , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+
+        $edges = new MockEdges( 'employs' ) ;
+        $edges->documentsResult = [] ;
+
+        $init = [ AQL::TARGET => $target ] ;
+        if ( $authorizer !== null )
+        {
+            $init[ Arango::AUTHORIZER ] = $authorizer ;
+        }
+
+        $edges->getVertices( Traversal::OUTBOUND , 'teams/1' , $init ) ;
+
+        return $edges ;
+    }
+
+    public function testTargetProjectionInheritsFieldRequiresDroppedWhenDenied() :void
+    {
+        // The target's `salary` is masked from reading; a denying authorizer must
+        // drop it from the traversal projection (no field oracle through the edge).
+        $edges = $this->traversalWithGatedTarget( fn() => false ) ;
+
+        $this->assertStringContainsString   ( 'name'   , $edges->lastQuery ) ;
+        $this->assertStringNotContainsString( 'salary' , $edges->lastQuery ) ;
+    }
+
+    public function testTargetProjectionInheritsFieldRequiresKeptWhenGranted() :void
+    {
+        $edges = $this->traversalWithGatedTarget( fn( string $s ) => $s === 'hr:read' ) ;
+
+        $this->assertStringContainsString( 'salary' , $edges->lastQuery ) ;
+    }
+
+    public function testTargetProjectionFailsOpenWithoutAuthorizer() :void
+    {
+        // No authorizer injected → the authorization layer is disabled, the gated
+        // field stays projected (unchanged behaviour, symmetric with the model path).
+        $edges = $this->traversalWithGatedTarget( null ) ;
+
+        $this->assertStringContainsString( 'salary' , $edges->lastQuery ) ;
     }
 
     public function testPrepareTraversalThrowsOnEmptyVertex() :void

@@ -2,6 +2,8 @@
 
 Cette page décrit la projection des **relations** : suivre une arête (edge), résoudre une référence stockée (join), traverser une hiérarchie, envelopper le résultat sous une clé. Les mécanismes transverses de la projection — les skins (`Field::SKINS`, `AQL::SKIN_FIELDS`), les permissions (`AQL::REQUIRES`), les transformations (`Field::ALTERS`) — sont décrits dans [La projection des champs](projection.md) et s'appliquent ici à l'identique.
 
+> **Traversées programmatiques.** Le contrôle d'autorisation vaut aussi pour les traversées explicites `getVertices()` / `getOutboundVertices()` / `getInboundVertices()` / `getAnyVertices()` : la projection du **modèle cible** hérite ses `Field::REQUIRES` / `AQL::REQUIRES` — l'*authorizer* de la requête est propagé jusqu'à la projection de la cible, donc un champ ou une relation cachés à la lecture le restent à travers l'arête (pas d'oracle de champ via un edge). *Fail-open* sans *authorizer*.
+
 ## Sommaire
 
 1. [Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge](#projection-composée--aqlfields--aqledges-sur-la-définition-dedge)
