@@ -70,7 +70,7 @@ public array  $fields   = [ Prop::NAME => true , Prop::SALARY => [ Field::REQUIR
 public ?array $sortable = [ Prop::NAME , Prop::SALARY ] ;   // just the list
 ```
 
-When `?sort=salary` arrives, sorting reads the `salary` definition in `$fields` and **inherits its permission**. *"What you cannot read, you cannot sort on"* — automatically, with no duplicate declaration.
+When `?sort=salary` arrives, sorting **inherits the permission of the target field in `$fields`, at the resolved path** — not only at the root. An alias to a deep path (`'salary' => 'address.salary'`) inherits the `Field::REQUIRES` of the **exact sub-field** `address.salary`, exactly like `?groupBy=` and `?bounds=` (via `isPathAuthorized`, which descends `Field::FIELDS` and strips `[*]`). *"What you cannot read, you cannot sort on"* — automatically, with no duplicate declaration, and without hitting the wrong field (never the URL key's homonym).
 
 | User **with** `hr:read` | User **without** `hr:read` |
 |---|---|
@@ -90,7 +90,7 @@ AQL::SORTABLE =>
 
 The entry carries its own field (`Field::PATH` → `doc.internal.rank`) and its own permission (`Field::REQUIRES`). A permission written here **overrides** the one inherited from `$fields`.
 
-> **Resolution rule.** The explicit permission on the `SORTABLE` entry wins; otherwise the homonymous field's permission in `$fields` is inherited; otherwise no permission (the field sorts freely). No permission, or no authorizer injected → free sort (*fail-open* — exactly the `fields` semantics).
+> **Resolution rule.** The explicit permission on the `SORTABLE` entry wins; otherwise it is inherited from the **target field in `$fields`, at the resolved path** (depth included — never the URL key's homonym); otherwise no permission (the field sorts freely). No permission, or no authorizer injected → free sort (*fail-open* — exactly the `fields` semantics).
 
 ## The synthetic `distance` and `score` keys
 

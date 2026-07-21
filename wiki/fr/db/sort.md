@@ -70,7 +70,7 @@ public array  $fields   = [ Prop::NAME => true , Prop::SALARY => [ Field::REQUIR
 public ?array $sortable = [ Prop::NAME , Prop::SALARY ] ;   // juste la liste
 ```
 
-Quand `?sort=salary` arrive, le tri va lire la définition de `salary` dans `$fields` et **hérite de sa permission**. *« Ce que tu ne peux pas lire, tu ne peux pas le trier »* — automatiquement, sans déclaration en double.
+Quand `?sort=salary` arrive, le tri **hérite la permission du champ visé dans `$fields`, au chemin résolu** — pas seulement à la racine. Un alias vers un chemin profond (`'salary' => 'address.salary'`) hérite le `Field::REQUIRES` du **sous-champ exact** `address.salary`, exactement comme `?groupBy=` et `?bounds=` (via `isPathAuthorized`, qui descend `Field::FIELDS` et strippe `[*]`). *« Ce que tu ne peux pas lire, tu ne peux pas le trier »* — automatiquement, sans déclaration en double, et sans se tromper de champ (jamais l'homonyme de la clé URL).
 
 | Utilisateur **avec** `hr:read` | Utilisateur **sans** `hr:read` |
 |---|---|
@@ -90,7 +90,7 @@ AQL::SORTABLE =>
 
 L'entrée porte son propre champ (`Field::PATH` → `doc.internal.rank`) et sa propre permission (`Field::REQUIRES`). Une permission écrite ici **prime** sur celle héritée de `$fields`.
 
-> **Règle de résolution.** La permission explicite de l'entrée `SORTABLE` gagne ; sinon on hérite de celle du champ homonyme dans `$fields` ; sinon aucune permission (le champ trie librement). Aucune permission, ou aucun *authorizer* branché → tri libre (*fail-open* — exactement la sémantique des `fields`).
+> **Règle de résolution.** La permission explicite de l'entrée `SORTABLE` gagne ; sinon on hérite de celle du **champ visé dans `$fields`, au chemin résolu** (profondeur incluse — jamais le champ homonyme de la clé URL) ; sinon aucune permission (le champ trie librement). Aucune permission, ou aucun *authorizer* branché → tri libre (*fail-open* — exactement la sémantique des `fields`).
 
 ## Les clés synthétiques `distance` et `score`
 

@@ -18,6 +18,7 @@ use function oihana\arango\db\functions\geo\distance;
 use function oihana\arango\db\functions\search\bm25;
 use function oihana\arango\db\helpers\resolveGeoPoint;
 use function oihana\arango\models\helpers\isAuthorized;
+use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\arango\models\helpers\normalizeSortable;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
@@ -42,9 +43,11 @@ use function oihana\core\strings\key;
  *
  * ### Permission gate
  * A whitelisted key can still be **permission-gated**, so a field hidden from the
- * projection stays untriable (no sort oracle). The `Field::REQUIRES` subject is
- * resolved by {@see authorizeSortKey()} — inherited from the homonymous field in
- * `$this->fields` by default, or declared explicitly on the `$sortable` entry:
+ * projection stays untriable (no sort oracle). The gate is resolved by
+ * {@see authorizeSortKey()} — inherited from the projection at the **resolved
+ * field path** (`address.salary`, gated at its exact sub-field via
+ * {@see isPathAuthorized()}, like groupBy/bounds), or declared explicitly on the
+ * `$sortable` entry:
  * ```php
  * // Inherited: `salary` is gated in $fields → its sort inherits the same subject.
  * AQL::SORTABLE => [ Prop::NAME , Prop::SALARY ]
@@ -307,7 +310,7 @@ trait SortTrait
     {
         [ $path , $requires ] = $this->resolveSortEntry( $key , $entry ) ;
 
-        if( !$this->isSortAuthorized( $requires , $init ) )
+        if( !$this->isSortAuthorized( $path , $requires , $init ) )
         {
             return null ;
         }
@@ -320,11 +323,12 @@ trait SortTrait
      *
      * The entry (the `$sortable[$key]` value) is either a plain field path — a string
      * or an array path (`[ 'address', 'city' ]`) — or an **explicit definition** (an
-     * associative array carrying `Field::PATH` and/or `Field::REQUIRES`). The permission
-     * subject is resolved in two steps, aligned on the projection's `Field::REQUIRES`:
-     * - **explicit** — a `Field::REQUIRES` declared on the entry itself takes priority;
-     * - **inherited** — otherwise the subject of the homonymous field declared in
-     *   `$this->fields` is reused, so « what you cannot read, you cannot sort on ».
+     * associative array carrying `Field::PATH` and/or `Field::REQUIRES`). Only the
+     * **explicit** `Field::REQUIRES` (Façon A) is returned here; the **inherited**
+     * permission (Façon B) is decided by {@see isSortAuthorized()} against the
+     * resolved `$path` — never against the URL key — so a dotted/aliased path
+     * (`salary` → `address.salary`) is gated at its exact (sub-)field, symmetric
+     * with groupBy/bounds and free of the "wrong homonym" pitfall.
      *
      * Shared by the textual `?sort=` grammar and the `?near=` distance anchor, so both
      * resolve a geo/scalar field the same way.
@@ -332,7 +336,8 @@ trait SortTrait
      * @param string $key   The public URL key (already resolved against the whitelist).
      * @param mixed  $entry The `$sortable[$key]` value (path or explicit definition).
      *
-     * @return array{0:mixed,1:mixed} The `[ fieldPath, requires ]` pair (`requires` may be `null`).
+     * @return array{0:mixed,1:mixed} The `[ fieldPath, requires ]` pair (`requires` is the
+     *                                explicit subject, or `null` when the entry declares none).
      */
     private function resolveSortEntry( string $key , mixed $entry ) : array
     {
@@ -343,34 +348,41 @@ trait SortTrait
         $path     = $isDefinition ? ( $entry[ Field::PATH     ] ?? $key ) : $entry ;
         $requires = $isDefinition ? ( $entry[ Field::REQUIRES ] ?? null ) : null ;
 
-        // Inherited permission (Façon B): reuse the homonymous projected field's subject.
-        if( $requires === null && property_exists( $this , 'fields' ) && is_array( $this->fields ) )
-        {
-            $fieldDefinition = $this->fields[ $key ] ?? null ;
-
-            if( is_array( $fieldDefinition ) )
-            {
-                $requires = $fieldDefinition[ Field::REQUIRES ] ?? null ;
-            }
-        }
-
         return [ $path , $requires ] ;
     }
 
     /**
-     * Decide whether a resolved sort/near `requires` subject is granted for the request.
+     * Decide whether a sort/near field is granted for the request.
      *
-     * No subject (`null`) or no authorizer injected sorts freely (fail-open — exactly the
-     * field-level semantics). Otherwise the subject is run through {@see isAuthorized()}.
+     * Two paths, mirroring the projection's own gating:
+     * - **explicit (Façon A)** — an entry that declared its own `Field::REQUIRES`
+     *   is run through {@see isAuthorized()};
+     * - **inherited (Façon B)** — otherwise the `Field::REQUIRES` is inherited from
+     *   the projection at the **resolved `$path`** via {@see isPathAuthorized()},
+     *   which descends `Field::FIELDS` / `AQL::SKIN_FIELDS` and strips `[*]`, so a
+     *   dotted/aliased path (`address.salary`) is gated at its exact sub-field —
+     *   never at the homonym of the URL key.
      *
-     * @param mixed $requires The `Field::REQUIRES` subject(s) resolved for the field, or `null`.
-     * @param array $init     The request-level init. Reads `Arango::AUTHORIZER`.
+     * Both fail open: no explicit subject with a projection that carries no
+     * `Field::REQUIRES` on the path (or no authorizer injected) sorts freely —
+     * exactly the field-level semantics, symmetric with `?filter=`.
+     *
+     * @param string $path     The resolved field path (`address.salary`, `location.point`, …).
+     * @param mixed  $requires The explicit `Field::REQUIRES` subject(s) declared on the entry, or `null`.
+     * @param array  $init     The request-level init. Reads `Arango::AUTHORIZER`.
      *
      * @return bool `true` when the field may be sorted on, `false` when refused.
      */
-    private function isSortAuthorized( mixed $requires , array $init ) : bool
+    private function isSortAuthorized( string $path , mixed $requires , array $init ) : bool
     {
-        return $requires === null || isAuthorized( [ Field::REQUIRES => $requires ] , $init ) ;
+        if( $requires !== null )
+        {
+            return isAuthorized( [ Field::REQUIRES => $requires ] , $init ) ;
+        }
+
+        $fields = property_exists( $this , 'fields' ) ? $this->fields : null ;
+
+        return isPathAuthorized( $path , $fields , $init ) ;
     }
 
     /**
@@ -409,7 +421,7 @@ trait SortTrait
 
         [ $field , $requires ] = $this->resolveSortEntry( $key , $this->sortable[ $key ] ) ;
 
-        if( !$this->isSortAuthorized( $requires , $init ) )
+        if( !$this->isSortAuthorized( $field , $requires , $init ) )
         {
             return null ;
         }

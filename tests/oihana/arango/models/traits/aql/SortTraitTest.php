@@ -256,4 +256,73 @@ class SortTraitTest extends TestCase
         $denied = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn( string $s ) => $s === 'inherited:sub' ] ;
         $this->assertSame( '' , $stub->prepareSort( $denied ) ) ;
     }
+
+    // ------------------------------------------------------------------ Permission gate : resolved-path depth (T3)
+
+    /** Façon B — an aliased key (`salary` → `address.salary`) inherits the REQUIRES of its
+     *  EXACT sub-field, not of the URL key: a denied subject drops the sort. */
+    public function testDeepAliasedPathInheritsRequiresDropsSortWhenDenied() :void
+    {
+        $stub = $this->stub( [ 'salary' => 'address.salary' ] ) ;
+        $stub->fields = [ 'address' => [ Field::FIELDS => [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ] ] ;
+
+        $init = [ 'sort' => '-salary' , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( '' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** Façon B — the same aliased key sorts when the sub-field subject is granted. */
+    public function testDeepAliasedPathInheritsRequiresAllowsSortWhenGranted() :void
+    {
+        $stub = $this->stub( [ 'salary' => 'address.salary' ] ) ;
+        $stub->fields = [ 'address' => [ Field::FIELDS => [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ] ] ;
+
+        $init = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn( string $s ) => $s === 'hr:read' ] ;
+        $this->assertSame( 'doc.address.salary ASC' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** A dotted shortcut key (`address.salary`) is gated in depth, not looked up as a flat key. */
+    public function testDottedShortcutPathIsGatedInDepth() :void
+    {
+        $stub = $this->stub( [ 'address.salary' => 'address.salary' ] ) ;
+        $stub->fields = [ 'address' => [ Field::FIELDS => [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ] ] ;
+
+        $init = [ 'sort' => 'address.salary' , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( '' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** The "wrong homonym" pitfall: an alias reusing a public token (`name` → `address.salary`)
+     *  must gate the RESOLVED path (`address.salary`), never the projection's `name` field. */
+    public function testAliasGatesResolvedPathNotTheUrlKeyHomonym() :void
+    {
+        $stub = $this->stub( [ 'name' => 'address.salary' ] ) ;
+        $stub->fields =
+        [
+            'name'    => true ,                                                               // public homonym of the URL key
+            'address' => [ Field::FIELDS => [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ] , // the real, gated target
+        ] ;
+
+        // Before the fix this inherited `name`'s (absent) gate → sorted freely, leaking salary.
+        $init = [ 'sort' => 'name' , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( '' , $stub->prepareSort( $init ) ) ;
+    }
+
+    /** Fail-open: a deep aliased gated path with no authorizer injected still sorts. */
+    public function testDeepAliasedPathFailsOpenWithoutAuthorizer() :void
+    {
+        $stub = $this->stub( [ 'salary' => 'address.salary' ] ) ;
+        $stub->fields = [ 'address' => [ Field::FIELDS => [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ] ] ;
+
+        $this->assertSame( 'doc.address.salary ASC' , $stub->prepareSort( [ 'sort' => 'salary' ] ) ) ;
+    }
+
+    /** A sortable field whose resolved path is absent from the projection stays sortable
+     *  (fail-open, symmetric with filter — "sort on a value you do not display"). */
+    public function testSortablePathAbsentFromProjectionSortsFreely() :void
+    {
+        $stub = $this->stub( [ 'salary' => 'address.salary' ] ) ;
+        $stub->fields = [ 'name' => true ] ; // address.salary not declared anywhere in the projection
+
+        $init = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( 'doc.address.salary ASC' , $stub->prepareSort( $init ) ) ;
+    }
 }

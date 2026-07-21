@@ -246,4 +246,31 @@ class NearSortTest extends TestCase
 
         $this->assertStringContainsString( 'DISTANCE(doc.geo.latitude,doc.geo.longitude,' , $result ) ;
     }
+
+    public function testNearAliasedDeepPathInheritsProjectionRequires(): void
+    {
+        // The geo key is aliased to a deep path (`geo` → `location.point`) masked by
+        // the projection's Field::REQUIRES; the near sort inherits that gate at the
+        // resolved path (T3), even without an explicit Field::REQUIRES on the entry.
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'testCollection' ,
+            AQL::LAZY       => false ,
+            AQL::SORTABLE   => [ 'geo' => 'location.point' ] ,
+            AQL::FIELDS     => [ 'location' => [ Field::FIELDS => [ 'point' => [ Field::REQUIRES => 'geo:read' ] ] ] ] ,
+        ]);
+
+        // Denied → no DISTANCE emitted (no location oracle).
+        $denied = [ Arango::NEAR => $this->near() , Arango::AUTHORIZER => fn() => false ] ;
+        $this->assertSame( '' , $model->prepareSort( $denied , binds: $this->binds ) ) ;
+
+        // Granted → DISTANCE on the resolved deep path.
+        $this->binds = [] ;
+        $granted = [ Arango::NEAR => $this->near() , Arango::AUTHORIZER => fn( string $s ) => $s === 'geo:read' ] ;
+        $this->assertStringContainsString
+        (
+            'DISTANCE(doc.location.point.latitude,doc.location.point.longitude,' ,
+            $model->prepareSort( $granted , binds: $this->binds )
+        ) ;
+    }
 }
