@@ -170,6 +170,7 @@ GET /products?facetCounts=category&bounds=width,height&metaOnly=true
 - `?metaOnly=` est le signal **générique** « la barre latérale, pas les documents » : il couvre les facettes **et** les bornes en un seul aller-retour sans documents.
 - Il **supplante** l'ancien `?facetsOnly=` (limité aux compteurs), conservé comme **alias** vrai (déprécié) — le contrôleur combine les deux drapeaux, donc les appels existants ne changent pas.
 - Accepte toute forme booléenne : `true`, `1`, `yes`, `on`.
+- **La [permission `REQUIRES`](#permission-requires) s'applique à l'identique.** Les bornes, les compteurs et le `total` de ce mode passent par les **mêmes contrôles d'autorisation** que le mode normal : un champ caché à la lecture ne livre pas plus son `{ min, max }` (ni ses comptes) via `?metaOnly=` (ou son alias déprécié `?facetsOnly=`) qu'via la liste. Le mode « métadonnées seules » n'est pas une porte dérobée.
 
 ## Voir aussi
 

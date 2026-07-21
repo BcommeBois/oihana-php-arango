@@ -113,6 +113,118 @@ final class DocumentsControllerGatingTest extends ControllerTestCase
     }
 
     /**
+     * Regression guard for the meta-only authorizer leak (audit T1): in
+     * `?metaOnly=true`, the document-fetch is skipped but count(), facetCounts()
+     * and bounds() still run — they MUST receive the request-scoped authorizer,
+     * otherwise every Field::REQUIRES / Facet::REQUIRES gate falls open and the
+     * sidebar becomes an inference oracle over hidden dimensions.
+     */
+    public function testMetaOnlyPropagatesAuthorizerToCountFacetCountsAndBounds() :void
+    {
+        $model      = $this->makeCapturingModel() ;
+        $controller = $this->makeAuthController( withStack: true , model: $model ) ;
+
+        $request = $this->makeRequest([ Arango::META_ONLY => 'true' , Arango::FACET_COUNTS => 'type' , Arango::BOUNDS => 'price' ])
+                        ->withAttribute( RequestAttribute::USER_ID , 'user-1' ) ;
+
+        $controller->list( $request , $this->makeResponse() ) ;
+
+        $this->assertAuthorizerPresent( $model->countInit       , 'count()'       ) ;
+        $this->assertAuthorizerPresent( $model->facetCountsInit , 'facetCounts()' ) ;
+        $this->assertAuthorizerPresent( $model->boundsInit      , 'bounds()'      ) ;
+    }
+
+    /**
+     * The deprecated `?facetsOnly=true` alias goes through the same meta-only
+     * branch and must propagate the authorizer identically.
+     */
+    public function testFacetsOnlyAliasPropagatesAuthorizerToMetaQueries() :void
+    {
+        $model      = $this->makeCapturingModel() ;
+        $controller = $this->makeAuthController( withStack: true , model: $model ) ;
+
+        $request = $this->makeRequest([ Arango::FACETS_ONLY => 'true' , Arango::FACET_COUNTS => 'type' , Arango::BOUNDS => 'price' ])
+                        ->withAttribute( RequestAttribute::USER_ID , 'user-1' ) ;
+
+        $controller->list( $request , $this->makeResponse() ) ;
+
+        $this->assertAuthorizerPresent( $model->countInit       , 'count()'       ) ;
+        $this->assertAuthorizerPresent( $model->facetCountsInit , 'facetCounts()' ) ;
+        $this->assertAuthorizerPresent( $model->boundsInit      , 'bounds()'      ) ;
+    }
+
+    /**
+     * The normal (non meta-only) path keeps propagating the authorizer to the
+     * document-fetch query — the fix moved beforeModelCall() before the branch,
+     * it must not have regressed the standard list().
+     */
+    public function testNormalListStillPropagatesAuthorizerToListQuery() :void
+    {
+        $model      = $this->makeCapturingModel() ;
+        $controller = $this->makeAuthController( withStack: true , model: $model ) ;
+
+        $request = $this->makeRequest()->withAttribute( RequestAttribute::USER_ID , 'user-1' ) ;
+
+        $controller->list( $request , $this->makeResponse() ) ;
+
+        $this->assertAuthorizerPresent( $model->listInit , 'list()' ) ;
+        $this->assertNull( $model->countInit , 'count() must not run on the normal list path' ) ;
+    }
+
+    /**
+     * Asserts the captured `$init` carries a callable authorizer under
+     * {@see Arango::AUTHORIZER}.
+     *
+     * @param array<string,mixed>|null $init  The `$init` captured by a model seam.
+     * @param string                   $label The seam name, for the failure message.
+     */
+    private function assertAuthorizerPresent( ?array $init , string $label ) :void
+    {
+        $this->assertIsArray( $init , $label . ' was never called' ) ;
+        $this->assertArrayHasKey( Arango::AUTHORIZER , $init , $label . ' did not receive the authorizer' ) ;
+        $this->assertInstanceOf( Closure::class , $init[ Arango::AUTHORIZER ] , $label . ' authorizer is not a Closure' ) ;
+    }
+
+    /**
+     * A MockDocuments double that captures the `$init` each meta query receives,
+     * so the test can assert the authorizer reached them.
+     */
+    private function makeCapturingModel() :MockDocuments
+    {
+        return new class( 'users' ) extends MockDocuments
+        {
+            public ?array $countInit       = null ;
+            public ?array $facetCountsInit  = null ;
+            public ?array $boundsInit       = null ;
+            public ?array $listInit         = null ;
+
+            public function count( array $init = [] ) :int
+            {
+                $this->countInit = $init ;
+                return 0 ;
+            }
+
+            public function facetCounts( array $init = [] ) :array
+            {
+                $this->facetCountsInit = $init ;
+                return [] ;
+            }
+
+            public function bounds( array $init = [] ) :array
+            {
+                $this->boundsInit = $init ;
+                return [] ;
+            }
+
+            public function list( array $init = [] ) :array
+            {
+                $this->listInit = $init ;
+                return [] ;
+            }
+        } ;
+    }
+
+    /**
      * Invokes the protected `beforeModelCall()` hook, propagating the by-reference
      * `$init` mutation back to the caller.
      *
@@ -130,7 +242,7 @@ final class DocumentsControllerGatingTest extends ControllerTestCase
      * the capability enforcer and the permission-subject resolver registered in
      * the container (or not, when `$withStack` is false).
      */
-    private function makeAuthController( bool $withStack ) :DocumentsController
+    private function makeAuthController( bool $withStack , ?MockDocuments $model = null ) :DocumentsController
     {
         $container = new Container() ;
         AppFactory::setContainer( $container ) ;
@@ -146,7 +258,7 @@ final class DocumentsControllerGatingTest extends ControllerTestCase
         [
             ControllerParam::APP    => $app ,
             ControllerParam::ROUTER => $app->getRouteCollector()->getRouteParser() ,
-            ControllerParam::MODEL  => new MockDocuments( 'users' ) ,
+            ControllerParam::MODEL  => $model ?? new MockDocuments( 'users' ) ,
         ]);
     }
 }

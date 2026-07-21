@@ -615,19 +615,19 @@ LET seller = (FOR doc IN @@products FILTER <mêmes filtres>
   quand même des documents racine distincts).
 - **Sans effet** sur une facette scalaire `Facet::FIELD` : elle émet déjà une
   ligne par document, donc le flag est ignoré (le `WITH COUNT` est conservé).
-- Ne touche ni à `?facetsOnly=` ni au `total` exact — ils proviennent déjà d'un
-  `count()` dédié.
+- Ne touche ni au mode `?metaOnly=` (ni à son alias déprécié `?facetsOnly=`) ni au
+  `total` exact — ils proviennent déjà d'un `count()` dédié.
 
-### Les comptes sans les documents (`?facetsOnly=`)
+### Les comptes sans les documents (`?metaOnly=`)
 
 Une barre latérale de recherche à facettes n'a souvent besoin **que des comptes**
 — les documents sont chargés par un appel paginé séparé. Ajoutez
-`?facetsOnly=true` pour **sauter entièrement la requête documents** : le tableau
+`?metaOnly=true` pour **sauter entièrement la requête documents** : le tableau
 `result` revient vide, tandis que les buckets `facets` et un **`total` exact**
 sont quand même calculés.
 
 ```
-GET /products?facetCounts=category&facetsOnly=true
+GET /products?facetCounts=category&metaOnly=true
 ```
 
 ```json
@@ -643,7 +643,7 @@ GET /products?facetCounts=category&facetsOnly=true
 ```
 
 - **Pourquoi pas `?limit=0` ?** `limit=0` veut dire **aucune limite** (tout
-  renvoyer) — ce n'est *pas* « zéro résultat ». `?facetsOnly=` est le signal dédié,
+  renvoyer) — ce n'est *pas* « zéro résultat ». `?metaOnly=` est le signal dédié,
   sans ambiguïté.
 - Le `total` est **exact** dans tous les cas (facettes scalaires *et* tableaux) :
   il provient d'une requête `count()` dédiée qui hérite des **mêmes** `?filter=` /
@@ -653,12 +653,18 @@ GET /products?facetCounts=category&facetsOnly=true
 - Employé **seul** (sans `?facetCounts=`), il renvoie quand même le `total` exact
   avec un `result` vide et sans `facets` — une sonde « combien y en a-t-il ? » peu
   coûteuse.
+- **Permissions respectées.** Les compteurs et le `total` de ce mode passent par
+  les **mêmes contrôles d'autorisation** `Field::REQUIRES` / `Facet::REQUIRES` que
+  le mode normal : une dimension masquée à un utilisateur reste masquée ici.
+  `?metaOnly=` n'est **pas** une porte dérobée vers les comptes d'un champ interdit.
 
-> **Déprécié.** `?facetsOnly=` est supplanté par le drapeau générique
-> [`?metaOnly=`](bounds.md#les-bornes-sans-les-documents-metaonly), qui saute
-> pareillement les documents mais conserve **aussi** les [bornes `?bounds=`](bounds.md),
-> pas seulement les compteurs. `?facetsOnly=` reste un **alias** vrai (le contrôleur
-> combine les deux drapeaux) — aucun changement pour les appels existants.
+> **`?facetsOnly=` est déprécié — préférez `?metaOnly=`.** L'ancien drapeau
+> `?facetsOnly=` (limité aux compteurs) est supplanté par le drapeau générique
+> `?metaOnly=`, qui saute pareillement les documents mais conserve **aussi** les
+> [bornes `?bounds=`](bounds.md), pas seulement les compteurs. `?facetsOnly=`
+> reste un **alias** vrai (le contrôleur combine les deux drapeaux) — aucun
+> changement pour les appels existants, mais utilisez `?metaOnly=` dans tout
+> nouveau code.
 
 ## Voir aussi
 

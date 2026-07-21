@@ -657,18 +657,18 @@ LET seller = (FOR doc IN @@products FILTER <same filters>
   the `[*]` hop depth (`a[*].b[*].c` still counts distinct root documents).
 - **No effect** on a scalar `Facet::FIELD` facet: it already emits one row per
   document, so the flag is ignored (the `WITH COUNT` is kept).
-- Touches neither `?facetsOnly=` nor the exact `total` — they already come from
-  a dedicated `count()`.
+- Touches neither the `?metaOnly=` mode (nor its deprecated `?facetsOnly=` alias)
+  nor the exact `total` — they already come from a dedicated `count()`.
 
-### Counts without the documents (`?facetsOnly=`)
+### Counts without the documents (`?metaOnly=`)
 
 A faceted-search sidebar often needs **only the counts** — the documents are
-fetched by a separate, paginated call. Add `?facetsOnly=true` to **skip the
+fetched by a separate, paginated call. Add `?metaOnly=true` to **skip the
 document-fetch query entirely**: the `result` array comes back empty while the
 `facets` buckets, and an **exact `total`**, are still computed.
 
 ```
-GET /products?facetCounts=category&facetsOnly=true
+GET /products?facetCounts=category&metaOnly=true
 ```
 
 ```json
@@ -684,19 +684,23 @@ GET /products?facetCounts=category&facetsOnly=true
 ```
 
 - **Why not `?limit=0`?** `limit=0` means **no limit** (return everything) — it is
-  *not* "zero results". `?facetsOnly=` is the dedicated, unambiguous signal.
+  *not* "zero results". `?metaOnly=` is the dedicated, unambiguous signal.
 - The `total` is **exact** in every case (scalar *and* array facets): it comes from
   a dedicated `count()` query that inherits the **same** `?filter=` / `?facets=` /
   `?search=` as the counts, never from summing the (possibly multi-valued) buckets.
 - Accepts any boolean form: `true`, `1`, `yes`, `on`.
 - Used **alone** (no `?facetCounts=`), it still returns the exact `total` with an
   empty `result` and no `facets` — a cheap "how many match?" probe.
+- **Permissions are enforced.** This mode's counts and `total` go through the
+  **same** `Field::REQUIRES` / `Facet::REQUIRES` gates as the normal path: a
+  dimension hidden from a user stays hidden here. `?metaOnly=` is **not** a back
+  door to the counts of a forbidden field.
 
-> **Deprecated.** `?facetsOnly=` is superseded by the generic
-> [`?metaOnly=`](bounds.md#bounds-without-the-documents-metaonly) flag, which
-> likewise skips the documents but **also** keeps the [bounds `?bounds=`](bounds.md),
-> not only the counts. `?facetsOnly=` stays a truthy **alias** (the controller ORs
-> the two flags) — no change for existing calls.
+> **`?facetsOnly=` is deprecated — prefer `?metaOnly=`.** The older `?facetsOnly=`
+> flag (counts only) is superseded by the generic `?metaOnly=`, which likewise
+> skips the documents but **also** keeps the [bounds `?bounds=`](bounds.md), not
+> only the counts. `?facetsOnly=` stays a truthy **alias** (the controller ORs the
+> two flags) — no change for existing calls, but use `?metaOnly=` in any new code.
 
 ## See also
 

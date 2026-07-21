@@ -170,6 +170,7 @@ GET /products?facetCounts=category&bounds=width,height&metaOnly=true
 - `?metaOnly=` is the **generic** "the sidebar, not the documents" signal: it spans facets **and** bounds in a single documentless round-trip.
 - It **supersedes** the older `?facetsOnly=` (counts only), kept as a truthy **alias** (deprecated) — the controller ORs the two flags, so existing calls are unchanged.
 - Accepts any boolean form: `true`, `1`, `yes`, `on`.
+- **The [`REQUIRES` permission](#permission-requires) applies identically.** This mode's bounds, counts and `total` go through the **same** gates as the normal path: a field hidden from reading yields its `{ min, max }` (or its counts) no more through `?metaOnly=` (or its deprecated `?facetsOnly=` alias) than through the list. The "metadata only" mode is not a back door.
 
 ## See also
 

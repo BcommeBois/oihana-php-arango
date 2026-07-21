@@ -93,18 +93,23 @@ trait DocumentsControllerListTrait
 
             $isDocuments = $this->model instanceof Documents && !$this->model->mock ;
 
+            // Inject the request-scoped authorizer BEFORE the meta-only branch:
+            // meta-only still issues model calls (count/facetCounts/bounds), so
+            // the permission gates must receive Arango::AUTHORIZER on every path.
+            // Left in the `else` only, it never reached the meta-only queries and
+            // every Field::REQUIRES / Facet::REQUIRES gate fell open. beforeModelCall
+            // is idempotent (an authorizer already in $modelInit is kept).
+            $this->beforeModelCall( $request , $modelInit ) ;
+
             if( $metaOnly )
             {
-                // Meta-only mode: the document-fetch query is skipped. The list
-                // returns an empty result set while `total` (exact, same filters,
-                // via count()) and the requested facet counts / bounds are still
-                // computed.
+                // Meta-only mode: the document-fetch query is skipped. The list returns an empty result
+                // set while `total` (exact, same filters, via count()) and the requested facet counts / bounds are still computed.
                 $documents = [] ;
                 $total     = $isDocuments ? $this->model->count( $modelInit ) : 0 ;
             }
             else
             {
-                $this->beforeModelCall( $request , $modelInit ) ;
                 $documents = $this->model->list( $modelInit ) ;
                 $this->afterModelCall( $request , $modelInit , $documents ) ;
 
