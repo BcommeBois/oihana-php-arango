@@ -15,7 +15,6 @@ use oihana\arango\db\enums\options\TraversalOption;
 use oihana\arango\db\enums\options\TraversalOrder;
 use oihana\arango\db\enums\options\TraversalUniqueVertices;
 use oihana\arango\db\enums\Traversal;
-use oihana\arango\enums\Arango;
 
 use org\schema\constants\Schema;
 
@@ -27,6 +26,7 @@ use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlTraversal;
 use function oihana\arango\models\helpers\authorizeRelationFields;
+use function oihana\arango\models\helpers\authorizeTargetFields;
 use function oihana\arango\models\helpers\buildVariables;
 use function oihana\core\strings\betweenBraces;
 use function oihana\core\strings\betweenParentheses;
@@ -99,13 +99,13 @@ function buildEdgeSubquery
     $edgeRef   = randomKey( AQL::EDGE   );
     $vertexRef = randomKey( AQL::VERTEX );
 
-    $definitionEdges = $definition[ Arango::EDGES  ] ?? [] ;
-    $definitionJoins = $definition[ Arango::JOINS  ] ?? [] ;
+    $definitionEdges = $definition[ AQL::EDGES  ] ?? [] ;
+    $definitionJoins = $definition[ AQL::JOINS  ] ?? [] ;
     // The edge def can pin a fixed skin (e.g. Skin::MAIN to break a cycle) ;
     // otherwise we fall back on the request-level skin propagated through
     // $init so a sub-edge projection can vary with `?skin=...` (the
     // sub-fields opt in via Field::SKINS markers).
-    $skin            = $definition[ Arango::SKIN   ] ?? $init[ Arango::SKIN ] ?? null ;
+    $skin            = $definition[ AQL::SKIN   ] ?? $init[ AQL::SKIN ] ?? null ;
     // AQL::SKIN_FIELDS lets a definition declare distinct projections per
     // skin in a single place, e.g. role() flat for Skin::DEFAULT and a rich
     // role([...]) for Skin::FULL. Falls back on the '*' bucket then on the
@@ -134,7 +134,7 @@ function buildEdgeSubquery
         $minDepth = 1 ;
     }
 
-    $property = $definition[ Arango::PROPERTY ] ?? null ;
+    $property = $definition[ AQL::PROPERTY ] ?? null ;
 
     // Path metadata (hierarchy reconstruction): AQL::WITH_PATH opts in to a `path`
     // traversal variable and injects, into the projected object, the immediate parent
@@ -186,6 +186,11 @@ function buildEdgeSubquery
     else
     {
         $fields = $documents->prepareQueryFields( $fields , $skin , $name ) ;
+
+        // An ad-hoc AQL::FIELDS on the definition replaces the target's $fields, so
+        // re-apply the target model's own Field::REQUIRES (T6): a field masked from
+        // reading stays masked through the relation.
+        $fields = authorizeTargetFields( $fields , $documents , $init ) ;
 
         if( is_array( $fields ) && count( $fields ) > 0 )
         {

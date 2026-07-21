@@ -62,6 +62,7 @@ AQL::EDGES =>
 Points importants :
 
 - `AQL::FIELDS` sur la définition d'edge **est lu** par `buildEdgeVariable`. C'est la projection effective utilisée pour hydrater le document cible.
+- Cette projection ad-hoc **hérite les `Field::REQUIRES` du modèle cible** : un champ déclaré ici mais masqué à la lecture sur le modèle cible reste masqué (retiré de la sous-requête si l'*authorizer* le refuse), sans qu'on ait à redéclarer sa permission sur la définition. Le contrôle porte sur l'attribut **source** (`Field::NAME` si aliasé), jamais sur la clé de sortie. *Fail-open* : un champ sans `Field::REQUIRES` sur le modèle cible, ou sans *authorizer*, reste projeté.
 - `AQL::EDGES` sur la définition d'edge déclare les sous-edges référencées par les `Filter::EDGE` ou `Filter::EDGES` dans la projection.
 - `Field::FIELDS` posé **inline au niveau du champ parent** est ignoré pour `Filter::EDGES` (il n'est respecté que pour `Filter::DOCUMENT` et `Filter::MAP`). C'est un piège classique : déclarer la projection au bon niveau (sur la définition d'edge, pas sur le champ parent).
 

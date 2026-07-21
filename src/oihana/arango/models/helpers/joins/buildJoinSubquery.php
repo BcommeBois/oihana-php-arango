@@ -11,7 +11,6 @@ use Psr\Container\ContainerInterface;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
-use oihana\arango\enums\Arango;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\models\Documents;
 
@@ -28,6 +27,7 @@ use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\in;
 use function oihana\arango\db\operators\ternary;
 use function oihana\arango\models\helpers\authorizeRelationFields;
+use function oihana\arango\models\helpers\authorizeTargetFields;
 use function oihana\arango\models\helpers\buildVariables;
 use function oihana\arango\models\helpers\getDocuments;
 use function oihana\core\strings\betweenBraces;
@@ -115,11 +115,11 @@ function buildJoinSubquery
         throw new UnexpectedValueException( __FUNCTION__ . ' failed, the edge collection not must be null or empty.' ) ;
     }
 
-    $edges    = $definition[ Arango::EDGES      ] ?? [] ;
-    $joins    = $definition[ Arango::JOINS      ] ?? [] ;
-    $key      = $definition[ Arango::KEY        ] ?? Schema::_KEY ;
-    $property = $definition[ Arango::PROPERTY   ] ?? null ; // string or array
-    $skin     = $definition[ Arango::SKIN       ] ?? $init[ Arango::SKIN ] ?? null ; // Fall back on the request-level skin from $init so a join projection can vary with `?skin=...` (sub-fields opt in via Field::SKINS).
+    $edges    = $definition[ AQL::EDGES      ] ?? [] ;
+    $joins    = $definition[ AQL::JOINS      ] ?? [] ;
+    $key      = $definition[ AQL::KEY        ] ?? Schema::_KEY ;
+    $property = $definition[ AQL::PROPERTY   ] ?? null ; // string or array
+    $skin     = $definition[ AQL::SKIN       ] ?? $init[ AQL::SKIN ] ?? null ; // Fall back on the request-level skin from $init so a join projection can vary with `?skin=...` (sub-fields opt in via Field::SKINS).
 
     // Same SKIN_FIELDS resolution as edges — see buildEdgeVariable.
     $fields = resolveSkinFields( $definition , $skin ) ;
@@ -144,9 +144,9 @@ function buildJoinSubquery
 
     $conditions = [] ;
 
-    if ( isset($definition[ Arango::CONDITIONS ] ) )
+    if ( isset($definition[ AQL::CONDITIONS ] ) )
     {
-        $cond = $definition[ Arango::CONDITIONS ] ;
+        $cond = $definition[ AQL::CONDITIONS ] ;
         if ( is_callable( $cond ) )
         {
             $reflection = new ReflectionFunction( $cond );
@@ -200,6 +200,12 @@ function buildJoinSubquery
     }
 
     $fields = $documents->prepareQueryFields( $fields , $skin , $name ) ;
+
+    // An ad-hoc AQL::FIELDS on the definition replaces the target's $fields, so
+    // re-apply the target model's own Field::REQUIRES (T6): a field masked from
+    // reading stays masked through the join.
+    $fields = authorizeTargetFields( $fields , $documents , $init ) ;
+
     if( is_array( $fields ) && count( $fields ) > 0 )
     {
         // Definition-level gating: purge the relation markers whose nested

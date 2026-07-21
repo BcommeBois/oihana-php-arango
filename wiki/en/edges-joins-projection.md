@@ -62,6 +62,7 @@ AQL::EDGES =>
 Important points:
 
 - `AQL::FIELDS` on the edge definition **is read** by `buildEdgeVariable`. This is the effective projection used to hydrate the target document.
+- This ad-hoc projection **inherits the target model's `Field::REQUIRES`**: a field declared here but hidden from reading on the target model stays hidden (dropped from the sub-query when the authorizer denies it), with no need to re-declare its permission on the definition. The gate applies to the **source** attribute (`Field::NAME` when aliased), never the output key. Fail-open: a field with no `Field::REQUIRES` on the target, or no authorizer, stays projected.
 - `AQL::EDGES` on the edge definition declares the sub-edges referenced by `Filter::EDGE` or `Filter::EDGES` markers in the projection.
 - `Field::FIELDS` placed **inline at the parent field level** is ignored for `Filter::EDGES` (it's only honoured for `Filter::DOCUMENT` and `Filter::MAP`). A common pitfall: declare the projection at the right level (on the edge definition, not on the parent field).
 

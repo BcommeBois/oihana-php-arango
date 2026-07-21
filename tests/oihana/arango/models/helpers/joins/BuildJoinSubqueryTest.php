@@ -4,6 +4,7 @@ namespace tests\oihana\arango\models\helpers\joins;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 
 use PHPUnit\Framework\TestCase;
 
@@ -86,6 +87,25 @@ final class BuildJoinSubqueryTest extends TestCase
 
         $this->assertSame( $without , $with ) ;
         $this->assertSame( 'FOR doc_join IN roles FILTER doc_join._key == doc.role RETURN doc_join' , $with ) ;
+    }
+
+    public function testAdHocProjectionInheritsTargetFieldRequires() :void
+    {
+        // The join's own AQL::FIELDS re-projects `salary` WITHOUT re-declaring its
+        // permission; the target model masks it. The gate must inherit that (T6).
+        $target = new MockDocuments( 'people' ) ;
+        $target->fields = [ 'name' => [] , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+
+        $definition = [ AQL::MODEL => $target , AQL::FIELDS => [ 'name' => [] , 'salary' => [] ] ] ;
+
+        // Denied → salary dropped from the join projection (no field oracle via the join).
+        $denied = buildJoinSubquery( 'employer' , $definition , AQL::DOC , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+        $this->assertStringContainsString   ( 'name'   , $denied ) ;
+        $this->assertStringNotContainsString( 'salary' , $denied ) ;
+
+        // Granted → salary kept.
+        $granted = buildJoinSubquery( 'employer' , $definition , AQL::DOC , null , [ Arango::AUTHORIZER => fn( string $s ) => $s === 'hr:read' ] ) ;
+        $this->assertStringContainsString( 'salary' , $granted ) ;
     }
 
     /**
