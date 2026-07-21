@@ -20,6 +20,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\Search;
@@ -587,6 +588,126 @@ class ViewSearchTest extends TestCase
             'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
             . ' || doc.salary IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
             $this->gatedModel()->prepareViewSearch( [ Arango::SEARCH => 'bois' ] , $this->binds )
+        ) ;
+    }
+
+    // ---------------------------------------------------------------- View search : inherited projection gate (T2)
+
+    public function testViewSearchInheritsProjectionRequiresDroppedWhenDenied() :void
+    {
+        // `salary` is searchable WITHOUT a Search::REQUIRES, but masked from
+        // reading by the projection's Field::REQUIRES. The View search must
+        // inherit that gate.
+        $model = $this->model(
+        [
+            AQL::FIELDS => [ 'name' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ,
+            AQL::VIEW   =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'name' => 1 , 'salary' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => false ] , $this->binds )
+        ) ;
+    }
+
+    public function testViewSearchInheritsProjectionRequiresKeptWhenGranted() :void
+    {
+        $model = $this->model(
+        [
+            AQL::FIELDS => [ 'name' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ,
+            AQL::VIEW   =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'name' => 1 , 'salary' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.salary IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => true ] , $this->binds )
+        ) ;
+    }
+
+    public function testViewSearchSubfieldExpansionGatedInDepthWhenDenied() :void
+    {
+        // A searchable array-of-objects sub-field (`contactPoints[*].email`) whose
+        // exact sub-field is masked by the projection is gated in depth: the `[*]`
+        // marker is stripped and isPathAuthorized descends Field::FIELDS.
+        $model = $this->model(
+        [
+            AQL::FIELDS =>
+            [
+                'name'          => true ,
+                'contactPoints' => [ Field::FIELDS => [ 'email' => [ Field::REQUIRES => 'c:read' ] ] ] ,
+            ] ,
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'name' => 1 , 'contactPoints[*].email' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $denied = $model->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => false ] , $this->binds ) ;
+        $this->assertStringNotContainsString( 'contactPoints' , $denied , 'The masked sub-field must not be searched.' ) ;
+        $this->assertStringContainsString( 'doc.name IN TOKENS' , $denied ) ;
+
+        $this->binds = [] ;
+        $granted = $model->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn() => true ] , $this->binds ) ;
+        $this->assertStringContainsString( 'contactPoints.email IN TOKENS' , $granted , 'Granted → the sub-field is searched.' ) ;
+    }
+
+    public function testViewSearchProjectionGateComposesWithSearchRequires() :void
+    {
+        // Both gates must grant: the field's Search::REQUIRES ('s:x') AND the
+        // projection's Field::REQUIRES ('p:y'). The authorizer grants the search
+        // subject but denies the projection one → the field is dropped (AND).
+        $model = $this->model(
+        [
+            AQL::FIELDS => [ 'name' => true , 'salary' => [ Field::REQUIRES => 'p:y' ] ] ,
+            AQL::VIEW   =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'name' => 1 , 'salary' => [ Search::REQUIRES => 's:x' ] ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( [ Arango::SEARCH => 'bois' , Arango::AUTHORIZER => fn( $s ) => $s === 's:x' ] , $this->binds )
+        ) ;
+    }
+
+    public function testViewSearchInheritedProjectionGateFailsOpenWithoutAuthorizer() :void
+    {
+        // No authorizer → the projection gate is disabled, the masked field stays searchable.
+        $model = $this->model(
+        [
+            AQL::FIELDS => [ 'name' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ,
+            AQL::VIEW   =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   => [ 'name' => 1 , 'salary' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr")'
+            . ' || doc.salary IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( [ Arango::SEARCH => 'bois' ] , $this->binds )
         ) ;
     }
 

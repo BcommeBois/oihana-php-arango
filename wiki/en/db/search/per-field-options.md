@@ -248,6 +248,8 @@ AQL::VIEW =>
 
 The two levels combine with **AND**: a field is searched when **(the View gate is absent or granted) AND (the field gate is absent or granted)**. Within a single list, subjects combine with **OR**. ⚠️ This is the **only** **additive** facet: unlike boost / fuzzy / analyzer / language / phrase (where a field *overrides* the View), `REQUIRES` **accumulate** (the most restrictive wins) — for safety.
 
+**Third level — inheritance from the projection.** On top of its own `Search::REQUIRES`, a searchable field **automatically** inherits the `Field::REQUIRES` declared on the **projection** (`$fields`), at the **exact sub-field** (`contactPoints[*].email` descends to `email`) — exactly like `?filter=`, `?facets=`, `?sort=`, `?bounds=` and `?groupBy=`. In other words: **a field hidden from reading is already non-searchable**, with no need to re-declare `Search::REQUIRES`. The three gates compose with **AND** (the most restrictive wins). A field **without** `Field::REQUIRES`, or **absent** from the projection, stays searchable — the intended "search on a value you do not display" case.
+
 **Concrete example.** The word « confidentiel » lives only in a `secret` field gated by `Search::REQUIRES => 'places:secret'`:
 
 ```
@@ -261,6 +263,7 @@ GET /places?search=confidentiel
 
 Key points:
 
+- **Inheritance from the projection** — a field hidden by `Field::REQUIRES` on `$fields` is dropped from the search **even without `Search::REQUIRES`** (symmetric with the five other query surfaces; closes the search oracle on a non-readable field).
 - **Global gate** — if the View's `Search::REQUIRES` is denied, the **whole** search returns `false` (zero results), whatever the declared fields.
 - **No leak by default** — if permissions remove **every** searched field, the emitted `SEARCH` is `false`: zero results. It **never** falls back to searching everything or to the `LIKE` sweep (which would bypass the gate).
 - **Fail-open without an authorizer** — if no `Arango::AUTHORIZER` is injected, the authorization layer is considered disabled and gated fields stay searchable (same behavior as the projection). In production the controller always injects the authorizer.

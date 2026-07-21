@@ -6,6 +6,7 @@ use ReflectionMethod;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 use oihana\arango\models\enums\Search;
 use oihana\arango\models\traits\aql\SearchTrait;
 
@@ -19,6 +20,13 @@ use PHPUnit\Framework\TestCase;
 class SearchTraitStub
 {
     use SearchTrait ;
+
+    /**
+     * The projection definition, mirroring the host model's `$fields`. Left
+     * `null` by default so the existing tests keep the fail-open behaviour; a
+     * test sets it to exercise the inherited `Field::REQUIRES` gate.
+     */
+    public ?array $fields = null ;
 
     public function __construct()
     {
@@ -205,6 +213,107 @@ class SearchTraitTest extends TestCase
         $this->assertSame
         (
             '(LIKE(doc.name,@search_0,true) || LIKE(doc.firstName,@search_0,true))' ,
+            $stub->prepareSearch( 'Marc' , $binds ) ,
+        ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareSearch : inherited projection gate (T2)
+
+    public function testSearchFieldInheritedProjectionRequiresDroppedWhenDenied() :void
+    {
+        // `salary` is masked from reading by the projection's Field::REQUIRES; the
+        // search must inherit that gate even without a per-field Search::REQUIRES.
+        $stub = $this->stub( [ 'name' , 'salary' ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => false ] , $binds ) ,
+        ) ;
+    }
+
+    public function testSearchFieldInheritedProjectionRequiresKeptWhenGranted() :void
+    {
+        $stub = $this->stub( [ 'name' , 'salary' ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true) || LIKE(doc.salary,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => true ] , $binds ) ,
+        ) ;
+    }
+
+    public function testSoleSearchFieldDeniedByProjectionMatchesNothing() :void
+    {
+        $stub = $this->stub( [ 'salary' ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+        $binds = [] ;
+
+        $this->assertSame( 'false' , $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => false ] , $binds ) ) ;
+        $this->assertSame( [] , $binds , 'No term is bound when the search matches nothing.' ) ;
+    }
+
+    public function testSearchFieldWithoutProjectionRequiresIsUnaffected() :void
+    {
+        // A projected field carrying no Field::REQUIRES stays searchable even when
+        // the authorizer denies everything — nothing to inherit.
+        $stub = $this->stub( [ 'name' ] ) ;
+        $stub->fields = [ 'name' => true ] ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => false ] , $binds ) ,
+        ) ;
+    }
+
+    public function testSearchFieldAbsentFromProjectionStaysSearchable() :void
+    {
+        // `name` is searchable but not declared in the projection: nothing to
+        // inherit, it stays searchable (fail-open, symmetric with filter — "search
+        // on a value you do not display").
+        $stub = $this->stub( [ 'name' ] ) ;
+        $stub->fields = [ 'other' => [ Field::REQUIRES => 'x:y' ] ] ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn() => false ] , $binds ) ,
+        ) ;
+    }
+
+    public function testProjectionGateComposesWithSearchRequires() :void
+    {
+        // Both gates must grant: Search::REQUIRES ('s:x') AND the projection's
+        // Field::REQUIRES ('p:y'). The authorizer grants the search subject but
+        // denies the projection one → the field is dropped (AND).
+        $stub = $this->stub( [ 'name' , [ Search::KEY => 'salary' , Search::REQUIRES => 's:x' ] ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'p:y' ] ] ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0,true))' ,
+            $stub->prepareSearch( [ Arango::SEARCH => 'Marc' , Arango::AUTHORIZER => fn( $s ) => $s === 's:x' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testInheritedProjectionGateFailsOpenWithoutAuthorizer() :void
+    {
+        // No authorizer → the projection gate is disabled, the field stays searchable.
+        $stub = $this->stub( [ 'salary' ] ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            '(LIKE(doc.salary,@search_0,true))' ,
             $stub->prepareSearch( 'Marc' , $binds ) ,
         ) ;
     }

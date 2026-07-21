@@ -248,6 +248,8 @@ AQL::VIEW =>
 
 Les deux niveaux se combinent en **AND** : un champ est cherché si **(le contrôle de la View est absent ou accordé) ET (le contrôle du champ est absent ou accordé)**. Dans une même liste, les sujets se combinent en **OR**. ⚠️ C'est la **seule** facette **additive** : contrairement au boost / fuzzy / analyzer / langue / phrase (où le champ *surcharge* la View), les `REQUIRES` s'**accumulent** (le plus restrictif gagne) — par sécurité.
 
+**Troisième niveau — l'héritage de la projection.** En plus de son `Search::REQUIRES` propre, un champ cherchable hérite **automatiquement** le `Field::REQUIRES` déclaré sur la **projection** (`$fields`), au **sous-champ exact** (`contactPoints[*].email` descend jusqu'à `email`) — exactement comme `?filter=`, `?facets=`, `?sort=`, `?bounds=` et `?groupBy=`. Autrement dit : **un champ masqué à la lecture est déjà non-cherchable**, sans avoir à re-déclarer `Search::REQUIRES`. Les trois contrôles se composent en **AND** (le plus restrictif gagne). Un champ **sans** `Field::REQUIRES`, ou **absent** de la projection, reste cherchable — le cas assumé « chercher sur une donnée qu'on n'affiche pas ».
+
 **Exemple concret.** Le mot « confidentiel » ne vit que dans un champ `secret` gardé par `Search::REQUIRES => 'places:secret'` :
 
 ```
@@ -261,6 +263,7 @@ GET /places?search=confidentiel
 
 Points clés :
 
+- **Héritage de la projection** — un champ masqué par `Field::REQUIRES` sur `$fields` est retiré de la recherche **même sans `Search::REQUIRES`** (symétrie avec les cinq autres surfaces d'interrogation ; ferme l'oracle de recherche sur un champ non lisible).
 - **Contrôle global** — si le `Search::REQUIRES` de la View est refusé, **toute** la recherche renvoie `false` (zéro résultat), quels que soient les champs déclarés.
 - **Aucune fuite par défaut** — si les permissions retirent **tous** les champs cherchés, le `SEARCH` émis est `false` : zéro résultat. Il ne retombe **jamais** sur « cherche tout » ni sur le balayage `LIKE` (ce qui contournerait le contrôle).
 - **Fail-open sans autorizer** — si aucun `Arango::AUTHORIZER` n'est injecté, la couche d'autorisation est considérée désactivée et les champs gardés restent cherchables (comportement identique à la projection). En production, le contrôleur injecte toujours l'autorizer.

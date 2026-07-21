@@ -23,6 +23,7 @@ use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
 use function oihana\arango\models\helpers\isAuthorized;
+use function oihana\arango\models\helpers\isPathAuthorized;
 
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\stripArrayExpansion;
@@ -213,11 +214,21 @@ trait SearchTrait
                 return null ; // no searchable field declared → search inactive
             }
 
-            // Permission gating : a searchable field declaring Search::REQUIRES
-            // is kept only when the request authorizer grants it (fail-open
-            // without one). Denying every field yields `false` (zero rows) — it
-            // must NEVER drop the search silently (that would return everything).
-            $specs = array_filter( $specs , static fn( array $spec ) => isAuthorized( $spec , $init ) ) ;
+            // Permission gating : a searchable field is kept only when BOTH gates
+            // grant it — its own Search::REQUIRES (isAuthorized) AND the
+            // Field::REQUIRES inherited from the projection at the exact (sub-)field
+            // (isPathAuthorized, symmetric with filter/facet/sort/bounds/groupBy).
+            // A field carrying no Field::REQUIRES, or absent from the projection,
+            // stays ungated (fail-open, same as filter). Denying every field yields
+            // `false` (zero rows) — it must NEVER drop the search silently (that
+            // would return everything).
+            $fieldsDef = property_exists( $this , AQL::FIELDS ) ? $this->fields : null ;
+            $specs     = array_filter
+            (
+                $specs ,
+                static fn( array $spec , $field ) => isAuthorized( $spec , $init ) && isPathAuthorized( (string) $field , $fieldsDef , $init ) ,
+                ARRAY_FILTER_USE_BOTH
+            ) ;
 
             if( count( $specs ) === 0 )
             {
@@ -336,12 +347,22 @@ trait SearchTrait
         $globalPhrase  = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
         $globalFuzzy   = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
 
-        // Per-field permission gating : a field declaring Search::REQUIRES joins
-        // the SEARCH only when the request authorizer grants it (fail-open without
-        // one). This ANDs with the View-level gate above. Denying every field
-        // yields a SEARCH that matches nothing — it must NEVER fall back to
+        // Per-field permission gating : a field joins the SEARCH only when BOTH
+        // gates grant it — its own Search::REQUIRES (isAuthorized) AND the
+        // Field::REQUIRES inherited from the projection at the exact (sub-)field
+        // (isPathAuthorized, which strips the `[*]` marker and descends, so
+        // `contactPoints[*].email` is gated in depth). This ANDs with the
+        // View-level gate above. A field with no Field::REQUIRES, or absent from
+        // the projection, stays ungated (fail-open, same as filter). Denying every
+        // field yields a SEARCH that matches nothing — it must NEVER fall back to
         // searching everything (that would bypass the gate).
-        $fields = array_filter( $fields , static fn( array $spec ) => isAuthorized( $spec , $init ) ) ;
+        $fieldsDef = property_exists( $this , 'fields' ) ? $this->fields : null ;
+        $fields = array_filter
+        (
+            $fields ,
+            static fn( array $spec , $field ) => isAuthorized( $spec , $init ) && isPathAuthorized( (string) $field , $fieldsDef , $init ) ,
+            ARRAY_FILTER_USE_BOTH
+        ) ;
 
         if( $fields === [] )
         {
