@@ -9,13 +9,13 @@ Une *capability* (« capacité ») est une **permission fine** qui s'applique à
 - *« cet utilisateur peut-il envoyer le champ `manualPriceOverride` dans le body d'un `PATCH /offers/{id}` ? »* ;
 - *« cet utilisateur peut-il déclencher l'action transverse `?bench=true` ? »*.
 
-Dans tous les cas, le verbe HTTP est **déjà autorisé** par Casbin — le client a bien le droit d'appeler la route. La *capability* gate **finement** ce qu'il peut envoyer **à l'intérieur** de la requête.
+Dans tous les cas, le verbe HTTP est **déjà autorisé** par Casbin — le client a bien le droit d'appeler la route. La *capability* **contrôle finement** ce qu'il peut envoyer **à l'intérieur** de la requête.
 
 Côté serveur, chaque *capability* est rattachée à une permission Casbin (typiquement `products:skin.offers.full`). Si l'utilisateur n'a pas cette permission, le framework applique la politique configurée : refuser la requête en 403, ignorer silencieusement la valeur, replier sur une valeur par défaut, etc.
 
 ## Pourquoi un système séparé de Casbin
 
-Casbin est excellent pour gater les **endpoints** : `GET`, `POST`, `PATCH`, `DELETE` par ressource. Mais Casbin ne sait pas répondre à *« cet utilisateur peut-il passer cette valeur dans ce paramètre ? »* — il ne voit que le verbe et le chemin de la route.
+Casbin est excellent pour contrôler les **endpoints** : `GET`, `POST`, `PATCH`, `DELETE` par ressource. Mais Casbin ne sait pas répondre à *« cet utilisateur peut-il passer cette valeur dans ce paramètre ? »* — il ne voit que le verbe et le chemin de la route.
 
 Sans système de *capabilities*, on a deux solutions médiocres :
 
@@ -37,12 +37,12 @@ Cette page documente :
 
 ```
 HTTP request
-  → middleware Authorized (Casbin)               gate verbe + chemin
+  → middleware Authorized (Casbin)               contrôle verbe + chemin
   → PrepareSkin                                  fixe $init[ Arango::SKIN ]
   → enforceParam(?skin=)                         valide la VALEUR du skin (cette page)
   → enforceFilterKeys(?filter=...)               valide les CLÉS du filtre (cette page)
   → enforceFields($payload)                      valide les CHAMPS du body (cette page)
-  → hasCapability(?bench=true)                   gate une action transverse (cette page)
+  → hasCapability(?bench=true)                   contrôle une action transverse (cette page)
   → preparePayload + validator                   cf. payloads.md + rules.md
   → buildAuthorizer($request) → $init[ AUTHORIZER ]
   → beforeModelCall($request, &$init)
@@ -128,9 +128,9 @@ L'enforcement est implémenté par sept traits exposés par [`oihana/php-auth`](
 |---|---|---|
 | `CapabilityGuardTrait` | **Façade** qui agrège les six traits spécialisés (sauf `CapabilityAuthorizerTrait`). | Contrôleur qui consomme plusieurs types de *capabilities* — c'est le cas standard. |
 | `CapabilityContextTrait` | État partagé : `$capabilities`, *kill-switch*, *enforcer* injecté. **Obligatoire** dès qu'un autre trait Capability est utilisé. | Toujours via `CapabilityGuardTrait` — pas besoin d'y toucher directement. |
-| `CapabilityParamTrait` | `enforceParam( $request , $paramName )` pour les paramètres à **valeur énumérée** (`?skin=`). | Quand on a une liste fermée de valeurs autorisées et qu'on veut gater chacune individuellement. |
-| `CapabilityFilterKeysTrait` | `enforceFilterKeys( $request )` pour les paramètres de type *map* (`?filter=`). Gate les **clés** du filtre. | Sur les ressources avec des champs filtrables sensibles (prix, données privées). |
-| `CapabilityFieldsTrait` | `enforceFields( $payload )` pour gater les **champs du body** sur `PATCH` / `POST` / `PUT`. | Quand un champ ne doit être modifiable que par certains utilisateurs (par exemple `level` sur `/roles`). |
+| `CapabilityParamTrait` | `enforceParam( $request , $paramName )` pour les paramètres à **valeur énumérée** (`?skin=`). | Quand on a une liste fermée de valeurs autorisées et qu'on veut contrôler chacune individuellement. |
+| `CapabilityFilterKeysTrait` | `enforceFilterKeys( $request )` pour les paramètres de type *map* (`?filter=`). Contrôle les **clés** du filtre. | Sur les ressources avec des champs filtrables sensibles (prix, données privées). |
+| `CapabilityFieldsTrait` | `enforceFields( $payload )` pour contrôler les **champs du body** sur `PATCH` / `POST` / `PUT`. | Quand un champ ne doit être modifiable que par certains utilisateurs (par exemple `level` sur `/roles`). |
 | `CapabilityBinaryTrait` | `hasCapability( $request , $paramName )` pour les paramètres **binaires** (`?bench=true`) ou les **actions transverses**. | Pour les *features* qu'on ne mappe pas sur une valeur mais sur la présence d'un paramètre. |
 | `CapabilityAuthorizerTrait` | `buildAuthorizer( $request )` produit un `Closure(string $subject): bool` **request-scoped** qui lit la string comme un **discriminant de *capability*** (action `PARAM:<name>`). | Pour un contrôle *capability* ad-hoc dans la logique du contrôleur. ⚠ **Pas** pour `AQL::REQUIRES` : ce *gating* utilise des libellés de permission, gardés par `buildPermissionAuthorizer` — posé automatiquement par la base (voir ci-dessous). |
 
@@ -149,10 +149,10 @@ final class ProductsController extends DocumentsController
     {
         parent::beforeModelCall( $request , $init ) ;
 
-        // Gate la valeur de ?skin= contre les permissions Casbin
+        // Contrôle la valeur de ?skin= contre les permissions Casbin
         $this->enforceParam( $request , ControllerParam::SKIN , $init ) ;
 
-        // Gate les clés de ?filter=
+        // Contrôle les clés de ?filter=
         $this->enforceFilterKeys( $request , $init ) ;
 
         // L'authorizer de permission qui garde AQL::REQUIRES / Field::REQUIRES
@@ -243,7 +243,7 @@ Le client n'a jamais besoin de demander une URL différente selon son rôle. Le 
 
 ## Voir aussi
 
-- [Skins](skins.md) — système de projection complémentaire (les *capabilities* gatent les **valeurs** des *skins*).
+- [Skins](skins.md) — système de projection complémentaire (les *capabilities* contrôlent les **valeurs** des *skins*).
 - [Projection des edges et joins — `AQL::REQUIRES`](../projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires) — *capability* au niveau modèle (edge/join).
 - [Filtres HTTP `?filter=`](../db/filter.md) — paramètre couvert par `CapabilityFilterKeysTrait`.
 - [Adaptateur Casbin RBAC](../casbin.md) — système d'autorisation sous-jacent.

@@ -78,9 +78,9 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 Le tri (`?sort=` et `?near=`) a sa **page dédiée** : [Tri](db/sort.md). L'essentiel :
 
 - **Fail-closed** — `AQL::SORTABLE` résout chaque clé de `?sort=` vers un champ AQL (3 notations mélangeables : raccourci indexé, alias, associatif). Une clé hors *whitelist* est **silencieusement ignorée** ; **`null` (pas de *whitelist*) = rien n'est triable** (jamais « tout »). `AQL::SORT_DEFAULT` traverse la même *whitelist* et doit donc nommer des clés déclarées.
-- **Permission** — une clé de tri peut être **gatée** (`Field::REQUIRES`), héritée du champ homonyme de la projection ou déclarée explicitement, pour qu'un champ caché à la lecture ne soit pas triable (pas d'oracle de tri).
+- **Permission** — une clé de tri peut être **soumise à un contrôle d'autorisation** (`Field::REQUIRES`), hérité du champ homonyme de la projection ou déclaré explicitement, pour qu'un champ caché à la lecture ne soit pas triable (pas d'oracle de tri).
 
-Détail des trois notations, du gate de permission et du tri par distance `?near=` dans [Tri](db/sort.md).
+Détail des trois notations, du contrôle d'autorisation et du tri par distance `?near=` dans [Tri](db/sort.md).
 
 ### Méthodes principales
 

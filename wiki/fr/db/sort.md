@@ -122,7 +122,7 @@ Deux clés de tri ne désignent pas un champ mais un **calcul**, et sont résolu
 
 **La situation.** Le `"key":"geo"` du payload nomme le champ géo depuis lequel la distance est mesurée. C'est un champ que le client désigne : il passe **le même videur** que n'importe quelle clé de tri.
 
-La clé géo doit donc être **déclarée dans `AQL::SORTABLE`**, et peut être **gatée par permission** comme le reste :
+La clé géo doit donc être **déclarée dans `AQL::SORTABLE`**, et peut être **soumise à un contrôle d'autorisation** comme le reste :
 
 ```php
 // Tri par distance ouvert à tous :

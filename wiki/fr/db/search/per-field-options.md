@@ -236,17 +236,17 @@ Résultat : « Fauteuil cuir vintage » passe **devant** « Sac en cuir, style v
 AQL::VIEW =>
 [
     Search::NAME     => 'placesView' ,
-    Search::REQUIRES => 'app:search' ,                              // gate global : pas de recherche sans ce sujet
+    Search::REQUIRES => 'app:search' ,                              // contrôle global : pas de recherche sans ce sujet
     Search::FIELDS   =>
     [
-        'name'   => 3 ,                                             // public (soumis au seul gate global)
+        'name'   => 3 ,                                             // public (soumis au seul contrôle global)
         'salary' => [ Search::REQUIRES => 'hr.salary:search' ] ,    // + 1 sujet requis
         'ssn'    => [ Search::REQUIRES => [ 'hr:admin' , 'hr:audit' ] ] , // + OR : admin OU audit
     ] ,
 ] ,
 ```
 
-Les deux niveaux se combinent en **AND** : un champ est cherché si **(le gate de la View est absent ou accordé) ET (le gate du champ est absent ou accordé)**. Dans une même liste, les sujets se combinent en **OR**. ⚠️ C'est la **seule** facette **additive** : contrairement au boost / fuzzy / analyzer / langue / phrase (où le champ *surcharge* la View), les `REQUIRES` s'**accumulent** (le plus restrictif gagne) — par sécurité.
+Les deux niveaux se combinent en **AND** : un champ est cherché si **(le contrôle de la View est absent ou accordé) ET (le contrôle du champ est absent ou accordé)**. Dans une même liste, les sujets se combinent en **OR**. ⚠️ C'est la **seule** facette **additive** : contrairement au boost / fuzzy / analyzer / langue / phrase (où le champ *surcharge* la View), les `REQUIRES` s'**accumulent** (le plus restrictif gagne) — par sécurité.
 
 **Exemple concret.** Le mot « confidentiel » ne vit que dans un champ `secret` gardé par `Search::REQUIRES => 'places:secret'` :
 
@@ -261,7 +261,7 @@ GET /places?search=confidentiel
 
 Points clés :
 
-- **Gate global** — si le `Search::REQUIRES` de la View est refusé, **toute** la recherche renvoie `false` (zéro résultat), quels que soient les champs déclarés.
+- **Contrôle global** — si le `Search::REQUIRES` de la View est refusé, **toute** la recherche renvoie `false` (zéro résultat), quels que soient les champs déclarés.
 - **Aucune fuite par défaut** — si les permissions retirent **tous** les champs cherchés, le `SEARCH` émis est `false` : zéro résultat. Il ne retombe **jamais** sur « cherche tout » ni sur le balayage `LIKE` (ce qui contournerait le contrôle).
 - **Fail-open sans autorizer** — si aucun `Arango::AUTHORIZER` n'est injecté, la couche d'autorisation est considérée désactivée et les champs gardés restent cherchables (comportement identique à la projection). En production, le contrôleur injecte toujours l'autorizer.
 - **`count()` et `facetCounts()`** appliquent le même filtrage (ils réutilisent la même expression `SEARCH`).

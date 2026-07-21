@@ -93,7 +93,7 @@ La règle vendor (voir PHPDoc de [`SkinTrait::INTERNAL`](https://github.com/Bcom
 est explicite — il faut **les trois couches**, pas une seule :
 
 1. Une permission Casbin dédiée (par exemple `users:skin.internal`)
-2. Une gate `Capability::PARAMS` sur le contrôleur qui rattache la permission
+2. Un contrôle d'autorisation `Capability::PARAMS` sur le contrôleur qui rattache la permission
    à la valeur de skin
 3. **Une whitelist en dur** qui empêche cette permission d'être attribuée à
    un compte via le CRUD `POST /users/{id}/permissions/{permKey}` ou

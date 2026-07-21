@@ -186,7 +186,7 @@ public ?array $groupable = [ 'category' => 'category' , 'salary' => 'salary' ] ;
 | `?group[group_by]=salary` → `COLLECT salary = doc.salary` | dimension **écartée** |
 | `?group[group_agg][m]=max:salary` → `MAX(doc.salary)` | agrégat **écarté** |
 
-> **Migration (BC).** `groupable = null` ne signifie plus « tout groupable » mais **rien** : déclare `AQL::GROUPABLE` avec les clés que le client peut grouper (celles du `SORT_DEFAULT` incluses). **Fail-open** : sans `REQUIRES`/*authorizer*, un champ whitelisté se groupe normalement. **Profondeur** : un chemin profond (`address.city`) est gaté au **sous-champ exact**, pas seulement à la racine. Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
+> **Migration (BC).** `groupable = null` ne signifie plus « tout groupable » mais **rien** : déclare `AQL::GROUPABLE` avec les clés que le client peut grouper (celles du `SORT_DEFAULT` incluses). **Fail-open** : sans `REQUIRES`/*authorizer*, un champ whitelisté se groupe normalement. **Profondeur** : un chemin profond (`address.city`) est **contrôlé au sous-champ exact**, pas seulement à la racine. Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
 
 ## Voir aussi
 

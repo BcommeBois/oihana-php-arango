@@ -918,9 +918,9 @@ Le filtre **hérite** de la permission du champ homonyme de `$fields`. Refusé, 
 |---|---|
 | `?filter=…salary…` → prédicat normal | `?filter=…salary…` → **neutralisé** (aucun résultat trahi) |
 
-**Relations.** Une relation verrouillée à sa définition (`AQL::REQUIRES` sur l'edge/join) ne peut pas être filtrée à travers : la traversée entière est neutralisée. Les deux gates composent (logique ET).
+**Relations.** Une relation verrouillée à sa définition (`AQL::REQUIRES` sur l'edge/join) ne peut pas être filtrée à travers : la traversée entière est neutralisée. Les deux contrôles d'autorisation composent (logique ET).
 
-**Sur la définition du filtre.** Le gate ci-dessus *hérite* de la permission de la projection (le champ homonyme de `$fields`). Mais parfois la projection est gardée par un **autre mécanisme** — ou volontairement toujours affichée — et ne porte donc pas de `Field::REQUIRES` : le filtre resterait alors ouvert. On déclare alors la permission **directement sur la définition du filtre**, exactement comme une facette porte la sienne.
+**Sur la définition du filtre.** Le contrôle d'autorisation ci-dessus *hérite* de la permission de la projection (le champ homonyme de `$fields`). Mais parfois la projection est gardée par un **autre mécanisme** — ou volontairement toujours affichée — et ne porte donc pas de `Field::REQUIRES` : le filtre resterait alors ouvert. On déclare alors la permission **directement sur la définition du filtre**, exactement comme une facette porte la sienne.
 
 **La situation.** `items` est toujours projeté (aucun `Field::REQUIRES` côté `$fields`), mais on ne veut le laisser filtrer qu'aux porteurs de `items:filter`.
 
@@ -931,17 +931,17 @@ public array $filters =
 ] ;
 ```
 
-Le `Field::REQUIRES` se déclare **à la racine de la définition**, y compris pour les formes imbriquées (`AQL::TYPE` / `AQL::FILTERS`). Refusé, le prédicat est **neutralisé en `false`** comme le gate hérité — jamais retiré. Les deux gates composent (logique ET) : un filtre s'applique seulement si la projection **et** sa propre définition l'autorisent.
+Le `Field::REQUIRES` se déclare **à la racine de la définition**, y compris pour les formes imbriquées (`AQL::TYPE` / `AQL::FILTERS`). Refusé, le prédicat est **neutralisé en `false`** comme le contrôle hérité — jamais retiré. Les deux contrôles d'autorisation composent (logique ET) : un filtre s'applique seulement si la projection **et** sa propre définition l'autorisent.
 
 | Utilisateur **avec** `items:filter` | Utilisateur **sans** `items:filter` |
 |---|---|
 | `?filter=…items[*].ref…` → prédicat normal | `?filter=…items[*].ref…` → **neutralisé** |
 
-> Une définition **string** (`FilterType::STRING`, …) ou **callable** ne porte pas de `Field::REQUIRES` : ce gate ne s'y applique pas (rien à lire). C'est la **symétrie** avec les facettes, qui lisent déjà le `REQUIRES` de leur propre définition en plus de celui hérité de la projection.
+> Une définition **string** (`FilterType::STRING`, …) ou **callable** ne porte pas de `Field::REQUIRES` : ce contrôle ne s'y applique pas (rien à lire). C'est la **symétrie** avec les facettes, qui lisent déjà le `REQUIRES` de leur propre définition en plus de celui hérité de la projection.
 
 > **Fail-open.** Aucun `Field::REQUIRES`, ou aucun *authorizer* branché → le filtre s'applique normalement (sémantique des `fields`). Un champ **non projeté** (absent de `$fields`) reste librement filtrable — c'est le cas d'usage « filtrer sur une donnée qu'on n'affiche pas ». Voir [La projection des champs](../projection.md) et [Tri](sort.md#permission-de-tri).
 >
-> **Profondeur.** Le gate descend au **champ feuille exact**, pas seulement à la racine : un sous-champ d'un document imbriqué (`address.city`), une feuille **à travers** un edge/join (`employee[*].salary` hérite du `Field::REQUIRES` du **modèle cible**) et un sous-champ de tableau d'objets (`contactPoint[*].email`, y compris via `match`) sont tous gatés. Une feuille refusée neutralise **toute la traversée** en `false` — y compris sous le quantificateur `all`/`none` (jamais transformée en oracle d'existence).
+> **Profondeur.** Le contrôle d'autorisation descend au **champ feuille exact**, pas seulement à la racine : un sous-champ d'un document imbriqué (`address.city`), une feuille **à travers** un edge/join (`employee[*].salary` hérite du `Field::REQUIRES` du **modèle cible**) et un sous-champ de tableau d'objets (`contactPoint[*].email`, y compris via `match`) y sont tous soumis. Une feuille refusée neutralise **toute la traversée** en `false` — y compris sous le quantificateur `all`/`none` (jamais transformée en oracle d'existence).
 
 ## Bonnes pratiques
 
