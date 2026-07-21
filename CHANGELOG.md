@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ConceptSchemeController` accepts `?filter=` on the thesaurus roots.** The controller only ever fetched *every* root (the concepts with no broader parent); a consumer could not restrict them (« the roots of the `animals` scheme », « the published roots »). It now reads the `?filter=` query parameter — the [same JSON DSL](wiki/en/db/filter.md) as the `Documents` surface — and **ANDs** it with the root constraint, which stays the first, non-negotiable operand:
+  ```
+  ?filter={"key":"inScheme","op":"eq","val":"animals"}
+  // FILTER ( <is a root> ) && ( doc.inScheme == @value )
+  ```
+  The URL filter enters as a **single** operand, so a client `["or", … ]` group keeps its own parentheses (`root && ( a || b )`, never `root || a || b`) — the same scope-preservation invariant as `InjectFilterTrait`. Two guard rails match the `Documents` controllers: the model's `AQL::FILTERS` **whitelist** (an undeclared attribute is dropped, never reachable) and, when an authorization stack is wired, the request **authorizer** gating `Field::REQUIRES` (a hidden attribute neutralizes its predicate to `false` instead of leaking — no filter-oracle). Without an authorization stack it falls open (backward compatible). `?filter=` is echoed in the response URL like `?sort` / `?search`.
+  - **Tests:** 5 new `ConceptSchemeControllerTest` cases (AND-merge, `or`-group scope preservation, malformed-JSON degradation to root-only, explicit-authorizer threading, fail-open without a stack). FR/EN wiki `controllers/README.md` gains a « Filtering the roots » section.
 - **`Field::WHERE` — filter the elements of a projected array (`Filter::MAP`) by a condition, including against a runtime bind.** A `Filter::MAP` projection could map a nested array but never *restrict* its elements: `aqlFieldMap()` emitted no `FILTER`, and the projection layer carried no bind variables, so `Field::WHEN` conditions could only compare against a literal frozen in the model definition. `Field::WHERE` closes both gaps at once. It reuses the `Field::WHEN` condition grammar (leaves, `AND`/`OR`/`NOT` groups, `alt`), compiles it against the array element, and inserts a `FILTER` between the `FOR` and the `RETURN`:
   ```php
   'addresses' =>

@@ -412,7 +412,20 @@ Expose un thésaurus hiérarchique en [`ConceptScheme`](https://www.w3.org/TR/sk
 | `RELATION` | la clé de relation broader dont l'**absence** marque une racine | `Oihana::BROADER` |
 | `SKIN` | le skin utilisé pour projeter les racines | `Skin::FULL` |
 
-Il honore `?sort` (ex. `id`, `name`, `created`, `modified`) et `?search` sur les racines — le modèle applique sa propre whitelist `SORTABLE` / `SEARCHABLE`. Rien n'est persisté.
+Il honore `?sort` (ex. `id`, `name`, `created`, `modified`), `?search` et `?filter` sur les racines — le modèle applique sa propre whitelist `SORTABLE` / `SEARCHABLE` / `AQL::FILTERS`. Rien n'est persisté.
+
+### Filtrer les racines (`?filter=`)
+
+Le paramètre `?filter=` accepte le [même DSL JSON](../db/filter.md) que la surface `Documents` et restreint les racines. Il est combiné en **ET** avec la contrainte de racine (« n'a pas de parent broader »), qui reste toujours le premier opérande, non négociable :
+
+`?filter={"key":"inScheme","op":"eq","val":"animals"}` → les racines **du schéma `animals`**, soit conceptuellement `FILTER ( <est une racine> ) && ( doc.inScheme == @value )`.
+
+Un groupe `or` client ne peut pas relâcher la portée : le filtre d'URL entre comme opérande **unique**, donc `["or", … ]` garde ses propres parenthèses — on obtient `racine && ( a || b )`, jamais `racine || a || b`. Même invariant que `InjectFilterTrait`.
+
+Deux garde-fous, identiques aux contrôleurs `Documents` :
+
+- **Whitelist** — seuls les attributs déclarés dans le `AQL::FILTERS` du modèle sont filtrables ; tout le reste est écarté (loggé), donc `?filter=` ne peut jamais atteindre un champ non déclaré.
+- **Authorizer** — quand la pile d'autorisation est câblée (`CapabilityEnforcerInterface` + `PermissionSubjectResolverInterface` dans le conteneur), l'authorizer de requête verrouille `Field::REQUIRES` : un attribut masqué au demandeur neutralise son prédicat à `false` au lieu de fuir, ce qui ferme l'oracle de filtre. Sans pile, il tombe ouvert (rétro-compatible).
 
 ```php
 use oihana\arango\controllers\ConceptSchemeController ;

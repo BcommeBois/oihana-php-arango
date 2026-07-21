@@ -412,7 +412,20 @@ Exposes a hierarchical thesaurus as a SKOS [`ConceptScheme`](https://www.w3.org/
 | `RELATION` | the broader relation key whose **absence** marks a root | `Oihana::BROADER` |
 | `SKIN` | the skin used to project the roots | `Skin::FULL` |
 
-It honours `?sort` (e.g. `id`, `name`, `created`, `modified`) and `?search` on the roots — the model applies its own `SORTABLE` / `SEARCHABLE` whitelist. Nothing is persisted.
+It honours `?sort` (e.g. `id`, `name`, `created`, `modified`), `?search` and `?filter` on the roots — the model applies its own `SORTABLE` / `SEARCHABLE` / `AQL::FILTERS` whitelist. Nothing is persisted.
+
+### Filtering the roots (`?filter=`)
+
+The `?filter=` query parameter accepts the [same JSON DSL](../db/filter.md) as the `Documents` surface and narrows the roots. It is **ANDed** with the root constraint (« has no broader parent »), which always stays the first, non-negotiable operand:
+
+`?filter={"key":"inScheme","op":"eq","val":"animals"}` → the roots **of the `animals` scheme**, conceptually `FILTER ( <is a root> ) && ( doc.inScheme == @value )`.
+
+A client `or` group cannot loosen the scope: the URL filter enters as a **single** operand, so `["or", … ]` keeps its own parentheses — you get `root && ( a || b )`, never `root || a || b`. Same invariant as `InjectFilterTrait`.
+
+Two guard rails, identical to the `Documents` controllers:
+
+- **Whitelist** — only the attributes declared in the model's `AQL::FILTERS` are filterable; anything else is dropped (logged), so `?filter=` can never reach an undeclared field.
+- **Authorizer** — when an authorization stack is wired (`CapabilityEnforcerInterface` + `PermissionSubjectResolverInterface` in the container), the request authorizer gates `Field::REQUIRES`: an attribute hidden from the caller neutralizes its predicate to `false` instead of leaking, closing the filter-oracle. Without a stack, it falls open (backward compatible).
 
 ```php
 use oihana\arango\controllers\ConceptSchemeController ;

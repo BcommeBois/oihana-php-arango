@@ -6,6 +6,7 @@ use DI\Container;
 
 use oihana\arango\controllers\ConceptSchemeController;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\filters\FilterLogic;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\filters\FilterQuantifier;
 
@@ -19,6 +20,9 @@ use xyz\oihana\schema\constants\Oihana;
 use xyz\oihana\schema\thesaurus\ConceptScheme;
 
 use PHPUnit\Framework\Attributes\CoversClass;
+
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 use Slim\Factory\AppFactory;
 
@@ -62,7 +66,8 @@ final class ConceptSchemeControllerTest extends ControllerTestCase
         AppFactory::setContainer( $container ) ;
         $app = AppFactory::create() ;
 
-        $container->set( 'thesaurus.model' , $model ) ;
+        $container->set( 'thesaurus.model'      , $model ) ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
 
         return new ConceptSchemeController( $container ,
         [
@@ -131,6 +136,83 @@ final class ConceptSchemeControllerTest extends ControllerTestCase
         $result = $this->makeController( $this->model( [] ) )->get() ;
 
         $this->assertSame( [] , $result->jsonSerialize()[ ConceptScheme::HAS_TOP_CONCEPT ] ) ;
+    }
+
+    public function testUrlFilterIsAndedWithTheRootConstraint() :void
+    {
+        $model = $this->model( [] ) ;
+
+        $urlFilter = [ FilterParam::KEY => 'inScheme' , FilterParam::OP => 'eq' , FilterParam::VAL => 'animals' ] ;
+
+        $this->makeController( $model )->get( $this->makeRequest( [ ControllerParam::FILTER => json_encode( $urlFilter ) ] ) ) ;
+
+        $root = [ FilterParam::KEY => Oihana::BROADER , FilterParam::QUANT => FilterQuantifier::NONE ] ;
+
+        // The root constraint stays FIRST, the URL filter is the trailing operand.
+        $this->assertSame( [ FilterLogic::AND , $root , $urlFilter ] , $model->listInit[ Arango::FILTER ] ?? null ) ;
+    }
+
+    public function testAClientOrGroupCannotDegradeTheRootScope() :void
+    {
+        $model = $this->model( [] ) ;
+
+        // A disjunctive client filter : without the single-operand wrapping it would
+        // splice as `root || a || b` (every concept, roots or not).
+        $orGroup =
+        [
+            FilterLogic::OR ,
+            [ FilterParam::KEY => 'a' , FilterParam::VAL => 1 ] ,
+            [ FilterParam::KEY => 'b' , FilterParam::VAL => 2 ] ,
+        ] ;
+
+        $this->makeController( $model )->get( $this->makeRequest( [ ControllerParam::FILTER => json_encode( $orGroup ) ] ) ) ;
+
+        $root = [ FilterParam::KEY => Oihana::BROADER , FilterParam::QUANT => FilterQuantifier::NONE ] ;
+        $got  = $model->listInit[ Arango::FILTER ] ?? null ;
+
+        // `root && ( a || b )` : the OR group is one intact operand, never head-spliced.
+        $this->assertSame( FilterLogic::AND , $got[ 0 ] ?? null ) ;
+        $this->assertSame( $root            , $got[ 1 ] ?? null ) ;
+        $this->assertSame( $orGroup         , $got[ 2 ] ?? null ) ;
+        $this->assertCount( 3 , $got ) ;
+    }
+
+    public function testMalformedFilterJsonKeepsOnlyTheRootConstraint() :void
+    {
+        $model = $this->model( [] ) ;
+
+        // Invalid JSON → PrepareFilter logs a warning and yields null → root only.
+        $this->makeController( $model )->get( $this->makeRequest( [ ControllerParam::FILTER => '{ not json' ] ) ) ;
+
+        $this->assertSame
+        (
+            [ FilterParam::KEY => Oihana::BROADER , FilterParam::QUANT => FilterQuantifier::NONE ] ,
+            $model->listInit[ Arango::FILTER ] ?? null
+        ) ;
+    }
+
+    public function testAnExplicitAuthorizerIsThreadedIntoTheModelCall() :void
+    {
+        $model      = $this->model( [] ) ;
+        $authorizer = fn( string $subject ) : bool => false ;
+
+        // A caller-supplied authorizer wins over buildPermissionAuthorizer() and is
+        // forwarded to the model, where it gates Field::REQUIRES on ?filter=.
+        $this->makeController( $model )->get( null , null , [] , [ Arango::AUTHORIZER => $authorizer ] ) ;
+
+        $this->assertSame( $authorizer , $model->listInit[ Arango::AUTHORIZER ] ?? null ) ;
+    }
+
+    public function testWithoutAnAuthorizationStackTheAuthorizerFallsOpen() :void
+    {
+        $model = $this->model( [] ) ;
+
+        // No enforcer/resolver in the container and no request → the built authorizer
+        // is null : the projection layer falls open (backward compatible).
+        $this->makeController( $model )->get() ;
+
+        $this->assertArrayHasKey( Arango::AUTHORIZER , $model->listInit ) ;
+        $this->assertNull( $model->listInit[ Arango::AUTHORIZER ] ) ;
     }
 
     public function testMissingModelReturnsNull() :void
