@@ -258,6 +258,14 @@ A `Field::WHEN` condition is compiled **inline**; a `Field::WHERE` one may addit
 - A **bind reference** (`aqlBindRef('name')`) inlines nothing: the **name** is validated by
   `assertBindVariable()`, and only the `@name` token is emitted. The **value** is supplied to
   the query via `AQL::BINDS` — so never concatenated into the AQL text, whatever it holds.
+- **Permission gating** covers not only the field that *carries* the condition (already gated
+  by its own `Field::REQUIRES`) but also the fields the condition **reads** (`Field::WHEN` /
+  `Field::WHERE`, and an attribute-valued `else` branch). If one is hidden from reading
+  (`Field::REQUIRES` denied for that user), **the whole conditional field is dropped** from
+  the projection — otherwise the presence/absence of its value (or the `else` branch) would
+  betray the masked field (inference oracle). Fail-open: a read field **without**
+  `Field::REQUIRES`, absent from the projection, or with no authorizer, leaves the
+  conditional field intact.
 
 ## Generated AQL — reference
 

@@ -31,6 +31,7 @@ use function oihana\arango\db\helpers\fields\aqlFieldObject;
 use function oihana\arango\db\helpers\fields\aqlFieldTranslate;
 use function oihana\arango\db\helpers\fields\aqlFieldUrl;
 use function oihana\arango\db\helpers\fields\aqlFieldWrap;
+use function oihana\arango\db\helpers\fields\conditionReadsDeniedField;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\core\strings\betweenDoubleQuotes;
 use function oihana\core\strings\compile;
@@ -216,12 +217,12 @@ function aqlFields
             {
                 if ( $edgeRef === null )
                 {
-                    throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::SCOPE '" . AQL::EDGE . "' on the field '" . (string) $key . "' is only valid inside an edge traversal projection." ) ;
+                    throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::SCOPE '" . AQL::EDGE . "' on the field '" . $key . "' is only valid inside an edge traversal projection." ) ;
                 }
 
                 if ( in_array( $filter , $edgeScopeDenied , true ) )
                 {
-                    throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::SCOPE '" . AQL::EDGE . "' on the field '" . (string) $key . "' is not supported with the structural filter '" . (string) $filter . "'." ) ;
+                    throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::SCOPE '" . AQL::EDGE . "' on the field '" . $key . "' is not supported with the structural filter '" . $filter . "'." ) ;
                 }
             }
 
@@ -257,6 +258,18 @@ function aqlFields
                 continue ;
             }
 
+            // Complementary gate (T5): the field above is gated on its OWN permission,
+            // but a conditional projection (Field::WHEN / WHERE / ELSE) also *reads*
+            // attributes to decide what to emit — and a read of a masked field would
+            // betray it (boolean/existence oracle, or a direct leak in the ELSE branch).
+            // Gate the read attributes against the projection and drop the whole field
+            // when one is refused (fail-closed). Fail-open otherwise (a field with no
+            // Field::REQUIRES, absent from the projection, or no authorizer → kept).
+            if ( is_array( $options ) && conditionReadsDeniedField( $options , $fields , $init ) )
+            {
+                continue ;
+            }
+
             if( $quoted === true )
             {
                 // The output label is the double-quoted key; the attribute access
@@ -282,7 +295,7 @@ function aqlFields
                 {
                     if( $when !== null )
                     {
-                        throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::WHEN on the field '" . (string) $key . "' is only valid on the default scalar projection, not the '" . (string) $filter . "' filter." ) ;
+                        throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::WHEN on the field '" . $key . "' is only valid on the default scalar projection, not the '" . $filter . "' filter." ) ;
                     }
                 }
                 else

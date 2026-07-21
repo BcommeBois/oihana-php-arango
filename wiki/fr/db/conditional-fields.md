@@ -271,6 +271,14 @@ plus **référencer un bind**. Les deux sont sûres par construction :
   `assertBindVariable()`, et seul le jeton `@nom` est émis. La **valeur** est fournie à la
   requête via `AQL::BINDS` — donc jamais concaténée dans le texte AQL, quel que soit son
   contenu.
+- Le **contrôle d'autorisation** ne garde pas seulement le champ *porteur* de la condition
+  (déjà couvert par son propre `Field::REQUIRES`) : les champs **lus** par la condition
+  (`Field::WHEN` / `Field::WHERE`, et la branche `else` valuée par attribut) le sont aussi.
+  Si l'un est masqué à la lecture (`Field::REQUIRES` refusé pour cet utilisateur), **tout le
+  champ conditionnel est retiré** de la projection — sinon la présence/absence de sa valeur
+  (ou la branche `else`) trahirait le champ masqué (oracle d'inférence). *Fail-open* : un
+  champ lu **sans** `Field::REQUIRES`, absent de la projection, ou sans authorizer branché,
+  laisse le champ conditionnel intact.
 
 ## AQL généré — référence
 

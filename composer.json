@@ -325,6 +325,8 @@
             "src/oihana/arango/db/helpers/fields/aqlFieldWrap.php",
             "src/oihana/arango/db/helpers/fields/buildWhenCondition.php",
             "src/oihana/arango/db/helpers/fields/buildWhenLeaf.php",
+            "src/oihana/arango/db/helpers/fields/collectWhenAttributes.php",
+            "src/oihana/arango/db/helpers/fields/conditionReadsDeniedField.php",
             "src/oihana/arango/db/helpers/fields/resolveWhenElse.php",
             "src/oihana/arango/db/helpers/isAQLExpression.php",
             "src/oihana/arango/db/helpers/isAQLFunction.php",

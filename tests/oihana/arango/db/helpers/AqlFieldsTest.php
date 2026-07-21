@@ -15,6 +15,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
+use function oihana\arango\db\binds\aqlBindRef;
 use function oihana\arango\db\helpers\aqlFields;
 
 final class AqlFieldsTest extends TestCase
@@ -71,6 +72,122 @@ final class AqlFieldsTest extends TestCase
         $init   = [ Arango::AUTHORIZER => fn() => false ];
 
         $this->assertSame( 'name:doc.name', aqlFields( $fields, 'doc', null, $init ) );
+    }
+
+    // ---------------------------------------------------------------- conditional projection reads a masked field (T5)
+
+    public function testWhenReadingMaskedFieldDropsTheConditionalField() :void
+    {
+        // `price` is public but its WHEN reads `secretFlag` (masked) → the whole
+        // conditional field is dropped (no boolean oracle through the condition).
+        $fields =
+        [
+            'name'       => [] ,
+            'secretFlag' => [ Field::REQUIRES => 'hr:read' ] ,
+            'price'      => [ Field::WHEN => [ 'secretFlag' , 'eq' , true ] ] ,
+        ] ;
+        $result = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertStringContainsString   ( 'name:doc.name' , $result ) ;
+        $this->assertStringNotContainsString( 'price'         , $result ) ;
+        $this->assertStringNotContainsString( 'secretFlag'    , $result ) ;
+    }
+
+    public function testWhenReadingGrantedFieldKeepsTheConditionalField() :void
+    {
+        $fields =
+        [
+            'secretFlag' => [ Field::REQUIRES => 'hr:read' ] ,
+            'price'      => [ Field::WHEN => [ 'secretFlag' , 'eq' , true ] ] ,
+        ] ;
+        $result = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn( string $s ) => $s === 'hr:read' ] ) ;
+
+        $this->assertStringContainsString( 'price' , $result ) ;
+    }
+
+    public function testElseBranchReadingMaskedPropertyDropsTheField() :void
+    {
+        // The ELSE branch would project `secretAttr` in clear (direct leak) → drop.
+        $fields =
+        [
+            'name'       => [] ,
+            'secretAttr' => [ Field::REQUIRES => 'hr:read' ] ,
+            'display'    => [ Field::WHEN => [ 'name' ] , Field::ELSE => [ Field::PROPERTY => 'secretAttr' ] ] ,
+        ] ;
+        $result = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertStringContainsString   ( 'name:doc.name' , $result ) ;
+        $this->assertStringNotContainsString( 'display'       , $result ) ;
+    }
+
+    public function testWhenGroupWithOneMaskedAttributeDropsTheField() :void
+    {
+        // An `and` group where one operand reads a masked field → drop.
+        $fields =
+        [
+            'name'   => [] ,
+            'hidden' => [ Field::REQUIRES => 'x:read' ] ,
+            'badge'  => [ Field::WHEN => [ 'and' , [ 'name' , 'ne' , null ] , [ 'hidden' , 'eq' , true ] ] ] ,
+        ] ;
+        $result = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertStringNotContainsString( 'badge' , $result ) ;
+    }
+
+    public function testWhenReadingUngatedFieldIsUnaffected() :void
+    {
+        // The read field carries no Field::REQUIRES → nothing to inherit, kept.
+        $fields =
+        [
+            'flag'  => [] ,
+            'price' => [ Field::WHEN => [ 'flag' , 'eq' , true ] ] ,
+        ] ;
+        $result = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertStringContainsString( 'price' , $result ) ;
+    }
+
+    public function testConditionGateFailsOpenWithoutAuthorizer() :void
+    {
+        $fields =
+        [
+            'secretFlag' => [ Field::REQUIRES => 'hr:read' ] ,
+            'price'      => [ Field::WHEN => [ 'secretFlag' , 'eq' , true ] ] ,
+        ] ;
+        // No authorizer → the authorization layer is disabled, the field is kept.
+        $result = aqlFields( $fields , 'doc' , null , [] ) ;
+
+        $this->assertStringContainsString( 'price' , $result ) ;
+    }
+
+    public function testWhereReadingMaskedSubFieldDropsTheMapField() :void
+    {
+        // A Filter::MAP whose WHERE filters on a masked sub-field (`item.region`) is
+        // dropped: the number of projected elements would betray `region`.
+        $fields =
+        [
+            'name'      => [] ,
+            'addresses' =>
+            [
+                Field::FILTER => Filter::MAP ,
+                Field::WHERE  => [ 'region' , 'eq' , 'X' ] ,
+                Field::FIELDS => [ 'region' => [ Field::REQUIRES => 'geo:read' ] , 'city' => [] ] ,
+            ] ,
+        ] ;
+        $result = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertStringContainsString   ( 'name:doc.name' , $result ) ;
+        $this->assertStringNotContainsString( 'addresses'     , $result ) ;
+    }
+
+    public function testWhenReadingBindReferenceIsIgnored() :void
+    {
+        // The WHEN reads a runtime bind (aqlBindRef), not a document field → nothing
+        // to gate, the field is kept even under a denying authorizer.
+        $fields = [ 'price' => [ Field::WHEN => [ aqlBindRef( 'unrestricted' ) ] ] ] ;
+        $result = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertStringContainsString( 'price' , $result ) ;
     }
 
     /**
