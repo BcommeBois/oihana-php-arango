@@ -225,6 +225,48 @@ OR BOOST(PHRASE(doc.name, @search_0), 6)                // bonus expression exac
 
 Résultat : « Fauteuil cuir vintage » passe **devant** « Sac en cuir, style vintage » au classement `BM25`. Le champ `code` (`Search::PHRASE => false`) ne reçoit jamais cette branche : un identifiant comme `REF-2024` ne doit pas être « rapproché » d'une saisie approximative.
 
+## Combiner les mots d'un terme (`Search::OPERATOR`)
+
+Un peu de vocabulaire d'abord. Une saisie `?search=` se découpe en **termes** (séparés par des virgules) et, à l'intérieur d'un terme, en **mots** (séparés par des espaces). `Search::OPERATOR` décide comment les **mots d'un même terme** se combinent **à l'intérieur d'un champ** :
+
+- `Logic::OR` (défaut) : le terme entier est cherché d'un bloc (`doc.name IN TOKENS("fourcade marc", …)`). Or la sémantique de `IN` est « au moins un jeton » — chercher « fourcade marc » ramène donc **tous les « marc »** ;
+- `Logic::AND` : le terme est éclaté et **chaque mot doit se retrouver dans le même champ** (`doc.name IN TOKENS("fourcade", …) && doc.name IN TOKENS("marc", …)`). Seul « Fourcade Marc » ressort.
+
+L'opérateur ne resserre que les mots **dans** un champ. Les deux autres « OU » de la recherche ne bougent pas : le OU entre termes séparés par une virgule (`marc,marco` = l'un ou l'autre) et le OU entre champs (une fiche n'a jamais à matcher deux champs différents à la fois).
+
+```php
+Search::FIELDS =>
+[
+    'name' => [ Search::OPERATOR => Logic::AND ] , // les deux mots dans le nom
+    'code' => 1 ,                                  // laissé souple (défaut de la View)
+] ,
+Search::OPERATOR => Logic::OR , // défaut au niveau de la View
+```
+
+Règle de résolution : un champ qui déclare `Search::OPERATOR` l'emporte ; un champ sans clé hérite de l'opérateur de la View ; sans valeur globale, c'est `OR`. **Rétro-compatible** : sans `OPERATOR` (ni View ni champ), la sortie AQL est strictement celle d'avant.
+
+Un code exact (identifiant, code postal) n'est **pas** gêné par un `AND` global : une saisie d'un seul mot est identique en `AND` et en `OR`, et une saisie de deux mots neutralise simplement sa branche (un code ne contient jamais les deux mots) — exactement le comportement voulu.
+
+**Exemple concret.** Annuaire de personnes, champ `name` déclaré en `Search::OPERATOR => Logic::AND`, requête :
+
+```
+GET /people?search=fourcade marc
+```
+
+| `name` | fourcade présent ? | marc présent ? | `AND` retient ? |
+|---|---|---|---|
+| « Fourcade Marc » | ✅ | ✅ | ✅ oui |
+| « Jean-Marc Dupont » | ❌ | ✅ | ❌ non (« fourcade » manque) |
+| « Marc Durand » | ❌ | ✅ | ❌ non |
+
+L'AQL généré pour le champ conjugue les deux mots (chacun sur son propre bind) :
+
+```aql
+ANALYZER((doc.name IN TOKENS(@search_0_0, "text_fr") && doc.name IN TOKENS(@search_0_1, "text_fr")), "text_fr")
+```
+
+Le **bonus d'expression exacte** (`Search::PHRASE`) reste posé sur le terme entier : il classe « Fourcade Marc » (adjacents, dans l'ordre) devant un match dispersé sans jamais élargir l'ensemble retenu. La **tolérance aux fautes** (`Search::FUZZY`) s'applique, elle, mot par mot.
+
 ## Permissions de recherche
 
 `Search::REQUIRES` déclare le(s) **sujet(s) de permission** requis pour chercher — une chaîne ou une liste (sémantique OR) — en miroir exact de [`Field::REQUIRES`](../../projection.md) côté projection. La décision est déléguée à l'**autorizer** de la requête (le closure `Arango::AUTHORIZER`, injecté par le contrôleur et consulté par `isAuthorized()`). Il se déclare à **deux niveaux** :

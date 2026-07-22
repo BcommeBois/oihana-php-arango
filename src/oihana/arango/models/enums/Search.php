@@ -139,6 +139,39 @@ class Search
     public const string NGRAM = 'ngram' ;
 
     /**
+     * How the words of a single search term combine **within one field**:
+     * {@see \oihana\arango\db\enums\Logic::AND} (every word must match the field)
+     * or {@see \oihana\arango\db\enums\Logic::OR} (any word — the default, so
+     * nothing changes for an existing View).
+     *
+     * A search term is a comma-separated piece of `?search=`; its words are its
+     * whitespace-separated pieces. With `OR` (default) the whole term is matched
+     * in one shot (`doc.name IN TOKENS("fourcade marc", …)`), which the `IN`
+     * semantics resolve as *any* token — so a search for « fourcade marc » returns
+     * every « marc ». With `AND` the term is split and each word must be found in
+     * the same field (`doc.name IN TOKENS("fourcade", …) && doc.name IN
+     * TOKENS("marc", …)`), so only « Fourcade Marc » matches. It only tightens the
+     * words *inside* a field: the `OR` between comma-separated terms and the `OR`
+     * between fields are untouched (a query never has to match two different
+     * fields at once).
+     *
+     * Declared at the View level it applies to every field; declared inside a
+     * {@see FIELDS} entry it overrides that level for the field — so a View can
+     * require both words on `name` while a code field stays loose. A field with no
+     * `OPERATOR` key inherits the View-level value; an absent View-level value is
+     * `OR`. Exact codes (an identifier, a postal code) are unaffected in practice:
+     * a single-word query is identical under `AND` and `OR`, and a two-word query
+     * simply neutralizes their branch (a code never holds both words), which is
+     * the wanted behaviour.
+     *
+     * The exact-phrase bonus ({@see PHRASE}) still applies to the whole term under
+     * `AND` — it ranks « Fourcade Marc » (adjacent, in order) above a scattered
+     * match without changing the matched set. Typo tolerance ({@see FUZZY}) applies
+     * per word.
+     */
+    public const string OPERATOR = 'operator' ;
+
+    /**
      * Whether to add an exact-phrase bonus: when `true`, a `PHRASE()` match on
      * a field weighs twice the field boost, ranking exact phrases first.
      *

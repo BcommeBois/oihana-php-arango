@@ -18,6 +18,7 @@ use oihana\arango\clients\view\ArangoSearchLink;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\DiffStatus;
+use oihana\arango\db\enums\Logic;
 use oihana\arango\db\results\DiffReport;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
@@ -811,6 +812,255 @@ class ViewSearchTest extends TestCase
             'ANALYZER(d.name IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
             $model->prepareViewSearch( 'bois' , $this->binds , 'd' )
         ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareViewSearch (Search::OPERATOR)
+
+    public function testPrepareViewSearchOperatorAndRequiresEveryWordInTheField() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        // « fourcade marc » → both words must match the same field, so a record
+        // holding only « marc » no longer matches.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . '(doc.name IN TOKENS(@search_0_0,"text_fr") && doc.name IN TOKENS(@search_0_1,"text_fr"))'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'fourcade marc' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0_0' => 'fourcade' , 'search_0_1' => 'marc' ] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchOperatorAndSingleWordHasNoConjunction() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        // A one-word term is identical under AND and OR (no `&&`, no wrapping).
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0_0' => 'bois' ] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchOperatorAndTrimsAndCollapsesWhitespace() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        // Trailing space + double space (the shape of the reported URL) split into
+        // exactly two words — no empty word, no dangling bind.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . '(doc.name IN TOKENS(@search_0_0,"text_fr") && doc.name IN TOKENS(@search_0_1,"text_fr"))'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'fourcade  marc ' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0_0' => 'fourcade' , 'search_0_1' => 'marc' ] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchOperatorAndWidensEachWordWithFuzzy() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FUZZY    => 1 ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        // Typo tolerance applies per word : each word is its own IN TOKENS ∪ Levenshtein.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . '((doc.name IN TOKENS(@search_0_0,"text_fr") || LEVENSHTEIN_MATCH(doc.name,@search_0_0,1))'
+            . ' && (doc.name IN TOKENS(@search_0_1,"text_fr") || LEVENSHTEIN_MATCH(doc.name,@search_0_1,1)))'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'fourcade marc' , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchOperatorAndKeepsThePhraseBonusOnTheWholeTerm() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::PHRASE   => true ,
+                Search::FIELDS   => [ 'name' => [ Search::BOOST => 3 ] ] ,
+            ] ,
+        ]) ;
+
+        // The AND constraint uses per-word binds ; the phrase bonus stays on the
+        // whole term (@search_0), OR-ed on top — it only reorders, never widens.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . 'BOOST((doc.name IN TOKENS(@search_0_0,"text_fr") && doc.name IN TOKENS(@search_0_1,"text_fr")),3)'
+            . ' || BOOST(PHRASE(doc.name,@search_0),6)'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'fourcade marc' , $this->binds )
+        ) ;
+        $this->assertSame
+        (
+            [ 'search_0' => 'fourcade marc' , 'search_0_0' => 'fourcade' , 'search_0_1' => 'marc' ] ,
+            $this->binds
+        ) ;
+    }
+
+    public function testPrepareViewSearchOperatorAndConjoinsTheNgramBranch() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   =>
+                [
+                    'name' =>
+                    [
+                        Search::ANALYZER => 'text_fr' ,
+                        Search::NGRAM    => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 0.6 ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        // Both the IN TOKENS group and the NGRAM_MATCH group require every word.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . '(doc.name IN TOKENS(@search_0_0,"text_fr") && doc.name IN TOKENS(@search_0_1,"text_fr"))'
+            . ',"text_fr")'
+            . ' || ANALYZER('
+            . '(NGRAM_MATCH(doc.name,@search_0_0,0.6,"autocomplete") && NGRAM_MATCH(doc.name,@search_0_1,0.6,"autocomplete"))'
+            . ',"autocomplete")' ,
+            $model->prepareViewSearch( 'fourcade marc' , $this->binds )
+        ) ;
+    }
+
+    public function testPrepareViewSearchOperatorAndKeepsCommaTermsOr() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        // Comma separates alternatives (OR) ; whitespace conjoins (AND). So
+        // « fourcade marc,dupont » = (fourcade AND marc) OR dupont.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . '(doc.name IN TOKENS(@search_0_0,"text_fr") && doc.name IN TOKENS(@search_0_1,"text_fr"))'
+            . ' || doc.name IN TOKENS(@search_1_0,"text_fr")'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'fourcade marc,dupont' , $this->binds )
+        ) ;
+        $this->assertSame
+        (
+            [ 'search_0_0' => 'fourcade' , 'search_0_1' => 'marc' , 'search_1_0' => 'dupont' ] ,
+            $this->binds
+        ) ;
+    }
+
+    public function testPrepareViewSearchOperatorMixedPerFieldOverride() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::FIELDS   =>
+                [
+                    'name' => [ Search::OPERATOR => Logic::AND ] , // both words on the name
+                    'code' => 1 ,                                 // loose (View default OR)
+                ] ,
+            ] ,
+        ]) ;
+
+        // The name conjoins the words while the code keeps the whole-term match ;
+        // both branches share the whole-term bind (@search_0) for the code.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . '(doc.name IN TOKENS(@search_0_0,"text_fr") && doc.name IN TOKENS(@search_0_1,"text_fr"))'
+            . ' || doc.code IN TOKENS(@search_0,"text_fr")'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'fourcade marc' , $this->binds )
+        ) ;
+        $this->assertSame
+        (
+            [ 'search_0' => 'fourcade marc' , 'search_0_0' => 'fourcade' , 'search_0_1' => 'marc' ] ,
+            $this->binds
+        ) ;
+    }
+
+    public function testPrepareViewSearchOperatorOrIsTheDefaultGrammar() :void
+    {
+        // An explicit View-level OR is the historical grammar : whole-term match,
+        // single @search_0 bind — identical to declaring no operator at all.
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::OR ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0,"text_fr"),"text_fr")' ,
+            $model->prepareViewSearch( 'fourcade marc' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0' => 'fourcade marc' ] , $this->binds ) ;
     }
 
     // ---------------------------------------------------------------- buildListQuery

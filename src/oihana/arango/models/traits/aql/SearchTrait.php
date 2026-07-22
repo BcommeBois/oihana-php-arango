@@ -122,8 +122,7 @@ trait SearchTrait
             return false ;
         }
 
-        return $this->getViewName() !== null
-            && count( $this->getViewSearchFields() ) > 0 ;
+        return $this->getViewName() !== null && count( $this->getViewSearchFields() ) > 0 ;
     }
 
     /**
@@ -347,6 +346,13 @@ trait SearchTrait
         $globalPhrase  = ( $this->view[ Search::PHRASE ] ?? false ) === true ;
         $globalFuzzy   = (int) ( $this->view[ Search::FUZZY ] ?? 0 ) ;
 
+        // View-level default for how a term's words combine within a field. Absent
+        // means Logic::OR (the whole term matched in one shot — the historical
+        // grammar); a field may override it (Search::OPERATOR).
+        $globalOperator = isset( $this->view[ Search::OPERATOR ] )
+                        ? Logic::normalize( (string) $this->view[ Search::OPERATOR ] )
+                        : Logic::OR ;
+
         // Per-field permission gating : a field joins the SEARCH only when BOTH
         // gates grant it — its own Search::REQUIRES (isAuthorized) AND the
         // Field::REQUIRES inherited from the projection at the exact (sub-)field
@@ -396,76 +402,23 @@ trait SearchTrait
             assertAttributeName( stripArrayExpansion( (string) $field ) ) ;
         }
 
-        $groups = [] ; // analyzer name => list of expressions, in first-seen order
-        $index  = 0 ;
-
-        foreach( explode( Char::COMMA , $search ) as $word )
+        // A field combines the words of a term with AND (all words must match the
+        // same field) or OR (any word — the default). When no field opts into AND
+        // the historical OR grammar is emitted byte-for-byte; otherwise the
+        // operator-aware builder handles the (possibly mixed) fields.
+        $anyAnd = false ;
+        foreach( $fields as $spec )
         {
-            $term = $this->bind( $word , $binds , AQL::SEARCH . Char::UNDERLINE . $index++ ) ;
-
-            foreach( $fields as $field => $spec )
+            if( ( $spec[ Search::OPERATOR ] ?? $globalOperator ) === Logic::AND )
             {
-                // A field may be queried through one Analyzer or several (e.g.
-                // `text` + `ngram` for whole-word search plus autocomplete). Each
-                // Analyzer gets its own branch, added to its own ANALYZER() group.
-                $declared  = $spec[ Search::ANALYZER ] ?? $modelAnalyzer ;
-                $analyzers = is_array( $declared ) ? array_values( $declared ) : [ $declared ] ;
-
-                $weight = $spec[ Search::BOOST ] ;
-                $fuzzy  = array_key_exists( Search::FUZZY  , $spec ) ? $spec[ Search::FUZZY  ] : $globalFuzzy ;
-                $phrase = array_key_exists( Search::PHRASE , $spec ) ? $spec[ Search::PHRASE ] : $globalPhrase ;
-
-                // An array sub-field is declared with the `[*]` expansion marker
-                // (e.g. `contactPoints[*].email`). The marker is stripped here :
-                // the ArangoSearch `SEARCH` grammar rejects array-expansion
-                // expressions, and the flat path `doc.contactPoints.email`
-                // already matches a token in any element of the indexed array
-                // (the field is linked flat by buildViewLink()).
-                $path = key( stripArrayExpansion( (string) $field ) , $docRef ) ;
-
-                foreach( $analyzers as $name )
-                {
-                    $groups[ $name ] ??= [] ;
-
-                    $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , json_encode( $name ) ) ;
-
-                    $groups[ $name ][] = $weight == 1 ? $match : boost( $match , $weight ) ;
-
-                    if( $phrase )
-                    {
-                        $groups[ $name ][] = boost( func( SearchFunction::PHRASE , [ $path , $term ] ) , $weight * 2 ) ;
-                    }
-
-                    if( $fuzzy > 0 )
-                    {
-                        $groups[ $name ][] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
-                    }
-                }
-
-                // A Search::NGRAM analyzer is queried by similarity threshold
-                // (NGRAM_MATCH) rather than IN TOKENS — the precise autocomplete
-                // branch. The term stays bound; the threshold is inlined only
-                // when declared (else the server default applies).
-                if( isset( $spec[ Search::NGRAM ] ) )
-                {
-                    $ngramName = $spec[ Search::NGRAM ][ Search::ANALYZER ] ;
-                    $threshold = $spec[ Search::NGRAM ][ Search::THRESHOLD ] ;
-
-                    $groups[ $ngramName ] ??= [] ;
-
-                    $args = [ $path , $term ] ;
-                    if( $threshold !== null )
-                    {
-                        $args[] = $threshold ;
-                    }
-                    $args[] = json_encode( $ngramName ) ;
-
-                    $ngramMatch = func( SearchFunction::NGRAM_MATCH , $args ) ;
-
-                    $groups[ $ngramName ][] = $weight == 1 ? $ngramMatch : boost( $ngramMatch , $weight ) ;
-                }
+                $anyAnd = true ;
+                break ;
             }
         }
+
+        $groups = $anyAnd
+                ? $this->buildViewSearchGroupsWithOperator( $search , $binds , $docRef , $fields , $modelAnalyzer , $globalPhrase , $globalFuzzy , $globalOperator )
+                : $this->buildViewSearchGroups( $search , $binds , $docRef , $fields , $modelAnalyzer , $globalPhrase , $globalFuzzy ) ;
 
         $wrapped = [] ;
 
@@ -673,6 +626,212 @@ trait SearchTrait
     }
 
     /**
+     * Builds the per-Analyzer expression groups of the View search under the
+     * historical `OR` grammar : each comma-separated term is bound whole and
+     * matched in one shot per field (`doc.<field> IN TOKENS(@search_N, …)`, whose
+     * `IN` semantics already `OR` the term's tokens), plus the optional phrase and
+     * fuzzy branches. This is the exact grammar emitted when no field opts into
+     * {@see Search::OPERATOR} `AND` — see {@see prepareViewSearch()}.
+     *
+     * @param string $search The raw `?search=` term string (comma-separated).
+     * @param ?array $binds Bind variables, populated by reference.
+     * @param string $docRef The document variable the fields hang off.
+     * @param array $fields The resolved, gated per-field specs.
+     * @param string $modelAnalyzer The View-level Analyzer (a per-field override is respected).
+     * @param bool $globalPhrase The View-level phrase-bonus default.
+     * @param int $globalFuzzy The View-level Levenshtein tolerance default.
+     *
+     * @return array<string,string[]> Analyzer name => list of expressions, in first-seen order.
+     *
+     * @throws BindException
+     */
+    protected function buildViewSearchGroups
+    (
+        string  $search ,
+        ?array &$binds ,
+        string  $docRef ,
+        array   $fields ,
+        string  $modelAnalyzer ,
+        bool    $globalPhrase ,
+        int     $globalFuzzy
+    )
+    :array
+    {
+        $groups = [] ; // analyzer name => list of expressions, in first-seen order
+        $index  = 0 ;
+
+        foreach( explode( Char::COMMA , $search ) as $word )
+        {
+            $term = $this->bind( $word , $binds , AQL::SEARCH . Char::UNDERLINE . $index++ ) ;
+
+            foreach( $fields as $field => $spec )
+            {
+                [ $analyzers , $weight , $fuzzy , $phrase , $path ] = $this->resolveFieldSearchSpec( $spec , $field , $modelAnalyzer , $globalPhrase , $globalFuzzy , $docRef ) ;
+
+                $this->pushWholeTermField( $groups , $spec , $path , $term , $analyzers , $weight , $phrase , $fuzzy ) ;
+            }
+        }
+
+        return $groups ;
+    }
+
+    /**
+     * Builds the per-Analyzer expression groups when at least one field opts into
+     * {@see Search::OPERATOR} `AND`. Each comma-separated term is split into words
+     * (whitespace) ; a field then combines those words with its resolved operator :
+     *
+     * - `OR` (default) reproduces the whole-term match
+     *   ({@see pushWholeTermField()}), so a mixed View keeps its loose fields loose ;
+     * - `AND` requires every word in the same field
+     *   (`( doc.<field> IN TOKENS(@w0, …) && doc.<field> IN TOKENS(@w1, …) )`), the
+     *   fuzzy branch (when enabled) widening each word
+     *   (`( … IN TOKENS(@w, …) || LEVENSHTEIN_MATCH(…, @w, …) )`), and the phrase
+     *   bonus (when enabled) kept on the whole term as a ranking boost `OR`-ed on
+     *   top — an adjacency match implies the words, so the matched set is unchanged.
+     *
+     * The whole-term bind is materialized only when a field needs it (an `OR`
+     * field, or an `AND` field carrying the phrase bonus), never left dangling.
+     * Groups are `OR`-ed between fields and between terms by {@see prepareViewSearch()}.
+     *
+     * @param string $search The raw `?search=` term string (comma-separated).
+     * @param ?array $binds Bind variables, populated by reference.
+     * @param string $docRef The document variable the fields hang off.
+     * @param array $fields The resolved, gated per-field specs.
+     * @param string $modelAnalyzer The View-level Analyzer (a per-field override is respected).
+     * @param bool $globalPhrase The View-level phrase-bonus default.
+     * @param int $globalFuzzy The View-level Levenshtein tolerance default.
+     * @param string $globalOperator The View-level operator default ({@see Logic::AND} / {@see Logic::OR}).
+     *
+     * @return array<string,string[]> Analyzer name => list of expressions, in first-seen order.
+     *
+     * @throws BindException
+     */
+    protected function buildViewSearchGroupsWithOperator
+    (
+        string  $search ,
+        ?array &$binds ,
+        string  $docRef ,
+        array   $fields ,
+        string  $modelAnalyzer ,
+        bool    $globalPhrase ,
+        int     $globalFuzzy ,
+        string  $globalOperator
+    )
+    :array
+    {
+        // The whole-term bind is shared by every OR field and by the phrase bonus
+        // of an AND field. Detect once whether any field references it, so an
+        // AND-only View with no phrase never binds (and leaves dangling) a term.
+        $needWholeTerm = false ;
+        foreach( $fields as $spec )
+        {
+            $operator = $spec[ Search::OPERATOR ] ?? $globalOperator ;
+            $phrase   = array_key_exists( Search::PHRASE , $spec ) ? $spec[ Search::PHRASE ] : $globalPhrase ;
+
+            if( $operator === Logic::OR || ( $operator === Logic::AND && $phrase ) )
+            {
+                $needWholeTerm = true ;
+                break ;
+            }
+        }
+
+        $groups    = [] ; // analyzer name => list of expressions, in first-seen order
+        $termIndex = 0 ;
+
+        foreach( explode( Char::COMMA , $search ) as $rawTerm )
+        {
+            $words = preg_split( '/\s+/' , trim( $rawTerm ) , -1 , PREG_SPLIT_NO_EMPTY ) ;
+
+            if( $words === [] )
+            {
+                $termIndex++ ;
+                continue ; // a whitespace-only term contributes nothing
+            }
+
+            // The whole comma-term (words rejoined by a single space), bound once
+            // and only when a field actually references it.
+            $wholeTerm = $needWholeTerm
+                       ? $this->bind( implode( Char::SPACE , $words ) , $binds , AQL::SEARCH . Char::UNDERLINE . $termIndex )
+                       : null ;
+
+            // One bind per word, consumed by every AND field of this term.
+            $wordTerms = [] ;
+            foreach( $words as $wordIndex => $word )
+            {
+                $wordTerms[] = $this->bind( $word , $binds , AQL::SEARCH . Char::UNDERLINE . $termIndex . Char::UNDERLINE . $wordIndex ) ;
+            }
+
+            foreach( $fields as $field => $spec )
+            {
+                $operator = $spec[ Search::OPERATOR ] ?? $globalOperator ;
+
+                [ $analyzers , $weight , $fuzzy , $phrase , $path ] = $this->resolveFieldSearchSpec( $spec , $field , $modelAnalyzer , $globalPhrase , $globalFuzzy , $docRef ) ;
+
+                if( $operator === Logic::OR )
+                {
+                    $this->pushWholeTermField( $groups , $spec , $path , $wholeTerm , $analyzers , $weight , $phrase , $fuzzy ) ;
+                    continue ;
+                }
+
+                // Logic::AND — every word must match this field (per Analyzer).
+                foreach( $analyzers as $name )
+                {
+                    $groups[ $name ] ??= [] ;
+
+                    $perWord = [] ;
+                    foreach( $wordTerms as $wordTerm )
+                    {
+                        $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $wordTerm , json_encode( $name ) ) ;
+
+                        if( $fuzzy > 0 )
+                        {
+                            // Widen the word with its own typo-tolerant branch.
+                            $match = betweenParentheses( [ $match , func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $wordTerm , $fuzzy ] ) ] , true , Char::SPACE . Logic::OR . Char::SPACE , false ) ;
+                        }
+
+                        $perWord[] = $match ;
+                    }
+
+                    $andExpr = count( $perWord ) > 1
+                             ? betweenParentheses( $perWord , true , Char::SPACE . Logic::AND . Char::SPACE , false )
+                             : $perWord[ 0 ] ;
+
+                    $groups[ $name ][] = $weight == 1 ? $andExpr : boost( $andExpr , $weight ) ;
+
+                    if( $phrase )
+                    {
+                        // Whole-term adjacency bonus, OR-ed on top as a ranking boost.
+                        $groups[ $name ][] = boost( func( SearchFunction::PHRASE , [ $path , $wholeTerm ] ) , $weight * 2 ) ;
+                    }
+                }
+
+                // The ngram (autocomplete) branch, AND-ed per word like the tokens.
+                if( isset( $spec[ Search::NGRAM ] ) )
+                {
+                    $ngramName = $spec[ Search::NGRAM ][ Search::ANALYZER ] ;
+                    $groups[ $ngramName ] ??= [] ;
+
+                    $perWord = [] ;
+                    foreach( $wordTerms as $wordTerm )
+                    {
+                        $perWord[] = $this->ngramMatch( $spec , $path , $wordTerm ) ;
+                    }
+
+                    $andNgram = count( $perWord ) > 1
+                              ? betweenParentheses( $perWord , true , Char::SPACE . Logic::AND . Char::SPACE , false )
+                              : $perWord[ 0 ] ;
+
+                    $groups[ $ngramName ][] = $weight == 1 ? $andNgram : boost( $andNgram , $weight ) ;
+                }
+            }
+
+            $termIndex++ ;
+        }
+
+        return $groups ;
+    }
+
+    /**
      * Normalizes the model's `AQL::SEARCHABLE` list into a per-field
      * specification map `field => [ (Search::REQUIRES => …)? ]`, the single
      * source consumed by {@see prepareSearch()} (the `LIKE` sweep) and by the
@@ -788,6 +947,16 @@ trait SearchTrait
                         $spec[ Search::LANG ] = (string) $options[ Search::LANG ] ;
                     }
 
+                    if( array_key_exists( Search::OPERATOR , $options ) )
+                    {
+                        // How the words of a term combine within this field:
+                        // Logic::AND (all words) or Logic::OR (any word). An
+                        // explicit value is normalized to one of the two; an
+                        // absent key means "inherit the View-level default"
+                        // resolved by prepareViewSearch().
+                        $spec[ Search::OPERATOR ] = Logic::normalize( (string) $options[ Search::OPERATOR ] ) ;
+                    }
+
                     if( array_key_exists( Search::PHRASE , $options ) )
                     {
                         $spec[ Search::PHRASE ] = (bool) $options[ Search::PHRASE ] ;
@@ -852,5 +1021,119 @@ trait SearchTrait
             static fn( array $spec ) : float => $spec[ Search::BOOST ] ,
             $this->getViewFieldSpecs()
         ) ;
+    }
+
+    /**
+     * Builds the `NGRAM_MATCH(doc.<field>, @term [, threshold], "<analyzer>")`
+     * core of a {@see Search::NGRAM} branch (without the surrounding boost). The
+     * threshold is inlined only when the field declares one, else the server
+     * default applies. Shared by the whole-term and the per-word emissions.
+     *
+     * @param array $spec The field spec (must carry a {@see Search::NGRAM} entry).
+     * @param string $path The `doc.<field>` accessor.
+     * @param string $term The bound term (`@search_N` or `@search_N_M`).
+     *
+     * @return string The `NGRAM_MATCH(…)` expression.
+     */
+    protected function ngramMatch( array $spec , string $path , string $term ) :string
+    {
+        $ngramName = $spec[ Search::NGRAM ][ Search::ANALYZER ] ;
+        $threshold = $spec[ Search::NGRAM ][ Search::THRESHOLD ] ;
+
+        $args = [ $path , $term ] ;
+        if( $threshold !== null )
+        {
+            $args[] = $threshold ;
+        }
+        $args[] = json_encode( $ngramName ) ;
+
+        return func( SearchFunction::NGRAM_MATCH , $args ) ;
+    }
+
+    /**
+     * Pushes the whole-term match of one field onto the Analyzer groups — the
+     * base `doc.<field> IN TOKENS(@term, …)` (boosted when the field weight is not
+     * `1`), the optional exact-phrase bonus and the optional fuzzy branch, plus
+     * the {@see Search::NGRAM} branch when declared. This is the `OR`-grammar
+     * emission, shared by {@see buildViewSearchGroups()} (every field) and by the
+     * `OR` fields of {@see buildViewSearchGroupsWithOperator()}.
+     *
+     * @param array  &$groups    Analyzer name => list of expressions, mutated by reference.
+     * @param array  $spec       The resolved field spec.
+     * @param string $path       The `doc.<field>` accessor.
+     * @param string $term       The bound whole term (`@search_N`).
+     * @param array  $analyzers  The Analyzers indexing the field (`IN TOKENS` side).
+     * @param float  $weight     The field boost.
+     * @param bool   $phrase     Whether to add the exact-phrase bonus.
+     * @param int    $fuzzy      The Levenshtein tolerance (`0` disables the branch).
+     *
+     * @return void
+     */
+    protected function pushWholeTermField( array &$groups , array $spec , string $path , string $term , array $analyzers , float $weight , bool $phrase , int $fuzzy ) :void
+    {
+        foreach( $analyzers as $name )
+        {
+            $groups[ $name ] ??= [] ;
+
+            $match = $path . Char::SPACE . Comparator::IN . Char::SPACE . tokens( $term , json_encode( $name ) ) ;
+
+            $groups[ $name ][] = $weight == 1 ? $match : boost( $match , $weight ) ;
+
+            if( $phrase )
+            {
+                $groups[ $name ][] = boost( func( SearchFunction::PHRASE , [ $path , $term ] ) , $weight * 2 ) ;
+            }
+
+            if( $fuzzy > 0 )
+            {
+                $groups[ $name ][] = func( SearchFunction::LEVENSHTEIN_MATCH , [ $path , $term , $fuzzy ] ) ;
+            }
+        }
+
+        if( isset( $spec[ Search::NGRAM ] ) )
+        {
+            $ngramName = $spec[ Search::NGRAM ][ Search::ANALYZER ] ;
+
+            $groups[ $ngramName ] ??= [] ;
+
+            $ngramMatch = $this->ngramMatch( $spec , $path , $term ) ;
+
+            $groups[ $ngramName ][] = $weight == 1 ? $ngramMatch : boost( $ngramMatch , $weight ) ;
+        }
+    }
+
+    /**
+     * Resolves the per-field search facets shared by both group builders : the
+     * Analyzers indexing the field (a per-field {@see Search::ANALYZER} overrides
+     * the View-level one, a single Analyzer normalized to a one-element list), the
+     * boost, the fuzzy tolerance and phrase bonus (a per-field value overrides the
+     * View-level default), and the `doc.<field>` accessor (with the `[*]` array
+     * marker stripped — the flat path already matches any element of the indexed
+     * array, and the `SEARCH` grammar rejects the expansion form).
+     *
+     * @param array      $spec          The resolved field spec.
+     * @param int|string $field         The field key (the dotted path, `[*]` allowed).
+     * @param string     $modelAnalyzer The View-level Analyzer.
+     * @param bool       $globalPhrase  The View-level phrase-bonus default.
+     * @param int        $globalFuzzy   The View-level Levenshtein tolerance default.
+     * @param string     $docRef        The document variable the field hangs off.
+     *
+     * @return array{0:string[],1:float,2:int,3:bool,4:string} `[ analyzers, weight, fuzzy, phrase, path ]`.
+     */
+    protected function resolveFieldSearchSpec( array $spec , int|string $field , string $modelAnalyzer , bool $globalPhrase , int $globalFuzzy , string $docRef ) :array
+    {
+        // A field may be queried through one Analyzer or several (e.g. `text` +
+        // `ngram` for whole-word search plus autocomplete).
+        $declared  = $spec[ Search::ANALYZER ] ?? $modelAnalyzer ;
+        $analyzers = is_array( $declared ) ? array_values( $declared ) : [ $declared ] ;
+
+        return
+        [
+            $analyzers ,
+            $spec[ Search::BOOST ] ,
+            array_key_exists( Search::FUZZY  , $spec ) ? $spec[ Search::FUZZY  ] : $globalFuzzy ,
+            array_key_exists( Search::PHRASE , $spec ) ? $spec[ Search::PHRASE ] : $globalPhrase ,
+            key( stripArrayExpansion( (string) $field ) , $docRef ) ,
+        ] ;
     }
 }

@@ -225,6 +225,48 @@ OR BOOST(PHRASE(doc.name, @search_0), 6)                // exact-phrase bonus (r
 
 As a result « Fauteuil cuir vintage » ranks **ahead of** « Sac en cuir, style vintage » in the `BM25` order. The `code` field (`Search::PHRASE => false`) never gets that branch: an identifier like `REF-2024` must not be "brought closer" to an approximate input.
 
+## Combining a term's words (`Search::OPERATOR`)
+
+Some vocabulary first. A `?search=` input splits into **terms** (comma-separated) and, inside a term, into **words** (whitespace-separated). `Search::OPERATOR` decides how the **words of one term** combine **within a field**:
+
+- `Logic::OR` (default): the whole term is matched in one shot (`doc.name IN TOKENS("fourcade marc", …)`). But the `IN` semantics mean "at least one token" — so searching « fourcade marc » returns **every « marc »**;
+- `Logic::AND`: the term is split and **each word must be found in the same field** (`doc.name IN TOKENS("fourcade", …) && doc.name IN TOKENS("marc", …)`). Only « Fourcade Marc » comes back.
+
+The operator only tightens the words **inside** a field. The two other "OR"s of the search are untouched: the OR between comma-separated terms (`marc,marco` = either one) and the OR between fields (a record never has to match two different fields at once).
+
+```php
+Search::FIELDS =>
+[
+    'name' => [ Search::OPERATOR => Logic::AND ] , // both words in the name
+    'code' => 1 ,                                  // left loose (View default)
+] ,
+Search::OPERATOR => Logic::OR , // View-level default
+```
+
+Resolution rule: a field declaring `Search::OPERATOR` wins; a field with no key inherits the View operator; with no global value, it is `OR`. **Backward-compatible**: with no `OPERATOR` (neither View nor field), the AQL output is exactly the former one.
+
+An exact code (identifier, postal code) is **not** hurt by a global `AND`: a one-word input is identical under `AND` and `OR`, and a two-word input simply neutralizes its branch (a code never holds both words) — precisely the wanted behaviour.
+
+**Concrete example.** People directory, `name` field declared as `Search::OPERATOR => Logic::AND`, request:
+
+```
+GET /people?search=fourcade marc
+```
+
+| `name` | fourcade present? | marc present? | `AND` keeps? |
+|---|---|---|---|
+| « Fourcade Marc » | ✅ | ✅ | ✅ yes |
+| « Jean-Marc Dupont » | ❌ | ✅ | ❌ no (« fourcade » missing) |
+| « Marc Durand » | ❌ | ✅ | ❌ no |
+
+The AQL generated for the field conjoins the two words (each on its own bind):
+
+```aql
+ANALYZER((doc.name IN TOKENS(@search_0_0, "text_fr") && doc.name IN TOKENS(@search_0_1, "text_fr")), "text_fr")
+```
+
+The **exact-phrase bonus** (`Search::PHRASE`) stays on the whole term: it ranks « Fourcade Marc » (adjacent, in order) ahead of a scattered match without ever widening the matched set. **Typo tolerance** (`Search::FUZZY`) applies per word.
+
 ## Search permissions
 
 `Search::REQUIRES` declares the **permission subject(s)** required to search — a string or a list (OR semantics) — mirroring [`Field::REQUIRES`](../../projection.md) on the projection side. The decision is delegated to the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller and consulted by `isAuthorized()`). It is declared at **two levels**:
