@@ -5,6 +5,7 @@ namespace tests\oihana\arango\models\traits\aql;
 use ReflectionMethod;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Logic;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\models\enums\Search;
@@ -121,6 +122,102 @@ class SearchTraitTest extends TestCase
         (
             '(LIKE(x.name,@search_0,true))' ,
             $this->stub()->prepareSearch( 'Marc' , $binds , [ 'name' ] , 'x' ) ,
+        ) ;
+    }
+
+    // ---------------------------------------------------------------- initializeSearchOperator
+
+    public function testInitializeSearchOperatorDefaultsToOr() :void
+    {
+        $this->assertSame( Logic::OR , ( new SearchTraitStub() )->searchOperator ) ;
+    }
+
+    public function testInitializeSearchOperatorReadsTheInitKeyAndReturnsSelf() :void
+    {
+        $stub   = new SearchTraitStub() ;
+        $result = $stub->initializeSearchOperator( [ Search::OPERATOR => Logic::AND ] ) ;
+
+        $this->assertSame( $stub , $result ) ;
+        $this->assertSame( Logic::AND , $stub->searchOperator ) ;
+    }
+
+    public function testInitializeSearchOperatorNormalizesAndKeepsDefaultWhenAbsent() :void
+    {
+        $stub = new SearchTraitStub() ;
+
+        $stub->initializeSearchOperator( [ Search::OPERATOR => 'nonsense' ] ) ; // normalized to AND
+        $this->assertSame( Logic::AND , $stub->searchOperator ) ;
+
+        $stub->initializeSearchOperator( [] ) ; // key absent → keeps the current value
+        $this->assertSame( Logic::AND , $stub->searchOperator ) ;
+
+        $stub->initializeSearchOperator( [ Search::OPERATOR => Logic::OR ] ) ;
+        $this->assertSame( Logic::OR , $stub->searchOperator ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareSearch : Search::OPERATOR (AND)
+
+    public function testOperatorAndRequiresEveryWordInTheField() :void
+    {
+        $stub = $this->stub() ;
+        $stub->searchOperator = Logic::AND ;
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            '((LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))'
+            . ' || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true)))' ,
+            $stub->prepareSearch( 'fourcade marc' , $binds ) ,
+        ) ;
+        $this->assertSame( [ 'search_0_0' => '%fourcade%' , 'search_0_1' => '%marc%' ] , $binds ) ;
+    }
+
+    public function testOperatorAndSingleWordHasNoConjunction() :void
+    {
+        $stub = $this->stub() ;
+        $stub->searchOperator = Logic::AND ;
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0_0,true) || LIKE(doc.firstName,@search_0_0,true))' ,
+            $stub->prepareSearch( 'marc' , $binds ) ,
+        ) ;
+        $this->assertSame( [ 'search_0_0' => '%marc%' ] , $binds ) ;
+    }
+
+    public function testOperatorAndTrimsAndCollapsesWhitespace() :void
+    {
+        $stub = $this->stub() ;
+        $stub->searchOperator = Logic::AND ;
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            '((LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))'
+            . ' || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true)))' ,
+            $stub->prepareSearch( 'fourcade  marc ' , $binds ) ,
+        ) ;
+        $this->assertSame( [ 'search_0_0' => '%fourcade%' , 'search_0_1' => '%marc%' ] , $binds ) ;
+    }
+
+    public function testOperatorAndKeepsCommaTermsOr() :void
+    {
+        $stub = $this->stub() ;
+        $stub->searchOperator = Logic::AND ;
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            '((LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))'
+            . ' || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true))'
+            . ' || LIKE(doc.name,@search_1_0,true) || LIKE(doc.firstName,@search_1_0,true))' ,
+            $stub->prepareSearch( 'fourcade marc,dupont' , $binds ) ,
+        ) ;
+        $this->assertSame
+        (
+            [ 'search_0_0' => '%fourcade%' , 'search_0_1' => '%marc%' , 'search_1_0' => '%dupont%' ] ,
+            $binds ,
         ) ;
     }
 

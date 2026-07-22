@@ -45,7 +45,33 @@ Terms are **comma-separated**. Each term is bound separately and tested against 
 // @search_0 = "%marc%" , @search_1 = "%marco%"
 ```
 
-> The semantics is an **OR** between terms ("contains marc OR marco"). To require several conditions at once (AND), use [`?filter=`](../filter.md) instead.
+> The default semantics is an **OR** between terms ("contains marc OR marco"). To require **all the words** of a term in one same field (AND), see [`Search::OPERATOR`](#requiring-every-word-of-a-term-searchoperator) just below; to combine conditions over **different fields**, use [`?filter=`](../filter.md).
+
+## Requiring every word of a term (`Search::OPERATOR`)
+
+By default a multi-word term is matched **as a whole**: `?search=fourcade marc` binds `%fourcade marc%` and requires the exact run "fourcade marc" (adjacent, in order). To require instead that **each word** be found in the field, **regardless of order**, declare `Search::OPERATOR => Logic::AND` on the model:
+
+```php
+use oihana\arango\db\enums\Logic ;
+use oihana\arango\models\enums\Search ;
+
+AQL::SEARCHABLE  => [ 'name' , 'firstName' ] ,
+Search::OPERATOR => Logic::AND , // every word must be found in the same field
+```
+
+`?search=fourcade marc` then generates, per field, a conjunction of substrings (one bind per word):
+
+```aql
+( (LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))
+  || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true)) )
+// @search_0_0 = "%fourcade%" , @search_0_1 = "%marc%"
+```
+
+- Splitting happens on **whitespace**: "fourcade marc" and "marc fourcade" both keep the same record (order-free), where the default `%whole term%` would match only the exact order.
+- **Fields** stay OR-ed (each word in the *same* field), and **comma-separated terms** stay OR-ed (`fourcade marc,dupont` = both words OR "dupont").
+- Default `Logic::OR`: the whole-term substring of today, **unchanged** AQL output (backward-compatible).
+
+It is the `LIKE`-sweep counterpart of the [View search `Search::OPERATOR`](per-field-options.md#combining-a-terms-words-searchoperator) — same intent (tighten a term's words within a field), mechanism adapted (`LIKE` substring instead of `IN TOKENS`). Here the operator is **model-wide** (the `LIKE` sweep has no per-field declaration).
 
 ## Model-side declaration
 

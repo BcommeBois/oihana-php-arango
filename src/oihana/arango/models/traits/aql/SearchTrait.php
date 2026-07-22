@@ -62,6 +62,18 @@ trait SearchTrait
     public ?array $searchable = [] ;
 
     /**
+     * The default operator combining the words of a `?search=` term **within a
+     * field** during the classic `LIKE` sweep ({@see prepareSearch()}):
+     * {@see \oihana\arango\db\enums\Logic::AND} (every word must be found in the
+     * field, order-independent) or {@see \oihana\arango\db\enums\Logic::OR} (the
+     * whole term matched as one substring — the default, backward-compatible).
+     * Set once per model through the `Search::OPERATOR` init key. The View search
+     * carries its own operator inside the `AQL::VIEW` block (per field), see
+     * {@see Search::OPERATOR}.
+     */
+    public string $searchOperator = Logic::OR ;
+
+    /**
      * The model-level ArangoSearch declaration (`AQL::VIEW` block, see {@see Search}).
      * When present (with a {@see Search::NAME}), the `?search=` parameter switches
      * from the simple `LIKE` sweep to an index-accelerated, relevance-ranked
@@ -139,6 +151,25 @@ trait SearchTrait
     }
 
     /**
+     * Initialize the `LIKE` sweep operator ({@see $searchOperator}) from the
+     * `Search::OPERATOR` init key. An explicit value is normalized to
+     * {@see Logic::AND} / {@see Logic::OR}; an absent key keeps the default
+     * ({@see Logic::OR}, backward-compatible).
+     *
+     * @param array $init
+     *
+     * @return static
+     */
+    public function initializeSearchOperator( array $init = [] ) :static
+    {
+        if( isset( $init[ Search::OPERATOR ] ) )
+        {
+            $this->searchOperator = Logic::normalize( (string) $init[ Search::OPERATOR ] ) ;
+        }
+        return $this ;
+    }
+
+    /**
      * Initialize the model-level ArangoSearch declaration (`AQL::VIEW` block)
      * and lazily provision the View, mirroring the collection provisioning of
      * `initializeCollection()`: when the model is lazy and the declared View
@@ -172,7 +203,20 @@ trait SearchTrait
     }
 
     /**
-     * Prepare the searchable AQL conditions.
+     * Prepare the searchable AQL conditions — the classic `?search=` `LIKE`
+     * sweep, a parenthesized `OR` of case-insensitive `LIKE()` predicates over
+     * every (permitted) searchable field, used when no View search is active.
+     *
+     * The comma-separated terms and the fields are always `OR`-ed. How the words
+     * of a single term combine within a field follows the model's
+     * {@see $searchOperator} ({@see Search::OPERATOR} init key):
+     *
+     * - {@see Logic::OR} (default) matches the whole term as one substring
+     *   (`LIKE(doc.name, "%marc fourcade%")`), so it needs the words adjacent and
+     *   in order — the historical, byte-for-byte grammar;
+     * - {@see Logic::AND} splits the term on whitespace and requires every word in
+     *   the same field (`( LIKE(doc.name, "%marc%") && LIKE(doc.name, "%fourcade%") )`),
+     *   order-independent.
      *
      * @param array|string|null $search
      * @param ?array $binds
@@ -234,21 +278,59 @@ trait SearchTrait
                 return Boolean::FALSE ; // every searchable field denied → match nothing
             }
 
-            $likes = [] ;
-            $index = 0 ;
-            foreach( explode( Char::COMMA , $search ) as $word )
+            // Model-level operator (Search::OPERATOR init key). AND splits each
+            // term into words and requires every one in the same field (a
+            // per-field conjunction of substring LIKEs, order-independent); OR (the
+            // default) keeps the historical whole-term substring match, byte for
+            // byte. Fields and comma-terms stay OR-ed either way.
+            $likes     = [] ;
+            $termIndex = 0 ;
+
+            foreach( explode( Char::COMMA , $search ) as $term )
             {
-                $word = $this->bind
-                (
-                    Char::MODULUS . $word . Char::MODULUS ,
-                    $binds ,
-                    AQL::SEARCH . Char::UNDERLINE . $index++
-                ) ;
-                foreach( array_keys( $specs ) as $field )
+                if( $this->searchOperator === Logic::AND )
                 {
-                    $likes[] = like( key( $field , $docRef ) , $word , caseInsensitive: true ) ;
+                    $words = preg_split( '/\s+/' , trim( $term ) , -1 , PREG_SPLIT_NO_EMPTY ) ;
+
+                    if( $words === [] )
+                    {
+                        $termIndex++ ;
+                        continue ; // a whitespace-only term contributes nothing
+                    }
+
+                    $wordBinds = [] ;
+                    foreach( $words as $wordIndex => $word )
+                    {
+                        $wordBinds[] = $this->bind( Char::MODULUS . $word . Char::MODULUS , $binds , AQL::SEARCH . Char::UNDERLINE . $termIndex . Char::UNDERLINE . $wordIndex ) ;
+                    }
+
+                    foreach( array_keys( $specs ) as $field )
+                    {
+                        $path    = key( $field , $docRef ) ;
+                        $perWord = [] ;
+                        foreach( $wordBinds as $wordBind )
+                        {
+                            $perWord[] = like( $path , $wordBind , caseInsensitive: true ) ;
+                        }
+
+                        $likes[] = count( $perWord ) > 1
+                                 ? betweenParentheses( $perWord , true , Char::SPACE . Logic::AND . Char::SPACE , false )
+                                 : $perWord[ 0 ] ;
+                    }
                 }
+                else
+                {
+                    $word = $this->bind( Char::MODULUS . $term . Char::MODULUS , $binds , AQL::SEARCH . Char::UNDERLINE . $termIndex ) ;
+
+                    foreach( array_keys( $specs ) as $field )
+                    {
+                        $likes[] = like( key( $field , $docRef ) , $word , caseInsensitive: true ) ;
+                    }
+                }
+
+                $termIndex++ ;
             }
+
             return betweenParentheses
             (
                 expression : compile( $likes , Char::SPACE . Logic::OR . Char::SPACE ) ,

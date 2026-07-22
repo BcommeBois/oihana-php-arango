@@ -45,7 +45,33 @@ Les termes sont **séparés par des virgules**. Chaque terme est lié séparéme
 // @search_0 = "%marc%" , @search_1 = "%marco%"
 ```
 
-> La sémantique est un **OU** entre les termes (« contient marc OU marco »). Pour exiger plusieurs conditions simultanées (ET), utilisez plutôt [`?filter=`](../filter.md).
+> La sémantique par défaut est un **OU** entre les termes (« contient marc OU marco »). Pour exiger que **tous les mots** d'un terme soient présents dans un même champ (ET), voir [`Search::OPERATOR`](#exiger-tous-les-mots-dun-terme-searchoperator) juste en dessous ; pour combiner des conditions sur **des champs différents**, utilisez [`?filter=`](../filter.md).
+
+## Exiger tous les mots d'un terme (`Search::OPERATOR`)
+
+Par défaut, un terme à plusieurs mots est cherché **en bloc** : `?search=fourcade marc` lie `%fourcade marc%` et exige la suite exacte « fourcade marc » (adjacents, dans l'ordre). Pour exiger plutôt que **chaque mot** se retrouve dans le champ, **quel que soit l'ordre**, déclarez `Search::OPERATOR => Logic::AND` sur le modèle :
+
+```php
+use oihana\arango\db\enums\Logic ;
+use oihana\arango\models\enums\Search ;
+
+AQL::SEARCHABLE  => [ 'name' , 'firstName' ] ,
+Search::OPERATOR => Logic::AND , // chaque mot doit se retrouver dans le même champ
+```
+
+`?search=fourcade marc` génère alors, par champ, une conjonction de sous-chaînes (un bind par mot) :
+
+```aql
+( (LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))
+  || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true)) )
+// @search_0_0 = "%fourcade%" , @search_0_1 = "%marc%"
+```
+
+- Le découpage se fait sur les **espaces** : « fourcade marc » et « marc fourcade » retiennent la même fiche (ordre libre), là où le `%terme entier%` par défaut ne matcherait que l'ordre exact.
+- Les **champs** restent en OU (chaque mot dans le *même* champ), et les **termes séparés par virgule** restent en OU (`fourcade marc,dupont` = les deux mots OU « dupont »).
+- Défaut `Logic::OR` : la sous-chaîne du terme entier d'aujourd'hui, sortie AQL **inchangée** (rétro-compatible).
+
+C'est le pendant, côté balayage `LIKE`, du [`Search::OPERATOR` de la recherche View](per-field-options.md#combiner-les-mots-dun-terme-searchoperator) — même intention (resserrer les mots d'un terme dans un champ), mécanisme adapté (sous-chaîne `LIKE` au lieu de `IN TOKENS`). Ici l'opérateur est **global au modèle** (le balayage `LIKE` n'a pas de déclaration par champ).
 
 ## Déclaration côté modèle
 
