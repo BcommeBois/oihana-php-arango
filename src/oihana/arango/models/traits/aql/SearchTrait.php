@@ -1018,7 +1018,7 @@ trait SearchTrait
      * default", which {@see prepareViewSearch()} resolves so that an explicit
      * value (`0` included) overrides the global tolerance.
      *
-     * @return array<string, array<string, float|int>>
+     * @return array<string, array<string, mixed>>
      *
      * @throws ValidationException
      */
