@@ -36,6 +36,15 @@ Configuration : [phpunit.xml](../../phpunit.xml). Points clés :
 
 > **Tests de caractérisation.** Quand on couvre du code existant, on écrit des tests qui décrivent ce que le code **fait réellement**, branche par branche (`if` / `else` / `match`). Ce travail de précision révèle régulièrement de vrais bugs (cas limite mal géré, valeur non filtrée…). **Règle d'or** : si un comportement surprenant pourrait être utilisé en aval par une autre lib, on le **gèle dans un test** et on le signale — on ne change pas une API publique sans validation explicite.
 
+### Éviter les warnings et les *deprecations*
+
+Le mode strict (`failOnWarning`, `failOnRisky`) transforme le moindre warning PHP en **échec de suite**. Un warning n'est donc jamais « toléré » : on le supprime à la source. Pièges récurrents rencontrés dans cette lib :
+
+- **`Undefined array key "REQUEST_URI"`.** Passer `null` comme requête à un handler qui **construit une réponse** fait lire `$_SERVER['REQUEST_URI']` (absent en CLI) par `BaseUrlTrait`, d'où le warning. Correctif : dès qu'un test fournit une `Response`, passe une **vraie requête** via le helper — `$this->makeRequest( [] )` pour « aucun paramètre » — jamais `null`. Réserve `null` aux appels qui **ne produisent pas** de réponse (retour direct de données, ex. `get()`/`count()` testés sans réponse).
+- **Distinguer nos *deprecations* de celles des dépendances.** Une *deprecation* déclenchée par **notre** code se corrige avant commit. Si elle vient d'une dépendance tierce, on la trace (issue/note) au lieu de la laisser masquer les nôtres.
+- **Pas de test « risqué ».** Chaque test **affirme** quelque chose (au moins un `assert*`) ; un test sans assertion échoue en mode strict — et surtout ne protège de rien.
+- **Aucune sortie pendant les tests.** Un `var_dump()` / `echo` oublié fait échouer `beStrictAboutOutputDuringTests`. Pour inspecter, on passe par des assertions ou `--debug`, jamais par une sortie directe.
+
 ## Couverture de code
 
 PHPUnit mesure quelles lignes de `./src` sont exécutées par la suite. Il faut **activer le mode coverage de Xdebug** (ou PCOV) ; sinon PHPUnit affiche `No tests executed!` et un warning `XDEBUG_MODE=coverage … has to be set`. Les scripts `composer` ci-dessous positionnent la variable d'environnement pour toi :

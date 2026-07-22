@@ -36,6 +36,15 @@ Configuration: [phpunit.xml](../../phpunit.xml). Key points:
 
 > **Characterization testing.** When covering existing code, we write tests that describe what the code **actually does**, branch by branch (`if` / `else` / `match`). That precision work regularly surfaces real bugs (mishandled edge case, unfiltered value…). **Golden rule**: if a surprising behaviour could be relied upon downstream by another library, we **freeze it in a test** and flag it — we never change a public API without explicit validation.
 
+### Avoiding warnings and deprecations
+
+Strict mode (`failOnWarning`, `failOnRisky`) turns any PHP warning into a **suite failure**. A warning is therefore never "tolerated": we remove it at the source. Recurring pitfalls seen in this library:
+
+- **`Undefined array key "REQUEST_URI"`.** Passing `null` as the request to a handler that **builds a response** makes `BaseUrlTrait` read `$_SERVER['REQUEST_URI']` (absent under CLI), hence the warning. Fix: whenever a test supplies a `Response`, pass a **real request** through the helper — `$this->makeRequest( [] )` for "no parameter" — never `null`. Reserve `null` for calls that **do not produce** a response (direct data return, e.g. `get()`/`count()` tested without a response).
+- **Tell our deprecations from the dependencies'.** A deprecation triggered by **our** code is fixed before commit. If it comes from a third-party dependency, we track it (issue/note) instead of letting it hide ours.
+- **No "risky" test.** Every test **asserts** something (at least one `assert*`); a test with no assertion fails under strict mode — and above all protects nothing.
+- **No output during tests.** A stray `var_dump()` / `echo` fails `beStrictAboutOutputDuringTests`. To inspect, use assertions or `--debug`, never direct output.
+
 ## Code coverage
 
 PHPUnit measures which lines of `./src` the suite executes. You must **enable Xdebug's coverage mode** (or PCOV); otherwise PHPUnit prints `No tests executed!` and a `XDEBUG_MODE=coverage … has to be set` warning. The `composer` scripts below set the environment variable for you:
