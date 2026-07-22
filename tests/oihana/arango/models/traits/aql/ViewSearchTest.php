@@ -1063,6 +1063,69 @@ class ViewSearchTest extends TestCase
         $this->assertSame( [ 'search_0' => 'fourcade marc' ] , $this->binds ) ;
     }
 
+    // ---------------------------------------------------------------- prepareViewSearch (Search::SEPARATORS)
+
+    private function operatorModel( array $view = [] ) :Documents
+    {
+        return $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+                ...$view ,
+            ] ,
+        ]) ;
+    }
+
+    public function testPrepareViewSearchOperatorSplitsOnHyphenByDefault() :void
+    {
+        // No Search::SEPARATORS → hyphen default : "Jean-Marc" behaves like "Jean Marc".
+        $this->assertSame
+        (
+            'ANALYZER('
+            . '(doc.name IN TOKENS(@search_0_0,"text_fr") && doc.name IN TOKENS(@search_0_1,"text_fr"))'
+            . ',"text_fr")' ,
+            $this->operatorModel()->prepareViewSearch( 'Jean-Marc' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0_0' => 'Jean' , 'search_0_1' => 'Marc' ] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchOperatorEmptySeparatorsKeepsHyphenatedWordWhole() :void
+    {
+        // Explicit empty → whitespace only : a hyphenated code stays one word.
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0_0,"text_fr"),"text_fr")' ,
+            $this->operatorModel( [ Search::SEPARATORS => '' ] )->prepareViewSearch( 'Jean-Marc' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0_0' => 'Jean-Marc' ] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchOperatorCustomSeparatorsString() :void
+    {
+        // A string of characters replaces the default extra set (whitespace always splits).
+        $this->operatorModel( [ Search::SEPARATORS => '-.' ] )->prepareViewSearch( 'Jean-Marc.Paul' , $this->binds ) ;
+        $this->assertSame
+        (
+            [ 'search_0_0' => 'Jean' , 'search_0_1' => 'Marc' , 'search_0_2' => 'Paul' ] ,
+            $this->binds
+        ) ;
+    }
+
+    public function testPrepareViewSearchOperatorCustomSeparatorsArray() :void
+    {
+        // A list of characters is normalized to the same set as the string form.
+        $this->operatorModel( [ Search::SEPARATORS => [ '-' , '.' ] ] )->prepareViewSearch( 'Jean-Marc.Paul' , $this->binds ) ;
+        $this->assertSame
+        (
+            [ 'search_0_0' => 'Jean' , 'search_0_1' => 'Marc' , 'search_0_2' => 'Paul' ] ,
+            $this->binds
+        ) ;
+    }
+
     // ---------------------------------------------------------------- buildListQuery
 
     public function testListQueryWithoutSearchIsUnchanged() :void

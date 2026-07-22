@@ -73,6 +73,8 @@ Search::OPERATOR => Logic::AND , // every word must be found in the same field
 
 It is the `LIKE`-sweep counterpart of the [View search `Search::OPERATOR`](per-field-options.md#combining-a-terms-words-searchoperator) — same intent (tighten a term's words within a field), mechanism adapted (`LIKE` substring instead of `IN TOKENS`). Here the operator is **model-wide** (the `LIKE` sweep has no per-field declaration).
 
+Words are split on **whitespace** and, **by default, the hyphen** — « Jean-Marc » behaves like « Jean Marc ». `Search::SEPARATORS` (a model init key) declares the separator characters on top of whitespace, as a **string** (`"-./"`) or a **list** (`["-", ".", "/"]`); an **empty** value (`""`) splits on whitespace only (to keep a `REF-2024` code whole). Only active in `AND` mode.
+
 ## Model-side declaration
 
 The swept fields are declared in the **`AQL::SEARCHABLE`** (= `'searchable'`) list at model construction:

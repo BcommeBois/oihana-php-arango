@@ -267,6 +267,21 @@ ANALYZER((doc.name IN TOKENS(@search_0_0, "text_fr") && doc.name IN TOKENS(@sear
 
 Le **bonus d'expression exacte** (`Search::PHRASE`) reste posé sur le terme entier : il classe « Fourcade Marc » (adjacents, dans l'ordre) devant un match dispersé sans jamais élargir l'ensemble retenu. La **tolérance aux fautes** (`Search::FUZZY`) s'applique, elle, mot par mot.
 
+### Découpage des mots (`Search::SEPARATORS`)
+
+Un terme est découpé en mots sur l'**espace** — mais un nom composé écrit **sans espace**, « Jean-Marc », resterait un seul mot et se re-diluerait en `OU` de ses jetons via `IN TOKENS` (« Jean-Marc » ramènerait tous les « jean » *ou* « marc », et toutes les villes en « Saint-**Jean** »). Pour l'éviter, le découpage se fait **aussi sur le trait d'union par défaut** : « Jean-Marc » se comporte comme « Jean Marc ».
+
+`Search::SEPARATORS` déclare l'ensemble des caractères qui découpent **en plus de l'espace** (toujours séparateur). Deux écritures au choix — une **chaîne de caractères** ou une **liste de caractères** (même ensemble) :
+
+```php
+Search::OPERATOR   => Logic::AND ,
+Search::SEPARATORS => "-./" ,                // chaîne
+// ou
+Search::SEPARATORS => [ "-" , "." , "/" ] ,  // liste
+```
+
+Défaut (clé absente) = le **trait d'union**. Une valeur **vide** (`""` ou `[]`) découpe sur l'espace **seul** — utile pour garder un code à trait d'union (`REF-2024`) entier. Les caractères sont échappés (n'importe quelle ponctuation est sûre). ⚠️ Élargir aux **élisions** (l'apostrophe de « d'Artagnan ») créerait un mot d'une lettre qui vide le `AND` — le défaut trait d'union reste sûr. N'agit qu'en mode `AND`.
+
 ## Permissions de recherche
 
 `Search::REQUIRES` déclare le(s) **sujet(s) de permission** requis pour chercher — une chaîne ou une liste (sémantique OR) — en miroir exact de [`Field::REQUIRES`](../../projection.md) côté projection. La décision est déléguée à l'**autorizer** de la requête (le closure `Arango::AUTHORIZER`, injecté par le contrôleur et consulté par `isAuthorized()`). Il se déclare à **deux niveaux** :

@@ -148,6 +148,7 @@ class Documents implements ArangoDocumentsModel
              ->initializeSchema           ( $init )
              ->initializeSearchable       ( $init )
              ->initializeSearchOperator   ( $init )
+             ->initializeSearchSeparators ( $init )
              ->initializeView             ( $init ) # After the collection and the searchable fields
              ->initializeSortDefault      ( $init )
              ->initializeSortable         ( $init )

@@ -221,6 +221,63 @@ class SearchTraitTest extends TestCase
         ) ;
     }
 
+    // ---------------------------------------------------------------- initializeSearchSeparators
+
+    public function testInitializeSearchSeparatorsDefaultsToHyphen() :void
+    {
+        $this->assertSame( '-' , ( new SearchTraitStub() )->searchSeparators ) ;
+    }
+
+    public function testInitializeSearchSeparatorsReadsStringArrayAndKeepsDefault() :void
+    {
+        $stub = new SearchTraitStub() ;
+
+        $result = $stub->initializeSearchSeparators( [ Search::SEPARATORS => './' ] ) ;
+        $this->assertSame( $stub , $result ) ;
+        $this->assertSame( './' , $stub->searchSeparators ) ;
+
+        $stub->initializeSearchSeparators( [ Search::SEPARATORS => [ '-' , '.' ] ] ) ; // list → joined string
+        $this->assertSame( '-.' , $stub->searchSeparators ) ;
+
+        $stub->initializeSearchSeparators( [] ) ; // key absent → keeps the current value
+        $this->assertSame( '-.' , $stub->searchSeparators ) ;
+
+        $stub->initializeSearchSeparators( [ Search::SEPARATORS => '' ] ) ; // explicit empty → whitespace only
+        $this->assertSame( '' , $stub->searchSeparators ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareSearch : Search::SEPARATORS (AND)
+
+    public function testOperatorAndSplitsOnHyphenByDefault() :void
+    {
+        $stub = $this->stub() ;
+        $stub->searchOperator = Logic::AND ;
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            '((LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))'
+            . ' || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true)))' ,
+            $stub->prepareSearch( 'Jean-Marc' , $binds ) ,
+        ) ;
+        $this->assertSame( [ 'search_0_0' => '%Jean%' , 'search_0_1' => '%Marc%' ] , $binds ) ;
+    }
+
+    public function testOperatorAndEmptySeparatorsKeepsHyphenatedWordWhole() :void
+    {
+        $stub = $this->stub() ;
+        $stub->searchOperator   = Logic::AND ;
+        $stub->searchSeparators = '' ; // whitespace only
+
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0_0,true) || LIKE(doc.firstName,@search_0_0,true))' ,
+            $stub->prepareSearch( 'Jean-Marc' , $binds ) ,
+        ) ;
+        $this->assertSame( [ 'search_0_0' => '%Jean-Marc%' ] , $binds ) ;
+    }
+
     // ---------------------------------------------------------------- prepareSearch : null results
 
     public function testEmptyStringReturnsNull() :void

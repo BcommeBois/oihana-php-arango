@@ -73,6 +73,8 @@ Search::OPERATOR => Logic::AND , // chaque mot doit se retrouver dans le même c
 
 C'est le pendant, côté balayage `LIKE`, du [`Search::OPERATOR` de la recherche View](per-field-options.md#combiner-les-mots-dun-terme-searchoperator) — même intention (resserrer les mots d'un terme dans un champ), mécanisme adapté (sous-chaîne `LIKE` au lieu de `IN TOKENS`). Ici l'opérateur est **global au modèle** (le balayage `LIKE` n'a pas de déclaration par champ).
 
+Le découpage en mots se fait sur l'**espace** et, **par défaut, le trait d'union** — « Jean-Marc » se comporte comme « Jean Marc ». `Search::SEPARATORS` (clé d'init du modèle) déclare les caractères séparateurs en plus de l'espace, sous forme de **chaîne** (`"-./"`) ou de **liste** (`["-", ".", "/"]`) ; une valeur **vide** (`""`) découpe sur l'espace seul (pour garder un code `REF-2024` entier). N'agit qu'en mode `AND`.
+
 ## Déclaration côté modèle
 
 Les champs balayés sont déclarés dans la liste **`AQL::SEARCHABLE`** (= `'searchable'`) à la construction du modèle :

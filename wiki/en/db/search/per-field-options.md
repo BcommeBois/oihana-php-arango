@@ -267,6 +267,21 @@ ANALYZER((doc.name IN TOKENS(@search_0_0, "text_fr") && doc.name IN TOKENS(@sear
 
 The **exact-phrase bonus** (`Search::PHRASE`) stays on the whole term: it ranks « Fourcade Marc » (adjacent, in order) ahead of a scattered match without ever widening the matched set. **Typo tolerance** (`Search::FUZZY`) applies per word.
 
+### Word splitting (`Search::SEPARATORS`)
+
+A term is split into words on **whitespace** — but a compound name written with **no** space, « Jean-Marc », would stay one word and re-dilute into an `OR` of its tokens through `IN TOKENS` (« Jean-Marc » would return every « jean » *or* « marc », and every « Saint-**Jean** » city). To avoid that, the split **also breaks on the hyphen by default**: « Jean-Marc » behaves like « Jean Marc ».
+
+`Search::SEPARATORS` declares the set of characters that split **on top of whitespace** (always a separator). Two shapes — a **string of characters** or a **list of characters** (same set):
+
+```php
+Search::OPERATOR   => Logic::AND ,
+Search::SEPARATORS => "-./" ,                // string
+// or
+Search::SEPARATORS => [ "-" , "." , "/" ] ,  // list
+```
+
+Default (key absent) = the **hyphen**. An **empty** value (`""` or `[]`) splits on whitespace **only** — handy to keep a hyphenated code (`REF-2024`) whole. Characters are regex-escaped (any punctuation is safe). ⚠️ Widening to **elisions** (the apostrophe of « d'Artagnan ») would make a one-letter word that empties the `AND` — the hyphen default stays safe. Only active in `AND` mode.
+
 ## Search permissions
 
 `Search::REQUIRES` declares the **permission subject(s)** required to search — a string or a list (OR semantics) — mirroring [`Field::REQUIRES`](../../projection.md) on the projection side. The decision is delegated to the request **authorizer** (the `Arango::AUTHORIZER` closure, injected by the controller and consulted by `isAuthorized()`). It is declared at **two levels**:

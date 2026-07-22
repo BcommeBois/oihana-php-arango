@@ -74,6 +74,17 @@ trait SearchTrait
     public string $searchOperator = Logic::OR ;
 
     /**
+     * The extra characters (beyond whitespace) that split a `?search=` term into
+     * words for the `AND` operator of the classic `LIKE` sweep ({@see prepareSearch()}).
+     * A string of characters; set once per model through the `Search::SEPARATORS`
+     * init key (a list of characters is normalized to a string at init). The
+     * default is the hyphen (`-`) so « Jean-Marc » splits like « Jean Marc »; an
+     * empty string keeps hyphenated codes whole. Only used in `AND` mode. See
+     * {@see Search::SEPARATORS}.
+     */
+    public string $searchSeparators = Char::HYPHEN ;
+
+    /**
      * The model-level ArangoSearch declaration (`AQL::VIEW` block, see {@see Search}).
      * When present (with a {@see Search::NAME}), the `?search=` parameter switches
      * from the simple `LIKE` sweep to an index-accelerated, relevance-ranked
@@ -165,6 +176,26 @@ trait SearchTrait
         if( isset( $init[ Search::OPERATOR ] ) )
         {
             $this->searchOperator = Logic::normalize( (string) $init[ Search::OPERATOR ] ) ;
+        }
+        return $this ;
+    }
+
+    /**
+     * Initialize the `LIKE` sweep word separators ({@see $searchSeparators}) from
+     * the `Search::SEPARATORS` init key. Accepts a string of characters or a list
+     * of characters (joined to a string); an absent key keeps the default (the
+     * hyphen). Only meaningful with the `AND` operator. See {@see Search::SEPARATORS}.
+     *
+     * @param array $init
+     *
+     * @return static
+     */
+    public function initializeSearchSeparators( array $init = [] ) :static
+    {
+        if( array_key_exists( Search::SEPARATORS , $init ) )
+        {
+            $separators = $init[ Search::SEPARATORS ] ;
+            $this->searchSeparators = is_array( $separators ) ? implode( Char::EMPTY , $separators ) : (string) $separators ;
         }
         return $this ;
     }
@@ -290,7 +321,7 @@ trait SearchTrait
             {
                 if( $this->searchOperator === Logic::AND )
                 {
-                    $words = preg_split( '/\s+/' , trim( $term ) , -1 , PREG_SPLIT_NO_EMPTY ) ;
+                    $words = $this->splitSearchTermWords( $term , $this->searchSeparators ) ;
 
                     if( $words === [] )
                     {
@@ -435,6 +466,10 @@ trait SearchTrait
                         ? Logic::normalize( (string) $this->view[ Search::OPERATOR ] )
                         : Logic::OR ;
 
+        // The extra word-separator characters for the AND split (Search::SEPARATORS),
+        // beyond whitespace. Absent → null → the hyphen default (splitSearchTermWords()).
+        $separators = $this->view[ Search::SEPARATORS ] ?? null ;
+
         // Per-field permission gating : a field joins the SEARCH only when BOTH
         // gates grant it — its own Search::REQUIRES (isAuthorized) AND the
         // Field::REQUIRES inherited from the projection at the exact (sub-)field
@@ -499,7 +534,7 @@ trait SearchTrait
         }
 
         $groups = $anyAnd
-                ? $this->buildViewSearchGroupsWithOperator( $search , $binds , $docRef , $fields , $modelAnalyzer , $globalPhrase , $globalFuzzy , $globalOperator )
+                ? $this->buildViewSearchGroupsWithOperator( $search , $binds , $docRef , $fields , $modelAnalyzer , $globalPhrase , $globalFuzzy , $globalOperator , $separators )
                 : $this->buildViewSearchGroups( $search , $binds , $docRef , $fields , $modelAnalyzer , $globalPhrase , $globalFuzzy ) ;
 
         $wrapped = [] ;
@@ -783,6 +818,7 @@ trait SearchTrait
      * @param bool $globalPhrase The View-level phrase-bonus default.
      * @param int $globalFuzzy The View-level Levenshtein tolerance default.
      * @param string $globalOperator The View-level operator default ({@see Logic::AND} / {@see Logic::OR}).
+     * @param string|array|null $separators The extra AND word separators ({@see Search::SEPARATORS}); null = the hyphen default.
      *
      * @return array<string,string[]> Analyzer name => list of expressions, in first-seen order.
      *
@@ -790,14 +826,15 @@ trait SearchTrait
      */
     protected function buildViewSearchGroupsWithOperator
     (
-        string  $search ,
-        ?array &$binds ,
-        string  $docRef ,
-        array   $fields ,
-        string  $modelAnalyzer ,
-        bool    $globalPhrase ,
-        int     $globalFuzzy ,
-        string  $globalOperator
+        string             $search ,
+        ?array            &$binds ,
+        string             $docRef ,
+        array              $fields ,
+        string             $modelAnalyzer ,
+        bool               $globalPhrase ,
+        int                $globalFuzzy ,
+        string             $globalOperator ,
+        string|array|null  $separators = null
     )
     :array
     {
@@ -822,7 +859,7 @@ trait SearchTrait
 
         foreach( explode( Char::COMMA , $search ) as $rawTerm )
         {
-            $words = preg_split( '/\s+/' , trim( $rawTerm ) , -1 , PREG_SPLIT_NO_EMPTY ) ;
+            $words = $this->splitSearchTermWords( $rawTerm , $separators ) ;
 
             if( $words === [] )
             {
@@ -1217,5 +1254,33 @@ trait SearchTrait
             array_key_exists( Search::PHRASE , $spec ) ? $spec[ Search::PHRASE ] : $globalPhrase ,
             key( stripArrayExpansion( (string) $field ) , $docRef ) ,
         ] ;
+    }
+
+    /**
+     * Splits an `AND`-operator search term into its words, on whitespace plus the
+     * given extra separator characters ({@see Search::SEPARATORS}). Whitespace
+     * always splits; `$separators` adds literal characters (a string, or a list
+     * of characters joined to one), `null` falls back to the hyphen default, and
+     * an empty value splits on whitespace only. The extra characters are
+     * regex-escaped, so any punctuation is safe. Empty words are dropped.
+     *
+     * @param string             $term       The raw comma-term (may hold several words).
+     * @param string|array|null  $separators The extra separator characters (string / list / null=default hyphen).
+     *
+     * @return string[] The non-empty words, in order.
+     */
+    protected function splitSearchTermWords( string $term , string|array|null $separators = null ) :array
+    {
+        if( is_array( $separators ) )
+        {
+            $separators = implode( Char::EMPTY , $separators ) ;
+        }
+
+        $separators ??= Char::HYPHEN ; // default : split compound words like "Jean-Marc"
+
+        $extra   = $separators === Char::EMPTY ? Char::EMPTY : preg_quote( $separators , '/' ) ;
+        $pattern = '/[\s' . $extra . ']+/u' ;
+
+        return preg_split( $pattern , trim( $term ) , -1 , PREG_SPLIT_NO_EMPTY ) ;
     }
 }

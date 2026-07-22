@@ -219,6 +219,35 @@ class Search
     public const string SCORE = 'score' ;
 
     /**
+     * The extra characters — **on top of whitespace, which always splits** — that
+     * break a search term into words when {@see OPERATOR} is
+     * {@see \oihana\arango\db\enums\Logic::AND}. Only meaningful in `AND` mode
+     * (the `OR` grammar matches the whole term and never splits).
+     *
+     * Two accepted shapes, a **string of characters** or a **list of characters**
+     * (normalized to the same set) — pick whichever reads better:
+     *
+     * ```php
+     * Search::SEPARATORS => "-./"                 // string of characters
+     * Search::SEPARATORS => [ "-" , "." , "/" ]   // list of characters
+     * ```
+     *
+     * The default (key absent) is the **hyphen** (`-`), so a compound term like
+     * « Jean-Marc » splits into `Jean` + `Marc` and behaves like « Jean Marc »
+     * (otherwise the single word re-expands to an `OR` of its tokens through
+     * `IN TOKENS`, losing the `AND`). An explicit **empty** value (`""` or `[]`)
+     * splits on whitespace only — e.g. to keep hyphenated codes (`REF-2024`)
+     * whole. Characters are regex-escaped, so any punctuation is safe.
+     *
+     * Declared on the `AQL::VIEW` block it drives the View search; the classic
+     * `LIKE` sweep reads the model-level `Search::SEPARATORS` init key (see
+     * {@see \oihana\arango\models\traits\aql\SearchTrait::$searchSeparators}).
+     * Beware widening it to elisions (the apostrophe of « d'Artagnan » would make
+     * a one-letter word that empties the `AND`); the hyphen default stays safe.
+     */
+    public const string SEPARATORS = 'separators' ;
+
+    /**
      * The `NGRAM_MATCH` similarity threshold, an inner key of a {@see NGRAM}
      * map — a float in `[0.0, 1.0]` (the fraction of the query's n-grams that
      * must be found). Higher = stricter. Absent / `null` falls back to the
