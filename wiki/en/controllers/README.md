@@ -379,7 +379,21 @@ All four methods accept a `?filter=` query parameter — the [same JSON DSL](../
 - **Whitelist** — only the attributes declared in the edge model's `AQL::FILTERS` are filterable; an undeclared attribute is dropped, so `?filter=` can never reach an unexposed field.
 - **Authorizer** — when an authorization stack is wired, the request authorizer gates `Field::REQUIRES` both on the compiled predicate and on the vertex projection (`returnFields()`): a hidden attribute cannot be probed through the traversal. Without a stack it falls open (backward compatible).
 
-**Semantics — `?filter=` hides, it does not prune.** On a transitive traversal (`ancestors` / `descendants`), a non-matching vertex is removed from the returned **flat list**, but the traversal still descends *through* it — so a matching grand-child survives even when its parent is filtered out. This is the correct behaviour for a flat list; to reconstruct a `children[]` tree from it, see the note on holes in [`buildTree()`](../edges-joins-projection.md). Cutting a whole branch off is a different operation (`?prune=`), covered separately.
+**Semantics — `?filter=` hides, it does not prune.** On a transitive traversal (`ancestors` / `descendants`), a non-matching vertex is removed from the returned **flat list**, but the traversal still descends *through* it — so a matching grand-child survives even when its parent is filtered out. This is the correct behaviour for a flat list; to reconstruct a `children[]` tree from it, see the note on holes in [`buildTree()`](../edges-joins-projection.md).
+
+### Cutting whole branches (`?prune=`)
+
+Where `?filter=` hides a vertex but keeps descending, `?prune=` **cuts the whole branch under a non-matching vertex**. Same JSON DSL, same guard rails (whitelist + authorizer). Take `root(published) → A(published) → B(draft) → C(published)`:
+
+| Query | Result | Why |
+|---|---|---|
+| `?filter={status:published}` | `root, A, C` | B hidden, but the traversal descends through it → C reappears |
+| `?prune={status:published}` | `root, A` | the branch under B is cut → C is never reached |
+
+`?prune=cond` excludes the non-matching **boundary** vertex too (its condition also joins the `FILTER`) and never walks its sub-tree — it compiles to `FILTER vertex.status == @b` **and** `PRUNE !( vertex.status == @b )`. So you get the clean sub-tree of matching vertices, no stray boundary leaves.
+
+- **Direction** — `?prune=` is **rejected with `400`** on the inbound methods (`getParent`, `getAncestors`): pruning while climbing to the root is ill-defined. It applies to `getChildren` / `getDescendants` (on the direct `getChildren` it is a harmless no-op — there is nothing below depth 1).
+- **Composes with `?filter=`** — both may be sent at once. Every condition narrows the returned set (they `AND` in the `FILTER`); only the prune one also stops the descent. E.g. `?filter={lang:fr}&prune={status:published}` returns the published sub-tree, further restricted to French vertices.
 
 ### Full wiring (edge + controller + routes)
 

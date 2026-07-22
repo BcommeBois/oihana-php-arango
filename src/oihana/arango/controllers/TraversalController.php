@@ -35,6 +35,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use ReflectionException;
 
+use function oihana\arango\db\operators\logicalNot;
 use function oihana\core\container\resolveDependency;
 
 /**
@@ -57,6 +58,12 @@ use function oihana\core\container\resolveDependency;
  * accept a `?depth=` query parameter, clamped to {@see self::DEFAULT_MAX_DEPTH}
  * (defaulting to the full sub-tree). Vertices hydrate through the edge's target
  * model (`Edges::get*Vertices()`), so a projected field survives the traversal.
+ *
+ * All four methods accept a `?filter=` predicate (the same JSON DSL as the
+ * `Documents` surface) restricting the traversed vertices, and `?prune=` cutting
+ * the whole branch under a non-matching vertex (rejected on the inbound methods).
+ * Both are compiled by the edge model's gated engine — whitelist + authorizer —
+ * never inlined raw.
  *
  * @package oihana\arango\controllers
  * @author  Marc Alcaraz
@@ -103,6 +110,12 @@ class TraversalController extends Controller
      * The `?depth=` query-parameter name capping a transitive traversal.
      */
     public const string DEPTH_PARAM = 'depth' ;
+
+    /**
+     * The `?prune=` query-parameter name — a JSON predicate that cuts the whole
+     * branch under a non-matching vertex. Rejected on inbound traversals.
+     */
+    public const string PRUNE_PARAM = 'prune' ;
 
     /**
      * The hard cap on the traversal depth.
@@ -282,6 +295,13 @@ class TraversalController extends Controller
             return $this->fail( $request , $response , HttpStatusCode::INTERNAL_SERVER_ERROR , 'Traversal edge not configured' ) ;
         }
 
+        $prune = $this->readPrune( $request ) ;
+
+        if ( $prune !== null && $inbound )
+        {
+            return $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'The ?prune= parameter is not supported on inbound traversals' ) ;
+        }
+
         $modelInit = [] ;
 
         if ( $transitive )
@@ -293,7 +313,7 @@ class TraversalController extends Controller
             $modelInit[ AQL::MAX_DEPTH ] = $depth > 0 ? min( $depth , self::DEFAULT_MAX_DEPTH ) : self::DEFAULT_MAX_DEPTH ;
         }
 
-        $modelInit = $this->prepareVertexFilter( $request , $init , $modelInit ) ;
+        $modelInit = $this->prepareVertexFilter( $request , $init , $modelInit , $prune ) ;
 
         $vertices = $inbound
                   ? $this->edges->getInboundVertices ( $id , $modelInit )
@@ -308,28 +328,40 @@ class TraversalController extends Controller
     }
 
     /**
-     * Reads the client `?filter=` (a JSON predicate, the same DSL as the
-     * `Documents` surface) and folds it into the traversal `$modelInit` — as an
-     * AQL fragment plus its binds — targeting the traversed `vertex`.
+     * Folds the client `?filter=` and `?prune=` predicates (both a JSON predicate,
+     * the same DSL as the `Documents` surface) into the traversal `$modelInit` —
+     * as AQL fragments plus their binds — targeting the traversed `vertex`.
      *
-     * The filter never reaches the traversal raw : `getVertices()` inlines its
-     * `AQL::FILTER` slot verbatim (a server-only knob), so the JSON is first
-     * **compiled** by the edge model's gated engine ({@see Edges::prepareFilter()}),
-     * which applies the model's `AQL::FILTERS` whitelist and, through the request
-     * authorizer, the `Field::REQUIRES` gate. An undeclared or hidden attribute
-     * therefore cannot be probed through the traversal (no filter oracle).
+     * Neither predicate reaches the traversal raw : `getVertices()` inlines its
+     * `AQL::FILTER` slot, and `aqlTraversal()` its `AQL::PRUNE` slot, **verbatim**
+     * (server-only knobs), so the JSON is first **compiled** by the edge model's
+     * gated engine ({@see Edges::prepareFilter()}), which applies the model's
+     * `AQL::FILTERS` whitelist and, through the request authorizer, the
+     * `Field::REQUIRES` gate. An undeclared or hidden attribute therefore cannot be
+     * probed through the traversal (no filter oracle).
+     *
+     * The two levers differ only on the descent:
+     * - `?filter=` **hides** a non-matching vertex but the traversal still descends
+     *   through it (a matching grand-child survives a filtered parent) ;
+     * - `?prune=` **cuts** the whole branch under a non-matching vertex — the
+     *   boundary vertex is excluded too (its condition also joins the `FILTER`) and
+     *   its sub-tree is never walked (`PRUNE !( condition )`).
+     *
+     * They compose : every condition narrows the returned set (they `AND` in the
+     * `FILTER`), and only the prune one also stops the descent.
      *
      * The same request-scoped authorizer is threaded under `Arango::AUTHORIZER`
      * so the vertex projection ({@see Edges::returnFields()}) is gated too — but
      * only when one exists : with no authorization stack it stays absent and the
      * projection falls open (backward compatible).
      *
-     * @param Request|null $request The current PSR-7 request.
-     * @param array $init The caller init (an `Arango::AUTHORIZER` here wins).
-     * @param array $modelInit The traversal init being assembled.
+     * @param Request|null $request   The current PSR-7 request.
+     * @param array        $init      The caller init (an `Arango::AUTHORIZER` here wins).
+     * @param array        $modelInit The traversal init being assembled.
+     * @param array|null   $prune     The decoded `?prune=` predicate, or null.
      *
-     * @return array The `$modelInit` enriched with `AQL::FILTER` / `AQL::BINDS` /
-     *               `Arango::AUTHORIZER` when applicable.
+     * @return array The `$modelInit` enriched with `AQL::FILTER` / `AQL::PRUNE` /
+     *               `AQL::BINDS` / `Arango::AUTHORIZER` when applicable.
      *
      * @throws BindException
      * @throws ConstantException
@@ -341,7 +373,7 @@ class TraversalController extends Controller
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function prepareVertexFilter( ?Request $request , array $init , array $modelInit ) :array
+    private function prepareVertexFilter( ?Request $request , array $init , array $modelInit , ?array $prune = null ) :array
     {
         $authorizer = $init[ Arango::AUTHORIZER ] ?? $this->buildPermissionAuthorizer( $request ) ;
 
@@ -350,35 +382,113 @@ class TraversalController extends Controller
             $modelInit[ Arango::AUTHORIZER ] = $authorizer ;
         }
 
+        $conditions = [] ;
+        $binds      = [] ;
+
+        // ?filter= : hide a non-matching vertex, but keep descending through it.
         $params    = [] ;
         $urlFilter = $this->prepareFilter( $request , $init , $params ) ;
 
-        if ( $urlFilter === null )
+        if ( $urlFilter !== null )
         {
-            return $modelInit ;
-        }
+            $fragment = $this->compileVertexPredicate( $urlFilter , $authorizer , $binds ) ;
 
-        // Compile the JSON predicate against the traversed `vertex` variable
-        // (matching aqlTraversal's `FOR vertex …` and getVertices' `RETURN vertex`).
-        $binds  = [] ;
-        $filter = $this->edges->prepareFilter
-        (
-            [ Arango::FILTER => $urlFilter , Arango::AUTHORIZER => $authorizer ] ,
-            $binds ,
-            AQL::VERTEX
-        ) ;
-
-        if ( $filter !== null )
-        {
-            $modelInit[ AQL::FILTER ] = $filter ;
-
-            if ( $binds !== [] )
+            if ( $fragment !== null )
             {
-                $modelInit[ AQL::BINDS ] = $binds ;
+                $conditions[] = $fragment ;
             }
         }
 
+        // ?prune= : cut the whole branch under a non-matching vertex — exclude the
+        // boundary too (FILTER) and never walk its sub-tree (PRUNE on the negation).
+        if ( $prune !== null )
+        {
+            $fragment = $this->compileVertexPredicate( $prune , $authorizer , $binds ) ;
+
+            if ( $fragment !== null )
+            {
+                $conditions[]            = $fragment ;
+                $modelInit[ AQL::PRUNE ] = logicalNot( $fragment , true ) ;
+            }
+        }
+
+        if ( $conditions !== [] )
+        {
+            $modelInit[ AQL::FILTER ] = count( $conditions ) === 1 ? $conditions[ 0 ] : $conditions ;
+        }
+
+        if ( $binds !== [] )
+        {
+            $modelInit[ AQL::BINDS ] = $binds ;
+        }
+
         return $modelInit ;
+    }
+
+    /**
+     * Compiles one JSON predicate into an AQL fragment against the traversed
+     * `vertex` variable (matching `aqlTraversal`'s `FOR vertex …` and
+     * `getVertices`' `RETURN vertex`), accumulating its binds into `$binds`.
+     *
+     * Returns null when nothing is filterable — an undeclared attribute or an
+     * empty `AQL::FILTERS` whitelist — so the caller drops the fragment.
+     *
+     * @param array $predicate  The decoded JSON predicate.
+     * @param mixed $authorizer The request-scoped authorizer (or null).
+     * @param array $binds      The accumulating bind variables (by reference).
+     *
+     * @return string|null The compiled `vertex.<field> …` fragment, or null.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    private function compileVertexPredicate( array $predicate , mixed $authorizer , array &$binds ) :?string
+    {
+        $local    = [] ;
+        $fragment = $this->edges->prepareFilter
+        (
+            [ Arango::FILTER => $predicate , Arango::AUTHORIZER => $authorizer ] ,
+            $local ,
+            AQL::VERTEX
+        ) ;
+
+        if ( $fragment !== null && $local !== [] )
+        {
+            $binds = [ ...$binds , ...$local ] ;
+        }
+
+        return $fragment ;
+    }
+
+    /**
+     * Reads and decodes the `?prune=` query parameter (a JSON predicate).
+     *
+     * Malformed or non-array JSON degrades to null (no prune), mirroring the
+     * `?filter=` reader.
+     *
+     * @param Request|null $request The current PSR-7 request.
+     *
+     * @return array|null The decoded predicate, or null.
+     */
+    private function readPrune( ?Request $request ) :?array
+    {
+        $param = $request?->getQueryParams()[ self::PRUNE_PARAM ] ?? null ;
+
+        if ( is_string( $param ) && json_validate( $param ) )
+        {
+            $value = json_decode( $param , true ) ;
+
+            return is_array( $value ) ? $value : null ;
+        }
+
+        return null ;
     }
 
     /**
@@ -413,7 +523,14 @@ class TraversalController extends Controller
             return $this->fail( $request , $response , HttpStatusCode::INTERNAL_SERVER_ERROR , 'Traversal edge not configured' ) ;
         }
 
-        $modelInit = $this->prepareVertexFilter( $request , $init , [] ) ;
+        $prune = $this->readPrune( $request ) ;
+
+        if ( $prune !== null && $inbound )
+        {
+            return $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'The ?prune= parameter is not supported on inbound traversals' ) ;
+        }
+
+        $modelInit = $this->prepareVertexFilter( $request , $init , [] , $prune ) ;
 
         $vertex = $inbound ? $this->edges->getFirstInboundVertex ( $id , $modelInit ) : $this->edges->getFirstOutboundVertex( $id , $modelInit ) ;
 

@@ -262,6 +262,85 @@ final class TraversalControllerTest extends ControllerTestCase
         $this->assertArrayNotHasKey( AQL::FILTER , $edges->calls[ 0 ][ 2 ] ) ;
     }
 
+    // ---- ?prune= (cut the branch under a non-matching vertex) -----------
+
+    public function testPruneCompilesToFilterPlusNegatedPruneOnDescendants() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound       = [] ;
+        $edges->compiledFilter = 'vertex.status == @f0' ;
+        $edges->compiledBinds  = [ 'f0' => 'published' ] ;
+
+        $request = $this->makeRequest( [ TraversalController::PRUNE_PARAM => json_encode( [ 'key' => 'status' , 'op' => 'eq' , 'val' => 'published' ] ) ] ) ;
+
+        $this->makeController( $edges )->getDescendants( $request , null , [ Schema::ID => '5' ] ) ;
+
+        $init = $edges->calls[ 0 ][ 2 ] ;
+        // CAS A : the condition excludes the boundary (FILTER) and the negation cuts
+        // its sub-tree (PRUNE), so a published node under a draft parent is unreachable.
+        $this->assertSame( 'vertex.status == @f0'    , $init[ AQL::FILTER ] ?? null ) ;
+        $this->assertSame( '!(vertex.status == @f0)' , $init[ AQL::PRUNE  ] ?? null ) ;
+        $this->assertSame( [ 'f0' => 'published' ]   , $init[ AQL::BINDS  ] ?? null ) ;
+    }
+
+    public function testFilterAndPruneComposeIntoAnAndedFilter() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound            = [] ;
+        // Distinct fragments for the ?filter= call then the ?prune= call.
+        $edges->compiledFilterQueue = [ 'vertex.lang == @f0' , 'vertex.status == @f1' ] ;
+        $edges->compiledBinds       = [ 'f0' => 'fr' ] ;
+
+        $request = $this->makeRequest
+        ([
+            ControllerParam::FILTER      => json_encode( [ 'key' => 'lang'   , 'val' => 'fr'        ] ) ,
+            TraversalController::PRUNE_PARAM => json_encode( [ 'key' => 'status' , 'val' => 'published' ] ) ,
+        ]) ;
+
+        $this->makeController( $edges )->getDescendants( $request , null , [ Schema::ID => '5' ] ) ;
+
+        $init = $edges->calls[ 0 ][ 2 ] ;
+        // Both conditions narrow the returned set (they AND in the FILTER) …
+        $this->assertSame( [ 'vertex.lang == @f0' , 'vertex.status == @f1' ] , $init[ AQL::FILTER ] ?? null ) ;
+        // … but only the prune one also stops the descent.
+        $this->assertSame( '!(vertex.status == @f1)' , $init[ AQL::PRUNE ] ?? null ) ;
+    }
+
+    public function testPruneIsRejectedOnInboundAncestors() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+
+        $request = $this->makeRequest( [ TraversalController::PRUNE_PARAM => json_encode( [ 'key' => 'status' , 'val' => 'published' ] ) ] ) ;
+
+        // fail(400) with a null response returns null ; no traversal is attempted.
+        $this->assertNull( $this->makeController( $edges )->getAncestors( $request , null , [ Schema::ID => '5' ] ) ) ;
+        $this->assertSame( [] , $edges->calls ) ;
+    }
+
+    public function testPruneIsRejectedOnTheInboundSingleParent() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+
+        $request = $this->makeRequest( [ TraversalController::PRUNE_PARAM => json_encode( [ 'key' => 'status' , 'val' => 'published' ] ) ] ) ;
+
+        $this->assertNull( $this->makeController( $edges )->getParent( $request , null , [ Schema::ID => '5' ] ) ) ;
+        $this->assertSame( [] , $edges->calls ) ;
+    }
+
+    public function testMalformedPruneJsonIsIgnored() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound = [] ;
+
+        $request = $this->makeRequest( [ TraversalController::PRUNE_PARAM => '{ not json' ] ) ;
+
+        $this->makeController( $edges )->getDescendants( $request , null , [ Schema::ID => '5' ] ) ;
+
+        // Invalid JSON degrades to "no prune" : the engine is not called, no PRUNE.
+        $this->assertSame( [] , $edges->filterCalls ) ;
+        $this->assertArrayNotHasKey( AQL::PRUNE , $edges->calls[ 0 ][ 2 ] ) ;
+    }
+
     // ---- guards ---------------------------------------------------------
 
     public function testMissingIdReturnsNull() :void

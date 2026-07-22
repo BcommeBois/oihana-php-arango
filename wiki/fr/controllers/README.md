@@ -379,7 +379,21 @@ Les quatre méthodes acceptent un paramètre `?filter=` — le [même DSL JSON](
 - **Whitelist** — seuls les attributs déclarés dans le `AQL::FILTERS` du modèle d'arête sont filtrables ; un attribut non déclaré est écarté, donc `?filter=` ne peut jamais atteindre un champ non exposé.
 - **Authorizer** — quand la pile d'autorisation est câblée, l'authorizer de requête verrouille `Field::REQUIRES` à la fois sur le prédicat compilé et sur la projection du sommet (`returnFields()`) : un attribut masqué ne peut pas être sondé à travers la traversée. Sans pile, il tombe ouvert (rétro-compatible).
 
-**Sémantique — `?filter=` cache, il n'élague pas.** Sur une traversée transitive (`ancestors` / `descendants`), un sommet non-matchant est retiré de la **liste plate** renvoyée, mais la traversée continue de descendre *à travers* lui — donc un petit-enfant matchant survit même si son parent est filtré. C'est le bon comportement pour une liste plate ; pour en reconstruire un arbre `children[]`, voir la note sur les trous dans [`buildTree()`](../edges-joins-projection.md). Couper toute une branche est une autre opération (`?prune=`), traitée à part.
+**Sémantique — `?filter=` cache, il n'élague pas.** Sur une traversée transitive (`ancestors` / `descendants`), un sommet non-matchant est retiré de la **liste plate** renvoyée, mais la traversée continue de descendre *à travers* lui — donc un petit-enfant matchant survit même si son parent est filtré. C'est le bon comportement pour une liste plate ; pour en reconstruire un arbre `children[]`, voir la note sur les trous dans [`buildTree()`](../edges-joins-projection.md).
+
+### Couper des branches entières (`?prune=`)
+
+Là où `?filter=` cache un sommet mais continue de descendre, `?prune=` **coupe toute la branche sous un sommet non-matchant**. Même DSL JSON, mêmes garde-fous (whitelist + authorizer). Prenons `racine(publié) → A(publié) → B(brouillon) → C(publié)` :
+
+| Requête | Résultat | Pourquoi |
+|---|---|---|
+| `?filter={status:publié}` | `racine, A, C` | B caché, mais la traversée descend à travers lui → C réapparaît |
+| `?prune={status:publié}` | `racine, A` | la branche sous B est coupée → C jamais atteint |
+
+`?prune=cond` exclut aussi le sommet-**frontière** non-matchant (sa condition rejoint le `FILTER`) et ne marche jamais son sous-arbre — il se compile en `FILTER vertex.status == @b` **et** `PRUNE !( vertex.status == @b )`. Tu obtiens le sous-arbre propre des sommets matchants, sans feuille-frontière parasite.
+
+- **Direction** — `?prune=` est **rejeté avec `400`** sur les méthodes inbound (`getParent`, `getAncestors`) : élaguer en remontant vers la racine n'a pas de sens défini. Il s'applique à `getChildren` / `getDescendants` (sur `getChildren` direct c'est un no-op inoffensif — rien sous la profondeur 1).
+- **Se compose avec `?filter=`** — les deux peuvent être envoyés ensemble. Chaque condition restreint l'ensemble renvoyé (elles s'`AND`ent dans le `FILTER`) ; seule celle de prune arrête aussi la descente. Ex. `?filter={lang:fr}&prune={status:publié}` renvoie le sous-arbre publié, encore restreint aux sommets français.
 
 ### Câblage complet (arête + contrôleur + routes)
 

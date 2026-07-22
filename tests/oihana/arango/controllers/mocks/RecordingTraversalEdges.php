@@ -57,6 +57,14 @@ class RecordingTraversalEdges extends MockEdges
     public ?string $compiledFilter = null ;
 
     /**
+     * Per-call canned fragments consumed in order (for the ?filter= + ?prune=
+     * composition) ; falls back to {@see compiledFilter} once empty.
+     *
+     * @var array<int,?string>
+     */
+    public array $compiledFilterQueue = [] ;
+
+    /**
      * Canned binds written back through {@see prepareFilter}'s `&$binds`.
      */
     public array $compiledBinds = [] ;
@@ -79,6 +87,11 @@ class RecordingTraversalEdges extends MockEdges
         if ( $binds !== null )
         {
             $binds = $this->compiledBinds ;
+        }
+
+        if ( $this->compiledFilterQueue !== [] )
+        {
+            return array_shift( $this->compiledFilterQueue ) ;
         }
 
         return $this->compiledFilter ;
