@@ -271,4 +271,39 @@ class DocumentsControllerReadTest extends ControllerTestCase
         $this->assertSame( [] , $payload[ Output::RESULT ] ) ;
         $this->assertSame( 9 , $payload[ Output::TOTAL ] ) ;
     }
+
+    public function testListMetaOnlyDefaultsToTrueWhenWiredInInit() :void
+    {
+        // A controller wired with META_ONLY => true (durable DI default) skips the
+        // documents even when the request carries no ?metaOnly= param.
+        $model = new class( 'products' ) extends MockDocuments
+        {
+            public function count( array $init = [] ) :int { return 42 ; }
+        } ;
+        $model->documentsResult = [ (object) [ '_key' => 'x' ] ] ; // would leak if list() ran
+
+        $controller = $this->makeDocumentsController( $model , [ Arango::META_ONLY => true ] ) ;
+        $this->assertTrue( $controller->metaOnly ) ; // the constructor stored the default
+
+        $request = $this->makeRequest( [] ) ; // a request that carries no ?metaOnly= param
+        $result  = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertSame( [] , $payload[ Output::RESULT ] ) ; // documents skipped by default
+        $this->assertSame( 42 , $payload[ Output::TOTAL ] ) ;  // exact count() still computed
+    }
+
+    public function testListRequestOverridesTheMetaOnlyDefault() :void
+    {
+        // ?metaOnly=false always wins over the durable DI default, restoring the documents.
+        $model = new MockDocuments( 'products' ) ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] , (object) [ '_key' => '2' ] ] ;
+
+        $controller = $this->makeDocumentsController( $model , [ Arango::META_ONLY => true ] ) ;
+
+        $request = $this->makeRequest( [ Arango::META_ONLY => 'false' ] ) ;
+        $result  = $controller->list( $request , null , [] ) ;
+
+        $this->assertSame( $model->documentsResult , $result ) ; // documents restored
+    }
 }

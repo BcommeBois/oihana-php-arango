@@ -10,6 +10,10 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 
 use PHPUnit\Framework\TestCase;
 
+/**
+ * `PrepareMetaOnlyTrait` pulls in `MetaOnlyTrait`, so the host also exposes the
+ * `$metaOnly` state property that acts as the base default of `prepareMetaOnly()`.
+ */
 class PrepareMetaOnlyHost
 {
     use PrepareMetaOnlyTrait ;
@@ -80,5 +84,32 @@ class PrepareMetaOnlyTraitTest extends TestCase
         // An empty string in the query does not override the predefined args base.
         $request = $this->request( [ Arango::META_ONLY => '' ] ) ;
         $this->assertTrue( $this->host()->call( $request , [ Arango::META_ONLY => true ] ) ) ;
+    }
+
+    // ---- controller default (MetaOnlyTrait::$metaOnly as base) ----------
+
+    public function testControllerDefaultActsAsBase() :void
+    {
+        // $this->metaOnly is the base when neither the args nor the request carry the flag.
+        $host = $this->host() ;
+        $this->assertFalse( $host->call( null ) ) ; // property default is false
+
+        $host->metaOnly = true ;
+        $this->assertTrue( $host->call( null ) ) ;
+        $this->assertTrue( $host->call( $this->request( [] ) ) ) ;
+    }
+
+    public function testArgsOverrideTheControllerDefault() :void
+    {
+        $host = $this->host() ;
+        $host->metaOnly = true ;
+        $this->assertFalse( $host->call( null , [ Arango::META_ONLY => false ] ) ) ;
+    }
+
+    public function testRequestOverridesTheControllerDefault() :void
+    {
+        $host = $this->host() ;
+        $host->metaOnly = true ;
+        $this->assertFalse( $host->call( $this->request( [ Arango::META_ONLY => 'false' ] ) ) ) ;
     }
 }
