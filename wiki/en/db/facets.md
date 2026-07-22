@@ -696,6 +696,33 @@ GET /products?facetCounts=category&metaOnly=true
   dimension hidden from a user stays hidden here. `?metaOnly=` is **not** a back
   door to the counts of a forbidden field.
 
+#### Making it the default of a dedicated endpoint
+
+The situation. You expose a route that *is*, by nature, a facet probe — a sidebar,
+a histogram, a bounds slider. There, returning the documents on every call makes no
+sense: you want `metaOnly` to be **true by default**, without forcing every client
+to append `?metaOnly=true`.
+
+Rather than repeat it in the URL, set it once in the controller `$init` (its DI
+definition), through the `Arango::META_ONLY` key:
+
+```php
+$init = [ Arango::META_ONLY => true , /* … */ ] ;
+```
+
+The controller stores that default at construction time (`initializeMetaOnly()`)
+and `list()` reads it as the base value. The precedence, weakest to strongest:
+
+1. `false` — the original default: **nothing changes** for existing controllers
+   (backward compatible);
+2. `Arango::META_ONLY => true` in `$init` — your durable default, scoped to that
+   endpoint;
+3. `?metaOnly=false` in the URL — the client always keeps the last word and gets
+   the documents back.
+
+In other words: the "facets" endpoint no longer returns the documents by default,
+yet stays able to yield them on demand. Other controllers are untouched.
+
 > **`?facetsOnly=` is deprecated — prefer `?metaOnly=`.** The older `?facetsOnly=`
 > flag (counts only) is superseded by the generic `?metaOnly=`, which likewise
 > skips the documents but **also** keeps the [bounds `?bounds=`](bounds.md), not

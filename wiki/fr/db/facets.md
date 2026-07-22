@@ -658,6 +658,33 @@ GET /products?facetCounts=category&metaOnly=true
   le mode normal : une dimension masquée à un utilisateur reste masquée ici.
   `?metaOnly=` n'est **pas** une porte dérobée vers les comptes d'un champ interdit.
 
+#### En faire le défaut d'un endpoint dédié
+
+La situation. Vous exposez une route qui *est*, par nature, une sonde de facettes —
+une barre latérale, un histogramme, un sélecteur de bornes. Là, renvoyer les
+documents à chaque appel n'a aucun sens : vous voudriez que `metaOnly` soit **vrai
+par défaut**, sans obliger chaque client à ajouter `?metaOnly=true`.
+
+Plutôt que de le répéter dans l'URL, posez-le une fois pour toutes dans le `$init`
+du contrôleur (sa définition DI), via la clé `Arango::META_ONLY` :
+
+```php
+$init = [ Arango::META_ONLY => true , /* … */ ] ;
+```
+
+Le contrôleur mémorise ce défaut au constructeur (`initializeMetaOnly()`) et
+`list()` le lit comme valeur de base. La cascade, du plus faible au plus fort :
+
+1. `false` — le défaut d'origine : **rien ne change** pour les contrôleurs
+   existants (compatibilité ascendante) ;
+2. `Arango::META_ONLY => true` dans le `$init` — votre défaut durable, propre à cet
+   endpoint ;
+3. `?metaOnly=false` dans l'URL — le client garde toujours le dernier mot et
+   récupère les documents.
+
+Autrement dit : l'endpoint « facettes » ne ramène plus les documents par défaut,
+mais reste capable de les rendre à la demande. Les autres contrôleurs ne bougent pas.
+
 > **`?facetsOnly=` est déprécié — préférez `?metaOnly=`.** L'ancien drapeau
 > `?facetsOnly=` (limité aux compteurs) est supplanté par le drapeau générique
 > `?metaOnly=`, qui saute pareillement les documents mais conserve **aussi** les

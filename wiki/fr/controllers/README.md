@@ -85,6 +85,7 @@ Clés de configuration principales :
 | `Arango::SKINS` | Liste blanche des *skins* acceptés via `?skin=`. |
 | `Arango::SKIN_DEFAULT` | *Skin* appliqué en l'absence de `?skin=`. |
 | `Arango::SKIN_METHODS` | *Skin* par défaut différent selon le verbe (typiquement `default` pour `list`, `full` pour `get`). |
+| `Arango::META_ONLY` | Défaut durable du mode « métadonnées seules » (pas de documents) : `true` pour un endpoint de type sonde de facettes/bornes. Reste surchargeable par `?metaOnly=`. Voir les [facettes](../db/facets.md). |
 
 ### Déclarer les routes
 

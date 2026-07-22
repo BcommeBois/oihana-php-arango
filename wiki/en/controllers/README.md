@@ -85,6 +85,7 @@ Main configuration keys:
 | `Arango::SKINS` | Whitelist of *skins* accepted via `?skin=`. |
 | `Arango::SKIN_DEFAULT` | *Skin* applied in the absence of `?skin=`. |
 | `Arango::SKIN_METHODS` | Different default *skin* per verb (typically `default` for `list`, `full` for `get`). |
+| `Arango::META_ONLY` | Durable default for the "metadata only" mode (no documents): `true` for a facet/bounds-probe endpoint. Still overridable per request with `?metaOnly=`. See [facets](../db/facets.md). |
 
 ### Declare routes
 
