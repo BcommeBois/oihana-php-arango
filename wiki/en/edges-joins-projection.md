@@ -196,6 +196,12 @@ The consumer then receives, on each document, a `descendants` field already nest
 
 > **Single parent per node.** `buildTree()` expects each node to reference **one** parent. With `AQL::WITH_PATH` this is guaranteed by the traversal's global vertex uniqueness. A polyhierarchy where a concept has several parents (an array-valued `broader`) is out of scope for the tree reshape — the flat list (with `?filter=` / `quant`) remains the correct surface for that.
 
+> **Filtered input → holes; pruned input → a clean tree.** `buildTree()` assumes the flat list is *connected* down from the root. A [`?filter=`](controllers/README.md) on the traversal can break that: a vertex whose ancestor was filtered out becomes an **orphan** — its `_parent` points at a removed node. The reshape then depends on the root mode:
+> - with `buildTreeAlter()` (an explicit `rootKey`), the orphan — and its own sub-tree — is **dropped**: the branch is truncated at the filtered vertex ;
+> - with inferred roots (`rootKey: null`), the orphan instead **floats up to become a root**, detached from its real ancestor.
+>
+> `?prune=` has no such effect: it cuts the whole branch under a non-matching vertex, so no survivor is ever left orphaned and the reconstructed tree stays connected. **Rule of thumb: to filter *and* rebuild a tree, prefer `?prune=` over `?filter=`** — or knowingly accept the truncation / floating above (a flat list, by contrast, is always a correct surface for `?filter=`).
+
 ## Projecting edge properties — `Field::SCOPE`
 
 By default, the fields declared in an edge definition's `AQL::FIELDS` are projected from the **target vertex** of the traversal (the other end of the relationship). But an edge is more than a connector: it often carries its own metadata (`created`, `weight`, `role`, `order`, …). The `Field::SCOPE` marker hoists those properties into the **same object**, next to the vertex fields.

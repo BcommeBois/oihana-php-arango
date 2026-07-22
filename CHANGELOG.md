@@ -95,6 +95,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Three static-analysis findings surfaced by the new PHPStan pass.** `Collection::__construct` is annotated `@final`, making `rename()`'s `new static( $database, $name )` provably safe while keeping `EdgeCollection`'s covariant return (a `new self()` would have downcast it). `DocumentsControllerUpdateTrait` now composes `ModelCallTrait`, so its `beforeModelCall()` / `afterModelCall()` hooks resolve from the trait itself instead of the host class: `PropertyController` pulls this trait (via `PropertyControllerPatchTrait`) without extending `DocumentsController`, so its inherited `update()` used to reference undefined hooks. Behaviour is unchanged — `DocumentsController`'s own hook override still wins over the trait default.
 
+### Documentation
+
+- **`buildTree()` — filtered input can leave holes, pruned input cannot.** Documented that `buildTree()` assumes the flat list is *connected* down from the root, and that a `?filter=` on the traversal can break that: a vertex whose ancestor was filtered out becomes an orphan, which `buildTreeAlter()` (explicit `rootKey`) **drops** (branch truncated at the filtered vertex) and inferred-roots mode (`rootKey: null`) **floats up as a root** (detached from its real ancestor). `?prune=` is tree-safe by construction — it cuts the whole branch under a non-matching vertex, so no survivor is left orphaned — hence the rule of thumb *to filter and rebuild a tree, prefer `?prune=` over `?filter=`*. FR/EN wiki `edges-joins-projection.md` (the `buildTree()` section).
+
 ## [1.5.0] - 2026-07-18
 
 ### Added
