@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`TraversalController` accepts `?filter=` on the traversed vertices (all four methods).** `getParent` / `getChildren` / `getAncestors` / `getDescendants` returned *every* traversed vertex; a consumer could not restrict them (« only the published descendants »). All four now accept a `?filter=` query parameter — the [same JSON DSL](wiki/en/db/filter.md) as the `Documents` surface. The delicate part: a traversal inlines its `FILTER` slot **verbatim** (a server-only knob — `aqlFilter()` expects a ready AQL string, not the JSON DSL), so the client filter is **never** dropped in raw. It is first *compiled* by the edge model's gated engine, targeting the traversed `vertex` variable (`Edges::prepareFilter( … , docRef: AQL::VERTEX )`), into a `FILTER vertex.<field> == @bind` fragment folded into the traversal init alongside its binds:
+  ```
+  GET /categories/5/descendants?filter={"key":"status","op":"eq","val":"published"}
+  // FOR vertex, edge IN 1..N OUTBOUND @start edges  FILTER vertex.status == @f0  RETURN vertex
+  ```
+  Both `Documents` guard rails therefore apply unchanged: the edge model's `AQL::FILTERS` **whitelist** (an undeclared attribute is dropped, never reachable) and, when an authorization stack is wired, the request **authorizer** gating `Field::REQUIRES` on *both* the compiled predicate and the vertex projection (`returnFields()`, the T4 propagation) — no filter oracle through the traversal. Without a stack it falls open (backward compatible). Semantics: `?filter=` **hides** a non-matching vertex but the traversal still descends through it (a matching grand-child survives a filtered parent) — the correct flat-list behaviour; cutting a whole branch is the separate `?prune=` operation.
+  - **Tests:** 5 new `TraversalControllerTest` cases (compile-against-`vertex` + fold-in, single-parent path, undeclared-attribute drop, explicit-authorizer forwarding to engine + projection, malformed-JSON never reaching the engine); the `RecordingTraversalEdges` double gains a recording `prepareFilter`. FR/EN wiki `controllers/README.md` gains a « Filtering the traversed vertices » section.
 - **`ConceptSchemeController` accepts `?filter=` on the thesaurus roots.** The controller only ever fetched *every* root (the concepts with no broader parent); a consumer could not restrict them (« the roots of the `animals` scheme », « the published roots »). It now reads the `?filter=` query parameter — the [same JSON DSL](wiki/en/db/filter.md) as the `Documents` surface — and **ANDs** it with the root constraint, which stays the first, non-negotiable operand:
   ```
   ?filter={"key":"inScheme","op":"eq","val":"animals"}

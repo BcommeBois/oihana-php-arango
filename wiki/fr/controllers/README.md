@@ -368,6 +368,19 @@ Les méthodes transitives acceptent un paramètre `?depth=N`, borné par `Traver
 
 L'enveloppe des méthodes plurielles (enfants, ancêtres, descendants) porte `count` **et** `total`, tous deux égaux au nombre de sommets traversés : la traversée n'est pas paginée, donc `count == total`.
 
+### Filtrer les sommets traversés (`?filter=`)
+
+Les quatre méthodes acceptent un paramètre `?filter=` — le [même DSL JSON](../db/filter.md) que la surface `Documents` — qui restreint la traversée aux sommets qui matchent :
+
+`GET /categories/5/descendants?filter={"key":"status","op":"eq","val":"published"}` → uniquement les descendants publiés.
+
+**Pourquoi c'est sûr.** Une traversée inline son slot `FILTER` verbatim (un cran server-only), donc le JSON client n'est **jamais** déposé brut. Il est d'abord *compilé* par le moteur gardé du modèle d'arête, ciblé sur le sommet traversé `vertex`, en `FILTER vertex.status == @bind` — si bien que les deux garde-fous des `Documents` s'appliquent à l'identique :
+
+- **Whitelist** — seuls les attributs déclarés dans le `AQL::FILTERS` du modèle d'arête sont filtrables ; un attribut non déclaré est écarté, donc `?filter=` ne peut jamais atteindre un champ non exposé.
+- **Authorizer** — quand la pile d'autorisation est câblée, l'authorizer de requête verrouille `Field::REQUIRES` à la fois sur le prédicat compilé et sur la projection du sommet (`returnFields()`) : un attribut masqué ne peut pas être sondé à travers la traversée. Sans pile, il tombe ouvert (rétro-compatible).
+
+**Sémantique — `?filter=` cache, il n'élague pas.** Sur une traversée transitive (`ancestors` / `descendants`), un sommet non-matchant est retiré de la **liste plate** renvoyée, mais la traversée continue de descendre *à travers* lui — donc un petit-enfant matchant survit même si son parent est filtré. C'est le bon comportement pour une liste plate ; pour en reconstruire un arbre `children[]`, voir la note sur les trous dans [`buildTree()`](../edges-joins-projection.md). Couper toute une branche est une autre opération (`?prune=`), traitée à part.
+
 ### Câblage complet (arête + contrôleur + routes)
 
 Les quatre sous-routes sont déclarées en une seule entrée avec [`TraversalRoute`](../../../src/oihana/arango/routes/TraversalRoute.php), qui mappe chaque suffixe vers la méthode correspondante (via `Route::METHOD`, sans magic string) — le jumeau d'`ArrayPropertyRoute`.

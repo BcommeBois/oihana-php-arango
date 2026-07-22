@@ -4,17 +4,31 @@ namespace tests\oihana\arango\controllers;
 
 use DI\Container;
 
+use DI\DependencyException;
+use DI\NotFoundException;
+use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\controllers\TraversalController;
 use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
 
 use oihana\controllers\enums\ControllerParam;
 
 use oihana\enums\Output;
 
+use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
+use oihana\reflect\exceptions\ConstantException;
 use org\schema\constants\Schema;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+
+use ReflectionException;
 use Slim\Factory\AppFactory;
 
 use tests\oihana\arango\controllers\mocks\RecordingTraversalEdges;
@@ -40,7 +54,8 @@ final class TraversalControllerTest extends ControllerTestCase
         AppFactory::setContainer( $container ) ;
         $app = AppFactory::create() ;
 
-        $container->set( 'edge.service' , $edges ) ;
+        $container->set( 'edge.service'         , $edges ) ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
 
         return new TraversalController( $container ,
         [
@@ -158,6 +173,95 @@ final class TraversalControllerTest extends ControllerTestCase
         ) ;
     }
 
+    // ---- ?filter= on the traversed vertices -----------------------------
+
+    public function testFilterIsCompiledAgainstTheVertexAndFoldedIntoTheTraversal() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound       = [] ;
+        $edges->compiledFilter = 'vertex.status == @f0' ;
+        $edges->compiledBinds  = [ 'f0' => 'published' ] ;
+
+        $predicate = [ 'key' => 'status' , 'op' => 'eq' , 'val' => 'published' ] ;
+        $request   = $this->makeRequest( [ ControllerParam::FILTER => json_encode( $predicate ) ] ) ;
+
+        $this->makeController( $edges )->getChildren( $request , null , [ Schema::ID => '5' ] ) ;
+
+        // The URL predicate is compiled against the traversed `vertex` variable.
+        $this->assertCount( 1 , $edges->filterCalls ) ;
+        $this->assertSame( $predicate  , $edges->filterCalls[ 0 ][ 0 ] ) ;
+        $this->assertSame( AQL::VERTEX , $edges->filterCalls[ 0 ][ 1 ] ) ;
+
+        // The compiled fragment + its binds are folded into the traversal init.
+        $init = $edges->calls[ 0 ][ 2 ] ;
+        $this->assertSame( 'vertex.status == @f0' , $init[ AQL::FILTER ] ?? null ) ;
+        $this->assertSame( [ 'f0' => 'published' ] , $init[ AQL::BINDS  ] ?? null ) ;
+    }
+
+    public function testFilterAlsoAppliesToTheSingleParent() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->firstInbound   = (object) [ '_key' => 'root' ] ;
+        $edges->compiledFilter = 'vertex.active == @f0' ;
+        $edges->compiledBinds  = [ 'f0' => true ] ;
+
+        $request = $this->makeRequest( [ ControllerParam::FILTER => json_encode( [ 'key' => 'active' , 'val' => true ] ) ] ) ;
+
+        $this->makeController( $edges )->getParent( $request , null , [ Schema::ID => '5' ] ) ;
+
+        $this->assertSame( 'getFirstInboundVertex' , $edges->calls[ 0 ][ 0 ] ) ;
+        $this->assertSame( AQL::VERTEX             , $edges->filterCalls[ 0 ][ 1 ] ) ;
+        $this->assertSame( 'vertex.active == @f0'  , $edges->calls[ 0 ][ 2 ][ AQL::FILTER ] ?? null ) ;
+    }
+
+    public function testAnUndeclaredAttributeYieldsNoFilter() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound       = [] ;
+        $edges->compiledFilter = null ; // the gated engine drops an undeclared attribute
+
+        $request = $this->makeRequest( [ ControllerParam::FILTER => json_encode( [ 'key' => 'secret' , 'val' => 'x' ] ) ] ) ;
+
+        $this->makeController( $edges )->getChildren( $request , null , [ Schema::ID => '5' ] ) ;
+
+        $init = $edges->calls[ 0 ][ 2 ] ;
+        $this->assertArrayNotHasKey( AQL::FILTER , $init ) ;
+        $this->assertArrayNotHasKey( AQL::BINDS  , $init ) ;
+    }
+
+    public function testAnExplicitAuthorizerIsForwardedToTheEngineAndTheProjection() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound       = [] ;
+        $edges->compiledFilter = 'vertex.status == @f0' ;
+        $edges->compiledBinds  = [ 'f0' => 'x' ] ;
+
+        $authorizer = fn( string $subject ) : bool => false ;
+
+        $request = $this->makeRequest( [ ControllerParam::FILTER => json_encode( [ 'key' => 'status' , 'val' => 'x' ] ) ] ) ;
+
+        $this->makeController( $edges )->getDescendants( $request , null , [ Schema::ID => '5' ] , [ Arango::AUTHORIZER => $authorizer ] ) ;
+
+        // Forwarded to the filter engine (Field::REQUIRES gate on ?filter=) …
+        $this->assertTrue( $edges->filterCalls[ 0 ][ 2 ] ) ;
+        // … and into the traversal init (Field::REQUIRES gate on the vertex projection).
+        $this->assertSame( $authorizer , $edges->calls[ 0 ][ 2 ][ Arango::AUTHORIZER ] ?? null ) ;
+    }
+
+    public function testMalformedFilterJsonNeverReachesTheEngine() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->outbound = [] ;
+
+        $request = $this->makeRequest( [ ControllerParam::FILTER => '{ not json' ] ) ;
+
+        $this->makeController( $edges )->getChildren( $request , null , [ Schema::ID => '5' ] ) ;
+
+        // Invalid JSON degrades to "no filter" : the engine is not even called.
+        $this->assertSame( [] , $edges->filterCalls ) ;
+        $this->assertArrayNotHasKey( AQL::FILTER , $edges->calls[ 0 ][ 2 ] ) ;
+    }
+
     // ---- guards ---------------------------------------------------------
 
     public function testMissingIdReturnsNull() :void
@@ -190,6 +294,20 @@ final class TraversalControllerTest extends ControllerTestCase
 
     // ---- response envelope ----------------------------------------------
 
+    /**
+     * @return void
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws ArangoException
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     * @throws ConstantException
+     */
     public function testManyEnvelopeCarriesCountAndTotal() :void
     {
         $children = [ [ '_key' => 'a' ] , [ '_key' => 'b' ] , [ '_key' => 'c' ] ] ;
@@ -197,8 +315,7 @@ final class TraversalControllerTest extends ControllerTestCase
         $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
         $edges->outbound = $children ;
 
-        $result  = $this->makeController( $edges )
-            ->getChildren( $this->makeRequest() , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+        $result  = $this->makeController( $edges )->getChildren( $this->makeRequest() , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
 
         $payload = json_decode( (string) $result->getBody() , true ) ;
 

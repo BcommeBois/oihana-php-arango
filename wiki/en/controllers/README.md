@@ -368,6 +368,19 @@ The transitive methods accept a `?depth=N` query parameter, clamped to `Traversa
 
 The plural methods' envelope (children, ancestors, descendants) carries `count` **and** `total`, both equal to the number of traversed vertices: the traversal is not paginated, so `count == total`.
 
+### Filtering the traversed vertices (`?filter=`)
+
+All four methods accept a `?filter=` query parameter — the [same JSON DSL](../db/filter.md) as the `Documents` surface — restricting the traversal to the vertices that match:
+
+`GET /categories/5/descendants?filter={"key":"status","op":"eq","val":"published"}` → only the published descendants.
+
+**How it stays safe.** A traversal inlines its `FILTER` slot verbatim (a server-only knob), so the client JSON is **never** dropped in raw. It is first *compiled* by the edge model's gated engine, targeting the traversed `vertex`, into `FILTER vertex.status == @bind` — which means the two `Documents` guard rails apply unchanged:
+
+- **Whitelist** — only the attributes declared in the edge model's `AQL::FILTERS` are filterable; an undeclared attribute is dropped, so `?filter=` can never reach an unexposed field.
+- **Authorizer** — when an authorization stack is wired, the request authorizer gates `Field::REQUIRES` both on the compiled predicate and on the vertex projection (`returnFields()`): a hidden attribute cannot be probed through the traversal. Without a stack it falls open (backward compatible).
+
+**Semantics — `?filter=` hides, it does not prune.** On a transitive traversal (`ancestors` / `descendants`), a non-matching vertex is removed from the returned **flat list**, but the traversal still descends *through* it — so a matching grand-child survives even when its parent is filtered out. This is the correct behaviour for a flat list; to reconstruct a `children[]` tree from it, see the note on holes in [`buildTree()`](../edges-joins-projection.md). Cutting a whole branch off is a different operation (`?prune=`), covered separately.
+
 ### Full wiring (edge + controller + routes)
 
 The four sub-routes are declared in one entry with [`TraversalRoute`](../../../src/oihana/arango/routes/TraversalRoute.php), which maps each suffix to the matching controller method (via `Route::METHOD`, no magic strings) — the twin of `ArrayPropertyRoute`.
