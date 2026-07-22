@@ -29,18 +29,26 @@ use function oihana\controllers\helpers\getQueryParam;
  */
 trait PrepareMetaOnlyTrait
 {
+    use MetaOnlyTrait ;
+
     /**
      * Resolves the `metaOnly` flag for a list query.
      *
+     * Precedence, from weakest to strongest:
+     * 1. the controller default {@see MetaOnlyTrait::$metaOnly} (itself `false` unless
+     *    `Arango::META_ONLY => true` was wired in the controller `$init`) ;
+     * 2. `$args[Arango::META_ONLY]`, the per-call `$init` of `list()` ;
+     * 3. the `?metaOnly=` query param, which always wins when present.
+     *
      * @param Request|null $request The HTTP request.
-     * @param array        $args    Predefined options (`$args[Arango::META_ONLY]` as base).
+     * @param array        $args    Predefined options (`$args[Arango::META_ONLY]` overrides the controller default).
      * @param array|null   $params  Echoed query params, populated by reference.
      *
      * @return bool True when only the metadata (no documents) is requested.
      */
     protected function prepareMetaOnly( ?Request $request , array $args = [] , ?array &$params = null ) :bool
     {
-        $metaOnly = filter_var( $args[ Arango::META_ONLY ] ?? false , FILTER_VALIDATE_BOOLEAN ) ;
+        $metaOnly = filter_var( $args[ Arango::META_ONLY ] ?? $this->metaOnly , FILTER_VALIDATE_BOOLEAN ) ;
 
         if ( isset( $request ) )
         {
