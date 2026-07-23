@@ -187,6 +187,36 @@ final class UsersController extends DocumentsController
 
 Avantage : **un seul override couvre tous les verbes HTTP**. Pas besoin de répéter la logique transverse dans `list()`, `get()`, `post()`, etc.
 
+## Les paramètres de route atteignent le modèle (`Arango::ARGS`)
+
+Prenons la route `/workspaces/{workspace}/things/{id}`. Slim remet à l'action ses
+*placeholders* — `[ 'workspace' => 'w1' , 'id' => '42' ]` — dans l'argument `$args`.
+Chaque *handler* les replie dans le `$init` qu'il passe au modèle, sous la clé
+`Arango::ARGS` :
+
+```php
+// DELETE /workspaces/w1/things/42
+$init = [ Arango::ARGS => [ 'workspace' => 'w1' , 'id' => '42' ] , Arango::VALUE => [ '42' ] ] ;
+```
+
+Les lectures (`list`, `get`, `last`) le faisaient déjà ; **les écritures aussi** :
+`post()` → `insert()`, `patch()` / `put()` → `update()` / `replace()`, `delete()` →
+`delete()`, ainsi que la sonde d'existence (`exist()`) qui garde la mise à jour comme la
+suppression. La clé est **toujours présente** (un tableau vide si la route ne porte aucun
+*placeholder*), et les paramètres de route **l'emportent** sur une entrée `Arango::ARGS`
+déjà posée dans le `$init` entrant.
+
+Deux consommateurs en profitent :
+
+- **Les champs `Filter::URL`**, dont les *placeholders* de `Field::PATH` sont résolus
+  depuis `Arango::ARGS` (voir [Champs URL](../db/helpers.md#champs-url--filterurl)) — le
+  document renvoyé par une écriture porte désormais la même `url` que celui renvoyé par
+  une lecture.
+- **Vos overrides `beforeModelCall()` / `afterModelCall()` et les signaux du modèle**
+  (`BeforeInsert`, `AfterUpdate`, `BeforeDelete`, …), dont le `context` *est* ce `$init` —
+  un segment de *tenant* ou d'espace de travail présent dans l'URL y est lisible sans
+  retoucher à la requête.
+
 ## Trait `InjectFilterTrait`
 
 **Namespace** : `oihana\arango\controllers\traits\inject\InjectFilterTrait`

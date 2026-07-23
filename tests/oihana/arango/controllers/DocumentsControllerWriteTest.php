@@ -11,6 +11,7 @@ use oihana\enums\http\HttpStatusCode;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
+use tests\oihana\arango\controllers\mocks\RecordingDocuments;
 use tests\oihana\arango\controllers\mocks\ThrowingDocuments;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 
@@ -108,6 +109,58 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $this->assertSame( $model->objectResult , $controller->post( $request , null , [] ) ) ;
     }
 
+    public function testPostPassesTheRouteArgsToTheInsertInit() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'new1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'name' => 'Alice' ] ) ;
+
+        $args = [ 'workspace' => 'w1' , 'observation' => '15454' ] ;
+
+        $controller->post( $request , null , $args ) ;
+
+        // the write init carries the route args, and so does the reload
+        $this->assertSame( $args , $model->initOf( 'insert' )[ Arango::ARGS ] ?? null ) ;
+        $this->assertSame( $args , $model->initOf( 'get'    )[ Arango::ARGS ] ?? null ) ;
+    }
+
+    public function testPostPassesAnEmptyArgsArrayWhenTheRouteHasNoPlaceholder() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'new1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'name' => 'Alice' ] ) ;
+
+        $controller->post( $request , null , [] ) ;
+
+        // the key is always present (never absent) so the model can read it blindly
+        $this->assertArrayHasKey( Arango::ARGS , $model->initOf( 'insert' ) ) ;
+        $this->assertSame( [] , $model->initOf( 'insert' )[ Arango::ARGS ] ) ;
+    }
+
+    public function testPostArgsAreVisibleAlongsideTheDocumentAndTheRelations() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model , [
+            ControllerParam::PAYLOAD => [ HttpMethod::ALL => [ 'tags' => [ Arango::TYPE => AQLType::EDGE ] ] ] ,
+        ] ) ;
+
+        $request = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'name' => 'X' , 'tags' => 'roles/admin' ] ) ;
+
+        $controller->post( $request , null , [ 'workspace' => 'w1' ] ) ;
+
+        $init = $model->initOf( 'insert' ) ;
+
+        $this->assertSame( [ 'workspace' => 'w1' ] , $init[ Arango::ARGS ] ) ;
+        $this->assertArrayHasKey   ( 'tags' , $init[ Arango::RELATIONS ] ) ;
+        $this->assertArrayNotHasKey( 'tags' , (array) $init[ Arango::DOC ] ) ;
+    }
+
     // ---- delete ---------------------------------------------------------
 
     public function testDeleteByArgsIdReturnsDeletedKey() :void
@@ -159,6 +212,58 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $controller = $this->makeDocumentsController( new ThrowingDocuments( 'users' ) ) ;
 
         $this->assertNull( $controller->delete( null , null , [ Arango::ID => 'k1' ] , [ Arango::EXIST => true ] ) ) ;
+    }
+
+    public function testDeletePassesTheRouteArgsToBothTheExistenceProbeAndTheDeleteInit() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ; // exist() → true
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        $args = [ Arango::ID => 'k1' , 'workspace' => 'w1' ] ;
+
+        $this->assertSame( 'k1' , $controller->delete( null , null , $args ) ) ;
+
+        // the init is built once, before exist(), so both calls see the args
+        $this->assertSame( [ 'exist' , 'delete' ] , $model->methods() ) ;
+        $this->assertSame( $args , $model->initOf( 'exist'  )[ Arango::ARGS ] ?? null ) ;
+        $this->assertSame( $args , $model->initOf( 'delete' )[ Arango::ARGS ] ?? null ) ;
+    }
+
+    public function testDeleteByQueryParamAlsoPassesTheRouteArgs() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->documentsResult = [ (object) [ '_key' => 'a' ] , (object) [ '_key' => 'b' ] ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [ Arango::ID => 'b,a' ] , 'DELETE' ) ;
+
+        // bulk delete: the ids come from the query string, the args from the route
+        $controller->delete( $request , null , [ 'workspace' => 'w1' ] , [ Arango::EXIST => true ] ) ;
+
+        $init = $model->initOf( 'delete' ) ;
+
+        $this->assertSame( [ 'workspace' => 'w1' ] , $init[ Arango::ARGS  ] ) ;
+        $this->assertSame( [ 'a' , 'b' ]           , $init[ Arango::VALUE ] ) ;
+    }
+
+    public function testDeleteRouteArgsOverrideAnyArgsAlreadyPresentInInit() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+
+        $result = $controller->delete( null , null , [ Arango::ID => 'k1' , 'workspace' => 'route' ] ,
+        [
+            Arango::EXIST => true ,
+            Arango::ARGS  => [ 'workspace' => 'stale' ] ,
+        ]) ;
+
+        $this->assertSame( 'k1' , $result ) ;
+        $this->assertSame( [ Arango::ID => 'k1' , 'workspace' => 'route' ] , $model->initOf( 'delete' )[ Arango::ARGS ] ) ;
     }
 
     // ---- update (patch / put) -------------------------------------------
@@ -261,5 +366,97 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $request = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 , 'tags' => 'roles/admin' ] ) ;
 
         $this->assertSame( $model->objectResult , $controller->patch( $request , null , [ 'id' => 'k1' ] ) ) ;
+    }
+
+    public function testPatchPassesTheRouteArgsToTheUpdateInit() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ; // exist() → true
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 ] ) ;
+
+        $args = [ 'id' => 'k1' , 'workspace' => 'w1' ] ;
+
+        $controller->patch( $request , null , $args ) ;
+
+        $this->assertSame( $args , $model->initOf( 'update' )[ Arango::ARGS ] ?? null ) ;
+        $this->assertSame( $args , $model->initOf( 'get'    )[ Arango::ARGS ] ?? null ) ;
+        $this->assertNull( $model->initOf( 'replace' ) ) ;
+    }
+
+    public function testPutPassesTheRouteArgsToTheReplaceInit() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'a' => 2 ] ) ;
+
+        $args = [ 'id' => 'k1' , 'workspace' => 'w1' ] ;
+
+        $controller->put( $request , null , $args ) ;
+
+        $this->assertSame( $args , $model->initOf( 'replace' )[ Arango::ARGS ] ?? null ) ;
+        $this->assertNull( $model->initOf( 'update' ) ) ;
+    }
+
+    public function testUpdateRouteArgsOverrideAnyArgsAlreadyPresentInInit() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 ] ) ;
+
+        $controller->patch( $request , null , [ 'id' => 'k1' , 'workspace' => 'route' ] ,
+        [
+            Arango::ARGS => [ 'workspace' => 'stale' ] ,
+        ]) ;
+
+        $this->assertSame( [ 'id' => 'k1' , 'workspace' => 'route' ] , $model->initOf( 'update' )[ Arango::ARGS ] ) ;
+    }
+
+    public function testUpdateArgsAreVisibleAlongsideTheDocumentTheRelationsAndTheValue() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model , [
+            ControllerParam::PAYLOAD => [ HttpMethod::ALL => [ 'tags' => [ Arango::TYPE => AQLType::EDGE ] ] ] ,
+        ] ) ;
+
+        $request = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 , 'tags' => 'roles/admin' ] ) ;
+
+        $controller->patch( $request , null , [ 'id' => 'k1' , 'workspace' => 'w1' ] ) ;
+
+        $init = $model->initOf( 'update' ) ;
+
+        $this->assertSame( [ 'id' => 'k1' , 'workspace' => 'w1' ] , $init[ Arango::ARGS  ] ) ;
+        $this->assertSame( 'k1'                                  , $init[ Arango::VALUE ] ) ;
+        $this->assertArrayHasKey   ( 'tags' , $init[ Arango::RELATIONS ] ) ;
+        $this->assertArrayNotHasKey( 'tags' , (array) $init[ Arango::DOC ] ) ;
+    }
+
+    public function testUpdatePassesTheRouteArgsToTheExistenceProbeToo() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 ] ) ;
+
+        $controller->patch( $request , null , [ 'id' => 'k1' , 'workspace' => 'w1' ] ) ;
+
+        // aligned on delete() : the args are posed before the probe, so a host gating
+        // existence on a route placeholder behaves the same on both verbs
+        $this->assertSame( [ 'exist' , 'update' , 'get' ] , $model->methods() ) ;
+        $this->assertSame( [ 'id' => 'k1' , 'workspace' => 'w1' ] , $model->initOf( 'exist' )[ Arango::ARGS ] ?? null ) ;
+        $this->assertSame( 'k1' , $model->initOf( 'exist' )[ Arango::VALUE ] ) ;
     }
 }

@@ -81,6 +81,9 @@ trait DocumentsControllerUpdateTrait
         {
             $value = $args[ Schema::ID ] ?? null ;
 
+            // The route args are posed once, up-front, so the existence probe sees them too - the same way delete() does.
+            $init = [ ...$init , Arango::ARGS => $args ] ;
+
             if( !$this->model->exist( [ ...$init , Arango::VALUE => $value ] ) )
             {
                 return $this->fail
@@ -124,9 +127,11 @@ trait DocumentsControllerUpdateTrait
                 ] ;
 
                 $this->beforeModelCall( $request , $init ) ;
+
                 $document = $method == HttpMethod::PATCH
                           ? $this->model->update  ( $init )   // PATCH -> update
                           : $this->model->replace ( $init ) ; // PUT   -> replace
+
                 $this->afterModelCall( $request , $init , $document ) ;
 
                 $raw = (bool) ( $init[ Arango::RAW ] ?? false ) ;

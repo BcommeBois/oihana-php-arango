@@ -187,6 +187,34 @@ final class UsersController extends DocumentsController
 
 Advantage: **a single override covers all HTTP verbs**. No need to repeat cross-cutting logic in `list()`, `get()`, `post()`, etc.
 
+## Route args reach the model (`Arango::ARGS`)
+
+Take the route `/workspaces/{workspace}/things/{id}`. Slim hands the action its
+placeholders — `[ 'workspace' => 'w1' , 'id' => '42' ]` — as the `$args` argument.
+Every handler folds them into the `$init` it passes to the model, under the
+`Arango::ARGS` key:
+
+```php
+// DELETE /workspaces/w1/things/42
+$init = [ Arango::ARGS => [ 'workspace' => 'w1' , 'id' => '42' ] , Arango::VALUE => [ '42' ] ] ;
+```
+
+Reads (`list`, `get`, `last`) always did this; **writes do it too**: `post()` → `insert()`,
+`patch()` / `put()` → `update()` / `replace()`, `delete()` → `delete()`, and the
+existence probe (`exist()`) that guards the update and the delete alike. The key is
+**always present** (an empty array when the route carries no placeholder), and the route
+args **win** over an `Arango::ARGS` entry already sitting in the incoming `$init`.
+
+Two consumers benefit:
+
+- **`Filter::URL` fields**, whose `Field::PATH` placeholders are resolved from
+  `Arango::ARGS` (see [URL fields](../db/helpers.md#url-fields--filterurl)) — the document
+  returned by a write now carries the same `url` as the one returned by a read.
+- **Your `beforeModelCall()` / `afterModelCall()` overrides and the model signals**
+  (`BeforeInsert`, `AfterUpdate`, `BeforeDelete`, …), whose `context` *is* that `$init` —
+  a tenant or workspace segment of the URL is readable there without touching the request
+  again.
+
 ## `InjectFilterTrait`
 
 **Namespace**: `oihana\arango\controllers\traits\inject\InjectFilterTrait`

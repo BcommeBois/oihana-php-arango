@@ -119,7 +119,7 @@ trait DocumentsControllerDeleteTrait
 
             // $this->logger->debug( __METHOD__ . '(' . $id . ')' ) ;
 
-            $init = [ ...$init , Arango::VALUE => $ids ] ;
+            $init = [ ...$init , Arango::ARGS => $args , Arango::VALUE => $ids ] ;
 
             $exist = $init[ Arango::EXIST ] ?? false ;
             if( !$exist && !$this->model->exist( $init ) )

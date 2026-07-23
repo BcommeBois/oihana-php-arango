@@ -72,12 +72,15 @@ trait DocumentsControllerPostTrait
 
                 $modelInit =
                 [
+                    Arango::ARGS      => $args ,
                     Arango::DOC       => $payload ,
                     Arango::RELATIONS => $relations ,
                 ] ;
 
                 $this->beforeModelCall( $request , $modelInit ) ;
+
                 $document = $this->model->insert( $modelInit ) ;
+
                 $this->afterModelCall( $request , $modelInit , $document ) ;
 
                 return $this->success
