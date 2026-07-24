@@ -95,7 +95,7 @@ use function oihana\core\strings\randomKey;
  *      Each field is converted to an array. Every declarative Field::* key is preserved as-is:
  *      - Field::FILTER, Field::ALTERS, Field::DEFAULT, Field::ELSE, Field::FORMAT, Field::NAME,
  *        Field::PATH, Field::PATHS, Field::PROPERTY, Field::QUOTED, Field::RAW, Field::REQUIRES,
- *        Field::SCOPE, Field::WHEN, Field::WHERE
+ *        Field::SELF_REQUIRES, Field::SCOPE, Field::WHEN, Field::WHERE (see self::NORMALIZED_MARKERS)
  *      - Field::FIELDS for DOCUMENT or MAP subfields
  *      - Field::UNIQUE for unique key generation for edges, joins, or unique names
  * - `returnFields()`:
@@ -201,6 +201,44 @@ trait FieldsTrait
      * The suffix used for unique fields in queries.
      */
     public const string UNIQUE_SUFFIX = '_u' ;
+
+    /**
+     * The scalar `Field::` markers copied **verbatim** from the raw field options
+     * into the normalized definition produced by {@see normalizeFieldDefinition()}.
+     *
+     * ⚠️ **Single source of truth — register every new marker here.** A scalar
+     * `Field::` marker absent from this list is silently stripped during projection
+     * normalization, so it never reaches the query builders nor the permission gates
+     * (this is exactly how `Field::SELF_REQUIRES` was first lost). The **structural**
+     * markers are built separately and must NOT be added here: `Field::FILTER` (seeded
+     * from the already-resolved filter), `Field::FIELDS` / `Field::EDGES` /
+     * `Field::JOINS` (sub-projections attached after the recursive walk),
+     * `Field::UNIQUE` (generated), and the skin buckets (`AQL::SKIN_FIELDS`).
+     *
+     * `Field::DEFAULT` is intentionally kept even though it resolves to `null`
+     * (`Field::DEFAULT === null`), so the copy is byte-for-byte identical to the
+     * historical literal table.
+     *
+     * @var array<int,string|null>
+     */
+    private const array NORMALIZED_MARKERS =
+    [
+        Field::ALTERS        ,
+        Field::DEFAULT       ,
+        Field::ELSE          ,
+        Field::FORMAT        ,
+        Field::NAME          ,
+        Field::PATH          ,
+        Field::PATHS         ,
+        Field::PROPERTY      ,
+        Field::QUOTED        ,
+        Field::RAW           ,
+        Field::REQUIRES      ,
+        Field::SELF_REQUIRES ,
+        Field::SCOPE         ,
+        Field::WHEN          ,
+        Field::WHERE         ,
+    ] ;
 
     /**
      * Initialize fields definitions from an associative array.
@@ -593,25 +631,17 @@ trait FieldsTrait
             return null ;
         }
 
-        $definition = clean
-        ([
-            Field::FILTER   => $filter ,
-            Field::ALTERS   => $options[ Field::ALTERS   ] ?? null ,
-            Field::DEFAULT  => $options[ Field::DEFAULT  ] ?? null ,
-            Field::ELSE     => $options[ Field::ELSE     ] ?? null ,
-            Field::FORMAT   => $options[ Field::FORMAT   ] ?? null ,
-            Field::NAME     => $options[ Field::NAME     ] ?? null ,
-            Field::PATH     => $options[ Field::PATH     ] ?? null ,
-            Field::PATHS    => $options[ Field::PATHS    ] ?? null ,
-            Field::PROPERTY => $options[ Field::PROPERTY ] ?? null ,
-            Field::QUOTED   => $options[ Field::QUOTED   ] ?? null ,
-            Field::RAW      => $options[ Field::RAW      ] ?? null ,
-            Field::REQUIRES => $options[ Field::REQUIRES ] ?? null ,
-            Field::SCOPE    => $options[ Field::SCOPE    ] ?? null ,
-            Field::WHEN     => $options[ Field::WHEN     ] ?? null ,
-            Field::WHERE    => $options[ Field::WHERE    ] ?? null ,
-        ]
-        , CleanFlag::NULLS );
+        // Field::FILTER is seeded from the already-resolved filter; every other
+        // scalar marker is copied verbatim from self::NORMALIZED_MARKERS — the single
+        // source of truth a new Field:: marker must be registered in (see the const).
+        $definition = [ Field::FILTER => $filter ] ;
+
+        foreach ( self::NORMALIZED_MARKERS as $marker )
+        {
+            $definition[ $marker ] = $options[ $marker ] ?? null ;
+        }
+
+        $definition = clean( $definition , CleanFlag::NULLS ) ;
 
         if ( $filter === Filter::WRAP )
         {

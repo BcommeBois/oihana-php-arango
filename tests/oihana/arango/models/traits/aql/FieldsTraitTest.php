@@ -109,26 +109,30 @@ class FieldsTraitTest extends TestCase
         ([
             'x' =>
             [
-                Field::FILTER   => Filter::BOOL ,
-                Field::NAME     => 'n' ,
-                Field::QUOTED   => true ,
-                Field::FORMAT   => 'fmt' ,
-                Field::PATH     => 'p' ,
-                Field::PROPERTY => 'prop' ,
-                Field::REQUIRES => 'r' ,
+                Field::FILTER        => Filter::BOOL ,
+                Field::NAME          => 'n' ,
+                Field::QUOTED        => true ,
+                Field::FORMAT        => 'fmt' ,
+                Field::PATH          => 'p' ,
+                Field::PROPERTY      => 'prop' ,
+                Field::REQUIRES      => 'r' ,
+                Field::SELF_REQUIRES => 's' ,
             ],
         ]) ;
 
         $x = $out[ 'x' ] ;
 
-        $this->assertSame( Filter::BOOL , $x[ Field::FILTER   ] ) ;
-        $this->assertSame( 'fmt'        , $x[ Field::FORMAT   ] ) ;
-        $this->assertSame( 'n'          , $x[ Field::NAME     ] ) ;
-        $this->assertSame( 'p'          , $x[ Field::PATH     ] ) ;
-        $this->assertSame( 'prop'       , $x[ Field::PROPERTY ] ) ;
+        $this->assertSame( Filter::BOOL , $x[ Field::FILTER        ] ) ;
+        $this->assertSame( 'fmt'        , $x[ Field::FORMAT        ] ) ;
+        $this->assertSame( 'n'          , $x[ Field::NAME          ] ) ;
+        $this->assertSame( 'p'          , $x[ Field::PATH          ] ) ;
+        $this->assertSame( 'prop'       , $x[ Field::PROPERTY      ] ) ;
         $this->assertTrue( $x[ Field::QUOTED ] ) ;
-        $this->assertSame( 'r'          , $x[ Field::REQUIRES ] ) ;
-        $this->assertSame( 'x'          , $x[ Field::UNIQUE   ] ) ;
+        $this->assertSame( 'r'          , $x[ Field::REQUIRES      ] ) ;
+        // Field::SELF_REQUIRES must survive normalization, otherwise the T6 relation
+        // re-gate (authorizeTargetFields) never sees it and the OR alternative is dead.
+        $this->assertSame( 's'          , $x[ Field::SELF_REQUIRES ] ) ;
+        $this->assertSame( 'x'          , $x[ Field::UNIQUE        ] ) ;
     }
 
     public function testWhenAndElseOptionsArePreserved() :void
