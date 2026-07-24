@@ -66,6 +66,38 @@ Important points:
 - `AQL::EDGES` on the edge definition declares the sub-edges referenced by `Filter::EDGE` or `Filter::EDGES` markers in the projection.
 - `Field::FIELDS` placed **inline at the parent field level** is ignored for `Filter::EDGES` (it's only honoured for `Filter::DOCUMENT` and `Filter::MAP`). A common pitfall: declare the projection at the right level (on the edge definition, not on the parent field).
 
+### Overriding the target gate for this relation — `Field::SELF_REQUIRES`
+
+The inheritance above is deliberately **absolute**: a relation cannot decide, on its own, that some other permission is enough to see a field the target model hides. That is exactly what stops a masked field from leaking through a relation. But sometimes the relation *is* a legitimately broader context — you can read a colleague's `salary` only through `people:admin`, yet you should always see **your own** salary when the relation you follow is « my own employee record ».
+
+`Field::SELF_REQUIRES` opens that door, and only that door. It is an **OR alternative** to the target model's `Field::REQUIRES`, honoured **only** when a relation re-projects the field through its own `AQL::FIELDS`. A first-level read of the model never goes through this path, so the model's own gate is untouched everywhere else.
+
+The situation. On the `people` model, `salary` is masked behind `people:admin`. A relation re-projects it and adds a self-scoped alternative:
+
+```php
+// people model — the read gate everyone is measured against
+'salary' => [ Field::REQUIRES => 'people:admin' ] ,
+
+// on a relation's AQL::FIELDS — same field, plus a relation-scoped OR alternative
+'salary' =>
+[
+    Field::SELF_REQUIRES => 'people:self' , // a string, or a list of subjects (OR)
+] ,
+```
+
+| Caller | `people:admin` | `people:self` | `salary` through the relation |
+| --- | --- | --- | --- |
+| an HR admin | granted | — | **kept** (target gate already passes) |
+| the record's owner | refused | granted | **kept** (the self alternative passes) |
+| anyone else | refused | refused | dropped |
+
+The rules, one at a time:
+
+- **OR, never AND.** The field survives if the target gate passes **or** at least one `Field::SELF_REQUIRES` subject is granted. A list is a logical OR, exactly like `Field::REQUIRES`.
+- **This helper only.** `Field::SELF_REQUIRES` is read by `authorizeTargetFields()` — the relation re-gate — and by nothing else. A model's direct read (`list`, `get`, a root projection) never consults it, so it can never widen a first-level read.
+- **An empty or malformed value is ignored.** `Field::SELF_REQUIRES => []` (or any value with no string subject) is **not** an override — the field stays dropped. It cannot borrow the « no subject → allowed » fail-open of a normal gate to silently re-expose a masked field.
+- **Fail-open unchanged.** With no authorizer wired, the field is kept regardless — same as everywhere else.
+
 ## Hierarchical traversal — `AQL::MAX_DEPTH` / `AQL::MIN_DEPTH`
 
 By default a `Filter::EDGES` projection follows the relation **one level deep** — the direct children (or parents). For a **self-referential** relation — a concept linked to other concepts of the same collection, i.e. a hierarchy (a thesaurus, a category tree, an org chart) — you can follow the relation across **several levels in a single traversal** by declaring a depth on the edge definition:

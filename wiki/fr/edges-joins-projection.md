@@ -66,6 +66,38 @@ Points importants :
 - `AQL::EDGES` sur la définition d'edge déclare les sous-edges référencées par les `Filter::EDGE` ou `Filter::EDGES` dans la projection.
 - `Field::FIELDS` posé **inline au niveau du champ parent** est ignoré pour `Filter::EDGES` (il n'est respecté que pour `Filter::DOCUMENT` et `Filter::MAP`). C'est un piège classique : déclarer la projection au bon niveau (sur la définition d'edge, pas sur le champ parent).
 
+### Lever le contrôle du modèle cible pour cette relation — `Field::SELF_REQUIRES`
+
+L'héritage ci-dessus est **absolu**, et c'est voulu : une relation ne peut pas décider toute seule qu'une autre permission suffit à voir un champ que le modèle cible masque. C'est exactement ce qui empêche un champ masqué de fuir à travers une relation. Mais parfois la relation *est* un contexte légitimement plus permissif — on ne lit le `salary` d'un collègue qu'avec `people:admin`, alors qu'on devrait toujours voir **son propre** salaire quand la relation suivie est « ma fiche employé à moi ».
+
+`Field::SELF_REQUIRES` ouvre cette porte, et seulement celle-là. C'est une **alternative en OU** au `Field::REQUIRES` du modèle cible, honorée **uniquement** quand une relation re-projette le champ via son propre `AQL::FIELDS`. Une lecture de premier niveau du modèle ne passe jamais par ce chemin : le contrôle propre du modèle reste donc intact partout ailleurs.
+
+La situation. Sur le modèle `people`, `salary` est masqué derrière `people:admin`. Une relation le re-projette et ajoute une alternative propre au possesseur :
+
+```php
+// modèle people — le contrôle de lecture auquel tout le monde est mesuré
+'salary' => [ Field::REQUIRES => 'people:admin' ] ,
+
+// sur l'AQL::FIELDS d'une relation — même champ, plus une alternative propre à la relation
+'salary' =>
+[
+    Field::SELF_REQUIRES => 'people:self' , // une chaîne, ou une liste de sujets (OU)
+] ,
+```
+
+| Appelant | `people:admin` | `people:self` | `salary` via la relation |
+| --- | --- | --- | --- |
+| un admin RH | accordé | — | **conservé** (le contrôle cible passe déjà) |
+| le possesseur de la fiche | refusé | accordé | **conservé** (l'alternative *self* passe) |
+| n'importe qui d'autre | refusé | refusé | retiré |
+
+Les règles, une par une :
+
+- **OU, jamais ET.** Le champ survit si le contrôle cible passe **ou** si au moins un sujet de `Field::SELF_REQUIRES` est accordé. Une liste est un OU logique, exactement comme `Field::REQUIRES`.
+- **Ce helper uniquement.** `Field::SELF_REQUIRES` est lu par `authorizeTargetFields()` — le re-contrôle de relation — et par rien d'autre. Une lecture directe du modèle (`list`, `get`, une projection racine) ne le consulte jamais : il ne peut donc jamais élargir une lecture de premier niveau.
+- **Une valeur vide ou malformée est ignorée.** `Field::SELF_REQUIRES => []` (ou toute valeur sans sujet chaîne) n'est **pas** un override — le champ reste retiré. Il ne peut pas emprunter le *fail-open* « aucun sujet → autorisé » d'un contrôle normal pour ré-exposer silencieusement un champ masqué.
+- **Fail-open inchangé.** Sans *authorizer* câblé, le champ est conservé de toute façon — comme partout ailleurs.
+
 ## Traversée hiérarchique — `AQL::MAX_DEPTH` / `AQL::MIN_DEPTH`
 
 Par défaut, une projection `Filter::EDGES` suit la relation **sur un seul niveau** — les enfants (ou les parents) directs. Pour une relation **auto-référente** — un concept lié à d'autres concepts de la même collection, c'est-à-dire une hiérarchie (thésaurus, arbre de catégories, organigramme) — on peut suivre la relation sur **plusieurs niveaux en une seule traversée** en déclarant une profondeur sur la définition d'edge :

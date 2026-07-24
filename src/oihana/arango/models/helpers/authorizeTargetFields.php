@@ -22,6 +22,15 @@ use oihana\arango\models\Documents;
  * attribute, otherwise the output key — is what gets gated, never the output
  * label, so an alias cannot dodge (or borrow) the wrong permission.
  *
+ * **Relation-scoped OR alternative — `Field::SELF_REQUIRES`.** A field refused by
+ * the target model is nonetheless **kept** when it declares `Field::SELF_REQUIRES`
+ * and the authorizer grants **at least one** of its subjects — the relation being a
+ * legitimately broader context (reading a sub-field of a resource the caller owns).
+ * This override lives **only here**: first-level model reads never pass through this
+ * helper, so it never widens a model's direct reads. The subjects are normalized to
+ * a non-empty list of strings before the check, so an empty / malformed value cannot
+ * borrow {@see isAuthorized()}'s "no subject → true" fail-open and re-open T6.
+ *
  * Fail-open and idempotent: with no target model, no `$documents->fields`, a
  * field carrying no `Field::REQUIRES` on the target, or no authorizer injected,
  * the field is kept — and re-running it on a projection that already came from
@@ -51,6 +60,30 @@ function authorizeTargetFields( ?array $fields , ?Documents $documents , array $
 
         if ( !isPathAuthorized( (string) $source , $targetFields , $init ) )
         {
+            // Relation-scoped alternative: an explicit `Field::SELF_REQUIRES` keeps
+            // the field when the caller satisfies at least one of its subjects, even
+            // though the target model refuses it — the relation is a legitimately
+            // broader context. It never widens the target model's direct reads (those
+            // first-level reads do not pass through this helper).
+            //
+            // Affirmative grant only: the subjects are normalized to a non-empty list
+            // of strings *before* deferring to isAuthorized(), so an empty / malformed
+            // SELF_REQUIRES cannot borrow isAuthorized()'s "no subject → true" fail-open
+            // and silently re-open the T6 hole this helper closes.
+            $selfRequires = is_array( $options ) ? ( $options[ Field::SELF_REQUIRES ] ?? null ) : null ;
+
+            if ( $selfRequires !== null )
+            {
+                $subjects = is_array( $selfRequires )
+                          ? array_values( array_filter( $selfRequires , 'is_string' ) )
+                          : ( is_string( $selfRequires ) ? [ $selfRequires ] : [] ) ;
+
+                if ( $subjects !== [] && isAuthorized( [ Field::REQUIRES => $subjects ] , $init ) )
+                {
+                    continue ;
+                }
+            }
+
             unset( $fields[ $key ] ) ;
         }
     }
