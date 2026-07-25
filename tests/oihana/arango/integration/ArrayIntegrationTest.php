@@ -44,6 +44,13 @@ use function oihana\init\initConfig;
  * positional move, membership, object (deep-equality) values, the `[]` seeding on
  * insert, and the collection-wide `arrayPurgeRef`.
  *
+ * It also covers the `Arango::ITEM_KEY` branches, where the whole point is that the
+ * server does the matching: an element is designated by an attribute it carries rather
+ * than by a copy of itself. What only a real engine can answer here — the `[? FILTER]`
+ * membership operator, `MERGE()` receiving a bound object (including an empty one), the
+ * `__el == null` guard leaving the array untouched instead of pushing a null, and
+ * `UNIQUE()` / `SORTED_UNIQUE()` re-applied to *objects* after a patch.
+ *
  * Skipped when no ArangoDB is reachable (see {@see IntegrationTestCase}).
  *
  * @group integration
@@ -66,7 +73,9 @@ final class ArrayIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * A Documents model wired to the disposable database, with `tracks`/`tags`/`genres`/`members` declared.
+     * A Documents model wired to the disposable database, with the by-value fields
+     * (`tracks`/`tags`/`genres`/`members`) and the by-key ones (`chapters`/`badges`/`ranks`)
+     * declared side by side.
      *
      * @return Documents
      * @throws TomlError
@@ -95,10 +104,15 @@ final class ArrayIntegrationTest extends IntegrationTestCase
             AQL::LAZY        => false ,
             AQL::ARRAYS      =>
             [
-                'tracks'  => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ,
-                'tags'    => ArrayMode::SET ,
-                'genres'  => ArrayMode::SORTED_SET ,
-                'members' => ArrayMode::LIST , // arrays of objects
+                'tracks'   => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ,
+                'tags'     => ArrayMode::SET ,
+                'genres'   => ArrayMode::SORTED_SET ,
+                'members'  => ArrayMode::LIST , // arrays of objects
+
+                // targeted by key: the element is designated by its `id` attribute
+                'chapters' => [ ArrayMode::LIST       , Arango::COUNTER => 'numberOfChapters' , Arango::ITEM_KEY => 'id' ] ,
+                'badges'   => [ ArrayMode::SET        , Arango::ITEM_KEY => 'id' ] ,
+                'ranks'    => [ ArrayMode::SORTED_SET , Arango::ITEM_KEY => 'id' ] ,
             ],
         ]);
     }
@@ -317,6 +331,386 @@ final class ArrayIntegrationTest extends IntegrationTestCase
 
         $new = $model->arrayRemove( [ Arango::OWNER => 'obj1' , Arango::FIELD => 'members' , Arango::VALUE => $member ] ) ;
         $this->assertSame( [] , $new->members ) ;
+    }
+
+    // ---------------------------------------------------------------- by item key
+
+    /**
+     * Three chapters, each an object carrying an `id`.
+     *
+     * @return array
+     */
+    private static function chapters() :array
+    {
+        return
+        [
+            [ 'id' => 'c1' , 'title' => 'Intro'  , 'rating' => 3 ] ,
+            [ 'id' => 'c2' , 'title' => 'Chorus' , 'rating' => 4 ] ,
+            [ 'id' => 'c3' , 'title' => 'Outro'  , 'rating' => 5 ] ,
+        ] ;
+    }
+
+    /**
+     * The whole point of an item key: the element is found by an attribute it carries,
+     * without the caller holding a copy of it.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testContainsByItemKeyFindsAnObjectFromItsKeyAlone() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-has' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $this->assertTrue ( $model->arrayContains( [ Arango::OWNER => 'k-has' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c2' ] ) ) ;
+        $this->assertFalse( $model->arrayContains( [ Arango::OWNER => 'k-has' , Arango::FIELD => 'chapters' , Arango::VALUE => 'nope' ] ) ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testRemoveByItemKeyDropsTheElementAndUpdatesTheCounter() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-rm' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $new = $model->arrayRemove( [ Arango::OWNER => 'k-rm' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c2' ] ) ;
+
+        $this->assertSame( [ 'c1' , 'c3' ] , array_column( $new->chapters , 'id' ) ) ;
+        $this->assertSame( 2 , $new->numberOfChapters ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testRemoveByItemKeyAcceptsAListOfKeys() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-rml' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $new = $model->arrayRemove( [ Arango::OWNER => 'k-rml' , Arango::FIELD => 'chapters' , Arango::VALUE => [ 'c1' , 'c3' ] ] ) ;
+
+        $this->assertSame( [ 'c2' ] , array_column( $new->chapters , 'id' ) ) ;
+        $this->assertSame( 1 , $new->numberOfChapters ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testMoveByItemKeyRepositionsTheWholeObject() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-mv' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $new = $model->arrayMove( [ Arango::OWNER => 'k-mv' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' , Arango::POSITION => 2 ] ) ;
+
+        $this->assertSame( [ 'c2' , 'c3' , 'c1' ] , array_column( $new->chapters , 'id' ) ) ;
+        // the object travelled whole, not just its key
+        $this->assertSame( 'Intro' , $new->chapters[ 2 ][ 'title' ] ) ;
+        $this->assertSame( 3 , $new->numberOfChapters ) ;
+    }
+
+    /**
+     * The `__el == null` guard: an unknown key rewrites the array **unchanged** instead
+     * of pushing a null at the requested position.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testMoveByAnUnknownItemKeyIsANoOp() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-mv0' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $new = $model->arrayMove( [ Arango::OWNER => 'k-mv0' , Arango::FIELD => 'chapters' , Arango::VALUE => 'nope' , Arango::POSITION => 0 ] ) ;
+
+        $this->assertSame( [ 'c1' , 'c2' , 'c3' ] , array_column( $new->chapters , 'id' ) ) ;
+        $this->assertNotContains( null , $new->chapters ) ; // no phantom element
+        $this->assertSame( 3 , $new->numberOfChapters ) ;
+    }
+
+    /**
+     * The same guard on an **empty** array — the degenerate case where `FIRST()` of an
+     * empty expansion is null and `SLICE()` has nothing to rebuild from.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testMoveByItemKeyOnAnEmptyArrayIsANoOp() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-mv-empty' , 'chapters' => [] , 'numberOfChapters' => 0 ] ) ;
+
+        $new = $model->arrayMove( [ Arango::OWNER => 'k-mv-empty' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' , Arango::POSITION => 0 ] ) ;
+
+        $this->assertSame( [] , $new->chapters ) ;
+        $this->assertSame( 0 , $new->numberOfChapters ) ;
+    }
+
+    // ---------------------------------------------------------------- update
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testUpdateMergesPartiallyAndLeavesTheSiblingsAlone() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-up' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $new = $model->arrayUpdate
+        ([
+            Arango::OWNER => 'k-up' ,
+            Arango::FIELD => 'chapters' ,
+            Arango::VALUE => 'c2' ,
+            Arango::PATCH => [ 'rating' => 9 , 'note' => 'live' ] ,
+        ]) ;
+
+        $edited = $new->chapters[ 1 ] ;
+
+        $this->assertSame( 9 , $edited[ 'rating' ] ) ;       // overwritten
+        $this->assertSame( 'live' , $edited[ 'note' ] ) ;    // added
+        $this->assertSame( 'Chorus' , $edited[ 'title' ] ) ; // untouched — the merge is partial
+        $this->assertSame( 'c2' , $edited[ 'id' ] ) ;
+
+        // order and siblings are preserved
+        $this->assertSame( [ 'c1' , 'c2' , 'c3' ] , array_column( $new->chapters , 'id' ) ) ;
+        $this->assertSame( 3 , $new->chapters[ 0 ][ 'rating' ] ) ;
+        $this->assertSame( 3 , $new->numberOfChapters ) ;
+    }
+
+    /**
+     * The very trap the item key closes: re-sending the same patch keeps working,
+     * where a by-value match would stop matching after the first call.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testUpdateIsRepeatable() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-up2' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+        $init  = [ Arango::OWNER => 'k-up2' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' ] ;
+
+        $model->arrayUpdate( [ ...$init , Arango::PATCH => [ 'rating' => 7 ] ] ) ;
+        $new = $model->arrayUpdate( [ ...$init , Arango::PATCH => [ 'rating' => 8 ] ] ) ;
+
+        $this->assertSame( 8 , $new->chapters[ 0 ][ 'rating' ] ) ;
+    }
+
+    /**
+     * An empty patch reaches AQL as `{}` thanks to the (object) cast — `[]` would not be
+     * a valid MERGE operand and the query would fail outright.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testUpdateWithAnEmptyPatchIsAHarmlessNoOp() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-up-empty' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $new = $model->arrayUpdate( [ Arango::OWNER => 'k-up-empty' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' ] ) ;
+
+        $this->assertSame( [ 'c1' , 'c2' , 'c3' ] , array_column( $new->chapters , 'id' ) ) ;
+        $this->assertSame( 3 , $new->chapters[ 0 ][ 'rating' ] ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testUpdateByAnUnknownItemKeyLeavesTheArrayUntouched() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-up0' , 'chapters' => self::chapters() , 'numberOfChapters' => 3 ] ) ;
+
+        $new = $model->arrayUpdate
+        ([
+            Arango::OWNER => 'k-up0' ,
+            Arango::FIELD => 'chapters' ,
+            Arango::VALUE => 'nope' ,
+            Arango::PATCH => [ 'rating' => 9 ] ,
+        ]) ;
+
+        $this->assertSame( [ 3 , 4 , 5 ] , array_column( $new->chapters , 'rating' ) ) ;
+        $this->assertSame( 3 , $new->numberOfChapters ) ;
+    }
+
+    /**
+     * A patch can make two elements identical: the SET invariant is re-applied on top,
+     * so the duplicate collapses instead of surviving.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testUpdateReappliesTheSetInvariantOnObjects() :void
+    {
+        $model = $this->seedDoc
+        ([
+            '_key'   => 'k-set' ,
+            'badges' => [ [ 'id' => 'b1' , 'level' => 1 ] , [ 'id' => 'b1' , 'level' => 2 ] ] ,
+        ]) ;
+
+        // levelling b1/2 down to 1 makes it identical to its sibling
+        $new = $model->arrayUpdate
+        ([
+            Arango::OWNER => 'k-set' ,
+            Arango::FIELD => 'badges' ,
+            Arango::VALUE => 'b1' ,
+            Arango::PATCH => [ 'level' => 1 ] ,
+        ]) ;
+
+        $this->assertCount( 1 , $new->badges ) ;
+        $this->assertSame( 1 , $new->badges[ 0 ][ 'level' ] ) ;
+    }
+
+    /**
+     * Same for a sortedSet: `SORTED_UNIQUE()` accepts objects, and orders them.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testUpdateReappliesTheSortedSetInvariantOnObjects() :void
+    {
+        $model = $this->seedDoc
+        ([
+            '_key'  => 'k-sorted' ,
+            'ranks' => [ [ 'id' => 'r2' ] , [ 'id' => 'r1' ] ] ,
+        ]) ;
+
+        // the patch is empty of consequence: what is proved here is that the invariant runs
+        $new = $model->arrayUpdate
+        ([
+            Arango::OWNER => 'k-sorted' ,
+            Arango::FIELD => 'ranks' ,
+            Arango::VALUE => 'r2' ,
+            Arango::PATCH => [ 'id' => 'r1' ] , // r2 becomes r1 → duplicate
+        ]) ;
+
+        $this->assertCount( 1 , $new->ranks ) ;
+        $this->assertSame( 'r1' , $new->ranks[ 0 ][ 'id' ] ) ;
+    }
+
+    /**
+     * A field targeted by value refuses the in-place edit rather than emitting an
+     * operation that would only work once.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testUpdateOnAByValueFieldThrows() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'k-up-novalue' , 'tracks' => [ 'A' ] , 'numberOfTracks' => 1 ] ) ;
+
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $model->arrayUpdate( [ Arango::OWNER => 'k-up-novalue' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::PATCH => [ 'x' => 1 ] ] ) ;
     }
 
     // ---------------------------------------------------------------- purgeRef

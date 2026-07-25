@@ -38,7 +38,11 @@ class ArrayPropertyControllerTest extends ControllerTestCase
 
     /**
      * A MockDocuments whose `chapters` property is targeted **by key** (`id`), with a
-     * canned NEW doc holding the two objects the write is supposed to have returned.
+     * canned NEW doc holding the two elements the write is supposed to have returned.
+     *
+     * They are associative **arrays**, which is the shape a hydrated document really
+     * carries for its nested elements — see {@see testUpdateItemAlsoMatchesObjectElements()}
+     * for the object shape, which the lookup handles just as well.
      */
     private function keyedModel() :MockDocuments
     {
@@ -50,8 +54,8 @@ class ArrayPropertyControllerTest extends ControllerTestCase
             '_key'     => 'p42' ,
             'chapters' =>
             [
-                (object) [ 'id' => 'c1' , 'title' => 'Intro'  , 'rating' => 5 ] ,
-                (object) [ 'id' => 'c2' , 'title' => 'Chorus' , 'rating' => 3 ] ,
+                [ 'id' => 'c1' , 'title' => 'Intro'  , 'rating' => 5 ] ,
+                [ 'id' => 'c2' , 'title' => 'Chorus' , 'rating' => 3 ] ,
             ] ,
         ] ;
         return $model ;
@@ -118,6 +122,24 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         (
             $model->objectResult->chapters ,
             $controller->updateItem( $request , null , [ Arango::ID => 'p42' , Arango::VALUE => 'c1' ] )
+        ) ;
+    }
+
+    /** The lookup reads an element whichever shape it comes back in. */
+    public function testUpdateItemAlsoMatchesObjectElements() :void
+    {
+        $model = $this->keyedModel() ;
+        $model->objectResult = (object) [ '_key' => 'p42' , 'chapters' => [ (object) [ 'id' => 'c1' , 'title' => 'Intro' ] ] ] ;
+
+        $this->assertSame
+        (
+            $model->objectResult->chapters ,
+            $this->keyedController( $model )->updateItem
+            (
+                $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ,
+                null ,
+                [ Arango::ID => 'p42' , Arango::VALUE => 'c1' ]
+            )
         ) ;
     }
 
