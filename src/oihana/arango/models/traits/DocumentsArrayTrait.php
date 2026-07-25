@@ -45,6 +45,7 @@ use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlUpdate;
 use function oihana\arango\db\operators\equal;
+use function oihana\arango\db\operators\greaterThan;
 
 use function oihana\core\accessors\ensureKeyValue;
 use function oihana\core\strings\compile;
@@ -90,6 +91,19 @@ trait DocumentsArrayTrait
     use ArangoTrait ,
         BindTrait   ,
         HasUpdateSignals ;
+
+    /**
+     * The AQL variable holding the new array value written back by the `UPDATE`.
+     *
+     * Double-underscored to stay out of the way of any user-supplied bind or alias.
+     */
+    protected const string ARRAY_VAR = '__arr' ;
+
+    /**
+     * The AQL variable holding the array **minus** the element being moved, from which
+     * {@see arrayMove()} rebuilds the final order.
+     */
+    protected const string REMAINDER_VAR = '__rm' ;
 
     /**
      * The per-field embedded-array configuration, normalised to
@@ -142,7 +156,7 @@ trait DocumentsArrayTrait
         ]) ;
 
         $subQuery = compile( [ $for , $filter , aqlReturn( '1' ) ] ) ;
-        $query    = aqlReturn( length( $subQuery ) . ' > 0' ) ;
+        $query    = aqlReturn( greaterThan( length( $subQuery ) , 0 ) ) ;
 
         if ( $init[ Arango::DEBUG ] ?? false )
         {
@@ -241,7 +255,7 @@ trait DocumentsArrayTrait
 
         $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
 
-        return $this->runArrayUpdate( $field , [ aqlLet( '__arr' , $arrExpr ) ] , $filter , $binds , $init ) ;
+        return $this->runArrayUpdate( $field , [ aqlLet( self::ARRAY_VAR , $arrExpr ) ] , $filter , $binds , $init ) ;
     }
 
     /**
@@ -303,8 +317,8 @@ trait DocumentsArrayTrait
 
         $lets =
         [
-            aqlLet( '__rm'  , removeValue( $fieldExpr , $value ) ) ,
-            aqlLet( '__arr' , append( push( slice( '__rm' , 0 , $position ) , $value , true ) , slice( '__rm' , $position , null ) ) ) ,
+            aqlLet( self::REMAINDER_VAR , removeValue( $fieldExpr , $value ) ) ,
+            aqlLet( self::ARRAY_VAR , append( push( slice( self::REMAINDER_VAR , 0 , $position ) , $value , true ) , slice( self::REMAINDER_VAR , $position , null ) ) ) ,
         ] ;
 
         $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
@@ -355,8 +369,8 @@ trait DocumentsArrayTrait
         // update-relations contract (see OnUpdateRelations).
         $for    = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
         $filter = aqlFilter( position( $fieldExpr , $value ) ) ;
-        $let    = aqlLet( '__arr' , removeValue( $fieldExpr , $value ) ) ;
-        $write  = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , '__arr' , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
+        $let    = aqlLet( self::ARRAY_VAR , removeValue( $fieldExpr , $value ) ) ;
+        $write  = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , self::ARRAY_VAR , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
 
         // count mode returns lightweight `1` rows (no document is materialised) and counts them.
         $query  = compile( [ $for , $filter , $let , $write , aqlReturn( $count ? '1' : Clause::NEW ) ] ) ;
@@ -421,7 +435,7 @@ trait DocumentsArrayTrait
 
         $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
 
-        return $this->runArrayUpdate( $field , [ aqlLet( '__arr' , $arrExpr ) ] , $filter , $binds , $init ) ;
+        return $this->runArrayUpdate( $field , [ aqlLet( self::ARRAY_VAR , $arrExpr ) ] , $filter , $binds , $init ) ;
     }
 
     /**
@@ -495,7 +509,7 @@ trait DocumentsArrayTrait
      * counter, and the `modified` timestamp unless `touch` is disabled.
      *
      * @param string|null $field      The array attribute name.
-     * @param string      $arrayVar   The AQL variable holding the new array (e.g. '__arr').
+     * @param string      $arrayVar   The AQL variable holding the new array (see {@see self::ARRAY_VAR}).
      * @param array       $init
      *
      * @return string
@@ -549,7 +563,7 @@ trait DocumentsArrayTrait
      * emitting the update signals around the write.
      *
      * @param string|null $field The array attribute name.
-     * @param array $lets The ordered LET clauses producing the `__arr` variable.
+     * @param array $lets The ordered LET clauses producing the {@see self::ARRAY_VAR} variable.
      * @param string $filter The FILTER predicate locating the document.
      * @param array $binds The bind variables (mutated by reference).
      * @param array $init
@@ -570,7 +584,7 @@ trait DocumentsArrayTrait
         $this->beforeUpdate?->emit( new BeforeUpdate( target : $this , context : $init ) ) ;
 
         $for   = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
-        $write = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , '__arr' , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
+        $write = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , self::ARRAY_VAR , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
         $query = compile( [ $for , aqlFilter( $filter ) , ...$lets , $write , aqlReturn( Clause::NEW ) ] ) ;
 
         if ( $init[ Arango::DEBUG ] ?? false )
