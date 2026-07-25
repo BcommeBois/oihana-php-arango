@@ -36,9 +36,35 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         return $model ;
     }
 
+    /**
+     * A MockDocuments whose `chapters` property is targeted **by key** (`id`), with a
+     * canned NEW doc holding the two objects the write is supposed to have returned.
+     */
+    private function keyedModel() :MockDocuments
+    {
+        $model = new MockDocuments( 'Playlist' ) ;
+        $model->arrays       = [ 'chapters' => [ Arango::MODE => ArrayMode::LIST , Arango::COUNTER => null , Arango::ITEM_KEY => 'id' ] ] ;
+        $model->firstResult  = 1 ; // exist() → true
+        $model->objectResult = (object)
+        [
+            '_key'     => 'p42' ,
+            'chapters' =>
+            [
+                (object) [ 'id' => 'c1' , 'title' => 'Intro'  , 'rating' => 5 ] ,
+                (object) [ 'id' => 'c2' , 'title' => 'Chorus' , 'rating' => 3 ] ,
+            ] ,
+        ] ;
+        return $model ;
+    }
+
     private function controller( MockDocuments $model ) :ArrayPropertyController
     {
         return $this->makeArrayPropertyController( $model , [ self::PROPERTY => 'tracks' ] ) ;
+    }
+
+    private function keyedController( MockDocuments $model ) :ArrayPropertyController
+    {
+        return $this->makeArrayPropertyController( $model , [ self::PROPERTY => 'chapters' ] ) ;
     }
 
     // ---- success paths --------------------------------------------------
@@ -81,7 +107,132 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertTrue( $controller->hasItem( null , null , [ Arango::ID => 'p42' , Arango::VALUE => 'A' ] ) ) ;
     }
 
+    public function testUpdateItemMergesTheBodyAsThePatch() :void
+    {
+        $model      = $this->keyedModel() ;
+        $controller = $this->keyedController( $model ) ;
+        // the body IS the patch — no envelope
+        $request    = $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ;
+
+        $this->assertSame
+        (
+            $model->objectResult->chapters ,
+            $controller->updateItem( $request , null , [ Arango::ID => 'p42' , Arango::VALUE => 'c1' ] )
+        ) ;
+    }
+
+    /** A property targeted by value keeps its 200: the post-check only runs on a keyed one. */
+    public function testMoveItemByValueIsUnaffectedByThePostCheck() :void
+    {
+        $controller = $this->controller( $this->model() ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ Arango::POSITION => 1 ] ) ;
+
+        $this->assertSame
+        (
+            [ 'A' , 'B' ] ,
+            $controller->moveItem( $request , null , [ Arango::ID => 'p42' , Arango::VALUE => 'Z' ] )
+        ) ;
+    }
+
+    public function testMoveItemByKeyReturnsTheUpdatedProperty() :void
+    {
+        $model      = $this->keyedModel() ;
+        $controller = $this->keyedController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ Arango::POSITION => 1 ] ) ;
+
+        $this->assertSame
+        (
+            $model->objectResult->chapters ,
+            $controller->moveItem( $request , null , [ Arango::ID => 'p42' , Arango::VALUE => 'c2' ] )
+        ) ;
+    }
+
     // ---- error paths ----------------------------------------------------
+
+    /**
+     * The model rewrote the array unchanged (the key matches no element), so the
+     * returned document is what proves the miss — no second query.
+     *
+     * @return void
+     */
+    public function testUpdateItemUnknownKeyReturns404() :void
+    {
+        $response = $this->keyedController( $this->keyedModel() )->updateItem
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => 'nope' ]
+        ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
+    }
+
+    public function testMoveItemUnknownKeyReturns404() :void
+    {
+        $response = $this->keyedController( $this->keyedModel() )->moveItem
+        (
+            $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ Arango::POSITION => 0 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => 'nope' ]
+        ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * The comparison is strict, like AQL's `==` on a document attribute: a numeric key
+     * requested as a string matches nothing on either side.
+     *
+     * @return void
+     */
+    public function testUpdateItemDoesNotMatchAKeyOfAnotherType() :void
+    {
+        $model = $this->keyedModel() ;
+        $model->objectResult = (object) [ '_key' => 'p42' , 'chapters' => [ (object) [ 'id' => 1 , 'title' => 'Intro' ] ] ] ;
+
+        $response = $this->keyedController( $model )->updateItem
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => '1' ] // the string from the URL
+        ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
+    }
+
+    /** An element with no attribute at all can never carry a key. */
+    public function testUpdateItemOnScalarElementsReturns404() :void
+    {
+        $model = $this->keyedModel() ;
+        $model->objectResult = (object) [ '_key' => 'p42' , 'chapters' => [ 'A' , 'B' ] ] ;
+
+        $response = $this->keyedController( $model )->updateItem
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => 'A' ]
+        ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * A property targeted by value cannot be edited in place: designating its element
+     * would need a byte-for-byte copy that the patch itself invalidates.
+     *
+     * @return void
+     */
+    public function testUpdateItemWithoutAnItemKeyReturns422() :void
+    {
+        $response = $this->controller( $this->model() )->updateItem
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => 'A' ]
+        ) ;
+
+        $this->assertSame( 422 , $response->getStatusCode() ) ;
+    }
 
     public function testHasItemAbsentReturns404() :void
     {

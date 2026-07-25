@@ -16,7 +16,7 @@ use Slim\App;
 use Slim\Factory\AppFactory;
 
 /**
- * Coverage for {@see ArrayPropertyRoute} — registers the four array sub-resource
+ * Coverage for {@see ArrayPropertyRoute} — registers the five array sub-resource
  * routes of an {@see ArrayPropertyController}.
  *
  * @package tests\oihana\arango\routes
@@ -33,7 +33,7 @@ final class ArrayPropertyRouteTest extends TestCase
         return $app ;
     }
 
-    public function testRegistersTheFourArrayRoutes() :void
+    public function testRegistersTheFiveArrayRoutes() :void
     {
         $container = new Container() ;
         $app       = $this->app( $container ) ;
@@ -43,6 +43,7 @@ final class ArrayPropertyRouteTest extends TestCase
             public function addItem()    { return ArrayPropertyController::ADD_ITEM    ; }
             public function removeItem() { return ArrayPropertyController::REMOVE_ITEM ; }
             public function moveItem()   { return ArrayPropertyController::MOVE_ITEM   ; }
+            public function updateItem() { return ArrayPropertyController::UPDATE_ITEM ; }
             public function hasItem()    { return ArrayPropertyController::HAS_ITEM    ; }
         } ;
         $container->set( 'playlist.tracks' , $controller ) ;
@@ -54,7 +55,7 @@ final class ArrayPropertyRouteTest extends TestCase
         ]) )() ;
 
         $registered = $app->getRouteCollector()->getRoutes() ;
-        $this->assertCount( 4 , $registered ) ;
+        $this->assertCount( 5 , $registered ) ;
 
         $map = [] ;
         foreach ( $registered as $route )
@@ -65,6 +66,8 @@ final class ArrayPropertyRouteTest extends TestCase
         $this->assertSame( ArrayPropertyController::ADD_ITEM    , $map[ 'POST /playlists/{id}/tracks' ] ) ;
         $this->assertSame( ArrayPropertyController::REMOVE_ITEM , $map[ 'DELETE /playlists/{id}/tracks/{value}' ] ) ;
         $this->assertSame( ArrayPropertyController::MOVE_ITEM   , $map[ 'PATCH /playlists/{id}/tracks/{value}' ] ) ;
+        // PATCH and PUT share the path: only the verb tells a move from an in-place edit
+        $this->assertSame( ArrayPropertyController::UPDATE_ITEM , $map[ 'PUT /playlists/{id}/tracks/{value}' ] ) ;
         $this->assertSame( ArrayPropertyController::HAS_ITEM    , $map[ 'GET /playlists/{id}/tracks/{value}' ] ) ;
     }
 
@@ -73,7 +76,7 @@ final class ArrayPropertyRouteTest extends TestCase
         $container = new Container() ;
         $app       = $this->app( $container ) ;
 
-        $controller = new class { public function removeItem() {} public function addItem() {} public function moveItem() {} public function hasItem() {} } ;
+        $controller = new class { public function removeItem() {} public function addItem() {} public function moveItem() {} public function updateItem() {} public function hasItem() {} } ;
         $container->set( 'playlist.tracks' , $controller ) ;
 
         ( new ArrayPropertyRoute( $container ,

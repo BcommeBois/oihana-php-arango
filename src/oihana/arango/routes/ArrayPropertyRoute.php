@@ -16,12 +16,13 @@ use oihana\routes\http\DeleteRoute;
 use oihana\routes\http\GetRoute;
 use oihana\routes\http\PatchRoute;
 use oihana\routes\http\PostRoute;
+use oihana\routes\http\PutRoute;
 
 use function oihana\core\arrays\clean;
 use function oihana\routes\helpers\withPlaceholder;
 
 /**
- * Declares, in a single definition, the four REST sub-resource routes of an
+ * Declares, in a single definition, the five REST sub-resource routes of an
  * {@see ArrayPropertyController} (which exposes the element-level operations of an
  * embedded array property).
  *
@@ -32,7 +33,10 @@ use function oihana\routes\helpers\withPlaceholder;
  * | `POST`   | `/{collection}/{id}/{property}`         | `addItem`         |
  * | `DELETE` | `/{collection}/{id}/{property}/{value}` | `removeItem`      |
  * | `PATCH`  | `/{collection}/{id}/{property}/{value}` | `moveItem`        |
+ * | `PUT`    | `/{collection}/{id}/{property}/{value}` | `updateItem`      |
  * | `GET`    | `/{collection}/{id}/{property}/{value}` | `hasItem`         |
+ *
+ * `PATCH` and `PUT` share a path: the verb is what tells a move from an in-place edit.
  *
  * The `{value}` placeholder is configurable via {@see self::VALUE_PLACEHOLDER}
  * (default `value`). Method bindings use the {@see ArrayPropertyController} constants
@@ -83,7 +87,7 @@ class ArrayPropertyRoute extends Route
     public string $valuePlaceholder = 'value' ;
 
     /**
-     * Registers the four array sub-resource routes on the application.
+     * Registers the five array sub-resource routes on the application.
      *
      * @return void
      *
@@ -108,6 +112,7 @@ class ArrayPropertyRoute extends Route
             $this->itemRoute( PostRoute::class   , $route , ArrayPropertyController::ADD_ITEM    ) ,
             $this->itemRoute( DeleteRoute::class , $item  , ArrayPropertyController::REMOVE_ITEM ) ,
             $this->itemRoute( PatchRoute::class  , $item  , ArrayPropertyController::MOVE_ITEM   ) ,
+            $this->itemRoute( PutRoute::class    , $item  , ArrayPropertyController::UPDATE_ITEM ) ,
             $this->itemRoute( GetRoute::class    , $item  , ArrayPropertyController::HAS_ITEM    ) ,
         ]) ;
     }

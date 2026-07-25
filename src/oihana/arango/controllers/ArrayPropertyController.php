@@ -15,9 +15,13 @@ use oihana\arango\controllers\traits\properties\ArrayPropertyControllerTrait;
  * - {@see ArrayPropertyControllerTrait::addItem()}    — `POST   /{collection}/{id}/{property}`
  * - {@see ArrayPropertyControllerTrait::removeItem()} — `DELETE /{collection}/{id}/{property}/{value}`
  * - {@see ArrayPropertyControllerTrait::moveItem()}   — `PATCH  /{collection}/{id}/{property}/{value}`
+ * - {@see ArrayPropertyControllerTrait::updateItem()} — `PUT    /{collection}/{id}/{property}/{value}`
  * - {@see ArrayPropertyControllerTrait::hasItem()}    — `GET    /{collection}/{id}/{property}/{value}`
  *
- * The four routes can be declared at once with {@see ArrayPropertyRoute}.
+ * `PATCH` and `PUT` share a path but not an intent: the verb disambiguates them —
+ * `PATCH` **moves** the element, `PUT` **edits** it.
+ *
+ * The five routes can be declared at once with {@see ArrayPropertyRoute}.
  *
  * @package oihana\arango\controllers
  */
@@ -44,4 +48,9 @@ class ArrayPropertyController extends PropertyController
      * The `removeItem` controller method name (route binding).
      */
     public const string REMOVE_ITEM = 'removeItem' ;
+
+    /**
+     * The `updateItem` controller method name (route binding).
+     */
+    public const string UPDATE_ITEM = 'updateItem' ;
 }
