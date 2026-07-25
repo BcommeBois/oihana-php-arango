@@ -126,6 +126,23 @@ class Arango extends AQL
     public const string INIT = 'init' ;
 
     /**
+     * The 'itemKey' parameter — the attribute carried by each element of an embedded
+     * array field, used to target a single element by identity instead of by value.
+     *
+     * Declared per field in the `AQL::ARRAYS` option
+     * (`'tracks' => [ ArrayMode::LIST , Arango::ITEM_KEY => 'id' ]`), it switches the
+     * element-level operations of {@see \oihana\arango\models\traits\DocumentsArrayTrait}
+     * from structural equality (`REMOVE_VALUE(doc.tracks, @value)`) to a key match
+     * (`doc.tracks[* FILTER CURRENT.id != @value]`), and enables `arrayUpdate()`.
+     *
+     * When absent, every array operation keeps its by-value behaviour.
+     *
+     * Unlike {@see Arango::KEY} — which identifies the *document* — this identifies an
+     * *element inside* one of its array fields.
+     */
+    public const string ITEM_KEY = 'itemKey' ;
+
+    /**
      * The 'keepNull' payload marker. When a payload field definition carries
      * `Arango::KEEP_NULL => true`, an explicit null the client sent for that
      * field survives the compress pass (see PayloadsTrait::preparePayload),
@@ -177,6 +194,16 @@ class Arango extends AQL
      * The 'num' parameter.
      */
     public const string NUM = 'num' ;
+
+    /**
+     * The 'patch' parameter — the partial object merged into the array element
+     * targeted by {@see Arango::ITEM_KEY}, consumed by
+     * {@see \oihana\arango\models\traits\DocumentsArrayTrait::arrayUpdate()}.
+     *
+     * The merge is shallow (`MERGE(CURRENT, @patch)`): the attributes it carries are
+     * overwritten, the others are left untouched.
+     */
+    public const string PATCH = 'patch' ;
 
     /**
      * The 'position' parameter.

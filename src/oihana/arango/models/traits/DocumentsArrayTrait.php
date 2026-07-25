@@ -22,6 +22,7 @@ use oihana\arango\models\traits\aql\BindTrait;
 
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
 use oihana\models\notices\AfterUpdate;
 use oihana\models\notices\BeforeUpdate;
@@ -39,6 +40,7 @@ use function oihana\arango\db\functions\arrays\slice;
 use function oihana\arango\db\functions\arrays\sortedUnique;
 use function oihana\arango\db\functions\dates\dateISO8601;
 use function oihana\arango\db\functions\dates\dateNow;
+use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
@@ -66,7 +68,7 @@ use function oihana\core\strings\key;
  *     AQL::COLLECTION => 'Playlist',
  *     AQL::ARRAYS     =>
  *     [
- *         'tracks' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ],
+ *         'tracks' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' , Arango::ITEM_KEY => 'id' ],
  *         'tags'   => ArrayMode::SET ,
  *         'genres' => ArrayMode::SORTED_SET ,
  *     ],
@@ -76,6 +78,11 @@ use function oihana\core\strings\key;
  * Document identification follows the model convention: `Arango::OWNER` is the value
  * that identifies the document, matched against the `Arango::KEY` attribute (default
  * `_key`); `Arango::VALUE` is the array element(s) being added/removed/moved.
+ *
+ * A field may additionally declare an `Arango::ITEM_KEY` — the attribute carried by
+ * each element that identifies it (`'id'` above). It makes `Arango::VALUE` the *key*
+ * of the element rather than the element itself, so an object can be targeted without
+ * resending it in full. Fields without an item key keep their by-value behaviour.
  *
  * All write methods emit the {@see HasUpdateSignals} `beforeUpdate` / `afterUpdate`
  * signals, like the other write operations of the model.
@@ -107,7 +114,7 @@ trait DocumentsArrayTrait
 
     /**
      * The per-field embedded-array configuration, normalised to
-     * `[ field => [ Arango::MODE => ArrayMode::*, Arango::COUNTER => ?string ] ]`.
+     * `[ field => [ Arango::MODE => ArrayMode::*, Arango::COUNTER => ?string, Arango::ITEM_KEY => ?string ] ]`.
      *
      * @var array
      */
@@ -380,11 +387,8 @@ trait DocumentsArrayTrait
             $this->debugQuery( __METHOD__ , $query , $binds ) ;
         }
 
-        $result = $count
-                ? count( $this->getResult( $query , $binds , raw : true ) ?? [] )
-                : ( $this->getResult( $query , $binds ) ?? [] ) ;
-
-        return $result ;
+        return $count ? count( $this->getResult( $query , $binds , raw : true ) ?? [] )
+                      : ( $this->getResult( $query , $binds ) ?? [] ) ;
     }
 
     /**
@@ -460,14 +464,15 @@ trait DocumentsArrayTrait
             {
                 if ( is_string( $definition ) )
                 {
-                    $normalized[ $field ] = [ Arango::MODE => $definition , Arango::COUNTER => null ] ;
+                    $normalized[ $field ] = [ Arango::MODE => $definition , Arango::COUNTER => null , Arango::ITEM_KEY => null ] ;
                 }
                 else if ( is_array( $definition ) )
                 {
                     $normalized[ $field ] =
                     [
-                        Arango::MODE    => $definition[ Arango::MODE ] ?? $definition[ 0 ] ?? ArrayMode::LIST ,
-                        Arango::COUNTER => $definition[ Arango::COUNTER ] ?? null ,
+                        Arango::MODE     => $definition[ Arango::MODE ] ?? $definition[ 0 ] ?? ArrayMode::LIST ,
+                        Arango::COUNTER  => $definition[ Arango::COUNTER  ] ?? null ,
+                        Arango::ITEM_KEY => $definition[ Arango::ITEM_KEY ] ?? null ,
                     ] ;
                 }
             }
@@ -488,6 +493,37 @@ trait DocumentsArrayTrait
     protected function arrayCounter( ?string $field ) : ?string
     {
         return $this->arrays[ $field ][ Arango::COUNTER ] ?? null ;
+    }
+
+    /**
+     * Resolves the item-key attribute of an array field — the attribute carried by each
+     * element that identifies it — honouring an optional per-call `itemKey` override,
+     * then the declared configuration, then defaulting to null.
+     *
+     * A null result means the field is targeted **by value** (the historical behaviour);
+     * a non-null one switches the element-level operations to a key match.
+     *
+     * The resolved name is interpolated verbatim into the generated AQL (the array
+     * expansion helpers do no escaping), so it is validated here — whatever its origin —
+     * against {@see assertAttributeName()}.
+     *
+     * @param string|null $field
+     * @param array       $init
+     *
+     * @return string|null The validated item-key attribute, or null when the field is targeted by value.
+     *
+     * @throws ValidationException When the configured item key is not a safe attribute name.
+     */
+    protected function arrayItemKey( ?string $field , array $init = [] ) : ?string
+    {
+        $itemKey = $init[ Arango::ITEM_KEY ] ?? $this->arrays[ $field ][ Arango::ITEM_KEY ] ?? null ;
+
+        if ( $itemKey !== null )
+        {
+            assertAttributeName( $itemKey ) ; // interpolated verbatim → guard against AQL injection
+        }
+
+        return $itemKey ;
     }
 
     /**

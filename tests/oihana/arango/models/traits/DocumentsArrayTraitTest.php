@@ -15,9 +15,11 @@ use oihana\arango\models\traits\DocumentsArrayTrait;
 
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
 use org\schema\helpers\SchemaResolver;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -49,11 +51,18 @@ class DocumentsArrayTraitStub
         ([
             AQL::ARRAYS =>
             [
-                'tracks' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ,
-                'tags'   => ArrayMode::SET ,
-                'genres' => ArrayMode::SORTED_SET ,
+                'tracks'   => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfTracks' ] ,
+                'tags'     => ArrayMode::SET ,
+                'genres'   => ArrayMode::SORTED_SET ,
+                'chapters' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfChapters' , Arango::ITEM_KEY => 'id' ] ,
             ] ,
         ]) ;
+    }
+
+    /** Exposes the protected item-key resolver, which nothing else calls yet. */
+    public function itemKey( ?string $field , array $init = [] ) : ?string
+    {
+        return $this->arrayItemKey( $field , $init ) ;
     }
 
     public function getObject( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null , array $context = [] ) :?object
@@ -498,7 +507,7 @@ final class DocumentsArrayTraitTest extends TestCase
     {
         $this->assertSame
         (
-            [ 'tracks' => [] , 'numberOfTracks' => 0 , 'tags' => [] , 'genres' => [] ] ,
+            [ 'tracks' => [] , 'numberOfTracks' => 0 , 'tags' => [] , 'genres' => [] , 'chapters' => [] , 'numberOfChapters' => 0 ] ,
             $this->stub()->arrayDefaults() ,
         ) ;
     }
@@ -510,12 +519,71 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame
         (
             [
-                'tracks' => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfTracks' ] ,
-                'tags'   => [ Arango::MODE => ArrayMode::SET        , Arango::COUNTER => null ] ,
-                'genres' => [ Arango::MODE => ArrayMode::SORTED_SET , Arango::COUNTER => null ] ,
+                'tracks'   => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfTracks'   , Arango::ITEM_KEY => null ] ,
+                'tags'     => [ Arango::MODE => ArrayMode::SET        , Arango::COUNTER => null               , Arango::ITEM_KEY => null ] ,
+                'genres'   => [ Arango::MODE => ArrayMode::SORTED_SET , Arango::COUNTER => null               , Arango::ITEM_KEY => null ] ,
+                'chapters' => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfChapters' , Arango::ITEM_KEY => 'id' ] ,
             ] ,
             $stub->arrays ,
         ) ;
+    }
+
+    // ---------------------------------------------------------------- arrayItemKey
+
+    public function testItemKeyIsNullWhenTheFieldDeclaresNone() :void
+    {
+        $stub = $this->stub() ;
+
+        $this->assertNull( $stub->itemKey( 'tracks'    ) ) ; // declared, by value
+        $this->assertNull( $stub->itemKey( 'undefined' ) ) ; // not declared at all
+        $this->assertNull( $stub->itemKey( null        ) ) ;
+    }
+
+    public function testItemKeyIsResolvedFromTheFieldConfiguration() :void
+    {
+        $this->assertSame( 'id' , $this->stub()->itemKey( 'chapters' ) ) ;
+    }
+
+    public function testItemKeyHonoursThePerCallOverride() :void
+    {
+        $stub = $this->stub() ;
+
+        $this->assertSame( 'uid' , $stub->itemKey( 'chapters' , [ Arango::ITEM_KEY => 'uid' ] ) ) ;
+        $this->assertSame( 'uid' , $stub->itemKey( 'tracks'   , [ Arango::ITEM_KEY => 'uid' ] ) ) ;
+    }
+
+    public function testItemKeyAcceptsADottedAttributeName() :void
+    {
+        $this->assertSame( 'meta.id' , $this->stub()->itemKey( 'chapters' , [ Arango::ITEM_KEY => 'meta.id' ] ) ) ;
+    }
+
+    /**
+     * The item key is interpolated verbatim into the generated AQL, so an unsafe
+     * attribute name must be rejected before it ever reaches a query.
+     *
+     * @param mixed $itemKey
+     *
+     * @return void
+     */
+    #[DataProvider( 'unsafeItemKeyProvider' )]
+    public function testItemKeyRejectsAnUnsafeAttributeName( mixed $itemKey ) :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->itemKey( 'chapters' , [ Arango::ITEM_KEY => $itemKey ] ) ;
+    }
+
+    public static function unsafeItemKeyProvider() :array
+    {
+        return
+        [
+            'injection'    => [ 'id != null REMOVE doc IN Playlist //' ] ,
+            'quote'        => [ 'id"' ] ,
+            'bracket'      => [ 'id[*]' ] ,
+            'space'        => [ 'my id' ] ,
+            'empty'        => [ '' ] ,
+            'leading digit'=> [ '1id' ] ,
+            'trailing dot' => [ 'meta.' ] ,
+        ] ;
     }
 
     /**
