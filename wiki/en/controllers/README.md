@@ -7,7 +7,7 @@ The [`src/oihana/arango/controllers/`](../../../src/oihana/arango/controllers/) 
 | `DocumentsController` | Full CRUD on a document collection. | `GET /resource`, `GET /resource/{id}`, `POST /resource`, `PATCH /resource/{id}`, `PUT /resource/{id}`, `DELETE /resource/{id}`, `GET /resource/count`, `GET /resource/last` |
 | `EdgesController` | CRUD on an edge collection. | Same verbs, edge semantics (validation `_from`/`_to`). |
 | `PropertyController` | Exposes a specific property of a document (GET / PATCH). | `GET /resource/{id}/{property}`, `PATCH /resource/{id}/{property}` |
-| `ArrayPropertyController` | Element-level operations of an [array-field](../db/arrays.md) property (add / remove / move / contains). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|GET /resource/{id}/{property}/{value}` |
+| `ArrayPropertyController` | Element-level operations of an [array-field](../db/arrays.md) property (add / remove / move / edit / contains). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|PUT\|GET /resource/{id}/{property}/{value}` |
 | `TraversalController` | Navigates a **self-referential** edge (a tree/graph): parent, children, ancestors, descendants. | `GET /resource/{id}/{parent\|children\|ancestors\|descendants}` |
 | `ConceptSchemeController` | Exposes a hierarchical thesaurus's **roots** as a SKOS `ConceptScheme`. | `GET /resource/scheme` |
 
@@ -321,28 +321,55 @@ return
 
 ## `ArrayPropertyController`
 
-Extends [`PropertyController`](#propertycontroller) to expose the **element-level operations** of a property declared as an **embedded array field** ([`AQL::ARRAYS`](../db/arrays.md)): add, remove, move an element, test its presence — on top of the inherited `get()` (read the whole array) and `patch()` (replace the whole array).
+Extends [`PropertyController`](#propertycontroller) to expose the **element-level operations** of a property declared as an **embedded array field** ([`AQL::ARRAYS`](../db/arrays.md)): add, remove, move, edit an element, test its presence — on top of the inherited `get()` (read the whole array) and `patch()` (replace the whole array).
 
 | Verb | Method | Route | Model operation |
 |---|---|---|---|
 | `addItem()` | `POST` | `/resource/{id}/{property}` | `arrayInsert` |
 | `removeItem()` | `DELETE` | `/resource/{id}/{property}/{value}` | `arrayRemove` |
 | `moveItem()` | `PATCH` | `/resource/{id}/{property}/{value}` | `arrayMove` |
+| `updateItem()` | `PUT` | `/resource/{id}/{property}/{value}` | `arrayUpdate` |
 | `hasItem()` | `GET` | `/resource/{id}/{property}/{value}` | `arrayContains` |
 
-The four methods live in `ArrayPropertyControllerTrait`.
+The five methods live in `ArrayPropertyControllerTrait`.
+
+> `PATCH` and `PUT` share the same path, but not the same intent: the **verb** is what tells them apart — `PATCH` **moves** the element, `PUT` **edits** it.
 
 ### Element value: URL or body
 
 The element is resolved from the URL `{value}` placeholder (handy for **scalars**: ids, tags), otherwise from the request **body** (key `value`) — use the body for **complex** (object) values that cannot travel in a URL. `addItem` reads the value from the body (plus an optional `side` `left`/`right`); `moveItem` reads `position` from the body.
+
+### Targeting an element by its key
+
+When the model declares an [`Arango::ITEM_KEY`](../db/arrays.md#targeting-an-element-by-its-key-arangoitem_key) on the property, `{value}` is no longer the element: it is **its key**. That is precisely what makes an array of **objects** addressable over REST — `DELETE /playlists/42/chapters/c1` instead of a whole object in the body.
+
+Two consequences on the HTTP side:
+
+- `moveItem` and `updateItem` answer **`404`** when no element carries the requested key. The model turns both cases into a no-op (nothing merged, nothing reordered), so the document it returns is enough to notice: **no extra query**.
+- The comparison is **strict**, like AQL's `==` on a document attribute. A numeric key requested from a URL (hence a string) matches nothing — neither in the database nor in the controller. Both say "not found" at the same moment.
+
+### `updateItem`: the body IS the patch
+
+`PUT /resource/{id}/{property}/{value}` merges a partial patch into the designated element. The request body **is** the patch, with no envelope:
+
+```http
+PUT /playlists/42/chapters/c1
+Content-Type: application/json
+
+{ "rating": 5 }
+```
+
+The verb already says the element is being edited: nothing needs to name it again in the body. The merge is partial — the patch attributes overwrite theirs, the others are kept.
 
 ### Error codes
 
 | Code | When |
 |---|---|
 | `400 Bad Request` | the targeted property is not declared in the model's `AQL::ARRAYS` |
-| `404 Not Found` | the owner document does not exist; or (`hasItem`) the value is absent from the array |
-| `422 Unprocessable Entity` | `moveItem` on a `sortedSet` field (sorting by value makes a manual position meaningless) |
+| `404 Not Found` | the owner document does not exist; or (`hasItem`) the value is absent from the array; or (`moveItem`/`updateItem` by key) no element carries the requested key |
+| `422 Unprocessable Entity` | `moveItem` on a `sortedSet` field (sorting by value makes a manual position meaningless); or `updateItem` on a property with no item key (see below) |
+
+> **Why `updateItem` refuses a property with no key.** Without a key, the element could only be designated by a byte-for-byte copy of itself — which the patch being applied invalidates at once. The second identical call would match nothing. The controller therefore refuses explicitly, rather than serving an operation that only works once.
 
 ### Full wiring (model + controller + routes)
 
@@ -357,6 +384,8 @@ use oihana\routes\Route ;
 // 1. The model declares the array field (mode + counter). Bonus: on document
 //    creation (POST /playlists), `tracks` is seeded to [] automatically
 //    (and `numberOfTracks` to 0).
+//    An array of objects additionally declares the attribute identifying its
+//    elements, which makes `{value}` addressable: Arango::ITEM_KEY => 'id'.
 Models::PLAYLIST => fn( Container $c ) => new Documents( $c ,
 [
     AQL::COLLECTION => 'Playlist' ,
@@ -378,7 +407,7 @@ Routes::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyRoute( $c ,
 ]) ,
 ```
 
-Generates `POST /playlists/{id}/tracks` (addItem) and `DELETE|PATCH|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / hasItem).
+Generates `POST /playlists/{id}/tracks` (addItem) and `DELETE|PATCH|PUT|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / updateItem / hasItem).
 
 > `arrayPurgeRef` (remove a value from **every** document that references it) is **not** exposed over HTTP: it is a cascade operation, triggered application-side through an `afterUpdate`/`afterDelete` listener (see [Embedded array fields](../db/arrays.md#propagating-a-change-to-parent-documents)).
 

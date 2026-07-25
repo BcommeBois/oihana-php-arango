@@ -7,7 +7,7 @@ Le dossier [`src/oihana/arango/controllers/`](../../../src/oihana/arango/control
 | `DocumentsController` | CRUD complet sur une collection de documents. | `GET /resource`, `GET /resource/{id}`, `POST /resource`, `PATCH /resource/{id}`, `PUT /resource/{id}`, `DELETE /resource/{id}`, `GET /resource/count`, `GET /resource/last` |
 | `EdgesController` | CRUD sur une collection d'arêtes. | Mêmes verbes, sémantique edge (validation `_from`/`_to`). |
 | `PropertyController` | Exposition d'une propriété spécifique d'un document (GET / PATCH). | `GET /resource/{id}/{property}`, `PATCH /resource/{id}/{property}` |
-| `ArrayPropertyController` | Opérations élément par élément d'une propriété [champ-tableau](../db/arrays.md) (ajout / retrait / déplacement / présence). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|GET /resource/{id}/{property}/{value}` |
+| `ArrayPropertyController` | Opérations élément par élément d'une propriété [champ-tableau](../db/arrays.md) (ajout / retrait / déplacement / édition / présence). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|PUT\|GET /resource/{id}/{property}/{value}` |
 | `TraversalController` | Navigue une arête **auto-référente** (arbre/graphe) : parent, enfants, ancêtres, descendants. | `GET /resource/{id}/{parent\|children\|ancestors\|descendants}` |
 | `ConceptSchemeController` | Expose les **racines** d'un thésaurus hiérarchique en `ConceptScheme` SKOS. | `GET /resource/scheme` |
 
@@ -323,28 +323,55 @@ return
 
 ## `ArrayPropertyController`
 
-Étend [`PropertyController`](#propertycontroller) pour exposer les **opérations élément par élément** d'une propriété déclarée comme **champ-tableau embarqué** ([`AQL::ARRAYS`](../db/arrays.md)) : ajouter, retirer, déplacer un élément, tester sa présence — par-dessus le `get()` (lire tout le tableau) et `patch()` (remplacer tout le tableau) hérités.
+Étend [`PropertyController`](#propertycontroller) pour exposer les **opérations élément par élément** d'une propriété déclarée comme **champ-tableau embarqué** ([`AQL::ARRAYS`](../db/arrays.md)) : ajouter, retirer, déplacer, éditer un élément, tester sa présence — par-dessus le `get()` (lire tout le tableau) et `patch()` (remplacer tout le tableau) hérités.
 
 | Verbe | Méthode | Route | Opération modèle |
 |---|---|---|---|
 | `addItem()` | `POST` | `/resource/{id}/{property}` | `arrayInsert` |
 | `removeItem()` | `DELETE` | `/resource/{id}/{property}/{value}` | `arrayRemove` |
 | `moveItem()` | `PATCH` | `/resource/{id}/{property}/{value}` | `arrayMove` |
+| `updateItem()` | `PUT` | `/resource/{id}/{property}/{value}` | `arrayUpdate` |
 | `hasItem()` | `GET` | `/resource/{id}/{property}/{value}` | `arrayContains` |
 
-Les quatre méthodes vivent dans `ArrayPropertyControllerTrait`.
+Les cinq méthodes vivent dans `ArrayPropertyControllerTrait`.
+
+> `PATCH` et `PUT` partagent le même chemin, mais pas la même intention : c'est le **verbe** qui les distingue — `PATCH` **déplace** l'élément, `PUT` l'**édite**.
 
 ### Valeur de l'élément : URL ou body
 
 L'élément est résolu depuis le placeholder `{value}` de l'URL (pratique pour les **scalaires** : ids, tags), **sinon** depuis le **body** (clé `value`) — utilisez le body pour les valeurs **complexes** (objets) qui ne peuvent pas voyager dans une URL. `addItem` lit la valeur dans le body (+ un `side` `left`/`right` optionnel) ; `moveItem` lit `position` dans le body.
+
+### Cibler un élément par sa clé
+
+Si le modèle déclare un [`Arango::ITEM_KEY`](../db/arrays.md#cibler-un-élément-par-sa-clé-arangoitem_key) sur la propriété, `{value}` n'est plus l'élément : c'est **sa clé**. C'est précisément ce qui rend un tableau d'**objets** adressable en REST — `DELETE /playlists/42/chapters/c1` au lieu d'un objet complet dans le body.
+
+Deux conséquences côté HTTP :
+
+- `moveItem` et `updateItem` répondent **`404`** quand aucun élément ne porte la clé demandée. Le modèle transforme les deux cas en no-op (rien de fusionné, rien de réordonné), donc le document qu'il renvoie suffit à le constater : **aucune requête supplémentaire**.
+- La comparaison est **stricte**, comme le `==` d'AQL sur un attribut de document. Une clé numérique demandée depuis une URL (donc une chaîne) ne matche rien — ni côté base, ni côté contrôleur. Les deux disent « introuvable » au même moment.
+
+### `updateItem` : le corps EST le patch
+
+`PUT /resource/{id}/{property}/{value}` fusionne un patch partiel dans l'élément désigné. Le corps de la requête **est** le patch, sans enveloppe :
+
+```http
+PUT /playlists/42/chapters/c1
+Content-Type: application/json
+
+{ "rating": 5 }
+```
+
+Le verbe dit déjà qu'on édite l'élément : rien n'a besoin de le renommer dans le corps. La fusion est partielle — les attributs du patch écrasent les leurs, les autres sont conservés.
 
 ### Codes d'erreur
 
 | Code | Quand |
 |---|---|
 | `400 Bad Request` | la propriété ciblée n'est pas déclarée dans `AQL::ARRAYS` du modèle |
-| `404 Not Found` | le document propriétaire n'existe pas ; ou (`hasItem`) la valeur est absente du tableau |
-| `422 Unprocessable Entity` | `moveItem` sur un champ `sortedSet` (le tri par valeur rend la position absurde) |
+| `404 Not Found` | le document propriétaire n'existe pas ; ou (`hasItem`) la valeur est absente du tableau ; ou (`moveItem`/`updateItem` par clé) aucun élément ne porte la clé demandée |
+| `422 Unprocessable Entity` | `moveItem` sur un champ `sortedSet` (le tri par valeur rend la position absurde) ; ou `updateItem` sur une propriété sans clé d'élément (voir ci-dessous) |
+
+> **Pourquoi `updateItem` refuse une propriété sans clé.** Sans clé, l'élément ne pourrait être désigné que par une copie octet pour octet de lui-même — que le patch qu'on applique invalide aussitôt. Le deuxième appel identique ne matcherait plus rien. Le contrôleur refuse donc explicitement, plutôt que de servir une opération qui ne marche qu'une fois.
 
 ### Câblage complet (modèle + controller + routes)
 
@@ -359,6 +386,8 @@ use oihana\routes\Route ;
 // 1. Le modèle déclare le champ-tableau (mode + compteur). Bonus : à la création
 //    d'un document (POST /playlists), `tracks` est initialisé à [] automatiquement
 //    (et `numberOfTracks` à 0).
+//    Un tableau d'objets déclare en plus l'attribut qui identifie ses éléments,
+//    ce qui rend `{value}` adressable : Arango::ITEM_KEY => 'id'.
 Models::PLAYLIST => fn( Container $c ) => new Documents( $c ,
 [
     AQL::COLLECTION => 'Playlist' ,
@@ -380,7 +409,7 @@ Routes::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyRoute( $c ,
 ]) ,
 ```
 
-Génère `POST /playlists/{id}/tracks` (addItem) et `DELETE|PATCH|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / hasItem).
+Génère `POST /playlists/{id}/tracks` (addItem) et `DELETE|PATCH|PUT|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / updateItem / hasItem).
 
 > `arrayPurgeRef` (retirer une valeur de **tous** les documents qui la référencent) n'est **pas** exposé en HTTP : c'est une opération de cascade, à déclencher côté application via un listener `afterUpdate`/`afterDelete` (cf. [Champs-tableaux embarqués](../db/arrays.md#propager-une-modification-aux-documents-parents)).
 
