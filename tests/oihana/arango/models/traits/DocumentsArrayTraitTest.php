@@ -304,6 +304,34 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'FILTER doc.id == @' , $stub->lastQuery ) ;
     }
 
+    /**
+     * An item key identifies an *existing* element: an insert carries the whole element,
+     * so a by-key field appends exactly like a by-value one.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testInsertIgnoresTheItemKey() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayInsert( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => [ 'id' => 'c1' ] ] ) ;
+        [ $query ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = APPEND(doc.chapters,@q_1) UPDATE doc WITH { chapters: __arr, numberOfChapters: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+    }
+
     // ---------------------------------------------------------------- arrayRemove
 
     /**
@@ -352,6 +380,95 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'LET __arr = REMOVE_VALUES(doc.tracks,@' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRemoveByItemKeyFiltersOnTheKeyAttribute() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayRemove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' ] ) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = doc.chapters[* FILTER CURRENT.id != @q_1] UPDATE doc WITH { chapters: __arr, numberOfChapters: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+        // the bound value is the *key* of the element, not the element itself
+        $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => 'c1' , '@collection' => 'Playlist' ] , $binds ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRemoveByItemKeyAcceptsAListOfKeys() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayRemove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => [ 'c1' , 'c2' ] ] ) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringContainsString( 'LET __arr = doc.chapters[* FILTER CURRENT.id NOT IN @q_1]' , $query ) ;
+        $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => [ 'c1' , 'c2' ] , '@collection' => 'Playlist' ] , $binds ) ;
+    }
+
+    /**
+     * A field declared by value can still be targeted by key for a single call.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRemoveHonoursThePerCallItemKeyOverride() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayRemove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::ITEM_KEY => 'uid' ] ) ;
+
+        $this->assertStringContainsString( 'LET __arr = doc.tracks[* FILTER CURRENT.uid != @' , $stub->lastQuery ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRemoveRejectsAnUnsafeItemKey() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->arrayRemove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' , Arango::ITEM_KEY => 'id"' ] ) ;
+    }
+
     // ---------------------------------------------------------------- arrayMove
 
     /**
@@ -397,6 +514,79 @@ final class DocumentsArrayTraitTest extends TestCase
     {
         $this->expectException( UnsupportedOperationException::class ) ;
         $this->stub()->arrayMove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'genres' , Arango::VALUE => 'rock' , Arango::POSITION => 0 ] ) ;
+    }
+
+    /**
+     * The by-key move resolves the element first, then reorders — and guards the whole
+     * rebuild on that lookup so an unknown key never inserts a null.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testMoveByItemKeyResolvesTheElementAndGuardsOnIt() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayMove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' , Arango::POSITION => 2 ] ) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0'
+          . ' LET __el = FIRST(doc.chapters[* FILTER CURRENT.id == @q_1])'
+          . ' LET __rm = doc.chapters[* FILTER CURRENT.id != @q_1]'
+          . ' LET __arr = __el == null ? doc.chapters : APPEND(PUSH(SLICE(__rm,0,2),__el,true),SLICE(__rm,2))'
+          . ' UPDATE doc WITH { chapters: __arr, numberOfChapters: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+        $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => 'c1' , '@collection' => 'Playlist' ] , $binds ) ;
+    }
+
+    /**
+     * The by-value move keeps a single LET pair and no element lookup.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testMoveByValueDeclaresNoElementVariable() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayMove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::POSITION => 0 ] ) ;
+
+        $this->assertStringNotContainsString( '__el' , $stub->lastQuery ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testMoveRejectsAnUnsafeItemKey() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->arrayMove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::ITEM_KEY => 'id[*]' ] ) ;
     }
 
     // ---------------------------------------------------------------- arrayContains
@@ -447,6 +637,52 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertFalse( $stub->arrayContains( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tags' , Arango::VALUE => 'nope' ] ) ) ;
     }
 
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testContainsByItemKeyUsesTheQuestionMarkOperator() :void
+    {
+        $stub = $this->stub() ;
+        $stub->firstResult = 1 ;
+        $result = $stub->arrayContains( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' ] ) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertTrue( $result ) ;
+        $this->assertSame
+        (
+            'RETURN LENGTH(FOR doc IN @@collection FILTER doc._key == @q_0 && doc.chapters[? FILTER CURRENT.id == @q_1] RETURN 1) > 0' ,
+            $query ,
+        ) ;
+        $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => 'c1' , '@collection' => 'Playlist' ] , $binds ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testContainsRejectsAnUnsafeItemKey() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->arrayContains( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tags' , Arango::VALUE => 'x' , Arango::ITEM_KEY => 'my id' ] ) ;
+    }
+
     // ---------------------------------------------------------------- arrayPurgeRef
 
     /**
@@ -476,6 +712,46 @@ final class DocumentsArrayTraitTest extends TestCase
             $query ,
         ) ;
         $this->assertSame( [ 'q_0' => 'A' , '@collection' => 'Playlist' ] , $binds ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    /**
+     * A collection-wide purge stays structural: it matches the reference itself and
+     * ignores any declared item key.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testPurgeRefIgnoresTheItemKey() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayPurgeRef( [ Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' ] ) ;
+        [ $query ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER POSITION(doc.chapters,@q_0) LET __arr = REMOVE_VALUE(doc.chapters,@q_0) UPDATE doc WITH { chapters: __arr, numberOfChapters: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
     }
 
     /**

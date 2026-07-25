@@ -31,6 +31,9 @@ use oihana\models\traits\signals\HasUpdateSignals;
 use org\schema\constants\Schema;
 
 use function oihana\arango\db\functions\arrays\append;
+use function oihana\arango\db\functions\arrays\arrayContains;
+use function oihana\arango\db\functions\arrays\arrayFilter;
+use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\arrays\push;
@@ -48,6 +51,9 @@ use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlUpdate;
 use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\greaterThan;
+use function oihana\arango\db\operators\notEqual;
+use function oihana\arango\db\operators\notIn;
+use function oihana\arango\db\operators\ternary;
 
 use function oihana\core\accessors\ensureKeyValue;
 use function oihana\core\strings\compile;
@@ -107,6 +113,15 @@ trait DocumentsArrayTrait
     protected const string ARRAY_VAR = '__arr' ;
 
     /**
+     * The AQL variable holding the element targeted by an item key, looked up by
+     * {@see arrayMove()} before it rebuilds the final order.
+     *
+     * It is `null` when no element carries the requested key, which the move guards
+     * against so an unknown key is a no-op rather than a phantom insertion.
+     */
+    protected const string ELEMENT_VAR = '__el' ;
+
+    /**
      * The AQL variable holding the array **minus** the element being moved, from which
      * {@see arrayMove()} rebuilds the final order.
      */
@@ -127,13 +142,18 @@ trait DocumentsArrayTrait
      * Generated AQL:
      * `RETURN LENGTH( FOR doc IN @@collection FILTER doc._key == @key && POSITION(doc.field, @value) RETURN 1 ) > 0`
      *
+     * When the field declares an {@see Arango::ITEM_KEY}, `value` is the **key** of the
+     * element rather than the element itself and the membership test becomes
+     * `doc.field[? FILTER CURRENT.<itemKey> == @value]`.
+     *
      * @param array{
-     *     owner?  : mixed,   // The value identifying the document.
-     *     field?  : string,  // The embedded array attribute to inspect.
-     *     value?  : mixed,   // The element to look for.
-     *     key?    : string,  // The attribute used to locate the document (default '_key').
-     *     prefix? : string,  // The AQL document alias (default 'doc').
-     *     debug?  : bool
+     *     owner?   : mixed,   // The value identifying the document.
+     *     field?   : string,  // The embedded array attribute to inspect.
+     *     value?   : mixed,   // The element to look for, or its item key.
+     *     key?     : string,  // The attribute used to locate the document (default '_key').
+     *     itemKey? : string,  // Optional per-call item-key override.
+     *     prefix?  : string,  // The AQL document alias (default 'doc').
+     *     debug?   : bool
      * } $init
      *
      * @return bool True if the value is present.
@@ -145,21 +165,30 @@ trait DocumentsArrayTrait
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     public function arrayContains( array $init = [] ) : bool
     {
-        $field  = $init[ Arango::FIELD  ] ?? null ;
-        $prefix = $init[ Arango::PREFIX ] ?? AQL::DOC ;
+        $field   = $init[ Arango::FIELD  ] ?? null ;
+        $prefix  = $init[ Arango::PREFIX ] ?? AQL::DOC ;
+        $itemKey = $this->arrayItemKey( $field , $init ) ;
 
         $binds  = [] ;
         $owner  = $this->bind( $init[ Arango::OWNER ] ?? null , $binds ) ;
         $value  = $this->bind( $init[ Arango::VALUE ] ?? null , $binds ) ;
 
+        $fieldExpr = key( $field , $prefix ) ;
+
+        // By value: POSITION(); by item key: the boolean array-contains operator.
+        $contains = $itemKey === null
+                  ? position     ( $fieldExpr , $value )
+                  : arrayContains( $fieldExpr , equal( key( $itemKey , Clause::CURRENT ) , $value ) ) ;
+
         $for    = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
         $filter = aqlFilter
         ([
             equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ,
-            position( key( $field , $prefix ) , $value ) ,
+            $contains ,
         ]) ;
 
         $subQuery = compile( [ $for , $filter , aqlReturn( '1' ) ] ) ;
@@ -278,12 +307,23 @@ trait DocumentsArrayTrait
      * UPDATE doc WITH { field: __arr [, counter: LENGTH(__arr)] [, modified: ...] } ...
      * ```
      *
+     * When the field declares an {@see Arango::ITEM_KEY}, `value` is the **key** of the
+     * element to move; it is looked up first and the reordering is guarded on it:
+     * ```
+     * LET __el  = FIRST(doc.field[* FILTER CURRENT.<itemKey> == @value])
+     * LET __rm  = doc.field[* FILTER CURRENT.<itemKey> != @value]
+     * LET __arr = __el == null ? doc.field : APPEND( PUSH( SLICE(__rm, 0, <pos>), __el, true ), SLICE(__rm, <pos>) )
+     * ```
+     * A key matching no element therefore leaves the array untouched, rather than
+     * inserting a `null` at the requested position.
+     *
      * @param array{
      *     owner?   : mixed,    // The value identifying the document.
      *     field?   : string,   // The embedded array attribute.
-     *     value?   : mixed,    // The element to move.
+     *     value?   : mixed,    // The element to move, or its item key.
      *     position?: int,      // The target zero-based index (default 0).
      *     key?     : string,   // The attribute used to locate the document (default '_key').
+     *     itemKey? : string,   // Optional per-call item-key override.
      *     prefix?  : string,   // The AQL document alias (default 'doc').
      *     touch?   : bool,     // Update the `modified` timestamp (default true).
      *     options? : array|object|string|null,
@@ -301,6 +341,7 @@ trait DocumentsArrayTrait
      * @throws ReflectionException
      * @throws Throwable
      * @throws UnsupportedOperationException
+     * @throws ValidationException
      */
     public function arrayMove( array $init = [] ) : ?object
     {
@@ -316,17 +357,37 @@ trait DocumentsArrayTrait
 
         $prefix   = $init[ Arango::PREFIX   ] ?? AQL::DOC ;
         $position = (int) ( $init[ Arango::POSITION ] ?? 0 ) ;
+        $itemKey  = $this->arrayItemKey( $field , $init ) ;
 
         $binds     = [] ;
         $owner     = $this->bind( $init[ Arango::OWNER ] ?? null , $binds ) ;
         $value     = $this->bind( $init[ Arango::VALUE ] ?? null , $binds ) ;
         $fieldExpr = key( $field , $prefix ) ;
 
-        $lets =
-        [
-            aqlLet( self::REMAINDER_VAR , removeValue( $fieldExpr , $value ) ) ,
-            aqlLet( self::ARRAY_VAR , append( push( slice( self::REMAINDER_VAR , 0 , $position ) , $value , true ) , slice( self::REMAINDER_VAR , $position , null ) ) ) ,
-        ] ;
+        if ( $itemKey === null )
+        {
+            // By value: the element re-inserted is the bound value itself.
+            $element = $value ;
+            $lets    = [ aqlLet( self::REMAINDER_VAR , removeValue( $fieldExpr , $value ) ) ] ;
+        }
+        else
+        {
+            // By item key: the element has to be resolved before it can be re-inserted.
+            $itemRef = key( $itemKey , Clause::CURRENT ) ;
+            $element = self::ELEMENT_VAR ;
+            $lets    =
+            [
+                aqlLet( self::ELEMENT_VAR   , first( arrayFilter( $fieldExpr , equal( $itemRef , $value ) ) ) ) ,
+                aqlLet( self::REMAINDER_VAR , arrayFilter( $fieldExpr , notEqual( $itemRef , $value ) ) ) ,
+            ] ;
+        }
+
+        $reordered = append( push( slice( self::REMAINDER_VAR , 0 , $position ) , $element , true ) , slice( self::REMAINDER_VAR , $position , null ) ) ;
+
+        // A key matching no element yields a null __el: keep the array as it is instead
+        // of pushing that null at the requested position.
+        $lets[] = aqlLet( self::ARRAY_VAR , $itemKey === null ? $reordered
+                                                              : ternary( equal( self::ELEMENT_VAR , AQL::NULL ) , $fieldExpr , $reordered ) ) ;
 
         $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
 
@@ -339,6 +400,9 @@ trait DocumentsArrayTrait
      *
      * Generated AQL:
      * `FOR doc IN @@collection FILTER POSITION(doc.field, @value) LET __arr = REMOVE_VALUE(doc.field, @value) UPDATE doc WITH { ... } ... RETURN NEW`
+     *
+     * Unlike the single-document operations, this one is **by value only**: it ignores any
+     * declared {@see Arango::ITEM_KEY} and matches the reference structurally.
      *
      * @param array{
      *     field?  : string,  // The embedded array attribute.
@@ -398,15 +462,20 @@ trait DocumentsArrayTrait
      * `... UPDATE doc WITH { field: REMOVE_VALUE(doc.field, @value) [, counter: LENGTH(...)] [, modified: ...] } ...`
      * (an array `value` uses `REMOVE_VALUES` instead).
      *
+     * When the field declares an {@see Arango::ITEM_KEY}, `value` holds the **key(s)** of
+     * the element(s) to drop and the new array is the inline filter
+     * `doc.field[* FILTER CURRENT.<itemKey> != @value]` (`NOT IN` for a list of keys).
+     *
      * @param array{
-     *     owner?  : mixed,           // The value identifying the document.
-     *     field?  : string,          // The embedded array attribute.
-     *     value?  : mixed,           // The element(s) to remove (scalar or array).
-     *     key?    : string,          // The attribute used to locate the document (default '_key').
-     *     prefix? : string,          // The AQL document alias (default 'doc').
-     *     touch?  : bool,            // Update the `modified` timestamp (default true).
-     *     options?: array|object|string|null,
-     *     debug?  : bool
+     *     owner?   : mixed,           // The value identifying the document.
+     *     field?   : string,          // The embedded array attribute.
+     *     value?   : mixed,           // The element(s) to remove, or their item key(s) (scalar or array).
+     *     key?     : string,          // The attribute used to locate the document (default '_key').
+     *     itemKey? : string,          // Optional per-call item-key override.
+     *     prefix?  : string,          // The AQL document alias (default 'doc').
+     *     touch?   : bool,            // Update the `modified` timestamp (default true).
+     *     options? : array|object|string|null,
+     *     debug?   : bool
      * } $init
      *
      * @return object|null The updated document, or null if no document matched.
@@ -419,12 +488,14 @@ trait DocumentsArrayTrait
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws Throwable
+     * @throws ValidationException
      */
     public function arrayRemove( array $init = [] ) : ?object
     {
-        $field  = $init[ Arango::FIELD  ] ?? null ;
-        $prefix = $init[ Arango::PREFIX ] ?? AQL::DOC ;
-        $raw    = $init[ Arango::VALUE  ] ?? null ;
+        $field   = $init[ Arango::FIELD  ] ?? null ;
+        $prefix  = $init[ Arango::PREFIX ] ?? AQL::DOC ;
+        $raw     = $init[ Arango::VALUE  ] ?? null ;
+        $itemKey = $this->arrayItemKey( $field , $init ) ;
 
         $binds     = [] ;
         $owner     = $this->bind( $init[ Arango::OWNER ] ?? null , $binds ) ;
@@ -433,9 +504,20 @@ trait DocumentsArrayTrait
 
         // A list of values removes them all; a scalar or an object (associative
         // array) removes that single element.
-        $arrExpr = is_array( $raw ) && array_is_list( $raw )
-                 ? removeValues( $fieldExpr , $value )
-                 : removeValue ( $fieldExpr , $value ) ;
+        $isList = is_array( $raw ) && array_is_list( $raw ) ;
+
+        if ( $itemKey === null )
+        {
+            $arrExpr = $isList ? removeValues( $fieldExpr , $value )
+                               : removeValue ( $fieldExpr , $value ) ;
+        }
+        else
+        {
+            // Keeping everything that does *not* carry the targeted key(s).
+            $itemRef = key( $itemKey , Clause::CURRENT ) ;
+            $arrExpr = arrayFilter( $fieldExpr , $isList ? notIn   ( $itemRef , $value )
+                                                         : notEqual( $itemRef , $value ) ) ;
+        }
 
         $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
 
