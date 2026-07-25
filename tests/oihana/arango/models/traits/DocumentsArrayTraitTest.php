@@ -24,6 +24,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
+use stdClass;
 use Throwable;
 
 /**
@@ -587,6 +588,210 @@ final class DocumentsArrayTraitTest extends TestCase
     {
         $this->expectException( ValidationException::class ) ;
         $this->stub()->arrayMove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::ITEM_KEY => 'id[*]' ] ) ;
+    }
+
+    // ---------------------------------------------------------------- arrayUpdate
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateMergesThePatchIntoTheKeyedElement() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER => 'p42' ,
+            Arango::FIELD => 'chapters' ,
+            Arango::VALUE => 'c1' ,
+            Arango::PATCH => [ 'rating' => 5 ] ,
+        ]) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0'
+          . ' LET __arr = doc.chapters[* RETURN CURRENT.id == @q_1 ? MERGE(CURRENT,@q_2) : CURRENT]'
+          . ' UPDATE doc WITH { chapters: __arr, numberOfChapters: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+        $this->assertSame( 'p42' , $binds[ 'q_0' ] ) ;
+        $this->assertSame( 'c1'  , $binds[ 'q_1' ] ) ;
+        // the patch is bound as an object, so MERGE() always receives an object
+        $this->assertEquals( (object) [ 'rating' => 5 ] , $binds[ 'q_2' ] ) ;
+    }
+
+    /**
+     * An absent patch must still reach AQL as `{}` — `[]` would not be a valid MERGE operand.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateBindsAnEmptyPatchAsAnObject() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' ] ) ;
+        [ , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertEquals( new stdClass() , $binds[ 'q_2' ] ) ;
+        $this->assertSame( '{}' , json_encode( $binds[ 'q_2' ] ) ) ;
+    }
+
+    /**
+     * A field targeted by value cannot be edited in place — designating its element
+     * would need a byte-for-byte copy that the patch itself invalidates.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateWithoutAnItemKeyThrows() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->stub()->arrayUpdate( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::PATCH => [ 'rating' => 5 ] ] ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateHonoursThePerCallItemKeyOverride() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::ITEM_KEY => 'uid' , Arango::PATCH => [ 'rating' => 5 ] ] ) ;
+
+        $this->assertStringContainsString( 'LET __arr = doc.tracks[* RETURN CURRENT.uid == @' , $stub->lastQuery ) ;
+    }
+
+    /**
+     * A patch can make two elements equal, so the field invariant is re-applied.
+     *
+     * @param string $field
+     * @param string $expected
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    #[DataProvider( 'updateInvariantProvider' )]
+    public function testUpdateReappliesTheFieldInvariant( string $field , string $expected ) :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER    => 'p42' ,
+            Arango::FIELD    => $field ,
+            Arango::VALUE    => 'x' ,
+            Arango::ITEM_KEY => 'id' ,
+            Arango::PATCH    => [ 'rating' => 5 ] ,
+        ]) ;
+
+        $this->assertStringContainsString( $expected , $stub->lastQuery ) ;
+    }
+
+    public static function updateInvariantProvider() :array
+    {
+        return
+        [
+            'list wraps nothing' => [ 'tracks' , 'LET __arr = doc.tracks[* RETURN'          ] ,
+            'set is unique'      => [ 'tags'   , 'LET __arr = UNIQUE(doc.tags[* RETURN'     ] ,
+            'sortedSet is both'  => [ 'genres' , 'LET __arr = SORTED_UNIQUE(doc.genres[* RETURN' ] ,
+        ] ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateRejectsAnUnsafeItemKey() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->arrayUpdate( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => 'c1' , Arango::ITEM_KEY => 'id != null REMOVE doc IN Playlist //' ] ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateEmitsUpdateSignalsAndForwardsOptions() :void
+    {
+        $stub = $this->stub() ;
+        $stub->initializeUpdateSignals() ;
+
+        $before = 0 ;
+        $after  = 0 ;
+        $stub->beforeUpdate->connect( function() use ( &$before ) { $before++ ; } ) ;
+        $stub->afterUpdate ->connect( function() use ( &$after  ) { $after++  ; } ) ;
+
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER   => 'p42' ,
+            Arango::FIELD   => 'chapters' ,
+            Arango::VALUE   => 'c1' ,
+            Arango::PATCH   => [ 'rating' => 5 ] ,
+            Arango::TOUCH   => false ,
+            Arango::OPTIONS => [ 'keepNull' => false ] ,
+            Arango::DEBUG   => true ,
+        ]) ;
+
+        $this->assertSame( 1 , $before ) ;
+        $this->assertSame( 1 , $after  ) ;
+        $this->assertStringNotContainsString( 'modified' , $stub->lastQuery ) ;
+        $this->assertStringContainsString( 'OPTIONS {"keepNull":false}' , $stub->lastQuery ) ;
     }
 
     // ---------------------------------------------------------------- arrayContains

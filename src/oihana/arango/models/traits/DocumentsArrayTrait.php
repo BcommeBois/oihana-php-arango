@@ -33,6 +33,7 @@ use org\schema\constants\Schema;
 use function oihana\arango\db\functions\arrays\append;
 use function oihana\arango\db\functions\arrays\arrayContains;
 use function oihana\arango\db\functions\arrays\arrayFilter;
+use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\functions\arrays\position;
@@ -41,8 +42,10 @@ use function oihana\arango\db\functions\arrays\removeValue;
 use function oihana\arango\db\functions\arrays\removeValues;
 use function oihana\arango\db\functions\arrays\slice;
 use function oihana\arango\db\functions\arrays\sortedUnique;
+use function oihana\arango\db\functions\arrays\unique;
 use function oihana\arango\db\functions\dates\dateISO8601;
 use function oihana\arango\db\functions\dates\dateNow;
+use function oihana\arango\db\functions\documents\merge;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
@@ -61,7 +64,7 @@ use function oihana\core\strings\key;
 
 /**
  * Manage an **embedded array field** of an ArangoDB document — add, remove, move,
- * test membership — server-side, atomically, in a single AQL `UPDATE`.
+ * edit in place, test membership — server-side, atomically, in a single AQL `UPDATE`.
  *
  * This replaces the legacy `ListItemTrait` / `MultiFieldTrait`. The behaviour of a
  * field (ordering, uniqueness, optional length counter) is declared **once** on the
@@ -88,7 +91,8 @@ use function oihana\core\strings\key;
  * A field may additionally declare an `Arango::ITEM_KEY` — the attribute carried by
  * each element that identifies it (`'id'` above). It makes `Arango::VALUE` the *key*
  * of the element rather than the element itself, so an object can be targeted without
- * resending it in full. Fields without an item key keep their by-value behaviour.
+ * resending it in full. Fields without an item key keep their by-value behaviour, and
+ * are the only ones {@see arrayUpdate()} refuses: an in-place edit needs a key.
  *
  * All write methods emit the {@see HasUpdateSignals} `beforeUpdate` / `afterUpdate`
  * signals, like the other write operations of the model.
@@ -518,6 +522,106 @@ trait DocumentsArrayTrait
             $arrExpr = arrayFilter( $fieldExpr , $isList ? notIn   ( $itemRef , $value )
                                                          : notEqual( $itemRef , $value ) ) ;
         }
+
+        $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
+
+        return $this->runArrayUpdate( $field , [ aqlLet( self::ARRAY_VAR , $arrExpr ) ] , $filter , $binds , $init ) ;
+    }
+
+    /**
+     * Merges a partial `patch` into the element of the array `field` carrying the given
+     * item key — an **in-place edit**, where the other operations only add, remove or
+     * reorder whole elements.
+     *
+     * Generated AQL:
+     * ```
+     * LET __arr = doc.field[* RETURN CURRENT.<itemKey> == @value ? MERGE(CURRENT, @patch) : CURRENT]
+     * UPDATE doc WITH { field: __arr [, counter: LENGTH(__arr)] [, modified: ...] } ...
+     * ```
+     * Every element is projected back, so a `value` matching none of them rewrites the
+     * array unchanged. The merge is **partial**: the patch attributes overwrite theirs,
+     * the others are kept.
+     *
+     * Requires an item key — declared on the field or passed per call. A field targeted
+     * **by value** cannot be edited in place: designating its element would mean holding
+     * a byte-for-byte copy of it, which the very patch being applied invalidates, so an
+     * {@see UnsupportedOperationException} is thrown rather than emitting an operation
+     * that only works once.
+     *
+     * The field invariant is re-applied afterwards, since a patch can make two elements
+     * equal: {@see ArrayMode::SET} wraps the result in `UNIQUE()`, {@see ArrayMode::SORTED_SET}
+     * in `SORTED_UNIQUE()`.
+     *
+     * @param array{
+     *     owner?   : mixed,           // The value identifying the document.
+     *     field?   : string,          // The embedded array attribute.
+     *     value?   : mixed,           // The item key of the element to edit.
+     *     patch?   : array|object,    // The partial object merged into that element.
+     *     key?     : string,          // The attribute used to locate the document (default '_key').
+     *     itemKey? : string,          // Optional per-call item-key override.
+     *     prefix?  : string,          // The AQL document alias (default 'doc').
+     *     touch?   : bool,            // Update the `modified` timestamp (default true).
+     *     options? : array|object|string|null,
+     *     debug?   : bool
+     * } $init
+     *
+     * @return object|null The updated document, or null if no document matched.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function arrayUpdate( array $init = [] ) : ?object
+    {
+        $field   = $init[ Arango::FIELD ] ?? null ;
+        $itemKey = $this->arrayItemKey( $field , $init ) ;
+
+        if ( $itemKey === null )
+        {
+            throw new UnsupportedOperationException
+            (
+                'arrayUpdate requires an item key on the field "' . $field . '" (an element cannot be edited in place without an attribute identifying it).'
+            ) ;
+        }
+
+        $prefix = $init[ Arango::PREFIX ] ?? AQL::DOC ;
+        $mode   = $this->arrayMode( $field , $init ) ;
+
+        $binds = [] ;
+        $owner = $this->bind( $init[ Arango::OWNER ] ?? null , $binds ) ;
+        $value = $this->bind( $init[ Arango::VALUE ] ?? null , $binds ) ;
+
+        // Cast: MERGE() takes objects, and an empty patch would otherwise reach AQL as `[]`.
+        $patch = $this->bind( (object) ( $init[ Arango::PATCH ] ?? [] ) , $binds ) ;
+
+        $fieldExpr = key( $field , $prefix ) ;
+
+        // Every element is projected back; only the one carrying the key is merged.
+        $arrExpr = arrayMap
+        (
+            $fieldExpr ,
+            ternary
+            (
+                equal( key( $itemKey , Clause::CURRENT ) , $value ) ,
+                merge( [ Clause::CURRENT , $patch ] ) ,
+                Clause::CURRENT ,
+            )
+        ) ;
+
+        // An in-place edit can break the field invariant: a patch may duplicate a sibling.
+        $arrExpr = match ( $mode )
+        {
+            ArrayMode::SET        => unique      ( $arrExpr ) ,
+            ArrayMode::SORTED_SET => sortedUnique( $arrExpr ) ,
+            default               => $arrExpr ,
+        } ;
 
         $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
 
