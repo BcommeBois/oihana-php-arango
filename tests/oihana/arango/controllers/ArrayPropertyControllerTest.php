@@ -2,12 +2,17 @@
 
 namespace tests\oihana\arango\controllers;
 
+use DI\DependencyException;
+use DI\NotFoundException;
 use oihana\arango\controllers\ArrayPropertyController;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\ArrayMode;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+use ReflectionException;
 use tests\oihana\arango\controllers\mocks\ThrowingDocuments;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 
@@ -61,11 +66,29 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         return $model ;
     }
 
+    /**
+     * @param MockDocuments $model
+     * @return ArrayPropertyController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     private function controller( MockDocuments $model ) :ArrayPropertyController
     {
         return $this->makeArrayPropertyController( $model , [ self::PROPERTY => 'tracks' ] ) ;
     }
 
+    /**
+     * @param MockDocuments $model
+     * @return ArrayPropertyController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     private function keyedController( MockDocuments $model ) :ArrayPropertyController
     {
         return $this->makeArrayPropertyController( $model , [ self::PROPERTY => 'chapters' ] ) ;
@@ -73,6 +96,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
 
     // ---- success paths --------------------------------------------------
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testAddItemReturnsUpdatedProperty() :void
     {
         $controller = $this->controller( $this->model() ) ;
@@ -81,6 +112,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( [ 'A' , 'B' ] , $controller->addItem( $request , null , [ Arango::ID => 'p42' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testRemoveItemUsesUrlValue() :void
     {
         $controller = $this->controller( $this->model() ) ;
@@ -92,6 +131,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testMoveItemUsesPositionFromBody() :void
     {
         $controller = $this->controller( $this->model() ) ;
@@ -104,6 +151,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testHasItemPresentReturnsTrue() :void
     {
         $controller = $this->controller( $this->model() ) ; // firstResult = 1 → present
@@ -111,6 +166,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertTrue( $controller->hasItem( null , null , [ Arango::ID => 'p42' , Arango::VALUE => 'A' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testUpdateItemMergesTheBodyAsThePatch() :void
     {
         $model      = $this->keyedModel() ;
@@ -125,7 +188,15 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         ) ;
     }
 
-    /** The lookup reads an element whichever shape it comes back in. */
+    /**
+     * The lookup reads an element whichever shape it comes back in.
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testUpdateItemAlsoMatchesObjectElements() :void
     {
         $model = $this->keyedModel() ;
@@ -143,7 +214,15 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         ) ;
     }
 
-    /** A property targeted by value keeps its 200: the post-check only runs on a keyed one. */
+    /**
+     * A property targeted by value keeps its 200: the post-check only runs on a keyed one.
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testMoveItemByValueIsUnaffectedByThePostCheck() :void
     {
         $controller = $this->controller( $this->model() ) ;
@@ -156,6 +235,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testMoveItemByKeyReturnsTheUpdatedProperty() :void
     {
         $model      = $this->keyedModel() ;
@@ -176,6 +263,11 @@ class ArrayPropertyControllerTest extends ControllerTestCase
      * returned document is what proves the miss — no second query.
      *
      * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
      */
     public function testUpdateItemUnknownKeyReturns404() :void
     {
@@ -189,6 +281,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( 404 , $response->getStatusCode() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testMoveItemUnknownKeyReturns404() :void
     {
         $response = $this->keyedController( $this->keyedModel() )->moveItem
@@ -206,6 +306,11 @@ class ArrayPropertyControllerTest extends ControllerTestCase
      * requested as a string matches nothing on either side.
      *
      * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
      */
     public function testUpdateItemDoesNotMatchAKeyOfAnotherType() :void
     {
@@ -222,7 +327,15 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( 404 , $response->getStatusCode() ) ;
     }
 
-    /** An element with no attribute at all can never carry a key. */
+    /**
+     * An element with no attribute at all can never carry a key.
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testUpdateItemOnScalarElementsReturns404() :void
     {
         $model = $this->keyedModel() ;
@@ -233,6 +346,32 @@ class ArrayPropertyControllerTest extends ControllerTestCase
             $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ,
             $this->makeResponse() ,
             [ Arango::ID => 'p42' , Arango::VALUE => 'A' ]
+        ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * The write matched no document at all — the owner vanished between the `exist()`
+     * probe and the update — so there is no array to look the key up in.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testUpdateItemReturns404WhenTheWriteMatchedNothing() :void
+    {
+        $model = $this->keyedModel() ;
+        $model->objectResult = null ; // RETURN NEW yielded nothing
+
+        $response = $this->keyedController( $model )->updateItem
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 5 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => 'c1' ]
         ) ;
 
         $this->assertSame( 404 , $response->getStatusCode() ) ;
@@ -256,6 +395,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( 422 , $response->getStatusCode() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testHasItemAbsentReturns404() :void
     {
         $model = $this->model() ;
@@ -270,6 +417,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( 404 , $response->getStatusCode() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testMoveItemOnSortedSetReturns422() :void
     {
         $response = $this->controller( $this->model( ArrayMode::SORTED_SET ) )->moveItem
@@ -282,6 +437,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( 422 , $response->getStatusCode() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testRejectsNonArrayPropertyWith400() :void
     {
         $model = $this->model() ;
@@ -296,6 +459,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( 400 , $response->getStatusCode() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testReturns404WhenDocumentMissing() :void
     {
         $model = $this->model() ;
@@ -310,6 +481,14 @@ class ArrayPropertyControllerTest extends ControllerTestCase
         $this->assertSame( 404 , $response->getStatusCode() ) ;
     }
 
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
     public function testModelFailureIsCaught() :void
     {
         $model = new ThrowingDocuments( 'Playlist' ) ;

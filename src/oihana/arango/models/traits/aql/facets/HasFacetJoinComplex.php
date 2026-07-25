@@ -5,22 +5,16 @@ namespace oihana\arango\models\traits\aql\facets;
 use oihana\exceptions\UnsupportedOperationException;
 use ReflectionException;
 
-use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\models\enums\Facet;
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
 
-use org\schema\constants\Prop;
-
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\operations\aqlFilter;
-use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
-use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\greaterThan;
-use function oihana\arango\db\operators\in;
-use function oihana\core\strings\key;
+use function oihana\arango\models\helpers\facets\resolveFacetJoin;
 use function oihana\core\strings\predicates;
 
 /**
@@ -93,16 +87,9 @@ trait HasFacetJoinComplex
      */
     protected function prepareFacetJoinComplex( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
-        $docRef     = AQL::DOC_PREFIX . $key ;
-        $collection = $facet[ AQL::COLLECTION ] ?? null ;
-        $joinKey    = $facet[ AQL::KEY        ] ?? Prop::_KEY ;
-        $property   = $facet[ Facet::PROPERTY ] ?? $key ;
-        $isArray    = $facet[ AQL::ARRAY      ] ?? false ;
-
-        // Join match: doc_<key>.<KEY> == doc.<PROPERTY>  (or IN for an array of keys)
-        $joinLeft  = key( $joinKey  , $docRef ) ;
-        $joinRight = key( $property , $doc ) ;
-        $match     = $isArray ? in( $joinLeft , $joinRight ) : equal( $joinLeft , $joinRight ) ;
+        // FOR doc_<key> IN <collection> + the join predicate — shared with the
+        // simple and aggregate join facets.
+        [ $docRef , $for , $match ] = resolveFacetJoin( $key , $facet , $doc ) ;
 
         // Sub-field conditions, shared with EDGE_COMPLEX.
         $filters = $this->prepareComplexConditions( $value , $docRef , $key , $binds , $facet[ Facet::ALT ] ?? null ) ;
@@ -110,7 +97,7 @@ trait HasFacetJoinComplex
         // LENGTH( FOR doc_$key IN <collection> FILTER <match> && ...filters RETURN 1 ) > 0
         return greaterThan( length
         ([
-            aqlFor    ( [ AQL::DOC_REF => $docRef , AQL::IN => $collection ] ) ,
+            $for ,
             aqlFilter ( predicates( [ $match , ...$filters ] , Logic::AND ) ) ,
             aqlReturn ( 1 )
         ]) , 0 ) ;

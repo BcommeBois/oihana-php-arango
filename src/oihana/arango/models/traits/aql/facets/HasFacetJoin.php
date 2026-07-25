@@ -2,17 +2,15 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
-use oihana\arango\db\enums\AQL;
+use ReflectionException;
+
 use oihana\arango\models\enums\Facet;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
-use org\schema\constants\Prop;
-
-use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
-use function oihana\arango\db\operators\equal;
-use function oihana\arango\db\operators\in;
-use function oihana\core\strings\key;
+use function oihana\arango\models\helpers\facets\resolveFacetJoin;
 
 /**
  * Builds the AQL filter fragment for a {@see Facet::JOIN} facet: the key-join
@@ -52,6 +50,9 @@ trait HasFacetJoin
      * @return string
      *
      * @throws BindException
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      *
      * @example
      * Filter posts by their author's name (join authors on post.authorId == author._key) :
@@ -77,18 +78,10 @@ trait HasFacetJoin
      */
     protected function prepareFacetJoin( string $key , mixed $value , array &$binds , array $facet , string $doc ) :string
     {
-        $docRef     = AQL::DOC_PREFIX . $key ;
-        $collection = $facet[ AQL::COLLECTION ] ?? null ;
-        $joinKey    = $facet[ AQL::KEY        ] ?? Prop::_KEY ;
-        $property   = $facet[ Facet::PROPERTY ] ?? $key ;
-        $isArray    = $facet[ AQL::ARRAY      ] ?? false ;
+        // FOR doc_<key> IN <collection> + the join predicate — shared with the
+        // aggregate and complex join facets.
+        [ $docRef , $for , $match ] = resolveFacetJoin( $key , $facet , $doc ) ;
 
-        // Join match: doc_<key>.<KEY> == doc.<PROPERTY>  (or IN for an array of keys)
-        $joinLeft  = key( $joinKey  , $docRef ) ;
-        $joinRight = key( $property , $doc ) ;
-        $match     = $isArray ? in( $joinLeft , $joinRight ) : equal( $joinLeft , $joinRight ) ;
-
-        $for    = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => $collection ] ) ;
         $return = aqlReturn( 1 ) ;
 
         return $this->prepareSimpleConditions( $value , $facet , $for , $match , $docRef , $key , $binds , $return ) ;

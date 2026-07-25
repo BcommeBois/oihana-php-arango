@@ -2,17 +2,14 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
-use oihana\arango\db\enums\AQL;
-use oihana\arango\models\enums\Facet;
+use ReflectionException;
+
+use DI\DependencyException;
+use DI\NotFoundException;
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
 
-use org\schema\constants\Prop;
-
-use function oihana\arango\db\operations\aqlFor;
-use function oihana\arango\db\operators\equal;
-use function oihana\arango\db\operators\in;
-use function oihana\core\strings\key;
+use function oihana\arango\models\helpers\facets\resolveFacetJoin;
 
 /**
  * Builds the AQL filter fragment for a {@see \oihana\arango\models\enums\Facet::JOIN_AGGREGATE}
@@ -42,10 +39,14 @@ trait HasFacetJoinAggregate
      * @param array $binds The bind variables, populated by reference.
      * @param array $facet The facet definition (`AQL::COLLECTION`, `AQL::KEY`, `Facet::PROPERTY`, `AQL::ARRAY`, `Facet::AGG`, `AQL::FIELDS`, `Facet::OP`).
      * @param string $doc The main document reference.
+     * @param array $init The query context, forwarded to the aggregate conditions.
      *
      * @return string
      *
      * @throws BindException
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws ReflectionException
      * @throws ValidationException
      *
      * @example
@@ -76,18 +77,9 @@ trait HasFacetJoinAggregate
      */
     protected function prepareFacetJoinAggregate( string $key , mixed $value , array &$binds , array $facet , string $doc , array $init = [] ) :string
     {
-        $docRef     = AQL::DOC_PREFIX . $key ;
-        $collection = $facet[ AQL::COLLECTION ] ?? null ;
-        $joinKey    = $facet[ AQL::KEY        ] ?? Prop::_KEY ;
-        $property   = $facet[ Facet::PROPERTY ] ?? $key ;
-        $isArray    = $facet[ AQL::ARRAY      ] ?? false ;
-
-        // Join match: doc_<key>.<KEY> == doc.<PROPERTY>  (or IN for an array of keys)
-        $joinLeft  = key( $joinKey  , $docRef ) ;
-        $joinRight = key( $property , $doc ) ;
-        $match     = $isArray ? in( $joinLeft , $joinRight ) : equal( $joinLeft , $joinRight ) ;
-
-        $for = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => $collection ] ) ;
+        // FOR doc_<key> IN <collection> + the join predicate — shared with the
+        // simple and complex join facets.
+        [ $docRef , $for , $match ] = resolveFacetJoin( $key , $facet , $doc ) ;
 
         return $this->prepareAggregateConditions( $value , $facet , $for , $match , $docRef , $key , $binds , $init ) ;
     }
