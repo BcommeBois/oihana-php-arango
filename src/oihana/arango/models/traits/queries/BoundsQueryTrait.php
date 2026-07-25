@@ -34,8 +34,8 @@ use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\aqlArray;
 use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\helpers\aqlValue;
+use function oihana\arango\db\helpers\expandArrayPath;
 use function oihana\arango\db\operations\aqlCollect;
-use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\models\helpers\isAuthorized;
@@ -337,31 +337,9 @@ trait BoundsQueryTrait
      */
     private function buildBoundsSubquery( string $property , array $definition , string $for , ?string $filter , string $docRef ) :string
     {
-        // Split on the marker: 'a[*].b.c[*].d' → ['a', '.b.c', '.d']. Every
-        // segment but the last opens a FOR hop (relative to the previous item
-        // reference); the last segment is the projected leaf.
-        $segments = explode( Operator::ARRAY_EXPANSION , $property ) ;
-        $last     = count( $segments ) - 1 ;
-
-        $reference = $docRef ;
-        $fors      = [] ;
-        for ( $i = 0 ; $i < $last ; $i++ )
-        {
-            $container = ltrim( $segments[ $i ] , Char::DOT ) ;
-            assertAttributeName( $container ) ; // defensive: config-trusted, but cheap to guard.
-
-            $itemRef   = self::BOUND_ITEM . ( $i === 0 ? Char::EMPTY : ( $i + 1 ) ) ;
-            $fors[]    = aqlFor( [ AQL::DOC_REF => $itemRef , AQL::IN => key( $container , $reference ) ] ) ;
-            $reference = $itemRef ;
-        }
-
-        $leaf  = ltrim( $segments[ $last ] , Char::DOT ) ;
-        $value = $reference ;
-        if ( $leaf !== Char::EMPTY )
-        {
-            assertAttributeName( $leaf ) ;
-            $value = key( $leaf , $reference ) ;
-        }
+        // One FOR hop per `[*]`, then the projected leaf — shared with the facet
+        // count sub-query, which unwinds the same way before its own tail.
+        [ $fors , $value ] = expandArrayPath( $property , $docRef , self::BOUND_ITEM ) ;
 
         $aggregate =
         [

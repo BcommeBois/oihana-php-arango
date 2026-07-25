@@ -29,6 +29,7 @@ use ReflectionException;
 
 use function oihana\arango\db\functions\arrays\countDistinct;
 use function oihana\arango\db\helpers\assertAttributeName;
+use function oihana\arango\db\helpers\expandArrayPath;
 use function oihana\arango\db\operations\aqlCollect;
 use function oihana\arango\db\operations\aqlCollectReturn;
 use function oihana\arango\db\operations\aqlFor;
@@ -210,35 +211,12 @@ trait FacetCountsQueryTrait
         // item2 IN item.prices COLLECT value = item2.currency …`).
         if ( str_contains( $property , Operator::ARRAY_EXPANSION ) )
         {
-            // Split on the marker: 'a[*].b.c[*].d' → ['a', '.b.c', '.d']. Every
-            // segment but the last opens a FOR hop (relative to the previous item
-            // reference); the last segment is the projected leaf (empty for a
-            // bare `tags[*]`, which counts the element itself).
-            $segments = explode( Operator::ARRAY_EXPANSION , $property ) ;
-            $last     = count( $segments ) - 1 ;
+            // One FOR hop per `[*]`, then the projected leaf — shared with the
+            // bounds sub-query, which unwinds the same way before its own tail.
+            [ $fors , $value ] = expandArrayPath( $property , $docRef , self::FACET_COUNT_ITEM ) ;
 
-            $reference = $docRef ;
-            $fors      = [] ;
-            for ( $i = 0 ; $i < $last ; $i++ )
-            {
-                $container = ltrim( $segments[ $i ] , Char::DOT ) ;
-                assertAttributeName( $container ) ; // defensive: config-trusted, but cheap to guard.
-
-                $itemRef = $i === 0 ? self::FACET_COUNT_ITEM : self::FACET_COUNT_ITEM . ( $i + 1 ) ;
-                $fors[]  = aqlFor( [ AQL::DOC_REF => $itemRef , AQL::IN => key( $container , $reference ) ] ) ;
-                $reference = $itemRef ;
-            }
-
-            $leaf  = ltrim( $segments[ $last ] , Char::DOT ) ;
-            $value = $reference ;
-            if ( $leaf !== Char::EMPTY )
-            {
-                assertAttributeName( $leaf ) ;
-                $value = key( $leaf , $reference ) ;
-            }
-
-            return compile(
-            [
+            return compile
+            ([
                 $for ,
                 $filter ,
                 ...$fors ,
@@ -250,22 +228,20 @@ trait FacetCountsQueryTrait
 
         return match ( $type )
         {
-            Facet::FIELD =>
-                compile(
-                [
-                    $for ,
-                    $filter ,
-                    ...$this->facetCountCollect( key( $property , $docRef ) , $sort ) ,
-                ]) ,
+            Facet::FIELD => compile
+            ([
+                $for ,
+                $filter ,
+                ...$this->facetCountCollect( key( $property , $docRef ) , $sort ) ,
+            ]) ,
 
-            Facet::IN , Facet::LIST , Facet::LIST_FIELD , Facet::LIST_FIELD_SORTED =>
-                compile(
-                [
-                    $for ,
-                    $filter ,
-                    aqlFor( [ AQL::DOC_REF => self::FACET_COUNT_ITEM , AQL::IN => key( $property , $docRef ) ] ) ,
-                    ...$this->facetCountCollect( self::FACET_COUNT_ITEM , $sort , $distinctKey ) ,
-                ]) ,
+            Facet::IN , Facet::LIST , Facet::LIST_FIELD , Facet::LIST_FIELD_SORTED => compile
+            ([
+                $for ,
+                $filter ,
+                aqlFor( [ AQL::DOC_REF => self::FACET_COUNT_ITEM , AQL::IN => key( $property , $docRef ) ] ) ,
+                ...$this->facetCountCollect( self::FACET_COUNT_ITEM , $sort , $distinctKey ) ,
+            ]) ,
 
             default => null ,
         } ;
