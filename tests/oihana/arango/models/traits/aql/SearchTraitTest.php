@@ -167,9 +167,9 @@ class SearchTraitTest extends TestCase
         (
             '((LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))'
             . ' || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true)))' ,
-            $stub->prepareSearch( 'fourcade marc' , $binds ) ,
+            $stub->prepareSearch( 'doe john' , $binds ) ,
         ) ;
-        $this->assertSame( [ 'search_0_0' => '%fourcade%' , 'search_0_1' => '%marc%' ] , $binds ) ;
+        $this->assertSame( [ 'search_0_0' => '%doe%' , 'search_0_1' => '%john%' ] , $binds ) ;
     }
 
     public function testOperatorAndSingleWordHasNoConjunction() :void
@@ -181,9 +181,9 @@ class SearchTraitTest extends TestCase
         $this->assertSame
         (
             '(LIKE(doc.name,@search_0_0,true) || LIKE(doc.firstName,@search_0_0,true))' ,
-            $stub->prepareSearch( 'marc' , $binds ) ,
+            $stub->prepareSearch( 'john' , $binds ) ,
         ) ;
-        $this->assertSame( [ 'search_0_0' => '%marc%' ] , $binds ) ;
+        $this->assertSame( [ 'search_0_0' => '%john%' ] , $binds ) ;
     }
 
     public function testOperatorAndTrimsAndCollapsesWhitespace() :void
@@ -196,9 +196,9 @@ class SearchTraitTest extends TestCase
         (
             '((LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))'
             . ' || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true)))' ,
-            $stub->prepareSearch( 'fourcade  marc ' , $binds ) ,
+            $stub->prepareSearch( 'doe  john ' , $binds ) ,
         ) ;
-        $this->assertSame( [ 'search_0_0' => '%fourcade%' , 'search_0_1' => '%marc%' ] , $binds ) ;
+        $this->assertSame( [ 'search_0_0' => '%doe%' , 'search_0_1' => '%john%' ] , $binds ) ;
     }
 
     public function testOperatorAndKeepsCommaTermsOr() :void
@@ -212,13 +212,33 @@ class SearchTraitTest extends TestCase
             '((LIKE(doc.name,@search_0_0,true) && LIKE(doc.name,@search_0_1,true))'
             . ' || (LIKE(doc.firstName,@search_0_0,true) && LIKE(doc.firstName,@search_0_1,true))'
             . ' || LIKE(doc.name,@search_1_0,true) || LIKE(doc.firstName,@search_1_0,true))' ,
-            $stub->prepareSearch( 'fourcade marc,dupont' , $binds ) ,
+            $stub->prepareSearch( 'doe john,dupont' , $binds ) ,
         ) ;
         $this->assertSame
         (
-            [ 'search_0_0' => '%fourcade%' , 'search_0_1' => '%marc%' , 'search_1_0' => '%dupont%' ] ,
+            [ 'search_0_0' => '%doe%' , 'search_0_1' => '%john%' , 'search_1_0' => '%dupont%' ] ,
             $binds ,
         ) ;
+    }
+
+    public function testOperatorAndSkipsAWhitespaceOnlyTermButStillConsumesItsIndex() :void
+    {
+        $stub = $this->stub() ;
+        $stub->searchOperator = Logic::AND ;
+
+        // « john, ,doe » : the middle term holds no word at all, so it
+        // contributes no predicate. It must NOT contribute a bind either — and,
+        // crucially, it still consumes its term index: the third term is bound as
+        // @search_2_0, never @search_1_0. Were the index not incremented before
+        // the `continue`, every following term would silently shift down one slot.
+        $binds = [] ;
+        $this->assertSame
+        (
+            '(LIKE(doc.name,@search_0_0,true) || LIKE(doc.firstName,@search_0_0,true)'
+            . ' || LIKE(doc.name,@search_2_0,true) || LIKE(doc.firstName,@search_2_0,true))' ,
+            $stub->prepareSearch( 'john, ,doe' , $binds ) ,
+        ) ;
+        $this->assertSame( [ 'search_0_0' => '%john%' , 'search_2_0' => '%doe%' ] , $binds ) ;
     }
 
     // ---------------------------------------------------------------- initializeSearchSeparators

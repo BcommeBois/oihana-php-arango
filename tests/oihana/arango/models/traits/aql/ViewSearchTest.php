@@ -1007,6 +1007,65 @@ class ViewSearchTest extends TestCase
         ) ;
     }
 
+    public function testPrepareViewSearchOperatorAndSkipsAWhitespaceOnlyTermButStillConsumesItsIndex() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   => [ 'name' => 1 ] ,
+            ] ,
+        ]) ;
+
+        // Same rule as the LIKE sweep : « marc, ,fourcade » drops the empty middle
+        // term but keeps its slot in the numbering. The third term is bound as
+        // @search_2_0 — not @search_1_0 — so the binds never shift under the
+        // expressions built for the terms that follow an empty one.
+        $this->assertSame
+        (
+            'ANALYZER('
+            . 'doc.name IN TOKENS(@search_0_0,"text_fr")'
+            . ' || doc.name IN TOKENS(@search_2_0,"text_fr")'
+            . ',"text_fr")' ,
+            $model->prepareViewSearch( 'marc, ,fourcade' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0_0' => 'marc' , 'search_2_0' => 'fourcade' ] , $this->binds ) ;
+    }
+
+    public function testPrepareViewSearchOperatorAndNgramSingleWordHasNoConjunction() :void
+    {
+        $model = $this->model(
+        [
+            AQL::VIEW =>
+            [
+                Search::NAME     => 'v' ,
+                Search::ANALYZER => 'text_fr' ,
+                Search::OPERATOR => Logic::AND ,
+                Search::FIELDS   =>
+                [
+                    'name' =>
+                    [
+                        Search::ANALYZER => 'text_fr' ,
+                        Search::NGRAM    => [ Search::ANALYZER => 'autocomplete' , Search::THRESHOLD => 0.6 ] ,
+                    ] ,
+                ] ,
+            ] ,
+        ]) ;
+
+        // A one-word term leaves the ngram branch bare : a single NGRAM_MATCH,
+        // with no `&&` and no parentheses around it.
+        $this->assertSame
+        (
+            'ANALYZER(doc.name IN TOKENS(@search_0_0,"text_fr"),"text_fr")'
+            . ' || ANALYZER(NGRAM_MATCH(doc.name,@search_0_0,0.6,"autocomplete"),"autocomplete")' ,
+            $model->prepareViewSearch( 'bois' , $this->binds )
+        ) ;
+        $this->assertSame( [ 'search_0_0' => 'bois' ] , $this->binds ) ;
+    }
+
     public function testPrepareViewSearchOperatorMixedPerFieldOverride() :void
     {
         $model = $this->model(
