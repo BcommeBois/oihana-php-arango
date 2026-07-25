@@ -323,11 +323,11 @@ trait BoundsQueryTrait
      * Builds one nested ([*]) field's extent sub-query, unwinding each `[*]` hop
      * with a `FOR` and aggregating `MIN` / `MAX` / count over the projected leaf.
      *
-     * @param string      $property   The `[*]`-bearing property path.
-     * @param array       $definition The bound definition (exclusion options).
-     * @param string      $for        The pre-built root `FOR` segment.
-     * @param string|null $filter     The shared `FILTER` clause.
-     * @param string      $docRef     The document reference.
+     * @param string $property The `[*]`-bearing property path.
+     * @param array $definition The bound definition (exclusion options).
+     * @param string $for The pre-built root `FOR` segment.
+     * @param string|null $filter The shared `FILTER` clause.
+     * @param string $docRef The document reference.
      *
      * @return string The `FOR … COLLECT AGGREGATE … RETURN { min, max, count }` sub-query.
      *
@@ -387,10 +387,12 @@ trait BoundsQueryTrait
      * Conditions combine with a logical AND: `POSITIVE` → `> 0`, `MIN` / `MAX` →
      * the accepted `[ min, max ]` domain, `IGNORE` → `NOT IN [ … ]` sentinels.
      *
-     * @param string $reference  The value reference (e.g. `doc.width`).
-     * @param array  $definition The bound definition.
+     * @param string $reference The value reference (e.g. `doc.width`).
+     * @param array $definition The bound definition.
      *
      * @return string|null The AQL condition, or null when the value is unfiltered.
+     *
+     * @throws UnsupportedOperationException
      */
     private function boundCondition( string $reference , array $definition ) :?string
     {
@@ -430,10 +432,12 @@ trait BoundsQueryTrait
      * `<condition> ? <reference> : null` guard that maps an excluded value to
      * `null` so it does not skew the extent.
      *
-     * @param string $reference  The value reference.
-     * @param array  $definition The bound definition.
+     * @param string $reference The value reference.
+     * @param array $definition The bound definition.
      *
      * @return string The value expression.
+     *
+     * @throws UnsupportedOperationException
      */
     private function boundValue( string $reference , array $definition ) :string
     {
@@ -449,10 +453,12 @@ trait BoundsQueryTrait
      * extent (non-null, and passing the exclusion condition when declared), `0`
      * otherwise — so `count` reports how many values the `{ min, max }` spans.
      *
-     * @param string $reference  The value reference.
-     * @param array  $definition The bound definition.
+     * @param string $reference The value reference.
+     * @param array $definition The bound definition.
      *
      * @return string The count expression.
+     *
+     * @throws UnsupportedOperationException
      */
     private function boundCount( string $reference , array $definition ) :string
     {
@@ -466,11 +472,13 @@ trait BoundsQueryTrait
      * Serializes a `{ min: <lo>, max: <hi>, count: <count> }` object from three
      * AQL variables.
      *
-     * @param string $lo    The lower-bound variable / expression.
-     * @param string $hi    The upper-bound variable / expression.
+     * @param string $lo The lower-bound variable / expression.
+     * @param string $hi The upper-bound variable / expression.
      * @param string $count The count variable / expression.
      *
      * @return string The `{ min: <lo>, max: <hi>, count: <count> }` object literal.
+     * 
+     * @throws UnsupportedOperationException
      */
     private function boundObject( string $lo , string $hi , string $count ) :string
     {
