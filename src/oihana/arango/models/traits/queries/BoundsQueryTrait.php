@@ -477,7 +477,7 @@ trait BoundsQueryTrait
      * @param string $count The count variable / expression.
      *
      * @return string The `{ min: <lo>, max: <hi>, count: <count> }` object literal.
-     * 
+     *
      * @throws UnsupportedOperationException
      */
     private function boundObject( string $lo , string $hi , string $count ) :string
