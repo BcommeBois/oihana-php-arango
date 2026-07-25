@@ -82,6 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The single-row aggregate read shared by `bounds()` and `facetCounts()` is one method, `ArangoTrait::firstRowAsArray()`.** Both entry points ran the same fourteen lines around their own builder: bail out on the empty query a builder returns when nothing is computable, read the row `raw` (no schema, no `alter()` — the row is a map of computed values, not a document), then normalize it through the same three-armed `match`, since the driver hands the row back as an object or as an array depending on how it decoded it.
+  ```php
+  $query = $this->buildBoundsQuery( $init , $bindVars ) ;
+  return $this->firstRowAsArray( $query , $bindVars ) ;
+  ```
+  Unlike the two helpers below, this one **cannot be a free function**: it calls `$this->getFirstResult()`. It is therefore a `protected` method of `ArangoTrait`, which both `DocumentsBoundsTrait` and `DocumentsFacetCountsTrait` already compose and which already carries `getFirstResult()` itself. The `raw: true` read is confined to these two callers — the eight other `getFirstResult()` call sites map documents through a schema and normalize nothing. The empty-string guard now compares against `Char::EMPTY` rather than a bare `''`, matching the rest of the codebase.
+  - **Each call site stays two statements, deliberately.** The builders populate `$bindVars` **by reference**, so folding the build into the argument list would make the result depend on PHP's left-to-right argument evaluation for a side effect — correct today, and a trap for whoever reorders the arguments. The query is built first, the binds are read after.
+  - No new test file: the four branches (empty query, object row, array row, anything else) are each already pinned twice, once through `DocumentsBoundsTraitTest` and once through `DocumentsFacetCountsTraitTest`, whose hosts stub `getFirstResult()` with canned values. A third copy of those assertions would duplicate test intent — the very thing this series removes.
+
 - **The `[*]` unwinding shared by the bounds and facet-count sub-queries is a helper, `expandArrayPath()`.** `BoundsQueryTrait::buildBoundsSubquery()` and `FacetCountsQueryTrait::buildFacetCountSubquery()` each turned an array-expansion path into its chain of `FOR` hops with the same twenty-two lines — split on the marker, walk every segment but the last into a hop relative to the previous item, then resolve the projected leaf. The two copies were byte-for-byte identical in behaviour (their `BOUND_ITEM` and `FACET_COUNT_ITEM` constants both hold `'item'`) and had already drifted in form, the item name being computed by two different spellings of the same expression:
   ```php
   [ $fors , $value ] = expandArrayPath( $property , $docRef , self::BOUND_ITEM ) ;

@@ -267,6 +267,50 @@ trait ArangoTrait
     }
 
     /**
+     * Runs a single-row aggregate query and normalizes its result to an array.
+     *
+     * The aggregate queries — {@see \oihana\arango\models\traits\documents\DocumentsBoundsTrait::bounds()},
+     * {@see \oihana\arango\models\traits\documents\DocumentsFacetCountsTrait::facetCounts()} —
+     * all return one row holding one entry per requested dimension, and all face
+     * the same two shapes: their builder yields an empty string when nothing is
+     * computable, and the row itself comes back as an object or as an array
+     * depending on how the driver decoded it. Both are handled here rather than
+     * at each call site.
+     *
+     * The result is read `raw` — no schema, no `alter()` — because the row is a
+     * map of computed values, not a document.
+     *
+     * @param string $query    The compiled aggregate query, or an empty string when there is nothing to compute.
+     * @param array  $bindVars The bind variables of that query.
+     *
+     * @return array The single row as an associative array; an empty array when the
+     *               query is empty or the row is neither an object nor an array.
+     *
+     * @throws ArangoException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    protected function firstRowAsArray( string $query , array $bindVars = [] ) :array
+    {
+        if ( $query === Char::EMPTY )
+        {
+            return [] ;
+        }
+
+        $result = $this->getFirstResult( $query , $bindVars , raw: true ) ;
+
+        return match ( true )
+        {
+            is_object( $result ) => get_object_vars( $result ) ,
+            is_array ( $result ) => $result ,
+            default              => [] ,
+        } ;
+    }
+
+    /**
      * Prepare, execute and returns an array of all documents with the passed-in AQL query.
      *
      * @param string                             $query    The AQL query string to execute

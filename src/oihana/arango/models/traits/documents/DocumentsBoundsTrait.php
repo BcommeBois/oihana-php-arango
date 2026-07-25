@@ -58,19 +58,10 @@ trait DocumentsBoundsTrait
     {
         $bindVars = $init[ Arango::BINDS ] ?? [] ;
 
+        // Two statements, not one: buildBoundsQuery() populates $bindVars by
+        // reference, so the query must be built before the binds are read.
         $query = $this->buildBoundsQuery( $init , $bindVars ) ;
-        if ( $query === '' )
-        {
-            return [] ;
-        }
 
-        $result = $this->getFirstResult( $query , $bindVars , raw: true ) ;
-
-        return match ( true )
-        {
-            is_object( $result ) => get_object_vars( $result ) ,
-            is_array ( $result ) => $result ,
-            default              => [] ,
-        } ;
+        return $this->firstRowAsArray( $query , $bindVars ) ;
     }
 }
