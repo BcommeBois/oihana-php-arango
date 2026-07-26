@@ -5,6 +5,8 @@ namespace oihana\arango\models;
 use DI\Container;
 use DI\DependencyException;
 use DI\NotFoundException;
+
+use oihana\arango\cache\InvalidatesOnWriteTrait;
 use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\models\traits\aql\FieldsTrait;
 use oihana\arango\models\traits\AQLQueryTrait;
@@ -19,8 +21,10 @@ use oihana\traits\ConfigTrait;
 use oihana\traits\ContainerTrait;
 use oihana\traits\QueryIDTrait;
 use oihana\traits\ToStringTrait;
+
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
+
 use ReflectionException;
 
 /**
@@ -98,6 +102,7 @@ class Documents implements ArangoDocumentsModel
      *   <li>'filters'    - The filter definitions to register</li>
      *   <li>'groupable'  - The optional whitelist/mapping (`urlKey => fieldPath`) of groupable dimensions for `?groupBy=` / `?group=`.</li>
      *   <li>'indexes'    - The definition of the indexes to auto-register when the collection is created (if not exist)</li>
+     *   <li>'invalidates'- The container ids of the {@see \oihana\interfaces\Invalidable} services this collection feeds, invalidated on every write.</li>
      *   <li>'joins'      - The joins definitions to register</li>
      *   <li>'lazy'       - Indicates if the model create the collection if not exit.</li>
      *   <li>'mock'       - Indicates if the methods return a mock value (debug mode only)</li>
@@ -152,7 +157,8 @@ class Documents implements ArangoDocumentsModel
              ->initializeView             ( $init ) # After the collection and the searchable fields
              ->initializeSortDefault      ( $init )
              ->initializeSortable         ( $init )
-             ->initializeDocumentsMethods () ;
+             ->initializeDocumentsMethods ()
+             ->initializeInvalidations    ( $init , $container ) ; # After the signals it connects to
     }
 
     use
@@ -164,6 +170,7 @@ class Documents implements ArangoDocumentsModel
     DocumentsArrayTrait ,
     DocumentsMethodsTrait,
     FieldsTrait ,
+    InvalidatesOnWriteTrait ,
     QueryIDTrait ,
     SchemaTrait ,
     ToStringTrait ;

@@ -205,26 +205,14 @@ Which leaves the question that decides everything: **who tells the cache when th
 
 The usual answer is to decorate the model factory, by hand, to re-wire `invalidate()` onto every write. That is copy-paste, and its only failure mode is precisely forgetting it. `Arango::INVALIDATES` replaces it with a **declaration** on the model: the container ids of the services this collection feeds.
 
-The situation. A `terms` model feeds the cache of the switched-off terms.
+The situation. A `terms` model feeds the cache of the switched-off terms. The declaration sits in the `$init`, next to the model's other keys — there is **nothing else to write**:
 
 ```php
-use oihana\arango\cache\InvalidatesOnWriteTrait ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Arango ;
 use oihana\arango\models\Documents ;
 
-class Terms extends Documents
-{
-    use InvalidatesOnWriteTrait ;
-
-    public function __construct( ContainerInterface $container , array $init = [] )
-    {
-        parent::__construct( $container , $init ) ;
-        $this->initializeInvalidations( $init , $container ) ;
-    }
-}
-
-$terms = new Terms( $container ,
+$terms = new Documents( $container ,
 [
     AQL::COLLECTION     => 'terms' ,
     Arango::INVALIDATES => [ 'thesaurus.disabledTerms' ] , // a bare string is accepted too
@@ -235,9 +223,9 @@ $terms->update( [ Arango::DOC => [ 'disabled' => false ] , Arango::VALUE => 'ter
 //   The next read of the service rebuilds the set.
 ```
 
-The trait wires **all three** write signals — `afterInsert`, `afterUpdate`, `afterDelete` — to the same closure. An insert, an update and a delete all count as "the collection moved": a derived set has no reason to survive one more than another.
+The wiring is **automatic**: `Documents` composes `InvalidatesOnWriteTrait` and calls `initializeInvalidations()` last in its constructor — after `initializeDocumentsMethods()`, which creates the signals it connects to. `Edges` inherits it. No subclass, no call to place.
 
-> **The trait does not wire itself.** Unlike the six signals, which `Documents`/`Edges` initialize on their own, `initializeInvalidations()` must be called — after `parent::__construct()`, so the signals exist. A model composing the trait without calling it connects nothing.
+**All three** write signals are wired — `afterInsert`, `afterUpdate`, `afterDelete` — to the same closure. An insert, an update and a delete all count as "the collection moved": a derived set has no reason to survive one more than another.
 
 > **The container is queried at emission time, never at wiring time.** This is deliberate, and not a performance detail: the invalidated service usually depends on the very model invalidating it — `thesaurus.disabledTerms` reads the `terms` collection. Resolving it inside the model constructor would close the loop and blow the container up. By the time a write finally emits the signal, the model is fully built and the resolution is safe.
 
@@ -310,7 +298,7 @@ The wiring is **tolerant**: a dubious declaration is skipped, never fatal. An in
 | **Purge cycles** | A purge triggers a `delete()` that re-emits `afterDelete`. Two models purging each other in `BOTH` may loop — declare the purge on a single side, or break the cycle. |
 | **Performance** | The purge deletes in **bulk** through an AQL `REMOVE` query (no PHP loop document by document). |
 | **`?->` on signals** | The models initialize their signals but always emit through `?->emit()`: if a signal was released (`release*Signals()`), the emission is simply skipped, never an error. |
-| **`initializeInvalidations()` is explicit** | Composing `InvalidatesOnWriteTrait` is not enough: without the call in the constructor (after `parent::__construct()`), no service is ever invalidated. |
+| **Invalidation is wired by default** | `Documents` calls `initializeInvalidations()` at the end of its constructor; with no `Arango::INVALIDATES` declared, nothing is connected and the model is unchanged. |
 | **Invalidation does not follow the cascade** | It is wired to the writes of **the model declaring it**. A layer-2 purge emits the purged model's `afterDelete`: it is *that* model which must declare its own `Arango::INVALIDATES`. |
 | **An invalidation never fails the write** | Unknown id, non-`Invalidable` service, malformed declaration: all silently skipped. The write itself was valid. |
 

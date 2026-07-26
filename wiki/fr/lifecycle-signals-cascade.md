@@ -205,28 +205,16 @@ Reste la question qui décide de tout : **qui prévient le cache quand la collec
 
 La réponse habituelle consiste à décorer la fabrique du modèle, à la main, pour rebrancher `invalidate()` sur chaque écriture. C'est du copier-coller, et son unique mode de défaillance est précisément l'oubli. `Arango::INVALIDATES` le remplace par une **déclaration** sur le modèle : la liste des identifiants de conteneur des services que cette collection alimente.
 
-La situation. Un modèle `terms` alimente le cache des termes désactivés.
+La situation. Un modèle `terms` alimente le cache des termes désactivés. La déclaration se pose dans le `$init`, à côté des autres clés du modèle — il n'y a **rien d'autre à écrire** :
 
 ```php
-use oihana\arango\cache\InvalidatesOnWriteTrait ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Arango ;
 use oihana\arango\models\Documents ;
 
-class Terms extends Documents
-{
-    use InvalidatesOnWriteTrait ;
-
-    public function __construct( ContainerInterface $container , array $init = [] )
-    {
-        parent::__construct( $container , $init ) ;
-        $this->initializeInvalidations( $init , $container ) ;
-    }
-}
-
-$terms = new Terms( $container ,
+$terms = new Documents( $container ,
 [
-    AQL::COLLECTION    => 'terms' ,
+    AQL::COLLECTION     => 'terms' ,
     Arango::INVALIDATES => [ 'thesaurus.disabledTerms' ] , // une chaîne seule est acceptée
 ]) ;
 
@@ -235,9 +223,9 @@ $terms->update( [ Arango::DOC => [ 'disabled' => false ] , Arango::VALUE => 'ter
 //   La prochaine lecture du service reconstruit l'ensemble.
 ```
 
-Le trait branche les **trois** signaux d'écriture — `afterInsert`, `afterUpdate`, `afterDelete` — sur la même closure. Une insertion, une modification et une suppression comptent toutes comme « la collection a bougé » : un ensemble dérivé n'a aucune raison de survivre à l'une plus qu'à l'autre.
+Le câblage est **automatique** : `Documents` compose `InvalidatesOnWriteTrait` et appelle `initializeInvalidations()` en dernier dans son constructeur — après `initializeDocumentsMethods()`, qui crée les signaux auxquels il se branche. `Edges` en hérite. Aucune sous-classe, aucun appel à placer.
 
-> **Le trait n'est pas câblé tout seul.** Contrairement aux six signaux, que `Documents`/`Edges` initialisent d'office, `initializeInvalidations()` doit être appelé — après `parent::__construct()`, pour que les signaux existent. Un modèle qui compose le trait sans l'appeler ne connecte rien.
+Les **trois** signaux d'écriture sont branchés — `afterInsert`, `afterUpdate`, `afterDelete` — sur la même closure. Une insertion, une modification et une suppression comptent toutes comme « la collection a bougé » : un ensemble dérivé n'a aucune raison de survivre à l'une plus qu'à l'autre.
 
 > **Le conteneur n'est interrogé qu'à l'émission, jamais au câblage.** C'est délibéré, et ce n'est pas un détail de performance : le service invalidé dépend en général du modèle qui l'invalide — `thesaurus.disabledTerms` lit la collection `terms`. Le résoudre dans le constructeur du modèle refermerait la boucle et ferait exploser le conteneur. Quand une écriture émet enfin le signal, le modèle est entièrement construit et la résolution est sûre.
 
@@ -310,7 +298,7 @@ Le câblage est **tolérant** : une déclaration douteuse est sautée, jamais fa
 | **Cycles de purge** | Une purge déclenche un `delete()` qui ré-émet `afterDelete`. Deux modèles qui se purgent mutuellement en `BOTH` peuvent boucler — déclarez la purge d'un seul côté, ou cassez le cycle. |
 | **Performance** | La purge supprime en **masse** via une requête AQL `REMOVE` (pas de boucle PHP document par document). |
 | **`?->` sur les signaux** | Les modèles initialisent leurs signaux, mais émettent toujours en `?->emit()` : si un signal était libéré (`release*Signals()`), l'émission est simplement ignorée, jamais une erreur. |
-| **`initializeInvalidations()` est explicite** | Composer `InvalidatesOnWriteTrait` ne suffit pas : sans l'appel dans le constructeur (après `parent::__construct()`), aucun service n'est invalidé. |
+| **L'invalidation est câblée d'office** | `Documents` appelle `initializeInvalidations()` en fin de constructeur ; sans `Arango::INVALIDATES` déclaré, rien n'est connecté et le modèle est inchangé. |
 | **L'invalidation ne suit pas la cascade** | Elle est branchée sur les écritures **du modèle qui la déclare**. Une purge de couche 2 émet l'`afterDelete` du modèle purgé : c'est *ce* modèle qui doit déclarer son propre `Arango::INVALIDATES`. |
 | **Une invalidation ne fait jamais échouer l'écriture** | Identifiant inconnu, service non `Invalidable`, déclaration malformée : tout est sauté en silence. L'écriture, elle, était valide. |
 

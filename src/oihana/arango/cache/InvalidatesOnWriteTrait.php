@@ -19,6 +19,9 @@ use oihana\arango\enums\Arango;
  * decoration a caller would otherwise repeat around every model factory — a
  * copy-paste whose only failure mode is silent staleness.
  *
+ * `Documents` composes this trait and calls {@see initializeInvalidations()} at the end of its constructor,
+ * so every `Documents` / `Edges` honours the key with no wiring of its own.
+ *
  * @package oihana\arango\cache
  * @author  Marc Alcaraz
  * @since   1.6.0
@@ -31,6 +34,9 @@ trait InvalidatesOnWriteTrait
 
     /**
      * Connects `afterInsert` / `afterUpdate` / `afterDelete` to the declared services.
+     *
+     * Called at the end of the `Documents` constructor, AFTER the signals exist —
+     * `initializeDocumentsMethods()` creates them.
      *
      * The closure resolves each service from the container at EMISSION time, not
      * at boot: a dependent typically depends on this very model, and an eager
