@@ -447,6 +447,7 @@
             "src/oihana/arango/models/helpers/extractToIDs.php",
             "src/oihana/arango/models/helpers/extractVertexIDs.php",
             "src/oihana/arango/models/helpers/facets/resolveFacetJoin.php",
+            "src/oihana/arango/models/helpers/facets/resolveFacetValue.php",
             "src/oihana/arango/models/helpers/getDocuments.php",
             "src/oihana/arango/models/helpers/isAttributeAuthorized.php",
             "src/oihana/arango/models/helpers/isAuthorized.php",

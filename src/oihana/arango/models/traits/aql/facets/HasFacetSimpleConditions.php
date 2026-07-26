@@ -7,7 +7,6 @@ use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterComparator;
-use oihana\arango\models\enums\filters\FilterParam;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
@@ -21,6 +20,7 @@ use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\greaterThan;
+use function oihana\arango\models\helpers\facets\resolveFacetValue;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\key;
 use function oihana\core\strings\predicate;
@@ -85,17 +85,14 @@ trait HasFacetSimpleConditions
         $op  = $facet[ Facet::OP  ] ?? FilterComparator::EQ ;
         $alt = $facet[ Facet::ALT ] ?? null ;
 
-        // {op, val, alt} request object overrides the configured operator / alt.
-        if( is_array( $value ) && !array_is_list( $value ) )
+        // A {op, val, alt} request object overrides the configured operator / alt
+        // — shared with the IN facet. No `val` at all: nothing to compare.
+        $resolved = resolveFacetValue( $value , $op , $alt ) ;
+        if( $resolved === null )
         {
-            $op  = $value[ FilterParam::OP  ] ?? $op ;
-            $alt = $value[ FilterParam::ALT ] ?? $alt ;
-            if( !array_key_exists( FilterParam::VAL , $value ) )
-            {
-                return Char::EMPTY ;
-            }
-            $value = $value[ FilterParam::VAL ] ;
+            return Char::EMPTY ;
         }
+        [ $op , $alt , $value ] = $resolved ;
 
         $comparator = FilterComparator::getAlias( $op , Comparator::EQUAL ) ;
 

@@ -82,6 +82,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `{op, val, alt}` request object is read once, by `resolveFacetValue()`.** A facet accepts two shapes on the wire — the bare value (`?facets={"author":"alice"}`) and the object form (`?facets={"author":{"op":"like","val":"al"}}`) — and only the second may override what the definition declares. `HasFacetSimpleConditions` and `HasFacetIn` each implemented that reading with the same eleven lines: an associative array is the object form (a list is a multi-value bare value), the keys actually present win over the configured defaults, and an object with no `val` at all leaves nothing to compare.
+  ```php
+  $resolved = resolveFacetValue( $value , $op , $alt ) ;
+  if( $resolved === null ) { return Char::EMPTY ; }
+  [ $op , $alt , $value ] = $resolved ;
+  ```
+  The abandon case is signalled by a **null return, never a null value**: `val` is looked up with `array_key_exists()`, not `isset()`, precisely so an explicit `{"op":"ne","val":null}` is honoured as a null value rather than read as a missing one. The extracted block used to `return` on behalf of its enclosing method, which a free function cannot do — hence the sentinel, and hence three lines at each call site rather than one. `FilterParam` is no longer referenced by either trait and its import goes with it.
+  - **`HasFacetAggregateConditions` keeps its own variant, and not out of caution.** It reads `agg` and `field` instead of `alt`, and **the order of its guards carries the security**: a URL-provided field outside the declared whitelist returns `Boolean::FALSE` (the facet is neutralized to false) *before* the missing-`val` test returns `Char::EMPTY` (the facet is dropped). Sharing a helper that tested `val` first would turn a denied field into a dropped facet — and a dropped facet is not a false one, which is how an aggregate oracle reopens. Three apparent call sites, two real ones.
+  - **Tests:** a new `ResolveFacetValueTest` (8 cases) covering the bare scalar, the list that must not be mistaken for a request object, the per-key override, the fallback on absent keys, both abandon shapes, the explicit `val: null`, a nested list value and the empty array.
+
 - **The upsert `RETURN` expression is resolved once, by `resolveUpsertReturn()`.** `aqlUpsert()` and `aqlRepsert()` each expanded the `Clause::WITH_STATUS` shorthand with the same twelve lines, differing by a single word — the write half is `UpsertType::UPDATE` for one, `UpsertType::REPLACE` for the other, the insert half always `UpsertType::INSERT`. The shorthand answers a question the returned document cannot: on an insert there is no `OLD`, so the ternary reports which half of the upsert actually ran.
   ```php
   $return = resolveUpsertReturn( $init , UpsertType::REPLACE ) ;
