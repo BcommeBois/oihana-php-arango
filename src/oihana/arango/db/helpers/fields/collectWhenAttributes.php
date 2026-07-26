@@ -60,15 +60,7 @@ function collectWhenAttributes( mixed $when ) : array
     }
 
     // list whose elements are all arrays → implicit AND group
-    $allArrays = true ;
-    foreach ( $when as $element )
-    {
-        if ( !is_array( $element ) )
-        {
-            $allArrays = false ;
-            break ;
-        }
-    }
+    $allArrays = array_all( $when , fn( $element ) => is_array( $element ) ) ;
 
     if ( $allArrays )
     {

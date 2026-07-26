@@ -82,6 +82,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The all-arrays test of the `Field::WHEN` walkers is `array_all()`.** `buildWhenCondition()` and `collectWhenAttributes()` both told an implicit AND group (`[['a','eq','1'],['b','gt','2']]`) from a single condition (`['a','eq','1']`) with the same hand-rolled nine-line loop — a flag, a `foreach`, a `break`. PHP 8.4 expresses it in one line, and short-circuits on the first non-array exactly as the `break` did:
+  ```php
+  $allArrays = array_all( $when , fn( $element ) => is_array( $element ) ) ;
+  ```
+  The named variable is kept so the `if ( $allArrays )` below still reads as prose. `array_all()` joins the five `array_any()` calls already in the codebase, whose closure style it follows; the package floor is `php >= 8.4`, so nothing is gated behind a version. No behaviour change and no new test: both branches are already exercised by the conditional-projection suite. The empty list cannot reach the test — both walkers reject it earlier — and would answer `true` either way.
+  - This removes **one** duplicated branch out of six: the two functions still classify each `WHEN` node shape independently (string, non-array, associative, logic-keyword group, all-arrays group, scalar list). Since `collectWhenAttributes()` is what `conditionReadsDeniedField()` relies on to drop a conditional field reading a masked one, the two walkers agreeing on a node's shape is a fail-closed invariant, and sharing that classification is left to its own change.
+
 - **The `{op, val, alt}` request object is read once, by `resolveFacetValue()`.** A facet accepts two shapes on the wire — the bare value (`?facets={"author":"alice"}`) and the object form (`?facets={"author":{"op":"like","val":"al"}}`) — and only the second may override what the definition declares. `HasFacetSimpleConditions` and `HasFacetIn` each implemented that reading with the same eleven lines: an associative array is the object form (a list is a multi-value bare value), the keys actually present win over the configured defaults, and an object with no `val` at all leaves nothing to compare.
   ```php
   $resolved = resolveFacetValue( $value , $op , $alt ) ;
