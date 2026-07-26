@@ -297,4 +297,11 @@ final class FakeResolver implements PermissionSubjectResolverInterface
     {
         return [] ;
     }
+
+    /**
+     * Nothing is cached here, so there is nothing to drop.
+     */
+    public function invalidate() :void
+    {
+    }
 }
