@@ -91,6 +91,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`GraphVertexCollection` and `GraphEdgeCollection` now share a base class, `GraphCollection`.** The two were twins: 123 lines of code each, thirteen methods, and a diff that consisted **entirely** of `Document` ↔ `Edge`, two constants (`/vertex` ↔ `/edge`, `vertex` ↔ `edge`), the class name, and one stray space of indentation. Every HTTP call, every gharial-envelope unwrapping, the `returnNew` / `returnOld` merge and the 404 branch of the existence probe were written twice. They now live once, and a subclass supplies only what actually differs:
+  ```php
+  readonly class GraphEdgeCollection extends GraphCollection
+  {
+      protected const string SUB_ROUTE     = '/edge' ;
+      protected const string WRAPPER_FIELD = 'edge' ;
+
+      protected function createDocument( array $data = [] ) : Document { return new Edge( $data ) ; }
+  }
+  ```
+  **The public API is unchanged, and that was verified rather than assumed**: a reflection dump of every public method of both classes — names, parameter types, return types — is byte-identical before and after. `GraphEdgeCollection` therefore keeps its five narrowed `: Edge` signatures, declared as one-line overrides delegating to the parent; letting them widen to `: Document` would have been lighter but would have weakened the static contract of a published class, which the runtime `Edge` instances do not compensate for. `GraphVertexCollection` needs no override at all, the base already returning `Document`.
+  - The pattern follows the one already in the codebase: `EdgeCollection extends Collection` in `clients/collection`, where the edge variant adds behaviour rather than restating it.
+  - **246 lines of code become 170** (124 shared + 12 + 34), with the whole gharial protocol in one place. The existing 56 tests of `GraphVertexCollectionTest` and `GraphEdgeCollectionTest` pass untouched — they exercise the two surfaces through their own classes, which is exactly what should keep working.
+
 - **The agreement between the two `Field::WHEN` walkers is now pinned by a test.** `buildWhenCondition()` compiles the condition tree to AQL; `collectWhenAttributes()` collects the attributes that tree reads, and is what `conditionReadsDeniedField()` — the T5 gate called by `aqlFields()` — relies on to drop a conditional field reading a masked one. Both classify the same six node shapes, independently, in two files. Nothing forced them to answer alike, and reporting *too little* is a leak: `price: doc.secretMargin > 0 ? doc.price : null` never shows `secretMargin`, yet tells the client, document by document, whether it is positive. `WhenWalkersAgreementTest` states the invariant instead of trusting it:
   > every document attribute the compiler emits must appear in what the collector collects.
   ```php
