@@ -11,8 +11,8 @@ class AQL
     use ConstantsTrait ,
         PaginationTrait ;
 
-    public const string _DEPTH          = '_depth' ;
-    public const string _PARENT         = '_parent' ;
+    public const string _DEPTH  = '_depth' ;
+    public const string _PARENT = '_parent' ;
 
     public const string AGGREGATE       = 'aggregate' ;
     public const string ALTERS          = 'alters' ;

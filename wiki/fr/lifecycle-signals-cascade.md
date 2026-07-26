@@ -4,6 +4,8 @@ Chaque écriture d'un modèle `Documents` ou `Edges` — `insert`, `update`, `re
 
 Le plus puissant de ces effets de bord est intégré au framework : la **cascade de suppression**. Supprimer un document-sommet (*vertex*) retire automatiquement ses arêtes (*edges*), et — si vous l'avez déclaré — **purge les documents liés à l'autre bout** dans le sens que vous choisissez (`INBOUND` / `OUTBOUND` / `BOTH`). C'est ainsi qu'on vide d'autres collections en supprimant un seul document, sans écrire une ligne de code applicatif.
 
+Le second est plus discret mais tout aussi utile : l'**invalidation des caches dépendants**. Un service qui garde en mémoire un état dérivé d'une collection doit l'oublier dès que la collection bouge ; `Arango::INVALIDATES` le déclare sur le modèle plutôt que de le recoder autour de chaque écriture.
+
 ```
             émission                  émission
    ┌──────────────────┐      ┌──────────────────┐
@@ -25,8 +27,12 @@ Le plus puissant de ces effets de bord est intégré au framework : la **cascade
    - [Couche 1 — purge automatique des arêtes](#couche-1--purge-automatique-des-arêtes)
    - [Couche 2 — purge dirigée des documents liés (`Purge`)](#couche-2--purge-dirigée-des-documents-liés-purge)
 4. [Exemple de bout en bout](#exemple-de-bout-en-bout)
-5. [Pièges & garanties](#pièges--garanties)
-6. [Voir aussi](#voir-aussi)
+5. [Invalider les caches dépendants (`Arango::INVALIDATES`)](#invalider-les-caches-dépendants-arangoinvalidates)
+   - [Le contrat `Invalidable`](#le-contrat-invalidable)
+   - [`DocumentFieldSetResolver` — un ensemble de valeurs caché](#documentfieldsetresolver--un-ensemble-de-valeurs-caché)
+   - [Ce qui est ignoré en silence](#ce-qui-est-ignoré-en-silence)
+6. [Pièges & garanties](#pièges--garanties)
+7. [Voir aussi](#voir-aussi)
 
 ## Les six signaux du cycle de vie
 
@@ -191,6 +197,108 @@ $accounts->delete( [ AQL::VALUE => 'acc-42' ] ) ;
 //   • afterDelete de $sessions émis → l'observateur logge     (cascade observable)
 ```
 
+## Invalider les caches dépendants (`Arango::INVALIDATES`)
+
+Certains services gardent en mémoire un état **dérivé** d'une collection. Un thésaurus expose la liste de ses termes désactivés, que chaque listing doit exclure ; un annuaire expose les clés des locataires suspendus. Cet ensemble est petit, il bouge rarement, et une requête chaude en a besoin à chaque appel — le relire à chaque fois coûte une requête de plus par requête. On le résout donc **une fois** et on le garde.
+
+Reste la question qui décide de tout : **qui prévient le cache quand la collection change ?** Sans réponse, un terme réactivé ce matin reste filtré jusqu'à l'expiration du TTL, et personne ne voit rien — la panne est silencieuse, ce qui est le pire genre.
+
+La réponse habituelle consiste à décorer la fabrique du modèle, à la main, pour rebrancher `invalidate()` sur chaque écriture. C'est du copier-coller, et son unique mode de défaillance est précisément l'oubli. `Arango::INVALIDATES` le remplace par une **déclaration** sur le modèle : la liste des identifiants de conteneur des services que cette collection alimente.
+
+La situation. Un modèle `terms` alimente le cache des termes désactivés.
+
+```php
+use oihana\arango\cache\InvalidatesOnWriteTrait ;
+use oihana\arango\db\enums\AQL ;
+use oihana\arango\enums\Arango ;
+use oihana\arango\models\Documents ;
+
+class Terms extends Documents
+{
+    use InvalidatesOnWriteTrait ;
+
+    public function __construct( ContainerInterface $container , array $init = [] )
+    {
+        parent::__construct( $container , $init ) ;
+        $this->initializeInvalidations( $init , $container ) ;
+    }
+}
+
+$terms = new Terms( $container ,
+[
+    AQL::COLLECTION    => 'terms' ,
+    Arango::INVALIDATES => [ 'thesaurus.disabledTerms' ] , // une chaîne seule est acceptée
+]) ;
+
+$terms->update( [ Arango::DOC => [ 'disabled' => false ] , Arango::VALUE => 'term-42' ] ) ;
+// → afterUpdate émis → le conteneur résout 'thesaurus.disabledTerms' → invalidate()
+//   La prochaine lecture du service reconstruit l'ensemble.
+```
+
+Le trait branche les **trois** signaux d'écriture — `afterInsert`, `afterUpdate`, `afterDelete` — sur la même closure. Une insertion, une modification et une suppression comptent toutes comme « la collection a bougé » : un ensemble dérivé n'a aucune raison de survivre à l'une plus qu'à l'autre.
+
+> **Le trait n'est pas câblé tout seul.** Contrairement aux six signaux, que `Documents`/`Edges` initialisent d'office, `initializeInvalidations()` doit être appelé — après `parent::__construct()`, pour que les signaux existent. Un modèle qui compose le trait sans l'appeler ne connecte rien.
+
+> **Le conteneur n'est interrogé qu'à l'émission, jamais au câblage.** C'est délibéré, et ce n'est pas un détail de performance : le service invalidé dépend en général du modèle qui l'invalide — `thesaurus.disabledTerms` lit la collection `terms`. Le résoudre dans le constructeur du modèle refermerait la boucle et ferait exploser le conteneur. Quand une écriture émet enfin le signal, le modèle est entièrement construit et la résolution est sûre.
+
+### Le contrat `Invalidable`
+
+Un service invalidable implémente [`oihana\interfaces\Invalidable`](https://github.com/BcommeBois/oihana-php-core/blob/main/src/oihana/interfaces/Invalidable.php), une seule méthode :
+
+```php
+interface Invalidable
+{
+    public function invalidate() : void ;
+}
+```
+
+C'est tout le couplage. Le modèle qui invalide ne sait **pas** ce que le service cache, ni où, ni comment — seulement qu'il faut le lui faire oublier. Memcached, un tableau en mémoire ou un fichier : le producteur du changement n'a pas à en connaître un mot.
+
+### `DocumentFieldSetResolver` — un ensemble de valeurs caché
+
+La lib fournit l'implémentation la plus courante : [`DocumentFieldSetResolver`](../../src/oihana/arango/cache/DocumentFieldSetResolver.php) résout — et cache dans Memcached — **l'ensemble des valeurs prises par un champ** sur les documents d'une collection filtrée.
+
+```php
+use oihana\arango\cache\DocumentFieldSetResolver ;
+
+$disabledTerms = new DocumentFieldSetResolver
+(
+    model    : $terms ,
+    cache    : $memcached ,
+    cacheKey : 'thesaurus.disabledTerms' ,  // requis, unique par résolveur
+    filter   : [ 'key' => 'disabled' , 'op' => 'eq' , 'val' => true ] ,
+    field    : 'id' ,                       // défaut : DocumentFieldSetResolver::DEFAULT_FIELD
+    ttl      : 3600                         // défaut : 1 heure
+) ;
+
+$disabledTerms->values() ; // ['t-12', 't-40'] — dédoublonné, réindexé
+```
+
+Trois décisions de conception méritent d'être connues, parce qu'elles se retournent contre vous si vous les prenez à l'envers dans un résolveur maison.
+
+**Le type natif de chaque valeur est préservé, jamais normalisé.** AQL ne convertit pas d'un type à l'autre : `5 NOT IN ["5"]` vaut **vrai**. Un ensemble dont on aurait « proprement » casté toutes les valeurs en chaînes ne filtrerait donc plus rien du tout — sans erreur, sans log, sans le moindre signe. Un `id` numérique reste un entier, et un code à zéro initial (`'0608'`) reste une chaîne.
+
+**Une lecture qui échoue rend un ensemble vide.** Une base injoignable ne doit pas se traduire par « tout est exclu ». Un ensemble vide veut dire « rien ne correspond », et l'appelant doit alors ne poser **aucun** prédicat plutôt qu'un `NOT IN []` toujours vrai. L'échec est journalisé si un logger a été fourni, mais il ne remonte pas : une panne de cache ne fait pas tomber la requête.
+
+**La clé de cache est requise, et unique par résolveur.** Deux résolveurs derrière une même clé se serviraient l'ensemble l'un de l'autre. Il n'y a pas de valeur par défaut, précisément pour qu'on ne puisse pas en hériter une par mégarde.
+
+Le TTL, lui, n'est pas le mécanisme de rafraîchissement — c'est un **filet**. Le chemin normal reste l'invalidation par signal, immédiate ; le TTL borne la fraîcheur au cas où un point d'invalidation aurait été oublié. Un `ttl: 0` court-circuite complètement le cache et relit à chaque appel : pratique pour déboguer, ruineux en production.
+
+> **Memcached est partagé par tous les workers**, donc une seule invalidation atteint toute la flotte — pas seulement le processus qui a reçu l'écriture.
+
+### Ce qui est ignoré en silence
+
+Le câblage est **tolérant** : une déclaration douteuse est sautée, jamais fatale. Une invalidation qui explose transformerait une écriture parfaitement valide en erreur 500.
+
+| Déclaration | Effet |
+|---|---|
+| `Arango::INVALIDATES` absent, `null`, `[]` | aucun signal connecté — le modèle est intact |
+| Valeur ni tableau ni chaîne (`42`, un objet…) | traitée comme absente |
+| Chaîne seule (`'a.service'`) | acceptée, normalisée en `['a.service']` |
+| Identifiant non-string dans le tableau | sauté ; le reste de la liste s'applique |
+| Identifiant inconnu du conteneur | sauté ; le reste de la liste s'applique |
+| Service résolu n'implémentant pas `Invalidable` | sauté ; le reste de la liste s'applique |
+
 ## Pièges & garanties
 
 | Point | À retenir |
@@ -202,6 +310,9 @@ $accounts->delete( [ AQL::VALUE => 'acc-42' ] ) ;
 | **Cycles de purge** | Une purge déclenche un `delete()` qui ré-émet `afterDelete`. Deux modèles qui se purgent mutuellement en `BOTH` peuvent boucler — déclarez la purge d'un seul côté, ou cassez le cycle. |
 | **Performance** | La purge supprime en **masse** via une requête AQL `REMOVE` (pas de boucle PHP document par document). |
 | **`?->` sur les signaux** | Les modèles initialisent leurs signaux, mais émettent toujours en `?->emit()` : si un signal était libéré (`release*Signals()`), l'émission est simplement ignorée, jamais une erreur. |
+| **`initializeInvalidations()` est explicite** | Composer `InvalidatesOnWriteTrait` ne suffit pas : sans l'appel dans le constructeur (après `parent::__construct()`), aucun service n'est invalidé. |
+| **L'invalidation ne suit pas la cascade** | Elle est branchée sur les écritures **du modèle qui la déclare**. Une purge de couche 2 émet l'`afterDelete` du modèle purgé : c'est *ce* modèle qui doit déclarer son propre `Arango::INVALIDATES`. |
+| **Une invalidation ne fait jamais échouer l'écriture** | Identifiant inconnu, service non `Invalidable`, déclaration malformée : tout est sauté en silence. L'écriture, elle, était valide. |
 
 ## Voir aussi
 
@@ -209,5 +320,6 @@ $accounts->delete( [ AQL::VALUE => 'acc-42' ] ) ;
 - [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, traversées de lecture.
 - [Champs-tableaux embarqués](db/arrays.md) — mutations atomiques et leurs signaux `*Update`.
 - [Glossaire](getting-started/glossary.md#cascade) — entrées *Cascade* et *Signal*.
+- [`DocumentFieldSetResolver`](../../src/oihana/arango/cache/DocumentFieldSetResolver.php) et [`InvalidatesOnWriteTrait`](../../src/oihana/arango/cache/InvalidatesOnWriteTrait.php) — les deux briques du namespace `oihana\arango\cache`.
 - [Dépendances](getting-started/dependencies.md#oihanaphp-signals) — le rôle de `oihana/php-signals`.
 - Amont : [Signals & notices (`oihana/php-models`)](https://github.com/BcommeBois/oihana-php-models/blob/main/wiki/fr/signals-notices.md) — primitives `Signal` / `Payload`, ajout de signaux à un modèle.

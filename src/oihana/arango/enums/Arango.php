@@ -143,6 +143,12 @@ class Arango extends AQL
     public const string ITEM_KEY = 'itemKey' ;
 
     /**
+     * Container ids of the {@see \oihana\interfaces\Invalidable} services whose
+     * cached state this collection feeds. They are invalidated on every write.
+     */
+    public const string INVALIDATES = 'invalidates' ;
+
+    /**
      * The 'keepNull' payload marker. When a payload field definition carries
      * `Arango::KEEP_NULL => true`, an explicit null the client sent for that
      * field survives the compress pass (see PayloadsTrait::preparePayload),
