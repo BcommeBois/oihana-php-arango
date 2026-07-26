@@ -82,6 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The upsert `RETURN` expression is resolved once, by `resolveUpsertReturn()`.** `aqlUpsert()` and `aqlRepsert()` each expanded the `Clause::WITH_STATUS` shorthand with the same twelve lines, differing by a single word — the write half is `UpsertType::UPDATE` for one, `UpsertType::REPLACE` for the other, the insert half always `UpsertType::INSERT`. The shorthand answers a question the returned document cannot: on an insert there is no `OLD`, so the ternary reports which half of the upsert actually ran.
+  ```php
+  $return = resolveUpsertReturn( $init , UpsertType::REPLACE ) ;
+  // AQL::RETURN => Clause::WITH_STATUS  →  "{ doc: NEW , type: OLD ? 'replace' : 'insert' }"
+  ```
+  Any other `AQL::RETURN` value still travels untouched, including a non-string one, since the shorthand match is strict and the option is untyped. The helper lands in `oihana\arango\db\helpers`, where the `aql*Expression()` builders these two operations already compose live, and is registered in `composer.json`'s `autoload.files`. `Clause` is no longer referenced by either operation's body and its import goes with it.
+  - **The two functions are otherwise left as they are, on purpose.** Their remaining bodies are also near-identical — they differ by `aqlReplaceExpression()` versus `aqlUpdateExpression()` — but merging them would mean passing a callable or a discriminant, trading fourteen plainly readable lines for an indirection. What was worth sharing is the `RETURN` rule, the one fragment carrying a decision; the rest is declarative composition that costs nothing to read twice.
+  - **Tests:** a new `ResolveUpsertReturnTest` (6 cases) pins the two write types **side by side** — until now `update` was asserted at the operation level and `replace` at the query-trait level, so nothing showed that a single word separates them — along with the `NEW` default, the invariant insert half, a passed-through custom expression and an uncoerced non-string one.
+
 - **The single-row aggregate read shared by `bounds()` and `facetCounts()` is one method, `ArangoTrait::firstRowAsArray()`.** Both entry points ran the same fourteen lines around their own builder: bail out on the empty query a builder returns when nothing is computable, read the row `raw` (no schema, no `alter()` — the row is a map of computed values, not a document), then normalize it through the same three-armed `match`, since the driver hands the row back as an object or as an array depending on how it decoded it.
   ```php
   $query = $this->buildBoundsQuery( $init , $bindVars ) ;

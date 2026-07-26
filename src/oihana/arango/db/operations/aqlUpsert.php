@@ -6,7 +6,6 @@ use JsonSerializable;
 use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\Clause;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\UpsertType;
 use oihana\arango\db\options\QueryOptions;
@@ -17,6 +16,7 @@ use oihana\exceptions\UnsupportedOperationException;
 use function oihana\arango\db\helpers\aqlInsertExpression;
 use function oihana\arango\db\helpers\aqlUpdateExpression;
 use function oihana\arango\db\helpers\aqlUpsertExpression;
+use function oihana\arango\db\helpers\resolveUpsertReturn;
 use function oihana\core\strings\compile;
 
 /**
@@ -85,19 +85,8 @@ use function oihana\core\strings\compile;
  */
 function aqlUpsert( array $init = [] ) :string
 {
-    $return = $init[ AQL::RETURN ] ?? Clause::NEW ;
-    $return = match( $return )
-    {
-        Clause::WITH_STATUS => sprintf
-        (
-            "{ doc: %s , type: %s ? '%s' : '%s' }" ,
-            Clause::NEW ,
-            Clause::OLD ,
-            UpsertType::UPDATE ,
-            UpsertType::INSERT
-        ),
-        default => $return ,
-    };
+    // The write half is UPDATE here: the document is merged into, not overwritten.
+    $return = resolveUpsertReturn( $init , UpsertType::UPDATE ) ;
 
     return compile
     ([

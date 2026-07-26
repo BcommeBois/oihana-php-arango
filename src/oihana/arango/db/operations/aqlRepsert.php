@@ -5,7 +5,6 @@ namespace oihana\arango\db\operations;
 use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\Clause;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\UpsertType;
 use oihana\arango\db\options\UpsertOptions;
@@ -15,6 +14,7 @@ use oihana\exceptions\UnsupportedOperationException;
 use function oihana\arango\db\helpers\aqlInsertExpression;
 use function oihana\arango\db\helpers\aqlReplaceExpression;
 use function oihana\arango\db\helpers\aqlUpsertExpression;
+use function oihana\arango\db\helpers\resolveUpsertReturn;
 use function oihana\core\strings\compile;
 
 /**
@@ -63,19 +63,8 @@ use function oihana\core\strings\compile;
  */
 function aqlRepsert( array $init = [] ) :string
 {
-    $return = $init[ AQL::RETURN ] ?? Clause::NEW ;
-    $return = match( $return )
-    {
-        Clause::WITH_STATUS => sprintf
-        (
-            "{ doc: %s , type: %s ? '%s' : '%s' }" ,
-            Clause::NEW ,
-            Clause::OLD ,
-            UpsertType::REPLACE ,
-            UpsertType::INSERT
-        ),
-        default => $return ,
-    };
+    // The write half is REPLACE here: the document is overwritten, not merged.
+    $return = resolveUpsertReturn( $init , UpsertType::REPLACE ) ;
 
     return compile
     ([
