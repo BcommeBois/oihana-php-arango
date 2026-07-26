@@ -91,6 +91,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The agreement between the two `Field::WHEN` walkers is now pinned by a test.** `buildWhenCondition()` compiles the condition tree to AQL; `collectWhenAttributes()` collects the attributes that tree reads, and is what `conditionReadsDeniedField()` — the T5 gate called by `aqlFields()` — relies on to drop a conditional field reading a masked one. Both classify the same six node shapes, independently, in two files. Nothing forced them to answer alike, and reporting *too little* is a leak: `price: doc.secretMargin > 0 ? doc.price : null` never shows `secretMargin`, yet tells the client, document by document, whether it is positive. `WhenWalkersAgreementTest` states the invariant instead of trusting it:
+  > every document attribute the compiler emits must appear in what the collector collects.
+  ```php
+  $emitted   = self::attributesOf( buildWhenCondition( $when , $docRef ) , $docRef ) ;
+  $collected = collectWhenAttributes( $when ) ;
+  foreach ( $emitted as $attribute ) { $this->assertContains( $attribute , $collected , … ) ; }
+  ```
+  The inclusion is one-way on purpose: the collector may report more than the compiler reads — it recurses into a malformed `not` group the compiler would refuse — and gating too eagerly is the safe direction. The suite never states what a shape *should* yield (that is `CollectWhenAttributesTest`'s job); it compares the two implementations against each other, so it also catches a divergence nobody enumerated, including the day a seventh node shape is taught to one walker and not the other. **No production code changed**, and the current walkers satisfy the invariant on every shape — there is no bug being fixed here, only a guarantee being written down.
+  - 25 cases over three properties: the invariant across 17 shapes (the three list-leaf arities, the associative leaf, `and`/`or`/`not`, the single-operand group, the implicit AND group, nesting, dotted paths, an `alt` chain, a bind reference that emits no attribute at all, and a non-`doc` reference since `Field::WHERE` compiles against `item`); a **guard on the guard**, because an extractor silently returning nothing would make all seventeen pass vacuously; and, on seven malformed shapes, that the compiler rejects while the collector survives — the gate runs *before* the compiler, so a bad declaration must surface as the compiler's message, not as a crash in the gate.
+  - Verified red before green: sabotaging the collector's implicit-AND branch to `return []` fails exactly the two shapes that traverse it, and nothing else.
+
 - **The all-arrays test of the `Field::WHEN` walkers is `array_all()`.** `buildWhenCondition()` and `collectWhenAttributes()` both told an implicit AND group (`[['a','eq','1'],['b','gt','2']]`) from a single condition (`['a','eq','1']`) with the same hand-rolled nine-line loop — a flag, a `foreach`, a `break`. PHP 8.4 expresses it in one line, and short-circuits on the first non-array exactly as the `break` did:
   ```php
   $allArrays = array_all( $when , fn( $element ) => is_array( $element ) ) ;
