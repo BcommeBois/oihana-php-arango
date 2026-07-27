@@ -1132,9 +1132,14 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->stub()->positionKey( 'lines' , [ Arango::POSITION_KEY => $positionKey ] ) ;
     }
 
+    // ---------------------------------------------------------------- arrayRank
+
     /**
-     * Nothing honours the marker yet: a field declaring a position key generates exactly
-     * the AQL it would generate without one.
+     * The renumbering runs last, on the array the operation produced, and the counter
+     * counts *it* rather than the array it replaces.
+     *
+     * The `LENGTH(__arr) == 0 ? []` branch is what keeps an empty array empty: AQL reads
+     * `0 .. -1` as a descending range and would otherwise rank two phantom elements.
      *
      * @return void
      *
@@ -1147,7 +1152,7 @@ final class DocumentsArrayTraitTest extends TestCase
      * @throws ReflectionException
      * @throws Throwable
      */
-    public function testPositionKeyDoesNotChangeTheGeneratedAqlYet() :void
+    public function testRankedInsertRenumbersFromTheIndices() :void
     {
         $stub = $this->stub() ;
         $stub->arrayInsert( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'id' => 'l1' ] ] ) ;
@@ -1155,9 +1160,304 @@ final class DocumentsArrayTraitTest extends TestCase
 
         $this->assertSame
         (
-            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = APPEND(doc.lines,@q_1) UPDATE doc WITH { lines: __arr, numberOfLines: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = APPEND(doc.lines,@q_1) '
+          . 'LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i })) '
+          . 'UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
             $query ,
         ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankedRemoveRenumbersTheSurvivors() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayRemove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => 'l2' ] ) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = doc.lines[* FILTER CURRENT.id != @q_1] '
+          . 'LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i })) '
+          . 'UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+    }
+
+    /**
+     * The drag and drop itself: the element is pulled out, re-inserted at the requested
+     * index, and the whole array is renumbered from the new order.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankedMoveRenumbersTheNewOrder() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayMove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => 'l3' , Arango::POSITION => 1 ] ) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 '
+          . 'LET __el = FIRST(doc.lines[* FILTER CURRENT.id == @q_1]) '
+          . 'LET __rm = doc.lines[* FILTER CURRENT.id != @q_1] '
+          . 'LET __arr = __el == null ? doc.lines : APPEND(PUSH(SLICE(__rm,0,1),__el,true),SLICE(__rm,1)) '
+          . 'LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i })) '
+          . 'UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+    }
+
+    /**
+     * A patch carrying the position attribute itself loses: the merge happens inside
+     * `__arr`, the renumbering rewrites it afterwards.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankedUpdateRenumbersAfterTheMerge() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER => 'p42' ,
+            Arango::FIELD => 'lines' ,
+            Arango::VALUE => 'l1' ,
+            Arango::PATCH => [ 'label' => 'A' , 'position' => 99 ] ,
+        ]) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = doc.lines[* RETURN CURRENT.id == @q_1 ? MERGE(CURRENT,@q_2) : CURRENT] '
+          . 'LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i })) '
+          . 'UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+    }
+
+    /**
+     * The collection-wide purge compiles its own query: without the shared helper it
+     * would drop a reference and leave a gap in the numbering.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankedPurgeRefRenumbersToo() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayPurgeRef( [ Arango::FIELD => 'lines' , Arango::VALUE => 'gone' ] ) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER POSITION(doc.lines,@q_0) LET __arr = REMOVE_VALUE(doc.lines,@q_0) '
+          . 'LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i })) '
+          . 'UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+    }
+
+    /**
+     * Order matters on a SET: the ranks make every element distinct, so a `UNIQUE()`
+     * running after them would no longer collapse anything.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankedSetKeepsItsInvariantBeforeTheRanks() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER        => 'p42' ,
+            Arango::FIELD        => 'badges' , // undeclared → LIST by default
+            Arango::MODE         => ArrayMode::SET ,
+            Arango::ITEM_KEY     => 'id' ,
+            Arango::POSITION_KEY => 'position' ,
+            Arango::VALUE        => 'b1' ,
+            Arango::PATCH        => [ 'label' => 'A' ] ,
+        ]) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = UNIQUE(doc.badges[* RETURN CURRENT.id == @q_1 ? MERGE(CURRENT,@q_2) : CURRENT]) '
+          . 'LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i })) '
+          . 'UPDATE doc WITH { badges: __pos, modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+    }
+
+    /**
+     * A field declaring no position key keeps the exact AQL it had before.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankingIsSkippedWithoutAPositionKey() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayInsert( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => [ 'id' => 'c1' ] ] ) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringNotContainsString( '__pos' , $query ) ;
+        $this->assertStringContainsString( '{ chapters: __arr, numberOfChapters: LENGTH(__arr)' , $query ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testPerCallPositionKeyRenumbersAFieldThatDeclaresNone() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayInsert
+        ([
+            Arango::OWNER        => 'p42' ,
+            Arango::FIELD        => 'tracks' ,
+            Arango::VALUE        => [ 'id' => 't1' ] ,
+            Arango::POSITION_KEY => 'rank' ,
+        ]) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringContainsString( 'RETURN MERGE(NTH(__arr,__i),{ rank: __i })' , $query ) ;
+        $this->assertStringContainsString( '{ tracks: __pos, numberOfTracks: LENGTH(__pos)' , $query ) ;
+    }
+
+    /**
+     * Writing the rank into an element feeds the very sort that decides it, so the two
+     * cannot coexist.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankingIsRefusedOnASortedSetField() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->stub()->arrayInsert
+        ([
+            Arango::OWNER        => 'p42' ,
+            Arango::FIELD        => 'genres' ,
+            Arango::VALUE        => 'rock' ,
+            Arango::POSITION_KEY => 'position' ,
+        ]) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankingIsRefusedOnASortedSetFieldThroughPurgeRef() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->stub()->arrayPurgeRef
+        ([
+            Arango::FIELD        => 'genres' ,
+            Arango::VALUE        => 'rock' ,
+            Arango::POSITION_KEY => 'position' ,
+        ]) ;
+    }
+
+    /**
+     * The resolver guards every write path, not just the isolated resolution.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testRankingRejectsADottedPositionKeyAtWriteTime() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->arrayInsert
+        ([
+            Arango::OWNER        => 'p42' ,
+            Arango::FIELD        => 'lines' ,
+            Arango::VALUE        => [ 'id' => 'l1' ] ,
+            Arango::POSITION_KEY => 'meta.position' ,
+        ]) ;
     }
 
     /**

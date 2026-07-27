@@ -27,10 +27,14 @@ use function oihana\core\strings\func;
  *
  * $expr = nth('[2,4,6,8]', 2);
  * // Produces: 'NTH([2,4,6,8],2)'
+ *
+ * $expr = nth('__arr', '__i');
+ * // Produces: 'NTH(__arr,__i)'
  * ```
  *
  * @param mixed $anyArray Array expression to get element from.
- * @param int $position Zero-based position of the element to retrieve.
+ * @param int|string $position Zero-based position of the element to retrieve, or the AQL
+ *                             expression evaluating to it (a loop variable, a bind name).
  * @return string The formatted AQL expression.
  *
  * @see https://docs.arangodb.com/stable/aql/functions/array/#nth
@@ -41,7 +45,7 @@ use function oihana\core\strings\func;
  * @since 1.0.0
  * @author Marc Alcaraz
  */
-function nth( mixed $anyArray , int $position ) : string
+function nth( mixed $anyArray , int|string $position ) : string
 {
     return func( ArrayFunction::NTH , [ $anyArray , $position ] ) ;
 }

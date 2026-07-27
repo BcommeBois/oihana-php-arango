@@ -38,6 +38,7 @@ use function oihana\arango\db\functions\arrays\arrayFilter;
 use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\functions\arrays\nth;
 use function oihana\arango\db\functions\arrays\position;
 use function oihana\arango\db\functions\arrays\push;
 use function oihana\arango\db\functions\arrays\removeValue;
@@ -58,9 +59,11 @@ use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\greaterThan;
 use function oihana\arango\db\operators\notEqual;
 use function oihana\arango\db\operators\notIn;
+use function oihana\arango\db\operators\rangeOperator;
 use function oihana\arango\db\operators\ternary;
 
 use function oihana\core\accessors\ensureKeyValue;
+use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
 
@@ -126,6 +129,18 @@ trait DocumentsArrayTrait
      * against so an unknown key is a no-op rather than a phantom insertion.
      */
     protected const string ELEMENT_VAR = '__el' ;
+
+    /**
+     * The AQL variable holding the index of the element being renumbered, bound by the
+     * loop {@see arrayRank()} runs over the final array.
+     */
+    protected const string INDEX_VAR = '__i' ;
+
+    /**
+     * The AQL variable holding the renumbered array — the one written back when the field
+     * declares an {@see Arango::POSITION_KEY}, in place of {@see self::ARRAY_VAR}.
+     */
+    protected const string RANKED_VAR = '__pos' ;
 
     /**
      * The AQL variable holding the array **minus** the element being moved, from which
@@ -444,13 +459,14 @@ trait DocumentsArrayTrait
         // No before/afterUpdate signals here: arrayPurgeRef is a collection-wide
         // operation returning a list/count, which does not fit the single-document
         // update-relations contract (see OnUpdateRelations).
+        [ $lets , $arrayVar ] = $this->arrayRank( $field , [ aqlLet( self::ARRAY_VAR , removeValue( $fieldExpr , $value ) ) ] , $init ) ;
+
         $for    = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
         $filter = aqlFilter( position( $fieldExpr , $value ) ) ;
-        $let    = aqlLet( self::ARRAY_VAR , removeValue( $fieldExpr , $value ) ) ;
-        $write  = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , self::ARRAY_VAR , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
+        $write  = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , $arrayVar , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
 
         // count mode returns lightweight `1` rows (no document is materialised) and counts them.
-        $query  = compile( [ $for , $filter , $let , $write , aqlReturn( $count ? '1' : Clause::NEW ) ] ) ;
+        $query  = compile( [ $for , $filter , ...$lets , $write , aqlReturn( $count ? '1' : Clause::NEW ) ] ) ;
 
         if ( $init[ Arango::DEBUG ] ?? false )
         {
@@ -822,6 +838,70 @@ trait DocumentsArrayTrait
     }
 
     /**
+     * Appends the renumbering `LET` to the given clauses when the field declares an
+     * {@see Arango::POSITION_KEY}, and returns them along with the AQL variable holding
+     * the array to write back.
+     *
+     * Generated AQL:
+     * ```
+     * LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i }))
+     * ```
+     * It always runs **last**, on the array every operation has already produced: the
+     * field invariant is therefore applied *before* the ranks, which matters on a
+     * {@see ArrayMode::SET} — renumbering makes every element distinct, so a `UNIQUE()`
+     * running after it would no longer collapse anything. For the same reason, a patch
+     * carrying the position attribute loses against the renumbering.
+     *
+     * The empty-array branch is not cosmetic: `0 .. LENGTH(__arr) - 1` becomes `0 .. -1`
+     * on an empty array, which AQL reads as a **descending** range and expands to
+     * `[0, -1]` — two phantom elements would be ranked into the document.
+     *
+     * Shared by {@see runArrayUpdate()} and {@see arrayPurgeRef()}, which compiles its own
+     * collection-wide query: a purge would otherwise leave gaps in the numbering.
+     *
+     * @param string|null $field The array attribute name.
+     * @param array $lets The clauses produced by the operation, ending with {@see self::ARRAY_VAR}.
+     * @param array $init
+     *
+     * @return array{0:array,1:string} The clauses, and the variable holding the array to write.
+     *
+     * @throws UnsupportedOperationException On a sortedSet field (the ranks would feed the sort back).
+     * @throws ValidationException When the configured position key is not a safe flat attribute name.
+     */
+    private function arrayRank( ?string $field , array $lets , array $init ) : array
+    {
+        $positionKey = $this->arrayPositionKey( $field , $init ) ;
+
+        if ( $positionKey === null )
+        {
+            return [ $lets , self::ARRAY_VAR ] ;
+        }
+
+        if ( $this->arrayMode( $field , $init ) === ArrayMode::SORTED_SET )
+        {
+            throw new UnsupportedOperationException
+            (
+                'The sortedSet field "' . $field . '" cannot be renumbered (writing the rank into an element feeds the sort that decides it).'
+            ) ;
+        }
+
+        $count = length( self::ARRAY_VAR ) ;
+
+        $loop = compile
+        ([
+            aqlFor( [ AQL::DOC_REF => self::INDEX_VAR , AQL::IN => rangeOperator( 0 , compile( [ $count , Char::HYPHEN , 1 ] ) ) ] ) ,
+            aqlReturn( merge( [ nth( self::ARRAY_VAR , self::INDEX_VAR ) , '{ ' . $positionKey . ': ' . self::INDEX_VAR . ' }' ] ) ) ,
+        ]) ;
+
+        // An empty array would make the range descend and rank two phantom elements.
+        $ranked = ternary( equal( $count , 0 ) , Char::LEFT_BRACKET . Char::RIGHT_BRACKET , betweenParentheses( $loop ) ) ;
+
+        $lets[] = aqlLet( self::RANKED_VAR , $ranked ) ;
+
+        return [ $lets , self::RANKED_VAR ] ;
+    }
+
+    /**
      * Compiles and executes a single-document array UPDATE (`FOR ... FILTER ... LET ... UPDATE ... RETURN NEW`),
      * emitting the update signals around the write.
      *
@@ -846,8 +926,10 @@ trait DocumentsArrayTrait
     {
         $this->beforeUpdate?->emit( new BeforeUpdate( target : $this , context : $init ) ) ;
 
+        [ $lets , $arrayVar ] = $this->arrayRank( $field , $lets , $init ) ;
+
         $for   = aqlFor( [ AQL::IN => [ AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
-        $write = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , self::ARRAY_VAR , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
+        $write = aqlUpdate( [ AQL::WITH => $this->arrayWith( $field , $arrayVar , $init ) , AQL::OPTIONS => $init[ Arango::OPTIONS ] ?? null ] ) ;
         $query = compile( [ $for , aqlFilter( $filter ) , ...$lets , $write , aqlReturn( Clause::NEW ) ] ) ;
 
         if ( $init[ Arango::DEBUG ] ?? false )

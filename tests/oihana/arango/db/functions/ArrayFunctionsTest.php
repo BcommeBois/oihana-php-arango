@@ -111,6 +111,13 @@ class ArrayFunctionsTest extends TestCase
         $this->assertEquals("NTH(arr,2)", nth('arr', 2));
     }
 
+    /** The position may be an expression — a loop variable, a bind name. */
+    public function testNthWithAnExpressionPosition(): void
+    {
+        $this->assertEquals("NTH(__arr,__i)", nth('__arr', '__i'));
+        $this->assertEquals("NTH(arr,@pos)" , nth('arr', '@pos'));
+    }
+
     /**
      * @return void
      * @throws ValidationException
