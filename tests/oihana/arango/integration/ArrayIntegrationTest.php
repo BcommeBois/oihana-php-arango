@@ -51,6 +51,11 @@ use function oihana\init\initConfig;
  * `__el == null` guard leaving the array untouched instead of pushing a null, and
  * `UNIQUE()` / `SORTED_UNIQUE()` re-applied to *objects* after a patch.
  *
+ * The ranked field (`lines`, declaring an `Arango::POSITION_KEY`) closes the loop a drag
+ * and drop needs: every write renumbers the whole array, and only the engine can tell
+ * that `0 .. LENGTH([]) - 1` is a **descending** range — the empty-array guard is what
+ * keeps two phantom `null` out of an emptied document.
+ *
  * Skipped when no ArangoDB is reachable (see {@see IntegrationTestCase}).
  *
  * @group integration
@@ -113,6 +118,9 @@ final class ArrayIntegrationTest extends IntegrationTestCase
                 'chapters' => [ ArrayMode::LIST       , Arango::COUNTER => 'numberOfChapters' , Arango::ITEM_KEY => 'id' ] ,
                 'badges'   => [ ArrayMode::SET        , Arango::ITEM_KEY => 'id' ] ,
                 'ranks'    => [ ArrayMode::SORTED_SET , Arango::ITEM_KEY => 'id' ] ,
+
+                // ranked: every write renumbers `position` from the element indices
+                'lines'    => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfLines' , Arango::ITEM_KEY => 'id' , Arango::POSITION_KEY => 'position' ] ,
             ],
         ]);
     }
@@ -739,5 +747,319 @@ final class ArrayIntegrationTest extends IntegrationTestCase
         $this->assertSame( [ 'Y' ] , $this->doc( 'pg1' )[ 'tracks' ] ) ;
         $this->assertSame( [] , $this->doc( 'pg2' )[ 'tracks' ] ) ;
         $this->assertSame( [ 'Z' ] , $this->doc( 'pg3' )[ 'tracks' ] ) ;
+    }
+
+    // ---------------------------------------------------------------- position key
+
+    /**
+     * Three lines carrying **stale** positions on purpose: every assertion below proves
+     * the engine rewrote them, rather than that the seed happened to be right.
+     *
+     * @return array
+     */
+    private static function lines() :array
+    {
+        return
+        [
+            [ 'id' => 'l1' , 'label' => 'Alpha' , 'position' => 7 ] ,
+            [ 'id' => 'l2' , 'label' => 'Beta'  , 'position' => 7 ] ,
+            [ 'id' => 'l3' , 'label' => 'Gamma' , 'position' => 7 ] ,
+        ] ;
+    }
+
+    /**
+     * Reads the `id:position` pairs of a ranked array, in array order.
+     *
+     * @param array $lines
+     * @return array
+     */
+    private static function ranks( array $lines ) :array
+    {
+        return array_map( static fn( array $line ) => $line[ 'id' ] . ':' . $line[ 'position' ] , $lines ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testInsertRenumbersTheWholeArray() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-add' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayInsert( [ Arango::OWNER => 'rk-add' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'id' => 'l4' , 'label' => 'Delta' ] ] ) ;
+
+        $this->assertSame( [ 'l1:0' , 'l2:1' , 'l3:2' , 'l4:3' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 4 , $new->numberOfLines ) ;
+    }
+
+    /**
+     * The empty-array guard, live: AQL reads `0 .. LENGTH([]) - 1` as a **descending**
+     * range and expands it to `[0, -1]`, so an unguarded renumbering would leave two
+     * phantom elements behind instead of an empty array.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testRemovingTheLastLineLeavesATrulyEmptyArray() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-empty' , 'lines' => [ [ 'id' => 'l1' , 'position' => 3 ] ] , 'numberOfLines' => 1 ] ) ;
+
+        $new = $model->arrayRemove( [ Arango::OWNER => 'rk-empty' , Arango::FIELD => 'lines' , Arango::VALUE => 'l1' ] ) ;
+
+        $this->assertSame( [] , $new->lines ) ;
+        $this->assertSame( 0 , $new->numberOfLines ) ;
+        $this->assertSame( [] , $this->doc( 'rk-empty' )[ 'lines' ] ) ; // and it is what got persisted
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testRemoveClosesTheGapInTheNumbering() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-rm' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayRemove( [ Arango::OWNER => 'rk-rm' , Arango::FIELD => 'lines' , Arango::VALUE => 'l1' ] ) ;
+
+        $this->assertSame( [ 'l2:0' , 'l3:1' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 2 , $new->numberOfLines ) ;
+    }
+
+    /**
+     * The drag and drop itself, end to end.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testMoveRenumbersTheNewOrder() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-mv' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayMove( [ Arango::OWNER => 'rk-mv' , Arango::FIELD => 'lines' , Arango::VALUE => 'l3' , Arango::POSITION => 0 ] ) ;
+
+        $this->assertSame( [ 'l3:0' , 'l1:1' , 'l2:2' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 'Gamma' , $new->lines[ 0 ][ 'label' ] ) ; // the object travelled whole
+    }
+
+    /**
+     * A patch cannot set the position itself: the merge happens first, the renumbering
+     * overwrites it.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testAPatchCannotChooseItsOwnPosition() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-up' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayUpdate
+        ([
+            Arango::OWNER => 'rk-up' ,
+            Arango::FIELD => 'lines' ,
+            Arango::VALUE => 'l2' ,
+            Arango::PATCH => [ 'label' => 'Beta+' , 'position' => 99 ] ,
+        ]) ;
+
+        $this->assertSame( [ 'l1:0' , 'l2:1' , 'l3:2' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 'Beta+' , $new->lines[ 1 ][ 'label' ] ) ; // the rest of the patch did apply
+    }
+
+    // ---------------------------------------------------------------- reorder
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testReorderAppliesTheRequestedOrder() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-ro' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayReorder( [ Arango::OWNER => 'rk-ro' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'l3' , 'l1' , 'l2' ] ] ) ;
+
+        $this->assertSame( [ 'l3:0' , 'l1:1' , 'l2:2' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 3 , $new->numberOfLines ) ;
+    }
+
+    /**
+     * A partial list reorders what it names and keeps the rest — an incomplete list must
+     * never delete.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testReorderKeepsTheLinesItDoesNotMention() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-ro-part' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayReorder( [ Arango::OWNER => 'rk-ro-part' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'l3' ] ] ) ;
+
+        $this->assertSame( [ 'l3:0' , 'l1:1' , 'l2:2' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 3 , $new->numberOfLines ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testReorderSkipsUnknownKeys() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-ro-zz' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayReorder( [ Arango::OWNER => 'rk-ro-zz' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'zz' , 'l2' ] ] ) ;
+
+        $this->assertSame( [ 'l2:0' , 'l1:1' , 'l3:2' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 3 , $new->numberOfLines ) ; // nothing was lost to the unknown key
+    }
+
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testReorderWithAnEmptyListKeepsEverything() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-ro-none' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayReorder( [ Arango::OWNER => 'rk-ro-none' , Arango::FIELD => 'lines' , Arango::VALUE => [] ] ) ;
+
+        $this->assertSame( [ 'l1:0' , 'l2:1' , 'l3:2' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 3 , $new->numberOfLines ) ;
+    }
+
+    /**
+     * A duplicated key would resolve the same element twice while `NOT IN` removes it
+     * from the leftovers only once — the array would grow a clone.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     */
+    public function testReorderWithADuplicatedKeyDoesNotCloneTheLine() :void
+    {
+        $model = $this->seedDoc( [ '_key' => 'rk-ro-dup' , 'lines' => self::lines() , 'numberOfLines' => 3 ] ) ;
+
+        $new = $model->arrayReorder( [ Arango::OWNER => 'rk-ro-dup' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'l2' , 'l1' , 'l2' ] ] ) ;
+
+        $this->assertSame( [ 'l2:0' , 'l1:1' , 'l3:2' ] , self::ranks( $new->lines ) ) ;
+        $this->assertSame( 3 , $new->numberOfLines ) ;
+    }
+
+    /**
+     * The collection-wide purge compiles its own query: it renumbers too, so dropping a
+     * reference does not leave a hole behind.
+     *
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     */
+    public function testPurgeRefRenumbersEveryTouchedDocument() :void
+    {
+        $shared = [ 'id' => 'shared' , 'label' => 'Shared' , 'position' => 7 ] ;
+
+        self::$db->collection( self::COLLECTION )->insert
+        ([
+            '_key'  => 'rk-pg1' ,
+            'lines' => [ [ 'id' => 'l1' , 'label' => 'Alpha' , 'position' => 7 ] , $shared , [ 'id' => 'l3' , 'label' => 'Gamma' , 'position' => 7 ] ] ,
+            'numberOfLines' => 3 ,
+        ]) ;
+
+        $this->model()->arrayPurgeRef( [ Arango::FIELD => 'lines' , Arango::VALUE => $shared ] ) ;
+
+        $doc = $this->doc( 'rk-pg1' ) ;
+
+        $this->assertSame( [ 'l1:0' , 'l3:1' ] , self::ranks( $doc[ 'lines' ] ) ) ;
+        $this->assertSame( 2 , $doc[ 'numberOfLines' ] ) ;
     }
 }
