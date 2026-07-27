@@ -30,6 +30,7 @@ Le second est plus discret mais tout aussi utile : l'**invalidation des caches d
 5. [Invalider les caches dépendants (`Arango::INVALIDATES`)](#invalider-les-caches-dépendants-arangoinvalidates)
    - [Le contrat `Invalidable`](#le-contrat-invalidable)
    - [`DocumentFieldSetResolver` — un ensemble de valeurs caché](#documentfieldsetresolver--un-ensemble-de-valeurs-caché)
+   - [`InheritedFieldSetResolver` — quand l'appartenance descend](#inheritedfieldsetresolver--quand-lappartenance-descend)
    - [Ce qui est ignoré en silence](#ce-qui-est-ignoré-en-silence)
 6. [Pièges & garanties](#pièges--garanties)
 7. [Voir aussi](#voir-aussi)
@@ -274,6 +275,55 @@ Le TTL, lui, n'est pas le mécanisme de rafraîchissement — c'est un **filet**
 
 > **Memcached est partagé par tous les workers**, donc une seule invalidation atteint toute la flotte — pas seulement le processus qui a reçu l'écriture.
 
+### `InheritedFieldSetResolver` — quand l'appartenance descend
+
+Certains arbres portent leur hiérarchie dans leurs identifiants eux-mêmes : `410` est une branche, `41006` en descend, `4100604` descend de `41006`. Le parent se **calcule**, il ne se lit pas. Sur un tel arbre, éteindre `410` doit éteindre toute sa descendance — un terme disparaît si lui-même **ou l'un de ses ancêtres** est éteint. L'inverse n'est pas vrai : un descendant éteint ne masque rien vers le haut.
+
+Le résolveur précédent ne sait pas faire cela, et pour deux raisons qui n'ont rien à voir l'une avec l'autre. Il ne lit que les documents filtrés, alors qu'il faut voir **tous** les termes pour savoir lesquels héritent ; et il ne connaît pas la règle de parenté, qui appartient au consommateur et n'a rien à faire dans la lib. D'où la découpe : [`InheritedFieldSetResolver`](../../src/oihana/arango/cache/InheritedFieldSetResolver.php) fournit la mécanique de remontée, vous fournissez la fonction qui calcule le parent.
+
+**La situation.** Un thésaurus dont les codes vont par paliers de deux caractères, et où seul `410` est marqué éteint.
+
+```php
+use oihana\arango\cache\InheritedFieldSetResolver ;
+
+$hiddenTerms = new InheritedFieldSetResolver
+(
+    model    : $terms ,
+    cache    : $memcached ,
+    cacheKey : 'thesaurus.hiddenTerms' ,     // requis, unique par résolveur
+    filter   : [ 'key' => 'disabled' , 'op' => 'eq' , 'val' => true ] ,
+    parent   : fn( int|string $id ) => strlen( (string) $id ) > 3
+             ? substr( (string) $id , 0 , -2 )
+             : null ,                        // null = c'est une racine
+    field    : 'id' ,                        // défaut : DEFAULT_FIELD
+    ttl      : 3600                          // défaut : 1 heure
+) ;
+
+$hiddenTerms->values() ; // ['410', '41006', '41007', '4100604'] — toute la descente
+```
+
+`$filter` sélectionne l'ensemble d'**amorçage** : les documents dont l'extinction est déclarée. Tout le reste s'en déduit. Notez qu'il n'a plus de valeur par défaut, contrairement au frère : `parent` est requis et le suit, et PHP interdit un paramètre requis derrière un paramètre optionnel.
+
+**Deux lectures au maximum, et la seconde est conditionnelle.** Le cas nominal — personne n'est éteint — coûte exactement une requête et s'arrête là : un amorçage vide ne peut rien faire hériter, il est donc inutile de relire la collection pour s'en convaincre. Ce n'est que lorsque l'amorçage contient quelque chose que la collection entière est lue, chaque valeur remontant ses ancêtres jusqu'à en croiser un qui appartient à l'amorçage.
+
+La remontée **traverse les paliers absents**. Si `41006` n'existe pas comme document, `4100604` hérite quand même de `410` : les identifiants sont calculés, la marche ne s'arrête pas sur un trou.
+
+> ⚠️ **La closure doit rendre le type que portent vos documents.** C'est la même règle que chez le frère, mais elle mord deux fois plus fort ici. AQL ne convertit pas d'un type à l'autre — `5 NOT IN ["5"]` vaut **vrai** — et l'appartenance est testée strictement. Une closure qui rend `'410'` alors que vos `id` sont des entiers ne fera correspondre aucun ancêtre : l'ensemble se réduira silencieusement à l'amorçage, sans erreur ni log. Des identifiants entiers appellent une closure qui calcule en entiers ; des codes à zéro initial (`'0410'`) appellent une closure qui travaille en chaînes.
+
+**La marche est bornée.** Une closure fautive peut boucler — elle rend son entrée, ou deux identifiants se pointent l'un l'autre. La remontée s'arrête net si un identifiant réapparaît sur le même chemin, et de toute façon au bout de `InheritedFieldSetResolver::MAX_DEPTH` paliers (32). Les deux cas sont journalisés en `warning` et abandonnent ce document ; aucun ne lève d'exception, aucun ne bloque un worker.
+
+**Le fail-open est gradué**, parce qu'une lecture qui échoue ne doit jamais **élargir** l'ensemble masqué :
+
+| Ce qui casse | Ce qui est rendu | Journal |
+|---|---|---|
+| La lecture d'amorçage | `[]` — comme le frère : une base injoignable ne veut pas dire « tout est exclu » | `error` |
+| La lecture d'expansion, ou la closure qui lève | l'**amorçage seul** — les extinctions déclarées restent honorées, seul l'héritage manque à l'appel | `error` distinct |
+| Une closure cyclique, ou la profondeur maximale | ce document ne rejoint pas l'ensemble | `warning` |
+
+Enfin, les deux lectures sont **projetées sur le seul champ collecté**. L'expansion lit la collection entière : sans projection, elle ramènerait chaque document en entier, et avec lui la sous-requête de chaque jointure et de chaque arête déclarée sur le modèle. Un champ pointé (`code.value`) est laissé sans projection — il produirait une clé d'objet `a.b` non quotée, invalide en AQL ; la lecture large est plus lente, jamais fausse. Le tout vit dans une méthode `listInit()` protégée : un modèle dont l'`alter()` exige d'autres champs la neutralise en la surchargeant, sans paramètre supplémentaire à porter.
+
+Pour le reste — clé de cache requise, TTL en filet, `ttl: 0` qui court-circuite, `invalidate()` câblable par `Arango::INVALIDATES` — la classe se comporte exactement comme celle dont elle hérite.
+
 ### Ce qui est ignoré en silence
 
 Le câblage est **tolérant** : une déclaration douteuse est sautée, jamais fatale. Une invalidation qui explose transformerait une écriture parfaitement valide en erreur 500.
@@ -308,6 +358,6 @@ Le câblage est **tolérant** : une déclaration douteuse est sautée, jamais fa
 - [Projection des edges et joins](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, traversées de lecture.
 - [Champs-tableaux embarqués](db/arrays.md) — mutations atomiques et leurs signaux `*Update`.
 - [Glossaire](getting-started/glossary.md#cascade) — entrées *Cascade* et *Signal*.
-- [`DocumentFieldSetResolver`](../../src/oihana/arango/cache/DocumentFieldSetResolver.php) et [`InvalidatesOnWriteTrait`](../../src/oihana/arango/cache/InvalidatesOnWriteTrait.php) — les deux briques du namespace `oihana\arango\cache`.
+- [`DocumentFieldSetResolver`](../../src/oihana/arango/cache/DocumentFieldSetResolver.php), [`InheritedFieldSetResolver`](../../src/oihana/arango/cache/InheritedFieldSetResolver.php) et [`InvalidatesOnWriteTrait`](../../src/oihana/arango/cache/InvalidatesOnWriteTrait.php) — les briques du namespace `oihana\arango\cache`.
 - [Dépendances](getting-started/dependencies.md#oihanaphp-signals) — le rôle de `oihana/php-signals`.
 - Amont : [Signals & notices (`oihana/php-models`)](https://github.com/BcommeBois/oihana-php-models/blob/main/wiki/fr/signals-notices.md) — primitives `Signal` / `Payload`, ajout de signaux à un modèle.

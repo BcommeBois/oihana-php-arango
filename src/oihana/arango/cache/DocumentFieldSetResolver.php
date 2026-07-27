@@ -78,38 +78,21 @@ class DocumentFieldSetResolver implements Invalidable
     public const int DEFAULT_TTL = 3600 ;
 
     /**
-     * Drops the cached set.
-     */
-    public function invalidate() : void
-    {
-        $this->cache->delete( $this->cacheKey ) ;
-
-        $this->logger?->debug( 'DocumentFieldSetResolver: cache invalidated (' . $this->cacheKey . ')' ) ;
-    }
-
-    /**
-     * Reads the matching documents and collects their field values.
+     * Reads the documents matching the given filter and collects their field values.
+     *
+     * Mechanics only — read, extract, de-duplicate. The fail-open policy lives in
+     * {@see load()}: a subclass reading twice must be able to tell WHICH read
+     * failed, which a catch buried here would hide.
+     *
+     * @param array|null $filter The filter selecting the documents, in the model filter shape. `null` reads them all.
      *
      * @return array<int,int|string>
+     *
+     * @throws Throwable Whatever the underlying read throws.
      */
-    private function load() : array
+    protected function collect( ?array $filter ) : array
     {
-        try
-        {
-            $init = [ Arango::LIMIT => 0 ] ;
-
-            if ( $this->filter !== null )
-            {
-                $init[ Arango::FILTER ] = $this->filter ;
-            }
-
-            $documents = $this->model->list( $init ) ;
-        }
-        catch ( Throwable $error )
-        {
-            $this->logger?->error( 'DocumentFieldSetResolver: failed to load ' . $this->cacheKey . ': ' . $error->getMessage() ) ;
-            return [] ;
-        }
+        $documents = $this->model->list( $this->listInit( $filter ) ) ;
 
         $values = [] ;
 
@@ -126,6 +109,56 @@ class DocumentFieldSetResolver implements Invalidable
         }
 
         return array_values( array_unique( $values ) ) ;
+    }
+
+    /**
+     * Drops the cached set.
+     */
+    public function invalidate() : void
+    {
+        $this->cache->delete( $this->cacheKey ) ;
+
+        $this->logger?->debug( static::class . ': cache invalidated (' . $this->cacheKey . ')' ) ;
+    }
+
+    /**
+     * Builds the model init of one read.
+     *
+     * The seam a subclass overrides to narrow the read — the whole document is
+     * fetched here, since the filtered set is small by construction.
+     *
+     * @param array|null $filter The filter selecting the documents. `null` reads them all.
+     *
+     * @return array<string,mixed>
+     */
+    protected function listInit( ?array $filter ) : array
+    {
+        $init = [ Arango::LIMIT => 0 ] ;
+
+        if ( $filter !== null )
+        {
+            $init[ Arango::FILTER ] = $filter ;
+        }
+
+        return $init ;
+    }
+
+    /**
+     * Resolves the set, failing open on a read error.
+     *
+     * @return array<int,int|string>
+     */
+    protected function load() : array
+    {
+        try
+        {
+            return $this->collect( $this->filter ) ;
+        }
+        catch ( Throwable $error )
+        {
+            $this->logger?->error( static::class . ': failed to load ' . $this->cacheKey . ': ' . $error->getMessage() ) ;
+            return [] ;
+        }
     }
 
     /**

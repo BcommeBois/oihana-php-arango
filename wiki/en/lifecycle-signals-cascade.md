@@ -30,6 +30,7 @@ The second one is quieter but just as useful: **invalidating dependent caches**.
 5. [Invalidating dependent caches (`Arango::INVALIDATES`)](#invalidating-dependent-caches-arangoinvalidates)
    - [The `Invalidable` contract](#the-invalidable-contract)
    - [`DocumentFieldSetResolver` — a cached set of values](#documentfieldsetresolver--a-cached-set-of-values)
+   - [`InheritedFieldSetResolver` — when membership runs downhill](#inheritedfieldsetresolver--when-membership-runs-downhill)
    - [What is silently skipped](#what-is-silently-skipped)
 6. [Pitfalls & guarantees](#pitfalls--guarantees)
 7. [See also](#see-also)
@@ -274,6 +275,55 @@ The TTL is not the refresh mechanism — it is a **safety net**. The normal path
 
 > **Memcached is shared by every worker**, so one invalidation reaches the whole fleet — not just the process that received the write.
 
+### `InheritedFieldSetResolver` — when membership runs downhill
+
+Some trees carry their hierarchy in the identifiers themselves: `410` is a branch, `41006` descends from it, `4100604` descends from `41006`. The parent is **computed**, never read. On such a tree, switching `410` off must switch its whole descent off — a term disappears if it is itself switched off **or one of its ancestors is**. The converse does not hold: a switched-off descendant masks nothing upwards.
+
+The previous resolver cannot do that, for two entirely unrelated reasons. It only reads the filtered documents, when **every** term must be seen to know which ones inherit; and it does not know the parentage rule, which belongs to the consumer and has no business inside the lib. Hence the split: [`InheritedFieldSetResolver`](../../src/oihana/arango/cache/InheritedFieldSetResolver.php) provides the climbing mechanics, you provide the function that computes the parent.
+
+**The situation.** A thesaurus whose codes go by two-character levels, where only `410` is marked disabled.
+
+```php
+use oihana\arango\cache\InheritedFieldSetResolver ;
+
+$hiddenTerms = new InheritedFieldSetResolver
+(
+    model    : $terms ,
+    cache    : $memcached ,
+    cacheKey : 'thesaurus.hiddenTerms' ,     // required, unique per resolver
+    filter   : [ 'key' => 'disabled' , 'op' => 'eq' , 'val' => true ] ,
+    parent   : fn( int|string $id ) => strlen( (string) $id ) > 3
+             ? substr( (string) $id , 0 , -2 )
+             : null ,                        // null = this one is a root
+    field    : 'id' ,                        // default: DEFAULT_FIELD
+    ttl      : 3600                          // default: 1 hour
+) ;
+
+$hiddenTerms->values() ; // ['410', '41006', '41007', '4100604'] — the whole descent
+```
+
+`$filter` selects the **seed** set: the documents whose exclusion is declared. Everything else is derived from it. Note that it has lost its default value, unlike the sibling's: `parent` is required and follows it, and PHP forbids a required parameter after an optional one.
+
+**Two reads at most, and the second one is conditional.** The nominal case — nobody is switched off — costs exactly one query and stops there: an empty seed set can make nothing inherit, so re-reading the collection to prove it would be pure waste. Only when the seed set holds something is the whole collection read, each value climbing its ancestors until one of them belongs to the seed set.
+
+The walk **crosses missing levels**. If `41006` does not exist as a document, `4100604` still inherits from `410`: the identifiers are computed, and the walk does not stop at a gap.
+
+> ⚠️ **The closure must return the type your documents carry.** Same rule as on the sibling, but it bites twice as hard here. AQL does not coerce across types — `5 NOT IN ["5"]` is **true** — and membership is tested strictly. A closure returning `'410'` when your `id`s are integers will match no ancestor at all: the set silently shrinks back to the seed, with no error and no log. Integer identifiers call for a closure computing in integers; leading-zero codes (`'0410'`) call for one working in strings.
+
+**The walk is bounded.** A faulty closure can loop — returning its own input, or two identifiers pointing at each other. The climb stops dead if an identifier reappears on the same path, and in any case after `InheritedFieldSetResolver::MAX_DEPTH` levels (32). Both cases are logged as a `warning` and abandon that document; neither raises, and neither hangs a worker.
+
+**Fail-open is graduated**, because a failing read must never **widen** the resolved set:
+
+| What breaks | What is returned | Log |
+|---|---|---|
+| The seed read | `[]` — like the sibling: an unreachable database does not mean "everything is excluded" | `error` |
+| The expansion read, or a raising closure | the **seed set alone** — the declared exclusions still hold, only the inheritance is missing | distinct `error` |
+| A cyclic closure, or the maximum depth | that document does not join the set | `warning` |
+
+Finally, both reads are **projected onto the collected field alone**. The expansion reads the whole collection: without a projection it would return every document in full, and with it the sub-query of every join and edge declared on the model. A dotted field (`code.value`) is left un-projected — it would render as an unquoted `a.b` object key, which is not valid AQL; the wide read is slower, never wrong. All of it lives in a protected `listInit()`: a model whose `alter()` needs other fields disables it by overriding that method, with no extra constructor parameter to carry around.
+
+For everything else — required cache key, TTL as a safety net, `ttl: 0` bypassing it, `invalidate()` wirable through `Arango::INVALIDATES` — the class behaves exactly like the one it extends.
+
 ### What is silently skipped
 
 The wiring is **tolerant**: a dubious declaration is skipped, never fatal. An invalidation blowing up would turn a perfectly valid write into a 500.
@@ -308,6 +358,6 @@ The wiring is **tolerant**: a dubious declaration is skipped, never fatal. An in
 - [Edges and joins projection](edges-joins-projection.md) — `AQL::EDGES`, `AQL::JOINS`, read traversals.
 - [Embedded array fields](db/arrays.md) — atomic mutations and their `*Update` signals.
 - [Glossary](getting-started/glossary.md#cascade) — *Cascade* and *Signal* entries.
-- [`DocumentFieldSetResolver`](../../src/oihana/arango/cache/DocumentFieldSetResolver.php) and [`InvalidatesOnWriteTrait`](../../src/oihana/arango/cache/InvalidatesOnWriteTrait.php) — the two bricks of the `oihana\arango\cache` namespace.
+- [`DocumentFieldSetResolver`](../../src/oihana/arango/cache/DocumentFieldSetResolver.php), [`InheritedFieldSetResolver`](../../src/oihana/arango/cache/InheritedFieldSetResolver.php) and [`InvalidatesOnWriteTrait`](../../src/oihana/arango/cache/InvalidatesOnWriteTrait.php) — the bricks of the `oihana\arango\cache` namespace.
 - [Dependencies](getting-started/dependencies.md#oihanaphp-signals) — the role of `oihana/php-signals`.
 - Upstream: [Signals & notices (`oihana/php-models`)](https://github.com/BcommeBois/oihana-php-models/blob/main/wiki/en/signals-notices.md) — `Signal` / `Payload` primitives, adding signals to a model.
