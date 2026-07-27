@@ -187,6 +187,53 @@ final class UsersController extends DocumentsController
 
 Advantage: **a single override covers all HTTP verbs**. No need to repeat cross-cutting logic in `list()`, `get()`, `post()`, etc.
 
+### ⚠️ `Arango::CONDITIONS` does not mean the same thing on every operation
+
+That advantage has one sharp edge, and it is worth knowing before you write your first hook: `conditions` is spelled the same in every `$init`, but the model reads it with **two different dictionaries** depending on the operation.
+
+| Operation | Expected type | Meaning |
+|---|---|---|
+| `get()`, `list()`, `last()`, `count()`, `exist()`, `delete()` | `string[]` | AQL predicates appended to the query's `FILTER` |
+| `insert()`, `update()`, `replace()` | `callable[]` | which **attributes to drop from the payload** before writing (the null-compression guards) |
+
+The situation. A hook posing a scope on every model call — the very pattern this section recommends:
+
+```php
+protected function beforeModelCall( ?Request $request , array &$init ) : void
+{
+    $init[ Arango::CONDITIONS ] = [ ...( $init[ Arango::CONDITIONS ] ?? [] ) , 'doc.published == @published' ] ;
+    $init[ Arango::BINDS      ] = [ ...( $init[ Arango::BINDS      ] ?? [] ) , 'published' => true ] ;
+
+    parent::beforeModelCall( $request , $init ) ;
+}
+```
+
+On `GET` it does exactly what you want. On `POST`, `PATCH` and `PUT` the string reaches `compress()`, which expects callables:
+
+```
+InvalidArgumentException: All conditions in the array must be callable.
+→ HTTP 500
+```
+
+The error surfaces three layers below the controller, in an array helper, and names neither the hook nor the option at fault.
+
+The workaround, until the two meanings are split. Write inits carry `Arango::DOC` — the payload about to be written — and read inits never do. That is the reliable discriminator, available inside the hook:
+
+```php
+protected function beforeModelCall( ?Request $request , array &$init ) : void
+{
+    if ( !array_key_exists( Arango::DOC , $init ) ) // a read
+    {
+        $init[ Arango::CONDITIONS ] = [ ...( $init[ Arango::CONDITIONS ] ?? [] ) , 'doc.published == @published' ] ;
+        $init[ Arango::BINDS      ] = [ ...( $init[ Arango::BINDS      ] ?? [] ) , 'published' => true ] ;
+    }
+
+    parent::beforeModelCall( $request , $init ) ;
+}
+```
+
+Consequence to accept: the write itself is then **not** scoped. Gate it upstream instead — probe the document through a scoped `exist()` before writing, which is the pattern [`PropertyController` applies](#scoping-a-property-controller). Note that the write `FILTER` ignores `Arango::CONDITIONS` today anyway (`delete()` being the one exception), so nothing is lost by leaving it out.
+
 ## Route args reach the model (`Arango::ARGS`)
 
 Take the route `/workspaces/{workspace}/things/{id}`. Slim hands the action its

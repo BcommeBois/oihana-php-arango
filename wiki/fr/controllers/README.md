@@ -187,6 +187,53 @@ final class UsersController extends DocumentsController
 
 Avantage : **un seul override couvre tous les verbes HTTP**. Pas besoin de répéter la logique transverse dans `list()`, `get()`, `post()`, etc.
 
+### ⚠️ `Arango::CONDITIONS` ne veut pas dire la même chose selon l'opération
+
+Cet avantage a un angle vif, et mieux vaut le connaître avant d'écrire son premier hook : `conditions` s'écrit pareil dans tous les `$init`, mais le modèle le lit avec **deux dictionnaires différents** selon l'opération.
+
+| Opération | Type attendu | Sens |
+|---|---|---|
+| `get()`, `list()`, `last()`, `count()`, `exist()`, `delete()` | `string[]` | prédicats AQL ajoutés au `FILTER` de la requête |
+| `insert()`, `update()`, `replace()` | `callable[]` | quels **attributs retirer du payload** avant l'écriture (les gardes de compression des nulls) |
+
+La situation. Un hook qui pose un périmètre sur tous les appels modèle — exactement le patron que cette section recommande :
+
+```php
+protected function beforeModelCall( ?Request $request , array &$init ) : void
+{
+    $init[ Arango::CONDITIONS ] = [ ...( $init[ Arango::CONDITIONS ] ?? [] ) , 'doc.published == @published' ] ;
+    $init[ Arango::BINDS      ] = [ ...( $init[ Arango::BINDS      ] ?? [] ) , 'published' => true ] ;
+
+    parent::beforeModelCall( $request , $init ) ;
+}
+```
+
+Sur `GET`, il fait précisément ce qu'on attend. Sur `POST`, `PATCH` et `PUT`, la chaîne arrive dans `compress()`, qui attend des callables :
+
+```
+InvalidArgumentException: All conditions in the array must be callable.
+→ HTTP 500
+```
+
+L'erreur tombe trois couches sous le contrôleur, dans un utilitaire de tableaux, et ne nomme ni le hook ni l'option fautive.
+
+Le contournement, tant que les deux sens ne sont pas séparés. Les `$init` d'écriture portent `Arango::DOC` — le payload sur le point d'être écrit — et ceux de lecture jamais. C'est le discriminant fiable, disponible à l'intérieur du hook :
+
+```php
+protected function beforeModelCall( ?Request $request , array &$init ) : void
+{
+    if ( !array_key_exists( Arango::DOC , $init ) ) // une lecture
+    {
+        $init[ Arango::CONDITIONS ] = [ ...( $init[ Arango::CONDITIONS ] ?? [] ) , 'doc.published == @published' ] ;
+        $init[ Arango::BINDS      ] = [ ...( $init[ Arango::BINDS      ] ?? [] ) , 'published' => true ] ;
+    }
+
+    parent::beforeModelCall( $request , $init ) ;
+}
+```
+
+Conséquence à assumer : l'écriture elle-même n'est alors **pas** périmétrée. Il faut la garder en amont — sonder le document par un `exist()` périmétré avant d'écrire, ce que fait [`PropertyController`](#périmétrer-un-contrôleur-de-propriété). À noter : le `FILTER` des écritures ignore de toute façon `Arango::CONDITIONS` aujourd'hui (`delete()` étant la seule exception), donc on ne perd rien à l'en retirer.
+
 ## Les paramètres de route atteignent le modèle (`Arango::ARGS`)
 
 Prenons la route `/workspaces/{workspace}/things/{id}`. Slim remet à l'action ses
