@@ -224,6 +224,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`patch()`, `put()` and `post()` crashed instead of answering when their write matched nothing.** All three read the document their write returned, to answer with the stored value rather than the submitted one — `Arango::VALUE => $document->_key`. `$document` is typed `?object` and the null was never handled; in PHP 8 `null->_key` raises an **`Error`**, which does not extend `Exception`, so the `catch( Exception )` closing each handler never saw it and a fatal escaped instead of the controller's own JSON error envelope.
+  - **On `update()` / `replace()` the null is reachable, and means 404.** `UPDATE … RETURN NEW` yields a row only when its `FILTER` matched, and between the existence probe and the write there is a window — another request deleting the document is enough, two tabs open on the same record will do it. That is the same fact the probe reports, so it answers with the same status and the same wording: `The document "…" does not exist`.
+  - **On `insert()` the null is not a client mistake, and means 500.** `INSERT … RETURN NEW` always yields the created document, so nothing coming back means the write reported success and produced nothing — a server-side anomaly, answered `The document was not created` rather than a 4xx blaming the caller.
+  - **Raw mode is gated by the same guards**, at all three sites. It never crashed — it skips the reload — but it answered `200` for a write that touched nothing, which reads as success. This is the one observable behaviour change: a 200 that lies costs more than an exact 404.
+  - The guards follow a convention the repository already had: `ArrayPropertyControllerTrait::respondWithItem()` already inspects the document returned by a write and answers 404 when it proves nothing was matched, at no extra query cost.
+  - **Tests:** 6 cases — `patch` and `put` vanishing before the write, raw mode covered on both `DocumentsController` and `PropertyController`, and `post` answering 500 when the insert returns nothing.
+
 - **A `Field::WHEN` logic group with no operand raised a `TypeError` instead of naming the mistake.** `[ 'and' ]` or `[ 'or' ]` — a keyword typed without its conditions — reached `predicates()`, which rightly returns `null` on an empty list, and that `null` surfaced against `buildWhenCondition()`'s `string` return type:
   ```
   TypeError: buildWhenCondition(): Return value must be of type string, null returned
