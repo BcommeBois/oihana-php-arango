@@ -320,7 +320,21 @@ The walk **crosses missing levels**. If `41006` does not exist as a document, `4
 | The expansion read, or a raising closure | the **seed set alone** — the declared exclusions still hold, only the inheritance is missing | distinct `error` |
 | A cyclic closure, or the maximum depth | that document does not join the set | `warning` |
 
-Finally, both reads are **projected onto the collected field alone**. The expansion reads the whole collection: without a projection it would return every document in full, and with it the sub-query of every join and edge declared on the model. A dotted field (`code.value`) is left un-projected — it would render as an unquoted `a.b` object key, which is not valid AQL; the wide read is slower, never wrong. All of it lives in a protected `listInit()`: a model whose `alter()` needs other fields disables it by overriding that method, with no extra constructor parameter to carry around.
+Finally, both reads are **narrowed to the collected field alone**. The expansion reads the whole collection: without that, it would return every document in full, and with it the sub-query of every join and edge declared on the model.
+
+Narrowing takes **two keys**, and the pair is not redundant — this is the trap of the projection machinery, and it reaches well beyond this resolver:
+
+| Key | The question it answers |
+|---|---|
+| `Arango::QUERY_FIELDS` | "**which** field declaration?" — it **replaces** the model's |
+| `Arango::IN` | "**which lines** of the surviving declaration?" — it **filters** it, replacing nothing |
+| `Arango::FIELDS` | "and if **no** declaration survives?" — a list of names read raw (`doc.<name>`) |
+
+The resolver therefore passes `Arango::IN` **and** `Arango::FIELDS`. `IN` keeps the model's declaration and retains only the collected key: when the model declares that key against another attribute — `[ 'termCode' => [ Field::NAME => 'id' ] ]` — the read renders `RETURN { termCode : doc.id }`, as it should. An empty `Arango::QUERY_FIELDS` would instead render `RETURN { termCode : doc.termCode }`, an attribute that does not exist: every value would come back `null`, the set would be empty, and **nothing would be excluded, with no error whatsoever**. `Arango::FIELDS` covers the opposite case, where the key is **not** declared: the intersection is then empty, no declaration survives, and `IN` alone would fall back on the whole document — the exact opposite of the intent.
+
+> ⚠️ The corollary holds for any call into the lib: **`Arango::FIELDS` alone is silently ignored** as soon as the model declares its own fields. `returnFields()` falls back on that declaration, takes its branch, and never reads `FIELDS` again. It works in a test against a bare model, and does nothing at all in production against a declared one.
+
+A dotted field (`code.value`) is left un-narrowed — it would render as an unquoted `a.b` object key, which is not valid AQL; the wide read is slower, never wrong. All of it lives in a protected `listInit()`: a model whose `alter()` needs other fields disables it by overriding that method, with no extra constructor parameter to carry around.
 
 For everything else — required cache key, TTL as a safety net, `ttl: 0` bypassing it, `invalidate()` wirable through `Arango::INVALIDATES` — the class behaves exactly like the one it extends.
 

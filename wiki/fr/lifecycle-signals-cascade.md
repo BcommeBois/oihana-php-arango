@@ -320,7 +320,21 @@ La remontée **traverse les paliers absents**. Si `41006` n'existe pas comme doc
 | La lecture d'expansion, ou la closure qui lève | l'**amorçage seul** — les extinctions déclarées restent honorées, seul l'héritage manque à l'appel | `error` distinct |
 | Une closure cyclique, ou la profondeur maximale | ce document ne rejoint pas l'ensemble | `warning` |
 
-Enfin, les deux lectures sont **projetées sur le seul champ collecté**. L'expansion lit la collection entière : sans projection, elle ramènerait chaque document en entier, et avec lui la sous-requête de chaque jointure et de chaque arête déclarée sur le modèle. Un champ pointé (`code.value`) est laissé sans projection — il produirait une clé d'objet `a.b` non quotée, invalide en AQL ; la lecture large est plus lente, jamais fausse. Le tout vit dans une méthode `listInit()` protégée : un modèle dont l'`alter()` exige d'autres champs la neutralise en la surchargeant, sans paramètre supplémentaire à porter.
+Enfin, les deux lectures sont **restreintes au seul champ collecté**. L'expansion lit la collection entière : sans cela, elle ramènerait chaque document en entier, et avec lui la sous-requête de chaque jointure et de chaque arête déclarée sur le modèle.
+
+Cette restriction demande **deux clés**, et la paire n'est pas redondante — c'est le piège de la mécanique de projection, et il vaut bien au-delà de ce résolveur :
+
+| Clé | La question à laquelle elle répond |
+|---|---|
+| `Arango::QUERY_FIELDS` | « **quelle** déclaration de champs ? » — elle **remplace** celle du modèle |
+| `Arango::IN` | « **quelles lignes** de la déclaration retenue ? » — elle la **filtre**, sans rien remplacer |
+| `Arango::FIELDS` | « et **s'il ne reste aucune** déclaration ? » — liste de noms lus bruts (`doc.<nom>`) |
+
+Le résolveur passe donc `Arango::IN` **et** `Arango::FIELDS`. `IN` conserve la déclaration du modèle et n'en garde que la clé collectée : si le modèle déclare cette clé contre un autre attribut — `[ 'termCode' => [ Field::NAME => 'id' ] ]` — la lecture émet bien `RETURN { termCode : doc.id }`. Un `Arango::QUERY_FIELDS` vide donnerait au contraire `RETURN { termCode : doc.termCode }`, un attribut qui n'existe pas : toutes les valeurs sortiraient `null`, l'ensemble serait vide, et **rien ne serait masqué, sans la moindre erreur**. `Arango::FIELDS` couvre le cas inverse, celui où la clé n'est **pas** déclarée : l'intersection est alors vide, plus aucune déclaration ne survit, et `IN` seul retomberait sur le document entier — l'exact contraire de l'intention.
+
+> ⚠️ Le corollaire vaut pour tout appel de la lib : **`Arango::FIELDS` seul est ignoré en silence** dès que le modèle déclare ses champs. `returnFields()` retombe sur la déclaration du modèle, prend cette branche, et ne relit jamais `FIELDS`. Ça marche en test sur un modèle nu, et ça ne fait plus rien en production sur un modèle déclaré.
+
+Un champ pointé (`code.value`) est laissé sans restriction — il produirait une clé d'objet `a.b` non quotée, invalide en AQL ; la lecture large est plus lente, jamais fausse. Le tout vit dans une méthode `listInit()` protégée : un modèle dont l'`alter()` exige d'autres champs la neutralise en la surchargeant, sans paramètre supplémentaire à porter.
 
 Pour le reste — clé de cache requise, TTL en filet, `ttl: 0` qui court-circuite, `invalidate()` câblable par `Arango::INVALIDATES` — la classe se comporte exactement comme celle dont elle hérite.
 

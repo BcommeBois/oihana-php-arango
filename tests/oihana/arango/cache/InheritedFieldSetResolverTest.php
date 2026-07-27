@@ -3,12 +3,15 @@
 namespace tests\oihana\arango\cache;
 
 use Closure;
+use DI\Container;
 use Memcached;
 use RuntimeException;
 use stdClass;
 
 use oihana\arango\cache\InheritedFieldSetResolver;
+use oihana\arango\db\enums\AQL as DbAQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 use oihana\arango\models\Documents;
 
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -16,6 +19,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 #[CoversClass( InheritedFieldSetResolver::class )]
 #[AllowMockObjectsWithoutExpectations]
@@ -595,24 +599,102 @@ final class InheritedFieldSetResolverTest extends TestCase
         $this->assertSame
         (
             [
-                Arango::LIMIT        => 0 ,
-                Arango::FILTER       => self::FILTER ,
-                Arango::QUERY_FIELDS => [] ,
-                Arango::FIELDS       => [ 'id' ] ,
+                Arango::LIMIT  => 0 ,
+                Arango::FILTER => self::FILTER ,
+                Arango::IN     => [ 'id' ] ,
+                Arango::FIELDS => [ 'id' ] ,
             ] ,
             $inits[ 0 ] ,
-            'The seed read is projected too, and the empty queryFields is what stops a model-declared projection from ignoring the fields key.'
+            'The seed read is narrowed too, and it is `in` — which filters the model declaration — rather than an empty `queryFields`, which would replace it.'
         ) ;
 
         $this->assertSame
         (
             [
-                Arango::LIMIT        => 0 ,
-                Arango::QUERY_FIELDS => [] ,
-                Arango::FIELDS       => [ 'id' ] ,
+                Arango::LIMIT  => 0 ,
+                Arango::IN     => [ 'id' ] ,
+                Arango::FIELDS => [ 'id' ] ,
             ] ,
             $inits[ 1 ] ,
-            'The expansion reads the whole collection: without the projection it would return every document in full, plus every declared relation.'
+            'The expansion reads the whole collection: without the narrowing it would return every document in full, plus every declared relation.'
+        ) ;
+    }
+
+    /**
+     * The two tests below assert what the emitted init actually RENDERS, on a real
+     * `Documents` carrying a field declaration. The narrowing lives in the init, but
+     * the guarantee lives in the AQL, and only the model can produce it.
+     */
+    private function makeDeclaringModel( array $fields ) : Documents
+    {
+        $container = new Container() ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
+
+        return new Documents
+        (
+            $container ,
+            [
+                DbAQL::COLLECTION => 'terms' ,
+                DbAQL::LAZY       => false ,
+                DbAQL::FIELDS     => $fields ,
+            ]
+        ) ;
+    }
+
+    /**
+     * Captures the init the resolver hands to `list()` for its expansion read.
+     */
+    private function captureExpansionInit( string $field ) : array
+    {
+        $inits = [] ;
+
+        $model = $this->makeTreeModel
+        (
+            [ $this->makeDocument([ $field => '410' ]) ] ,
+            [ $this->makeDocument([ $field => '410' ]) ] ,
+            $calls ,
+            $inits
+        ) ;
+
+        $resolver = new InheritedFieldSetResolver
+        (
+            $model , $this->makeCacheStub() , self::KEY , self::FILTER , $this->chunkedParent() , field: $field
+        ) ;
+
+        $resolver->values() ;
+
+        return $inits[ 1 ] ;
+    }
+
+    public function testTheNarrowedReadFollowsTheModelDeclarationOfTheCollectedKey() : void
+    {
+        $variables = [] ;
+
+        $model = $this->makeDeclaringModel
+        ([
+            'termCode' => [ Field::NAME => 'id' ] , // the key is declared against ANOTHER attribute
+            'name'     => null ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'RETURN {termCode:doc.id}' ,
+            $model->returnFields( $this->captureExpansionInit( 'termCode' ) , $variables ) ,
+            'The narrowing must keep the declaration and only restrict it: replacing it would read doc.termCode, an attribute that does not exist, and resolve an empty set with no error.'
+        ) ;
+    }
+
+    public function testTheNarrowedReadStillProjectsAnUndeclaredKey() : void
+    {
+        $variables = [] ;
+
+        $model = $this->makeDeclaringModel([ 'name' => null ]) ; // 'id' is not declared at all
+
+        $this->assertSame
+        (
+            'RETURN {id:doc.id}' ,
+            $model->returnFields( $this->captureExpansionInit( 'id' ) , $variables ) ,
+            'Nothing survives the intersection here, so `fields` must catch it — `in` alone would fall back on the whole document.'
         ) ;
     }
 

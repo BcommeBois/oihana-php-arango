@@ -178,12 +178,20 @@ class InheritedFieldSetResolver extends DocumentFieldSetResolver
     /**
      * Builds the model init of one read, narrowed to the collected field.
      *
-     * The expansion reads the WHOLE collection, where the sibling's un-projected
-     * read would return every document in full — and emit the sub-query of every
-     * declared join and edge along with it. Two keys are needed, not one:
-     * `Arango::FIELDS` alone is ignored whenever the model declares its own
-     * projection, since `returnFields()` falls back on it and takes the DSL
-     * branch; the empty `Arango::QUERY_FIELDS` disables that fallback.
+     * The expansion reads the WHOLE collection, where an un-projected read would
+     * return every document in full — and emit the sub-query of every declared
+     * join and edge along with it.
+     *
+     * Narrowing takes two keys, and the pair is not redundant:
+     * - `Arango::IN` keeps the model's own field declaration and restricts it to
+     *   the collected key. It must be `IN` rather than an empty
+     *   `Arango::QUERY_FIELDS`: the latter *replaces* the declaration instead of
+     *   filtering it, and would read a raw `doc.<field>` — the wrong attribute
+     *   whenever the model declares that key against another one (`Field::NAME`),
+     *   yielding an empty set with no error at all.
+     * - `Arango::FIELDS` catches the case where the key is NOT declared: the
+     *   intersection is then empty, no declaration survives, and `IN` alone would
+     *   fall back on the whole document — the opposite of the intent.
      *
      * A dotted field is left un-projected: it would render as an unquoted `a.b`
      * object key, which is not valid AQL. The wide read is slower, never wrong.
@@ -198,8 +206,8 @@ class InheritedFieldSetResolver extends DocumentFieldSetResolver
 
         if ( !str_contains( $this->field , '.' ) )
         {
-            $init[ Arango::QUERY_FIELDS ] = [] ;
-            $init[ Arango::FIELDS       ] = [ $this->field ] ;
+            $init[ Arango::IN     ] = [ $this->field ] ;
+            $init[ Arango::FIELDS ] = [ $this->field ] ;
         }
 
         return $init ;
