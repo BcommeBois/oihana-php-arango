@@ -55,9 +55,21 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $this->assertSame( $model->objectResult , $result ) ;
     }
 
-    public function testPostReturnsValidatorErrorWhenPayloadInvalid() :void
+    /**
+     * A refused payload must never reach the model, and that is what is asserted —
+     * not the returned value.
+     *
+     * With a null response `fail()` returns null, so `assertNull()` alone proves
+     * nothing: it is also what a write that ran and produced nothing returns. This
+     * test used to pass through exactly that path — validation refused the payload,
+     * the insert ran anyway, the mock returned nothing, and the "write matched
+     * nothing" guard produced the expected null. Recording the model calls is the
+     * only assertion no chain of accidents can satisfy.
+     */
+    public function testPostRefusesAnInvalidPayloadWithoutTouchingTheModel() :void
     {
-        $model = new MockDocuments( 'users' ) ;
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'new1' ] ; // a write would succeed, if one ran
 
         $controller = $this->makeDocumentsController( $model , [
             ControllerParam::RULES => [ HttpMethod::ALL => [ 'missing' => 'required' ] ] ,
@@ -65,8 +77,47 @@ class DocumentsControllerWriteTest extends ControllerTestCase
 
         $request = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'name' => 'X' ] ) ;
 
-        // required field absent → validation fails → getValidatorError (null on null response)
         $this->assertNull( $controller->post( $request , null , [] ) ) ;
+        $this->assertSame( [] , $model->methods() , 'the model was reached despite the validation failure' ) ;
+    }
+
+    /**
+     * The same guard, seen from the HTTP side: with a real response the refusal is
+     * a 400 carrying the rule errors.
+     */
+    public function testPostAnswers400WhenPayloadInvalid() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+
+        $controller = $this->makeDocumentsController( $model , [
+            ControllerParam::RULES => [ HttpMethod::ALL => [ 'missing' => 'required' ] ] ,
+        ] ) ;
+
+        $request  = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'name' => 'X' ] ) ;
+        $response = $controller->post( $request , $this->makeResponse() , [] ) ;
+
+        $this->assertSame( 400 , $response->getStatusCode() ) ;
+        $this->assertSame( [] , $model->methods() ) ;
+    }
+
+    /**
+     * The i18n shape guard short-circuits on a null response too. It used to need a
+     * real one — the test below had to say so in a comment — because the guard
+     * branched on the truthiness of the error response instead of on the errors.
+     */
+    public function testPostRefusesAMalformedI18nFieldWithoutTouchingTheModel() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'new1' ] ;
+
+        $controller = $this->makeDocumentsController( $model , [
+            ControllerParam::PAYLOAD => [ HttpMethod::ALL => [ 'title' => [ Arango::TYPE => AQLType::I18N ] ] ] ,
+        ] ) ;
+
+        $request = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'title' => 'flat' ] ) ;
+
+        $this->assertNull( $controller->post( $request , null , [] ) ) ;
+        $this->assertSame( [] , $model->methods() , 'the model was reached despite the malformed i18n field' ) ;
     }
 
     public function testPostReturnsNullOnModelFailure() :void
@@ -103,8 +154,7 @@ class DocumentsControllerWriteTest extends ControllerTestCase
             ControllerParam::PAYLOAD => [ HttpMethod::ALL => [ 'title' => [ Arango::TYPE => AQLType::I18N ] ] ] ,
         ] ) ;
 
-        // a flat string where a per-language object is expected → 422 (needs a real
-        // response so enforceI18nShape returns a truthy Response to short-circuit)
+        // a flat string where a per-language object is expected → 422
         $request = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'title' => 'flat' ] ) ;
 
         $result = $controller->post( $request , $this->makeResponse() , [] ) ;
@@ -384,10 +434,16 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $this->assertSame( HttpStatusCode::NOT_FOUND , $response->getStatusCode() ) ;
     }
 
-    public function testUpdateReturnsValidatorErrorWhenPayloadInvalid() :void
+    /**
+     * Same guard on the update path. The existence probe has already run by then, so
+     * the assertion targets the write itself: `update` must not appear among the
+     * recorded calls.
+     */
+    public function testUpdateRefusesAnInvalidPayloadWithoutWriting() :void
     {
-        $model = new MockDocuments( 'users' ) ;
-        $model->firstResult = 1 ;
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;                          // exist() → true
+        $model->objectResult = (object) [ '_key' => 'k1' ] ; // a write would succeed, if one ran
 
         $controller = $this->makeDocumentsController( $model , [
             ControllerParam::RULES => [ HttpMethod::ALL => [ 'missing' => 'required' ] ] ,
@@ -396,6 +452,7 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $request = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 ] ) ;
 
         $this->assertNull( $controller->patch( $request , null , [ 'id' => 'k1' ] ) ) ;
+        $this->assertSame( [ 'exist' ] , $model->methods() , 'the write ran despite the validation failure' ) ;
     }
 
     public function testUpdateReturnsNullOnModelFailure() :void

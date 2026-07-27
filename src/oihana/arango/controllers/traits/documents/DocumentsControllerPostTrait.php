@@ -46,9 +46,10 @@ trait DocumentsControllerPostTrait
         {
             $relations = [] ;
             $payload   = null ;
+            $failure   = null ;
             $method    = $request?->getMethod() ;
 
-            if ( $failure = $this->prepareWritePayload( $request , $response , $method , $init , $relations , $payload ) )
+            if ( !$this->prepareWritePayload( $request , $response , $method , $init , $relations , $payload , $failure ) )
             {
                 return $failure ;
             }

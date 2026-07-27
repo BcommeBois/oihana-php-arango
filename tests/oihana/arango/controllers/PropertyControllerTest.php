@@ -6,10 +6,12 @@ use oihana\arango\controllers\PropertyController;
 use oihana\arango\controllers\enums\AQLType;
 use oihana\arango\enums\Arango;
 use oihana\controllers\enums\ControllerParam;
+use oihana\enums\http\HttpMethod;
 use oihana\enums\http\HttpStatusCode;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
+use tests\oihana\arango\controllers\mocks\RecordingDocuments;
 use tests\oihana\arango\controllers\mocks\ThrowingDocuments;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 
@@ -163,6 +165,31 @@ class PropertyControllerTest extends ControllerTestCase
         $response   = $controller->patch( $request , $this->makeResponse() , [ Arango::ID => 'k1' ] , [ Arango::RAW => true ] ) ;
 
         $this->assertSame( HttpStatusCode::NOT_FOUND , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * `patch()` keeps its payload preparation inline, in an `if/else` whose `else`
+     * holds the write — so a refused payload cannot reach the model whatever the
+     * error response is worth. The shared `prepareWritePayload()` of `post()` and
+     * `update()` had to be given a boolean verdict to offer the same guarantee;
+     * this asserts the structural one rather than trusting it.
+     */
+    public function testPatchRefusesAnInvalidPayloadWithoutWriting() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' , 'emails' => [ 'x@x' ] ] ;
+
+        $controller = $this->makePropertyController( $model ,
+        [
+            self::PROPERTY         => 'emails' ,
+            ControllerParam::RULES => [ HttpMethod::ALL => [ 'missing' => 'required' ] ] ,
+        ]) ;
+
+        $request = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'emails' => [ 'x@x' ] ] ) ;
+
+        $this->assertNull( $controller->patch( $request , null , [ Arango::ID => 'k1' ] ) ) ;
+        $this->assertSame( [ 'exist' ] , $model->methods() , 'the write ran despite the validation failure' ) ;
     }
 
     public function testPatchReturnsValidatorErrorWhenPayloadInvalid() :void

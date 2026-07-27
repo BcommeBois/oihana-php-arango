@@ -375,27 +375,29 @@ trait PayloadsTrait
      * matters (the shape guard must run before extraction, the stripping after
      * validation, so the rules still see the relation attributes the caller sent).
      *
-     * On success it returns `null` and both `$payload` and `$relations` are filled.
-     * On failure it returns the response to hand back, and `$payload` is left
-     * untouched:
+     * It answers **whether the write may proceed**, and hands the response to return
+     * through `$failure` when it may not:
      *
      * ```php
      * $relations = [] ;
      * $payload   = null ;
+     * $failure   = null ;
      * $method    = $request?->getMethod() ;
      *
-     * if ( $failure = $this->prepareWritePayload( $request , $response , $method , $init , $relations , $payload ) )
+     * if ( !$this->prepareWritePayload( $request , $response , $method , $init , $relations , $payload , $failure ) )
      * {
      *     return $failure ;
      * }
      * ```
      *
-     * **Known limitation, inherited rather than introduced:** the failure signal is
-     * the response object, and `fail()` returns `null` when `$response` is null — so
-     * in that mode (tests, CLI) a failure is indistinguishable from a success and the
-     * caller carries on. The two inlined versions behaved exactly the same way; this
-     * method preserves it rather than changing it silently. Production handlers always
-     * receive a response, so the case is degenerate there.
+     * **The verdict is a boolean, never the response object, and that is the point.**
+     * `fail()` returns `null` when `$response` is null — the convention the controller
+     * tests rely on — so a caller branching on the truthiness of an error response
+     * cannot tell "it failed" from "it went fine": in that mode it would carry on and
+     * write a payload the rules had just refused. Production always supplies a
+     * response and never saw it; the test suite did, silently. Each guard below is
+     * therefore decided on its **cause** — a non-empty error list, `fails()` — and the
+     * response is only ever built afterwards, to be carried back.
      *
      * @param ?Request $request The current HTTP request.
      * @param ?Response $response The current HTTP response.
@@ -403,8 +405,9 @@ trait PayloadsTrait
      * @param array $init Optional override of the payload definitions.
      * @param array $relations Reference filled with the attributes registered as relations (edges).
      * @param mixed $payload Reference filled with the payload to write, relation keys already stripped.
+     * @param mixed $failure Reference filled with the response to return when the verdict is false.
      *
-     * @return ?Response Null when the payload is ready to write, otherwise the response to return.
+     * @return bool True when the payload is ready to write, false when the caller must return `$failure`.
      *
      * @throws DependencyException
      * @throws NotFoundException
@@ -416,13 +419,18 @@ trait PayloadsTrait
         ?string   $method    ,
         array     $init      ,
         array     &$relations ,
-        mixed     &$payload
+        mixed     &$payload  ,
+        mixed     &$failure = null
     )
-    : ?Response
+    : bool
     {
-        if ( $shapeError = $this->enforceI18nShape( $request , $response , $method , $init ) )
+        // The cause is the error list, which is empty or not — never ambiguous.
+        // enforceI18nShape() then re-validates to build the response, on the failing
+        // path only, which is the rare one.
+        if ( !empty( $this->validateI18nShape( $request , $method , $init ) ) )
         {
-            return $shapeError ;
+            $failure = $this->enforceI18nShape( $request , $response , $method , $init ) ;
+            return false ;
         }
 
         $payload    = $this->preparePayload( $request , $method , $init , $relations ) ;
@@ -430,12 +438,13 @@ trait PayloadsTrait
 
         if( $validation->fails() )
         {
-            return $this->getValidatorError( $request , $response , $validation ) ;
+            $failure = $this->getValidatorError( $request , $response , $validation ) ;
+            return false ;
         }
 
         $payload = $this->stripRelationKeys( $payload , $relations ) ;
 
-        return null ;
+        return true ;
     }
 
     /**
