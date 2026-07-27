@@ -22,7 +22,7 @@ use function oihana\core\arrays\clean;
 use function oihana\routes\helpers\withPlaceholder;
 
 /**
- * Declares, in a single definition, the five REST sub-resource routes of an
+ * Declares, in a single definition, the six REST sub-resource routes of an
  * {@see ArrayPropertyController} (which exposes the element-level operations of an
  * embedded array property).
  *
@@ -31,12 +31,15 @@ use function oihana\routes\helpers\withPlaceholder;
  * | Verb     | Path                                    | Controller method |
  * |----------|-----------------------------------------|-------------------|
  * | `POST`   | `/{collection}/{id}/{property}`         | `addItem`         |
+ * | `PUT`    | `/{collection}/{id}/{property}`         | `reorderItems`    |
  * | `DELETE` | `/{collection}/{id}/{property}/{value}` | `removeItem`      |
  * | `PATCH`  | `/{collection}/{id}/{property}/{value}` | `moveItem`        |
  * | `PUT`    | `/{collection}/{id}/{property}/{value}` | `updateItem`      |
  * | `GET`    | `/{collection}/{id}/{property}/{value}` | `hasItem`         |
  *
- * `PATCH` and `PUT` share a path: the verb is what tells a move from an in-place edit.
+ * `PATCH` and `PUT` share the element path: the verb is what tells a move from an
+ * in-place edit. `PUT` also serves the property path, where it replaces the **order**
+ * of the whole array.
  *
  * The `{value}` placeholder is configurable via {@see self::VALUE_PLACEHOLDER}
  * (default `value`). Method bindings use the {@see ArrayPropertyController} constants
@@ -87,7 +90,7 @@ class ArrayPropertyRoute extends Route
     public string $valuePlaceholder = 'value' ;
 
     /**
-     * Registers the five array sub-resource routes on the application.
+     * Registers the six array sub-resource routes on the application.
      *
      * @return void
      *
@@ -109,11 +112,12 @@ class ArrayPropertyRoute extends Route
 
         $this->execute
         ([
-            $this->itemRoute( PostRoute::class   , $route , ArrayPropertyController::ADD_ITEM    ) ,
-            $this->itemRoute( DeleteRoute::class , $item  , ArrayPropertyController::REMOVE_ITEM ) ,
-            $this->itemRoute( PatchRoute::class  , $item  , ArrayPropertyController::MOVE_ITEM   ) ,
-            $this->itemRoute( PutRoute::class    , $item  , ArrayPropertyController::UPDATE_ITEM ) ,
-            $this->itemRoute( GetRoute::class    , $item  , ArrayPropertyController::HAS_ITEM    ) ,
+            $this->itemRoute( PostRoute::class   , $route , ArrayPropertyController::ADD_ITEM      ) ,
+            $this->itemRoute( PutRoute::class    , $route , ArrayPropertyController::REORDER_ITEMS ) ,
+            $this->itemRoute( DeleteRoute::class , $item  , ArrayPropertyController::REMOVE_ITEM   ) ,
+            $this->itemRoute( PatchRoute::class  , $item  , ArrayPropertyController::MOVE_ITEM     ) ,
+            $this->itemRoute( PutRoute::class    , $item  , ArrayPropertyController::UPDATE_ITEM   ) ,
+            $this->itemRoute( GetRoute::class    , $item  , ArrayPropertyController::HAS_ITEM      ) ,
         ]) ;
     }
 

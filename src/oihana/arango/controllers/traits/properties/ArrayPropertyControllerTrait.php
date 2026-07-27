@@ -11,9 +11,9 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
-use oihana\arango\models\enums\ArrayMode;
 
 use oihana\enums\http\HttpStatusCode;
+use oihana\exceptions\UnsupportedOperationException;
 
 use org\schema\constants\Schema;
 
@@ -34,8 +34,11 @@ use function oihana\core\accessors\getKeyValue;
  * - **400 Bad Request** — the configured property is not a declared array field.
  * - **404 Not Found** — the owner document does not exist (or, for {@see hasItem()},
  *   the value is not present in the array).
- * - **422 Unprocessable Entity** — {@see moveItem()} on a `sortedSet` field, or
- *   {@see updateItem()} on a property declaring no item key.
+ * - **422 Unprocessable Entity** — the operation does not exist on that property: a
+ *   {@see moveItem()} or {@see reorderItems()} on a `sortedSet`, an {@see updateItem()}
+ *   or {@see reorderItems()} on a property declaring no item key. The rule is stated
+ *   once, by the model, which raises an `UnsupportedOperationException`; the shared
+ *   skeleton turns every one of them into this single status.
  *
  * The element value is resolved from the `{value}` route placeholder when present,
  * otherwise from the request body (key `value`) — use the body for **complex** (object)
@@ -153,17 +156,6 @@ trait ArrayPropertyControllerTrait
     {
         return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
         {
-            if ( ( $model->arrays[ $this->property ][ Arango::MODE ] ?? null ) === ArrayMode::SORTED_SET )
-            {
-                return $this->fail
-                (
-                    request  : $request ,
-                    response : $response ,
-                    code     : HttpStatusCode::UNPROCESSABLE_ENTITY ,
-                    details  : sprintf( 'Cannot move an item in the sorted property "%s".' , $this->property ?? 'undefined' ) ,
-                ) ;
-            }
-
             $value = $this->resolveItemValue( $request , $args ) ;
 
             $document = $model->arrayMove
@@ -212,6 +204,45 @@ trait ArrayPropertyControllerTrait
     }
 
     /**
+     * Reorders the array property from a list of item keys — the whole new order in a
+     * single request, where {@see moveItem()} moves one element at a time.
+     *
+     * `PUT /{collection}/{id}/{property}` — the ordered keys are read from the request
+     * body (key `value`), like {@see addItem()}, the other operation that targets the
+     * property rather than one of its elements.
+     *
+     * A partial list reorders what it names and **keeps** the rest, appended after it;
+     * unknown keys are skipped and an empty list changes nothing — a reorder never
+     * deletes. Requires the property to declare an `Arango::ITEM_KEY`, and is
+     * unsupported on a `sortedSet` property → **422** in both cases.
+     *
+     * @param ?Request $request
+     * @param ?Response $response
+     * @param array $args Route placeholders (`id`).
+     * @param array $init Optional initialization options.
+     *
+     * @return mixed The updated array property on success (200), or an error response (400/404/422).
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     */
+    public function reorderItems( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
+    {
+        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
+        {
+            $document = $model->arrayReorder
+            ([
+                ...$init ,
+                Arango::OWNER => $owner ,
+                Arango::FIELD => $this->property ,
+                Arango::VALUE => $this->resolveItemValue( $request , $args ) ,
+            ]) ;
+
+            return $this->success( $request , $response , $document?->{ $this->property } ?? null ) ;
+        }) ;
+    }
+
+    /**
      * Merges a partial patch into the element of the array property carrying the given
      * item key — an **in-place edit**, where {@see moveItem()} only reorders and
      * {@see removeItem()} only drops.
@@ -241,19 +272,7 @@ trait ArrayPropertyControllerTrait
         return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
         {
             $itemKey = $this->resolveItemKey( $model , $init ) ;
-
-            if ( $itemKey === null )
-            {
-                return $this->fail
-                (
-                    request  : $request ,
-                    response : $response ,
-                    code     : HttpStatusCode::UNPROCESSABLE_ENTITY ,
-                    details  : sprintf( 'Cannot edit an item of the property "%s" in place: it declares no item key.' , $this->property ?? 'undefined' ) ,
-                ) ;
-            }
-
-            $value = $this->resolveItemValue( $request , $args ) ;
+            $value   = $this->resolveItemValue( $request , $args ) ;
 
             $document = $model->arrayUpdate
             ([
@@ -436,11 +455,18 @@ trait ArrayPropertyControllerTrait
         }
         catch ( Exception $e )
         {
+            // "This operation does not exist on this field" is a request the property
+            // cannot satisfy, not a server failure: the model states the rule once, and
+            // every operation refusing it answers alike.
+            $code = $e instanceof UnsupportedOperationException
+                  ? HttpStatusCode::UNPROCESSABLE_ENTITY
+                  : HttpStatusCode::fromException( $e ) ;
+
             return $this->fail
             (
                 request  : $request ,
                 response : $response ,
-                code     : HttpStatusCode::fromException( $e ) ,
+                code     : $code ,
                 details  : $e->getMessage() ,
             ) ;
         }

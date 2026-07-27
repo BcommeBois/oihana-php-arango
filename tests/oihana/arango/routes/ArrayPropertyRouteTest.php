@@ -33,18 +33,19 @@ final class ArrayPropertyRouteTest extends TestCase
         return $app ;
     }
 
-    public function testRegistersTheFiveArrayRoutes() :void
+    public function testRegistersTheSixArrayRoutes() :void
     {
         $container = new Container() ;
         $app       = $this->app( $container ) ;
 
         $controller = new class
         {
-            public function addItem()    { return ArrayPropertyController::ADD_ITEM    ; }
-            public function removeItem() { return ArrayPropertyController::REMOVE_ITEM ; }
-            public function moveItem()   { return ArrayPropertyController::MOVE_ITEM   ; }
-            public function updateItem() { return ArrayPropertyController::UPDATE_ITEM ; }
-            public function hasItem()    { return ArrayPropertyController::HAS_ITEM    ; }
+            public function addItem()      { return ArrayPropertyController::ADD_ITEM      ; }
+            public function removeItem()   { return ArrayPropertyController::REMOVE_ITEM   ; }
+            public function moveItem()     { return ArrayPropertyController::MOVE_ITEM     ; }
+            public function updateItem()   { return ArrayPropertyController::UPDATE_ITEM   ; }
+            public function reorderItems() { return ArrayPropertyController::REORDER_ITEMS ; }
+            public function hasItem()      { return ArrayPropertyController::HAS_ITEM      ; }
         } ;
         $container->set( 'playlist.tracks' , $controller ) ;
 
@@ -55,7 +56,7 @@ final class ArrayPropertyRouteTest extends TestCase
         ]) )() ;
 
         $registered = $app->getRouteCollector()->getRoutes() ;
-        $this->assertCount( 5 , $registered ) ;
+        $this->assertCount( 6 , $registered ) ;
 
         $map = [] ;
         foreach ( $registered as $route )
@@ -64,9 +65,11 @@ final class ArrayPropertyRouteTest extends TestCase
         }
 
         $this->assertSame( ArrayPropertyController::ADD_ITEM    , $map[ 'POST /playlists/{id}/tracks' ] ) ;
+        // on the property path, PUT replaces the order of the whole array
+        $this->assertSame( ArrayPropertyController::REORDER_ITEMS , $map[ 'PUT /playlists/{id}/tracks' ] ) ;
         $this->assertSame( ArrayPropertyController::REMOVE_ITEM , $map[ 'DELETE /playlists/{id}/tracks/{value}' ] ) ;
         $this->assertSame( ArrayPropertyController::MOVE_ITEM   , $map[ 'PATCH /playlists/{id}/tracks/{value}' ] ) ;
-        // PATCH and PUT share the path: only the verb tells a move from an in-place edit
+        // PATCH and PUT share the element path: only the verb tells a move from an in-place edit
         $this->assertSame( ArrayPropertyController::UPDATE_ITEM , $map[ 'PUT /playlists/{id}/tracks/{value}' ] ) ;
         $this->assertSame( ArrayPropertyController::HAS_ITEM    , $map[ 'GET /playlists/{id}/tracks/{value}' ] ) ;
     }
@@ -76,7 +79,7 @@ final class ArrayPropertyRouteTest extends TestCase
         $container = new Container() ;
         $app       = $this->app( $container ) ;
 
-        $controller = new class { public function removeItem() {} public function addItem() {} public function moveItem() {} public function updateItem() {} public function hasItem() {} } ;
+        $controller = new class { public function removeItem() {} public function addItem() {} public function moveItem() {} public function updateItem() {} public function reorderItems() {} public function hasItem() {} } ;
         $container->set( 'playlist.tracks' , $controller ) ;
 
         ( new ArrayPropertyRoute( $container ,

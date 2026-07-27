@@ -152,6 +152,102 @@ class ArrayPropertyControllerTest extends ControllerTestCase
     }
 
     /**
+     * The ordered keys travel in the body under `value`, like {@see addItem()} — the
+     * other operation targeting the property rather than one of its elements.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testReorderItemsUsesTheOrderedKeysFromTheBody() :void
+    {
+        $model      = $this->keyedModel() ;
+        $controller = $this->keyedController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PUT' )->withParsedBody( [ Arango::VALUE => [ 'c2' , 'c1' ] ] ) ;
+
+        $items = $controller->reorderItems( $request , null , [ Arango::ID => 'p42' ] ) ;
+
+        $this->assertSame( $model->objectResult->chapters , $items ) ;
+        $this->assertStringContainsString( 'LET __ord = (FOR __k IN @' , $model->lastQuery ) ;
+        $this->assertContains( [ 'c2' , 'c1' ] , $model->lastBinds ) ;
+    }
+
+    /**
+     * Ordering elements needs an attribute identifying them — the model states the rule,
+     * the shared skeleton turns it into a 422.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testReorderItemsWithoutAnItemKeyReturns422() :void
+    {
+        $response = $this->controller( $this->model() )->reorderItems
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ Arango::VALUE => [ 'A' ] ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' ]
+        ) ;
+
+        $this->assertSame( 422 , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testReorderItemsOnSortedSetReturns422() :void
+    {
+        $model = $this->keyedModel() ;
+        $model->arrays[ 'chapters' ][ Arango::MODE ] = ArrayMode::SORTED_SET ;
+
+        $response = $this->keyedController( $model )->reorderItems
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ Arango::VALUE => [ 'c1' ] ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' ]
+        ) ;
+
+        $this->assertSame( 422 , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * A field declared both sortedSet and ranked cannot ever be written: it is the same
+     * kind of refusal, so it answers with the same status.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testAddItemOnASortedSetDeclaringAPositionKeyReturns422() :void
+    {
+        $model = $this->model( ArrayMode::SORTED_SET ) ;
+        $model->arrays[ 'tracks' ][ Arango::POSITION_KEY ] = 'position' ;
+
+        $response = $this->controller( $model )->addItem
+        (
+            $this->makeRequest( [] , 'POST' )->withParsedBody( [ Arango::VALUE => 'A' ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' ]
+        ) ;
+
+        $this->assertSame( 422 , $response->getStatusCode() ) ;
+    }
+
+    /**
      * @return void
      * @throws ContainerExceptionInterface
      * @throws DependencyException

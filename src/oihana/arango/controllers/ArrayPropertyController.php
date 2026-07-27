@@ -12,16 +12,18 @@ use oihana\arango\controllers\traits\properties\ArrayPropertyControllerTrait;
  * the whole array) and `patch()` (replace the whole array) — and adds, through
  * {@see ArrayPropertyControllerTrait}:
  *
- * - {@see ArrayPropertyControllerTrait::addItem()}    — `POST   /{collection}/{id}/{property}`
- * - {@see ArrayPropertyControllerTrait::removeItem()} — `DELETE /{collection}/{id}/{property}/{value}`
- * - {@see ArrayPropertyControllerTrait::moveItem()}   — `PATCH  /{collection}/{id}/{property}/{value}`
- * - {@see ArrayPropertyControllerTrait::updateItem()} — `PUT    /{collection}/{id}/{property}/{value}`
- * - {@see ArrayPropertyControllerTrait::hasItem()}    — `GET    /{collection}/{id}/{property}/{value}`
+ * - {@see ArrayPropertyControllerTrait::addItem()}      — `POST   /{collection}/{id}/{property}`
+ * - {@see ArrayPropertyControllerTrait::reorderItems()} — `PUT    /{collection}/{id}/{property}`
+ * - {@see ArrayPropertyControllerTrait::removeItem()}   — `DELETE /{collection}/{id}/{property}/{value}`
+ * - {@see ArrayPropertyControllerTrait::moveItem()}     — `PATCH  /{collection}/{id}/{property}/{value}`
+ * - {@see ArrayPropertyControllerTrait::updateItem()}   — `PUT    /{collection}/{id}/{property}/{value}`
+ * - {@see ArrayPropertyControllerTrait::hasItem()}      — `GET    /{collection}/{id}/{property}/{value}`
  *
- * `PATCH` and `PUT` share a path but not an intent: the verb disambiguates them —
- * `PATCH` **moves** the element, `PUT` **edits** it.
+ * `PATCH` and `PUT` share the element path but not an intent: the verb disambiguates
+ * them — `PATCH` **moves** the element, `PUT` **edits** it. On the property path, `PUT`
+ * replaces the **order** of the whole array.
  *
- * The five routes can be declared at once with {@see ArrayPropertyRoute}.
+ * The six routes can be declared at once with {@see ArrayPropertyRoute}.
  *
  * @package oihana\arango\controllers
  */
@@ -48,6 +50,11 @@ class ArrayPropertyController extends PropertyController
      * The `removeItem` controller method name (route binding).
      */
     public const string REMOVE_ITEM = 'removeItem' ;
+
+    /**
+     * The `reorderItems` controller method name (route binding).
+     */
+    public const string REORDER_ITEMS = 'reorderItems' ;
 
     /**
      * The `updateItem` controller method name (route binding).
