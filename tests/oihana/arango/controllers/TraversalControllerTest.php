@@ -195,7 +195,7 @@ final class TraversalControllerTest extends ControllerTestCase
 
         // The compiled fragment + its binds are folded into the traversal init.
         $init = $edges->calls[ 0 ][ 2 ] ;
-        $this->assertSame( 'vertex.status == @f0' , $init[ AQL::FILTER ] ?? null ) ;
+        $this->assertSame( [ 'vertex.status == @f0' ] , $init[ AQL::FILTER ] ?? null ) ;
         $this->assertSame( [ 'f0' => 'published' ] , $init[ AQL::BINDS  ] ?? null ) ;
     }
 
@@ -212,7 +212,7 @@ final class TraversalControllerTest extends ControllerTestCase
 
         $this->assertSame( 'getFirstInboundVertex' , $edges->calls[ 0 ][ 0 ] ) ;
         $this->assertSame( AQL::VERTEX             , $edges->filterCalls[ 0 ][ 1 ] ) ;
-        $this->assertSame( 'vertex.active == @f0'  , $edges->calls[ 0 ][ 2 ][ AQL::FILTER ] ?? null ) ;
+        $this->assertSame( [ 'vertex.active == @f0' ] , $edges->calls[ 0 ][ 2 ][ AQL::FILTER ] ?? null ) ;
     }
 
     public function testAnUndeclaredAttributeYieldsNoFilter() :void
@@ -279,7 +279,7 @@ final class TraversalControllerTest extends ControllerTestCase
         $init = $edges->calls[ 0 ][ 2 ] ;
         // CAS A : the condition excludes the boundary (FILTER) and the negation cuts
         // its sub-tree (PRUNE), so a published node under a draft parent is unreachable.
-        $this->assertSame( 'vertex.status == @f0'    , $init[ AQL::FILTER ] ?? null ) ;
+        $this->assertSame( [ 'vertex.status == @f0' ] , $init[ AQL::FILTER ] ?? null ) ;
         $this->assertSame( '!(vertex.status == @f0)' , $init[ AQL::PRUNE  ] ?? null ) ;
         $this->assertSame( [ 'f0' => 'published' ]   , $init[ AQL::BINDS  ] ?? null ) ;
     }

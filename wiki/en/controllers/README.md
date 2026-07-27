@@ -613,6 +613,54 @@ Routes::CATEGORIES_TREE => fn( Container $c ) => new TraversalRoute( $c ,
 
 Generates `GET /categories/{id:[0-9]+}/{parent|children|ancestors|descendants}`. The `{id}` placeholder is configurable via `Route::ROUTE_PLACEHOLDER`.
 
+### Scoping the traversed vertices
+
+`?filter=` and `?prune=` are the **caller's** levers. They cannot express "hide the vertices marked inactive, unless the caller holds that permission" — a rule the server imposes and the caller must not be able to widen.
+
+The controller carries the same **authorization seat** as the others: the four traversals are wrapped by the [lifecycle hooks](#lifecycle-hooks), and `beforeModelCall()` runs **after** `?filter=` and `?prune=` have been compiled in, so the scope has the last word.
+
+⚠ **The payload is not the same as on the other surfaces.** At that point `AQL::FILTER` no longer holds a JSON predicate but a **list of compiled AQL fragments** targeting the `vertex` variable, alongside their `AQL::BINDS` — because `getVertices()` reads that slot and **never** `Arango::CONDITIONS`. An override appends a *fragment*, not a predicate:
+
+```php
+final class PublicTreeController extends TraversalController
+{
+    protected function beforeModelCall( ?Request $request , array &$init ) : void
+    {
+        $init[ AQL::FILTER ] = [ ...( $init[ AQL::FILTER ] ?? [] ) , 'vertex.status == @scope' ] ;
+        $init[ AQL::BINDS  ] = [ ...( $init[ AQL::BINDS  ] ?? [] ) , 'scope' => 'published' ] ;
+
+        parent::beforeModelCall( $request , $init ) ;
+    }
+}
+```
+
+The fragments are joined by `&&`, and a compiled client group keeps its own parentheses, so a disjunctive `?filter=` renders as `FILTER ( a || b ) && vertex.status == @scope` — it can never degrade the scope into an alternative. A fragment you write yourself is your own responsibility: parenthesize it if it contains an `||`.
+
+**Or compile your predicate through the gated engine.** `compileVertexPredicate()` is `protected` so a scope expressible in the [JSON DSL](../db/filter.md) can go through the same `AQL::FILTERS` whitelist and `Field::REQUIRES` gate as the client filter, instead of being hand-written AQL:
+
+```php
+$binds    = $init[ AQL::BINDS ] ?? [] ;
+$fragment = $this->compileVertexPredicate( [ 'key' => 'status' , 'val' => 'published' ] , $init[ Arango::AUTHORIZER ] ?? null , $binds ) ;
+
+if ( $fragment === null )
+{
+    throw new LogicException( 'the scope attribute is not declared filterable' ) ; // a wiring error, NOT "no scope"
+}
+
+$init[ AQL::FILTER ] = [ ...( $init[ AQL::FILTER ] ?? [] ) , $fragment ] ;
+$init[ AQL::BINDS  ] = $binds ; // merged, never overwritten
+```
+
+Two rules when calling it: the binds are **merged** into the array you hand in, so pass (and give back) `$init[ AQL::BINDS ]`; and a `null` return means the attribute is not declared filterable — a wiring error, never "no scope", since reading it as the latter makes a mis-declared scope evaporate silently.
+
+**The scope joins the `FILTER`, not the `PRUNE`.** Pruning on a server-side scope would stop the walk at the first out-of-scope vertex and hide its in-scope descendants. `?prune=` remains the caller's lever, and stays rejected on the inbound traversals.
+
+The request-scoped authorizer is posed **before** the hook (it gates the compilation of `?filter=`), so an override reads it from `$init` — which is what lets a scope be compiled under the caller's own permissions — and `parent::beforeModelCall()` reaches the trait's no-op. A caller-supplied `Arango::AUTHORIZER` still wins.
+
+`afterModelCall( $request , $init , $result )` receives the vertices (a list) or the single vertex, and may replace them. A non-list replacement on the list verbs degrades to an empty result rather than breaking the envelope's `count`.
+
+An out-of-scope vertex simply **disappears** from the result. No status code changes: `/parent` answers 200 with a null result, exactly as it does for a root — a 404 would tell the caller the vertex exists.
+
 ## `ConceptSchemeController`
 
 Exposes a hierarchical thesaurus as a SKOS [`ConceptScheme`](https://www.w3.org/TR/skos-reference/#schemes): its `hasTopConcept` is the set of **roots** (the concepts that have no broader parent), assembled on the fly from the underlying `Documents` model. Read-only and generic — a single entry point, so a plain `GetRoute` is enough (no dedicated route class).

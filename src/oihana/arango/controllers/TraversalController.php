@@ -16,6 +16,7 @@ use oihana\auth\controllers\traits\CapabilityContextTrait;
 use oihana\auth\controllers\traits\PermissionAuthorizerTrait;
 
 use oihana\controllers\Controller;
+use oihana\controllers\traits\ModelCallTrait;
 use oihana\controllers\traits\prepare\PrepareFilter;
 
 use oihana\enums\Char;
@@ -65,6 +66,21 @@ use function oihana\core\container\resolveDependency;
  * Both are compiled by the edge model's gated engine — whitelist + authorizer —
  * never inlined raw.
  *
+ * It carries an **authorization seat**: the four traversals are wrapped by the
+ * {@see ModelCallTrait} hooks, so a consumer can impose a server-side scope the
+ * caller cannot widen. {@see beforeModelCall()} runs **after** `?filter=` and
+ * `?prune=` have been compiled in — last word to the scope — and the class poses
+ * no scope of its own.
+ *
+ * **The payload differs from the other surfaces, and that is not a detail.** At
+ * that point `AQL::FILTER` no longer holds a JSON predicate but a **list of
+ * compiled AQL fragments** targeting the `vertex` variable, alongside their
+ * `AQL::BINDS` — because `getVertices()` reads that slot and nothing else
+ * (`Arango::CONDITIONS` is never consulted on the traversal path). An override
+ * therefore appends a **fragment**, not a predicate; {@see compileVertexPredicate()}
+ * is protected so it can compile one through the same whitelist and gate as the
+ * client filter.
+ *
  * @package oihana\arango\controllers
  * @author  Marc Alcaraz
  */
@@ -98,6 +114,7 @@ class TraversalController extends Controller
 
     use AuthorizationContextTrait ,
         CapabilityContextTrait    ,
+        ModelCallTrait            ,
         PermissionAuthorizerTrait ,
         PrepareFilter             ;
 
@@ -259,6 +276,16 @@ class TraversalController extends Controller
      * Returns null when nothing is filterable — an undeclared attribute or an
      * empty `AQL::FILTERS` whitelist — so the caller drops the fragment.
      *
+     * **Protected on purpose**: an override of {@see beforeModelCall()} posing a
+     * server-side scope can compile its own JSON predicate through the very same
+     * whitelist and `Field::REQUIRES` gate as the client `?filter=`, instead of
+     * hand-writing AQL. Two things to know when calling it from a hook:
+     * - the binds are **merged** into the array handed in, so pass (and give back)
+     *   `$init[ AQL::BINDS ]` rather than overwriting it ;
+     * - a `null` return means the attribute is **not declared filterable** — a
+     *   wiring error, never "no scope". Treating it as the latter makes a
+     *   mis-declared scope evaporate silently.
+     *
      * @param array $predicate  The decoded JSON predicate.
      * @param mixed $authorizer The request-scoped authorizer (or null).
      * @param array $binds      The accumulating bind variables (by reference).
@@ -275,7 +302,7 @@ class TraversalController extends Controller
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function compileVertexPredicate( array $predicate , mixed $authorizer , array &$binds ) :?string
+    protected function compileVertexPredicate( array $predicate , mixed $authorizer , array &$binds ) :?string
     {
         $local    = [] ;
         $fragment = $this->edges->prepareFilter
@@ -345,9 +372,15 @@ class TraversalController extends Controller
 
         $modelInit = $this->prepareVertexFilter( $request , $init , $modelInit , $prune ) ;
 
+        // The authorization seat, posed LAST : a scope must have the final word over
+        // the client `?filter=` already compiled into AQL::FILTER by the line above.
+        $this->beforeModelCall( $request , $modelInit ) ;
+
         $vertices = $inbound
                   ? $this->edges->getInboundVertices ( $id , $modelInit )
                   : $this->edges->getOutboundVertices( $id , $modelInit ) ;
+
+        $this->afterModelCall( $request , $modelInit , $vertices ) ;
 
         $vertices = is_array( $vertices ) ? $vertices : [] ;
 
@@ -494,7 +527,12 @@ class TraversalController extends Controller
 
         if ( $conditions !== [] )
         {
-            $modelInit[ AQL::FILTER ] = count( $conditions ) === 1 ? $conditions[ 0 ] : $conditions ;
+            // Always a LIST, even for a single fragment : `aqlFilter()` joins a list
+            // with ` && ` and renders a one-element list as the fragment itself, so
+            // the emitted AQL is unchanged — but the hook contract becomes "absent,
+            // or a list of fragments", where a bare string would make the natural
+            // `$init[ AQL::FILTER ][] = …` of an override a fatal error.
+            $modelInit[ AQL::FILTER ] = $conditions ;
         }
 
         if ( $binds !== [] )
@@ -558,7 +596,12 @@ class TraversalController extends Controller
 
         $modelInit = $this->prepareVertexFilter( $request , $init , [] , $prune ) ;
 
+        // The authorization seat, posed LAST — see many().
+        $this->beforeModelCall( $request , $modelInit ) ;
+
         $vertex = $inbound ? $this->edges->getFirstInboundVertex ( $id , $modelInit ) : $this->edges->getFirstOutboundVertex( $id , $modelInit ) ;
+
+        $this->afterModelCall( $request , $modelInit , $vertex ) ;
 
         return $this->success( $request , $response , $vertex ?: null ) ;
     }

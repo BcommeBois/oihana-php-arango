@@ -615,6 +615,54 @@ Routes::CATEGORIES_TREE => fn( Container $c ) => new TraversalRoute( $c ,
 
 Génère `GET /categories/{id:[0-9]+}/{parent|children|ancestors|descendants}`. Le placeholder `{id}` est configurable via `Route::ROUTE_PLACEHOLDER`.
 
+### Périmétrer les sommets traversés
+
+`?filter=` et `?prune=` sont les leviers de l'**appelant**. Ils ne savent pas dire « masquer les sommets marqués inactifs, sauf si l'appelant détient telle permission » — une règle que le serveur impose et que l'appelant ne doit pas pouvoir élargir.
+
+Le contrôleur porte le même **siège d'autorisation** que les autres : les quatre traversées sont encadrées par les [hooks de cycle de vie](#hooks-de-cycle-de-vie), et `beforeModelCall()` tourne **après** la compilation de `?filter=` et `?prune=`, donc le périmètre a le dernier mot.
+
+⚠ **La charge n'a pas la même forme que sur les autres surfaces.** À cet endroit, `AQL::FILTER` ne porte plus un prédicat JSON mais une **liste de fragments AQL compilés** ciblant la variable `vertex`, accompagnés de leurs `AQL::BINDS` — parce que `getVertices()` lit cette fente-là et **jamais** `Arango::CONDITIONS`. Une surcharge ajoute donc un *fragment*, pas un prédicat :
+
+```php
+final class PublicTreeController extends TraversalController
+{
+    protected function beforeModelCall( ?Request $request , array &$init ) : void
+    {
+        $init[ AQL::FILTER ] = [ ...( $init[ AQL::FILTER ] ?? [] ) , 'vertex.status == @scope' ] ;
+        $init[ AQL::BINDS  ] = [ ...( $init[ AQL::BINDS  ] ?? [] ) , 'scope' => 'published' ] ;
+
+        parent::beforeModelCall( $request , $init ) ;
+    }
+}
+```
+
+Les fragments sont joints par `&&`, et un groupe client compilé garde ses propres parenthèses : un `?filter=` disjonctif rend `FILTER ( a || b ) && vertex.status == @scope` — il ne peut jamais dégrader le périmètre en alternative. Un fragment que vous écrivez vous-même reste votre responsabilité : parenthésez-le s'il contient un `||`.
+
+**Ou compilez votre prédicat par le moteur verrouillé.** `compileVertexPredicate()` est `protected` pour qu'un périmètre exprimable dans le [DSL JSON](../db/filter.md) passe par la même whitelist `AQL::FILTERS` et le même verrou `Field::REQUIRES` que le filtre client, au lieu d'être de l'AQL écrit à la main :
+
+```php
+$binds    = $init[ AQL::BINDS ] ?? [] ;
+$fragment = $this->compileVertexPredicate( [ 'key' => 'status' , 'val' => 'published' ] , $init[ Arango::AUTHORIZER ] ?? null , $binds ) ;
+
+if ( $fragment === null )
+{
+    throw new LogicException( 'l\'attribut du périmètre n\'est pas déclaré filtrable' ) ; // erreur de câblage, PAS « pas de périmètre »
+}
+
+$init[ AQL::FILTER ] = [ ...( $init[ AQL::FILTER ] ?? [] ) , $fragment ] ;
+$init[ AQL::BINDS  ] = $binds ; // fusionnés, jamais écrasés
+```
+
+Deux règles à l'appel : les binds sont **fusionnés** dans le tableau que vous passez, donc passez (et reprenez) `$init[ AQL::BINDS ]` ; et un retour `null` signifie que l'attribut n'est pas déclaré filtrable — une erreur de câblage, jamais « pas de périmètre », puisque le lire ainsi fait s'évaporer en silence un périmètre mal déclaré.
+
+**Le périmètre rejoint le `FILTER`, pas le `PRUNE`.** Élaguer sur un périmètre serveur arrêterait la descente au premier sommet hors périmètre et masquerait ses descendants qui, eux, y sont. `?prune=` reste le levier de l'appelant, et reste refusé sur les traversées inbound.
+
+L'autorisateur de requête est posé **avant** le hook (il verrouille la compilation du `?filter=`), donc une surcharge le lit dans `$init` — c'est ce qui permet de compiler un périmètre sous les permissions de l'appelant — et `parent::beforeModelCall()` atteint le no-op du trait. Un `Arango::AUTHORIZER` fourni par l'appelant reste prioritaire.
+
+`afterModelCall( $request , $init , $result )` reçoit les sommets (une liste) ou le sommet unique, et peut les remplacer. Un remplacement qui n'est pas une liste, sur les verbes de liste, dégrade en résultat vide plutôt que de casser le `count` de l'enveloppe.
+
+Un sommet hors périmètre **disparaît** simplement du résultat. Aucun code de statut ne change : `/parent` répond 200 avec un résultat nul, exactement comme pour une racine — un 404 dirait à l'appelant que le sommet existe.
+
 ## `ConceptSchemeController`
 
 Expose un thésaurus hiérarchique en [`ConceptScheme`](https://www.w3.org/TR/skos-reference/#schemes) SKOS : son `hasTopConcept` est l'ensemble des **racines** (les concepts sans parent broader), assemblé à la volée depuis le modèle `Documents` sous-jacent. Lecture seule et générique — un seul point d'entrée, donc un simple `GetRoute` suffit (pas de classe de route dédiée).
