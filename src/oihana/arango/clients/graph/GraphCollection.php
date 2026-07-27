@@ -91,6 +91,23 @@ abstract readonly class GraphCollection
      * Uses `GET /_api/gharial/{graph}/{surface}/{collection}/{key}` and swallows the 404 branch.
      * Any other failure rethrows as an {@see ArangoException}.
      *
+     * **The `GET` is not an oversight, and must not be "optimized" into a
+     * `HEAD`.** The verb costs a full document transfer for an answer one bit
+     * wide, so `HEAD` would be the natural choice — and it is what the non-graph
+     * {@see \oihana\arango\clients\collection\Collection::documentExists()} uses.
+     * The gharial endpoints do not support it: a `HEAD` on this route answers
+     * **HTTP 500**, on an existing key as well as on a missing one, for both the
+     * vertex and the edge surface. Measured against arangod, which answers
+     * `200` / `404` to the very same `HEAD` on the generic `/_api/document`
+     * route — so the limitation is the server's, not the client's. Switching
+     * would break the method outright, and no unit test would catch it: they all
+     * stub the transport and honour whatever verb they are handed.
+     *
+     * A caller on a hot path can bypass gharial and probe the underlying
+     * collection directly (`$db->collection( $name )->documentExists( $key )`),
+     * which does send a `HEAD` — the graph constraints gharial enforces are a
+     * write-time concern and buy nothing on a read.
+     *
      * @param string $key The document key.
      *
      * @return bool

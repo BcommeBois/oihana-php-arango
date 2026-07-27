@@ -89,6 +89,8 @@ $people->remove ( 'alice' ) ;
 
 Options identiques à `Collection` : `returnNew`, `returnOld`, `waitForSync`, `keepNull`, `rev`.
 
+> **Coût de `documentExists()` sur un graphe.** Les routes gharial n'acceptent pas la méthode `HEAD` — le serveur répond `500`. La vérification passe donc par un `GET`, qui transfère le document entier pour une réponse d'un seul bit. Sur un chemin critique, interrogez directement la collection sous-jacente : `$db->collection( 'people' )->documentExists( 'alice' )` envoie bien un `HEAD`. Les contraintes que gharial fait respecter concernent l'écriture ; elles n'apportent rien à une lecture.
+
 ## CRUD d'arêtes
 
 `GraphEdgeCollection` fonctionne de la même façon, mais renvoie des objets `Edge` (sous-classe de `Document` avec accesseurs `getFrom()` et `getTo()`) et **valide `_from`/`_to` contre l'edge definition** :
