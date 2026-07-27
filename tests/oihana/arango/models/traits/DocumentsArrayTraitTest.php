@@ -601,6 +601,212 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->stub()->arrayMove( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => 'A' , Arango::ITEM_KEY => 'id[*]' ] ) ;
     }
 
+    // ---------------------------------------------------------------- arrayReorder
+
+    /**
+     * The whole new order in one call, renumbered on the way out.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderRebuildsTheRequestedOrder() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayReorder( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'l3' , 'l1' ] ] ) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 '
+          . 'LET __ord = (FOR __k IN @q_1 LET __el = FIRST(doc.lines[* FILTER CURRENT.id == __k]) FILTER __el != null RETURN __el) '
+          . 'LET __arr = APPEND(__ord,doc.lines[* FILTER CURRENT.id NOT IN @q_1]) '
+          . 'LET __pos = LENGTH(__arr) == 0 ? [] : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr,__i),{ position: __i })) '
+          . 'UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+        $this->assertSame( [ 'q_0' => 'p42' , 'q_1' => [ 'l3' , 'l1' ] , '@collection' => 'Playlist' ] , $binds ) ;
+    }
+
+    /**
+     * A partial list reorders what it names and keeps the rest: the elements it does not
+     * mention are appended after it, never dropped.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderKeepsTheElementsItDoesNotMention() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayReorder( [ Arango::OWNER => 'p42' , Arango::FIELD => 'chapters' , Arango::VALUE => [ 'c2' ] ] ) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 '
+          . 'LET __ord = (FOR __k IN @q_1 LET __el = FIRST(doc.chapters[* FILTER CURRENT.id == __k]) FILTER __el != null RETURN __el) '
+          . 'LET __arr = APPEND(__ord,doc.chapters[* FILTER CURRENT.id NOT IN @q_1]) '
+          . 'UPDATE doc WITH { chapters: __arr, numberOfChapters: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
+    }
+
+    /**
+     * Resolving the same key twice would push its element twice.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderCollapsesDuplicateKeys() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayReorder( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'l1' , 'l2' , 'l1' ] ] ) ;
+        [ , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame( [ 'l1' , 'l2' ] , $binds[ 'q_1' ] ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderAcceptsAScalarKey() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayReorder( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => 'l2' ] ) ;
+        [ , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame( [ 'l2' ] , $binds[ 'q_1' ] ) ;
+    }
+
+    /**
+     * An empty list mentions nothing, so everything is a leftover: the array survives
+     * untouched rather than being emptied.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderWithAnEmptyListKeepsEverything() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayReorder( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => [] ] ) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame( [] , $binds[ 'q_1' ] ) ;
+        $this->assertStringContainsString( 'APPEND(__ord,doc.lines[* FILTER CURRENT.id NOT IN @q_1])' , $query ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderHonoursThePerCallItemKey() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayReorder
+        ([
+            Arango::OWNER    => 'p42' ,
+            Arango::FIELD    => 'tracks' ,
+            Arango::VALUE    => [ 'a' ] ,
+            Arango::ITEM_KEY => 'uid' ,
+        ]) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringContainsString( 'FILTER CURRENT.uid == __k' , $query ) ;
+        $this->assertStringContainsString( 'CURRENT.uid NOT IN @q_1'   , $query ) ;
+    }
+
+    /**
+     * Without an attribute identifying the elements, there is nothing to order them by.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderRequiresAnItemKey() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->stub()->arrayReorder( [ Arango::OWNER => 'p42' , Arango::FIELD => 'tracks' , Arango::VALUE => [ 'A' ] ] ) ;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testReorderIsRefusedOnASortedSetField() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->stub()->arrayReorder
+        ([
+            Arango::OWNER    => 'p42' ,
+            Arango::FIELD    => 'genres' ,
+            Arango::VALUE    => [ 'rock' ] ,
+            Arango::ITEM_KEY => 'id' ,
+        ]) ;
+    }
+
     // ---------------------------------------------------------------- arrayUpdate
 
     /**

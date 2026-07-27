@@ -69,7 +69,8 @@ use function oihana\core\strings\key;
 
 /**
  * Manage an **embedded array field** of an ArangoDB document — add, remove, move,
- * edit in place, test membership — server-side, atomically, in a single AQL `UPDATE`.
+ * reorder, edit in place, test membership — server-side, atomically, in a single
+ * AQL `UPDATE`.
  *
  * This replaces the legacy `ListItemTrait` / `MultiFieldTrait`. The behaviour of a
  * field (ordering, uniqueness, optional length counter) is declared **once** on the
@@ -135,6 +136,18 @@ trait DocumentsArrayTrait
      * loop {@see arrayRank()} runs over the final array.
      */
     protected const string INDEX_VAR = '__i' ;
+
+    /**
+     * The AQL variable holding the item key currently looked up by {@see arrayReorder()},
+     * bound by the loop it runs over the requested order.
+     */
+    protected const string KEY_VAR = '__k' ;
+
+    /**
+     * The AQL variable holding the elements {@see arrayReorder()} resolved from the
+     * requested order, before the ones it did not mention are appended back.
+     */
+    protected const string ORDERED_VAR = '__ord' ;
 
     /**
      * The AQL variable holding the renumbered array — the one written back when the field
@@ -544,6 +557,111 @@ trait DocumentsArrayTrait
         $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
 
         return $this->runArrayUpdate( $field , [ aqlLet( self::ARRAY_VAR , $arrExpr ) ] , $filter , $binds , $init ) ;
+    }
+
+    /**
+     * Reorders the array `field` from a list of item keys — the whole new order in a
+     * single call, where {@see arrayMove()} moves one element at a time.
+     *
+     * Generated AQL:
+     * ```
+     * LET __ord = (FOR __k IN @value LET __el = FIRST(doc.field[* FILTER CURRENT.<itemKey> == __k]) FILTER __el != null RETURN __el)
+     * LET __arr = APPEND(__ord, doc.field[* FILTER CURRENT.<itemKey> NOT IN @value])
+     * UPDATE doc WITH { field: __arr [, counter: LENGTH(__arr)] [, modified: ...] } ...
+     * ```
+     * The elements the list does **not** mention are kept and appended after it: a partial
+     * list reorders what it names instead of deleting the rest. A key matching no element
+     * is skipped, and an empty list leaves the array as it is.
+     *
+     * Duplicate keys are collapsed (first occurrence wins) before the query is built —
+     * resolving the same key twice would otherwise duplicate its element.
+     *
+     * Requires an item key, like {@see arrayUpdate()}: without an attribute identifying
+     * the elements there is nothing to order them by. Unsupported on a
+     * {@see ArrayMode::SORTED_SET} field, like {@see arrayMove()}.
+     *
+     * Being a permutation of the existing elements, it does not re-apply the field
+     * invariant — it cannot introduce a duplicate that was not already there.
+     *
+     * @param array{
+     *     owner?   : mixed,           // The value identifying the document.
+     *     field?   : string,          // The embedded array attribute.
+     *     value?   : mixed,           // The item keys, in the wanted order.
+     *     key?     : string,          // The attribute used to locate the document (default '_key').
+     *     itemKey? : string,          // Optional per-call item-key override.
+     *     prefix?  : string,          // The AQL document alias (default 'doc').
+     *     touch?   : bool,            // Update the `modified` timestamp (default true).
+     *     options? : array|object|string|null,
+     *     debug?   : bool
+     * } $init
+     *
+     * @return object|null The updated document, or null if no document matched.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function arrayReorder( array $init = [] ) : ?object
+    {
+        $field   = $init[ Arango::FIELD ] ?? null ;
+        $itemKey = $this->arrayItemKey( $field , $init ) ;
+
+        if ( $itemKey === null )
+        {
+            throw new UnsupportedOperationException
+            (
+                'arrayReorder requires an item key on the field "' . $field . '" (elements cannot be ordered without an attribute identifying them).'
+            ) ;
+        }
+
+        if ( $this->arrayMode( $field , $init ) === ArrayMode::SORTED_SET )
+        {
+            throw new UnsupportedOperationException
+            (
+                'arrayReorder is not supported on the sortedSet field "' . $field . '" (the sort order overrides any requested order).'
+            ) ;
+        }
+
+        $prefix = $init[ Arango::PREFIX ] ?? AQL::DOC ;
+
+        // A scalar key reorders that single element; duplicates would resolve the same
+        // element twice, so only the first occurrence is kept.
+        $raw   = $init[ Arango::VALUE ] ?? [] ;
+        $order = array_values( array_unique( is_array( $raw ) && array_is_list( $raw ) ? $raw : [ $raw ] , SORT_REGULAR ) ) ;
+
+        $binds = [] ;
+        $owner = $this->bind( $init[ Arango::OWNER ] ?? null , $binds ) ;
+        $value = $this->bind( $order , $binds ) ;
+
+        $fieldExpr = key( $field , $prefix ) ;
+        $itemRef   = key( $itemKey , Clause::CURRENT ) ;
+
+        // Each requested key is resolved to its element, unknown ones are skipped.
+        $ordered = compile
+        ([
+            aqlFor( [ AQL::DOC_REF => self::KEY_VAR , AQL::IN => $value ] ) ,
+            aqlLet( self::ELEMENT_VAR , first( arrayFilter( $fieldExpr , equal( $itemRef , self::KEY_VAR ) ) ) ) ,
+            aqlFilter( notEqual( self::ELEMENT_VAR , AQL::NULL ) ) ,
+            aqlReturn( self::ELEMENT_VAR ) ,
+        ]) ;
+
+        $lets =
+        [
+            aqlLet( self::ORDERED_VAR , $ordered , true ) ,
+            // The elements the list did not mention keep their relative order, at the end.
+            aqlLet( self::ARRAY_VAR , append( self::ORDERED_VAR , arrayFilter( $fieldExpr , notIn( $itemRef , $value ) ) ) ) ,
+        ] ;
+
+        $filter = equal( key( $init[ Arango::KEY ] ?? Schema::_KEY , $prefix ) , $owner ) ;
+
+        return $this->runArrayUpdate( $field , $lets , $filter , $binds , $init ) ;
     }
 
     /**
