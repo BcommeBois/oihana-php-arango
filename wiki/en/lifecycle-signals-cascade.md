@@ -56,7 +56,7 @@ Each CRUD operation exposes two public `oihana\signals\Signal` properties — a 
 
 > **Automatic initialization.** Unlike the upstream lib (where you must call `initialize*Signals()` by hand), the `Documents`/`Edges` models **initialize their six signals in the constructor** (via `initializeDocumentsMethods()`). You can therefore `connect()` right after instantiation, with no preliminary step.
 
-> **Array writes emit `*Update`.** `arrayInsert` / `arrayRemove` / `arrayMove` / `arrayPurgeRef` emit `beforeUpdate` / `afterUpdate`, exactly like `update()` (see [Array fields](db/arrays.md#signals)). `arrayContains` is a read: no signal.
+> **Array writes emit `*Update`.** `arrayInsert` / `arrayRemove` / `arrayMove` / `arrayReorder` / `arrayUpdate` emit `beforeUpdate` / `afterUpdate`, exactly like `update()` (see [Array fields](db/arrays.md#signals)). `arrayContains` is a read: no signal. `arrayPurgeRef` emits none either — it is a collection-wide operation, which does not fit the "one updated document" contract.
 
 ## Connecting a listener
 

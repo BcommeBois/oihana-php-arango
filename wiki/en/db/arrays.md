@@ -1,6 +1,6 @@
 # Embedded array fields `AQL::ARRAYS`
 
-> Manage an **array stored inside a document** (add, remove, move, edit, test) server-side, atomically, in a single AQL `UPDATE`.
+> Manage an **array stored inside a document** (add, remove, move, reorder, edit, test) server-side, atomically, in a single AQL `UPDATE`.
 
 The [`DocumentsArrayTrait`](../../../src/oihana/arango/models/traits/DocumentsArrayTrait.php) trait — composed by [`Documents`](../models.md) — exposes a small set of methods to mutate an embedded list field (e.g. `tracks`, `tags`, `hasPart`…) without fetching the array back into PHP. The behaviour of each field (ordering, uniqueness, optional length counter) is declared **once** on the model, through the `AQL::ARRAYS` option.
 
@@ -9,9 +9,10 @@ This page documents:
 1. [When to use it](#when-to-use-it) (vs *edges*).
 2. The [`AQL::ARRAYS` declaration](#the-aqlarrays-declaration) and the [ordering modes](#ordering-modes-arraymode).
 3. [Targeting an element by its key](#targeting-an-element-by-its-key-arangoitem_key), for arrays of **objects**.
-4. The [six methods](#the-methods) and their `$init` keys.
-5. The [signals](#signals) and the [parent propagation](#propagating-a-change-to-parent-documents).
-6. The [migration](#migrating-from-listitemtrait--multifieldtrait) from the legacy traits.
+4. [Numbering the elements](#numbering-the-elements-arangoposition_key), for a drag and drop.
+5. The [seven methods](#the-methods) and their `$init` keys.
+6. The [signals](#signals) and the [parent propagation](#propagating-a-change-to-parent-documents).
+7. The [migration](#migrating-from-listitemtrait--multifieldtrait) from the legacy traits.
 
 ## When to use it
 
@@ -67,7 +68,7 @@ The mode drives **both uniqueness AND sorting** with a single setting — so you
 | `ArrayMode::SET` | no | insertion | ✅ | `APPEND(doc.f, @value, true)` |
 | `ArrayMode::SORTED_SET` | no | by value | ❌ (throws) | `SORTED_UNIQUE(APPEND(doc.f, @value, true))` |
 
-> On a `SORTED_SET` field, [`arrayMove()`](#arraymove) is meaningless (sorting by value overrides any position) and throws an `UnsupportedOperationException`.
+> On a `SORTED_SET` field, anything touching the manual order is meaningless (sorting by value overrides any position) and throws an `UnsupportedOperationException`: [`arrayMove()`](#arraymove), [`arrayReorder()`](#arrayreorder), and the [numbering](#numbering-the-elements-arangoposition_key).
 
 ## Targeting an element by its key (`Arango::ITEM_KEY`)
 
@@ -160,6 +161,87 @@ One by one:
 - **`arrayContains` takes one key, not a list.** Only `arrayRemove` accepts several keys at once (`CURRENT.id NOT IN @value`).
 - **The key name is interpolated verbatim** into the AQL — the array-expansion helpers escape nothing. It is therefore validated by `assertAttributeName()` **whatever its origin** (configuration or per-call override): a name that is not a safe attribute identifier throws a `ValidationException` before it reaches any query.
 
+## Numbering the elements (`Arango::POSITION_KEY`)
+
+Picture a ring binder. There are two ways to keep its sheets in order.
+
+- **The physical order**: you pull a sheet out and slip it back three slots higher. Nothing else to touch.
+- **The number written at the top of each sheet**: as soon as you move one, you have to **erase and rewrite the number of all the others**.
+
+An embedded array already knows the first one: ArangoDB preserves the element order, and [`arrayMove`](#arraymove) is enough to change it. The second one — a `position` attribute carried by each element — needs a full renumbering on every write. That is what `Arango::POSITION_KEY` declares.
+
+> **Do you really need that attribute?** The array order comes back to you as it is: the rank is only needed when your elements are consumed **detached** from their parent document, when an existing schema mandates it, or when a client sorts on it. Otherwise `arrayMove` alone does the job, with nothing to erase.
+
+**The setting.** An invoice carries its lines in an embedded array, each line carrying its rank:
+
+```json
+{
+  "_key"  : "invoice-42",
+  "lines" : [
+    { "id": "l1", "label": "Alpha", "position": 0 },
+    { "id": "l2", "label": "Beta" , "position": 1 },
+    { "id": "l3", "label": "Gamma", "position": 2 }
+  ]
+}
+```
+
+**The situation.** The user drags `l3` to the top. The array order changes on its own — but the three `position` become wrong **at the same time**, not just the one of the moved line.
+
+**The declaration.** The field names the attribute carrying the rank, next to the mode and the item key:
+
+```php
+AQL::ARRAYS =>
+[
+    'lines'  => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfLines' , Arango::ITEM_KEY => 'id' , Arango::POSITION_KEY => 'position' ],
+    'tracks' => [ ArrayMode::LIST ], // nothing declared → no element is ever renumbered
+]
+```
+
+From then on, **every** write on `lines` renumbers the whole array from its indices:
+
+```aql
+LET __arr = …            -- whatever the operation produced (add, remove, move, edit…)
+LET __pos = LENGTH(__arr) == 0 ? []
+          : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr, __i), { position: __i }))
+UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: … }
+```
+
+The numbering is **zero-based**, like `Arango::POSITION` and like `SLICE`/`NTH` in AQL.
+
+### What gets renumbered
+
+**Everything**, including the collection-wide purge:
+
+| Operation | Effect on the ranks |
+|---|---|
+| [`arrayInsert`](#arrayinsert) | the added element takes its rank, the others are confirmed |
+| [`arrayRemove`](#arrayremove) | the gap closes (`0,1,3` becomes `0,1,2`) |
+| [`arrayMove`](#arraymove) / [`arrayReorder`](#arrayreorder) | the whole new order is rewritten |
+| [`arrayUpdate`](#arrayupdate) | the patch applies, then the ranks are rewritten **over it** |
+| [`arrayPurgeRef`](#arraypurgeref) | renumbers too — dropping a reference leaves no hole behind |
+
+**Backward compatibility.** A field declaring no `POSITION_KEY` keeps its exact AQL, byte for byte.
+
+### The empty-array guard
+
+The `LENGTH(__arr) == 0 ? []` ternary is not cosmetic. On an empty array, `0 .. LENGTH(__arr) - 1` becomes `0 .. -1` — and AQL reads that range **backwards**, as a descent: it expands to `[0, -1]`. Without the guard, emptying the array would therefore write **two phantom `null` elements** into it, instead of leaving it empty.
+
+### The order of operations
+
+The renumbering is the **last** `LET`, applied to the array the operation has just produced. Two consequences, both intended:
+
+- **The field invariant comes first.** On an `ArrayMode::SET`, `UNIQUE()` applies before: were the ranks written first, two identical elements would become distinct (`position: 0` and `position: 1`) and uniqueness would collapse nothing.
+- **A patch never chooses its own rank.** `arrayUpdate` merges first, the renumbering rewrites afterwards — a request body carrying `"position": 99` therefore has no effect on the rank. The server stays the sole owner of the numbering.
+
+### The limits
+
+One by one:
+
+- **Refused on a `SORTED_SET`.** Writing the rank **into** the element feeds the very sort that decides that rank: the order would never settle. The combination throws an `UnsupportedOperationException`.
+- **The name must be flat.** A dotted item key (`meta.id`) is accepted, because it is only ever **read** — AQL walks one level down. A dotted position key is **refused**: it is **written back**, and in an AQL object the key is a string, not a path. `MERGE(CURRENT, { "meta.position": 3 })` would create an attribute whose *name* contains a dot, next to the real `meta` left stale — silently. A nested `MERGE` (`MERGE(CURRENT, { meta: MERGE(CURRENT.meta, { position: 3 }) })`) could support it one day; until then, a dotted key throws a `ValidationException`.
+- **The base is 0, hard-coded.** There is no option to number from 1.
+- **The name is interpolated verbatim** into the AQL, hence validated by `assertAttributeName()` whatever its origin — same rule as the item key.
+
 ## The methods
 
 | Method | Role | Returns |
@@ -167,6 +249,7 @@ One by one:
 | [`arrayInsert`](#arrayinsert) | add one or several values | `?object` (modified doc) |
 | [`arrayRemove`](#arrayremove) | remove one or several values | `?object` |
 | [`arrayMove`](#arraymove) | move a value to a position | `?object` |
+| [`arrayReorder`](#arrayreorder) | apply **a whole order** from a list of keys | `?object` |
 | [`arrayUpdate`](#arrayupdate) | merge a patch into an element, **in place** | `?object` |
 | [`arrayContains`](#arraycontains) | test the presence of a value | `bool` |
 | [`arrayPurgeRef`](#arraypurgeref) | remove a value from **every** document that contains it | `object[]` or `int` |
@@ -181,6 +264,7 @@ One by one:
 | `Arango::FIELD` | — | The targeted array field. |
 | `Arango::VALUE` | — | The element(s) involved — or **its key**, when the field declares an `ITEM_KEY`. |
 | `Arango::ITEM_KEY` | *(field config)* | Per-call override of the attribute identifying an element. See [targeting by key](#targeting-an-element-by-its-key-arangoitem_key). |
+| `Arango::POSITION_KEY` | *(field config)* | Per-call override of the attribute carrying the rank. See [numbering](#numbering-the-elements-arangoposition_key). |
 | `Arango::TOUCH` | `true` | Set `modified` to `DATE_ISO8601(DATE_NOW())`; `false` to leave it untouched. |
 | `Arango::DEBUG` | `false` | Log the compiled AQL query. |
 
@@ -258,6 +342,43 @@ LET __arr = __el == null ? doc.chapters
 
 An unknown key therefore leaves `__el` at `null`, and the array is rewritten **unchanged** — never a phantom `null` at the requested position.
 
+### `arrayReorder`
+
+Applies **a whole order at once**, from the list of item keys — where `arrayMove` moves a single element. This is the right shape when the client already knows the final order: it is idempotent, it fits in one round trip, and it leaves no ambiguity about the intent.
+
+**The situation.** The user is done rearranging the lines of `invoice-42`; the interface sends the resulting order.
+
+```php
+$invoices->arrayReorder([
+    Arango::OWNER => 'invoice-42',
+    Arango::FIELD => 'lines',
+    Arango::VALUE => [ 'l3' , 'l1' , 'l2' ], // the keys, in the wanted order
+]);
+```
+```aql
+LET __ord = (FOR __k IN @value
+             LET __el = FIRST(doc.lines[* FILTER CURRENT.id == __k])
+             FILTER __el != null
+             RETURN __el)
+LET __arr = APPEND(__ord, doc.lines[* FILTER CURRENT.id NOT IN @value])
+```
+
+**A partial list reorders, it does not delete.** The elements the list does not name are **kept** and appended behind it, in their relative order. Sending `[ 'l3' ]` brings `l3` to the top and leaves `l1`, `l2` after it — an interface bug sending only a subset therefore cannot wipe lines out.
+
+The other edge cases go the same way:
+
+| Sent | Result |
+|---|---|
+| an unknown key | skipped (`FILTER __el != null`), the rest applies |
+| an empty list | nothing is named, so everything is a leftover: the array is untouched |
+| a duplicated key | collapsed before the query, first occurrence winning |
+
+> **Why collapse duplicates in PHP rather than with `UNIQUE()`.** Resolving the same key twice would push its element twice, while `NOT IN` removes it from the leftovers only once: the array would gain a clone. And the AQL `UNIQUE()` guarantees **no output order** — which is precisely what this operation is about.
+
+**An item key is required** (like [`arrayUpdate`](#arrayupdate)): without an attribute identifying the elements there is nothing to order them by. And the operation is **refused on a `SORTED_SET`** (like [`arrayMove`](#arraymove)): sorting by value would override the requested order. Both cases throw an `UnsupportedOperationException`.
+
+Finally, `arrayReorder` **does not re-apply** the field invariant: being a permutation of existing elements, it cannot introduce a duplicate that was not already there.
+
 ### `arrayContains`
 
 Tests whether a value is present in a document's array. Returns a `bool`.
@@ -333,7 +454,7 @@ The return shape is **your choice**:
 
 ## Signals
 
-The single-document write methods (`arrayInsert`/`arrayRemove`/`arrayMove`/`arrayUpdate`) emit the `beforeUpdate` / `afterUpdate` signals of the [`HasUpdateSignals`](../models.md#lifecycle-and-hooks) trait, exactly like the other write methods of the model. `arrayContains` is a read: no signal. `arrayPurgeRef` emits none either — it is a collection-wide operation, which does not fit the "one updated document" contract.
+The single-document write methods (`arrayInsert`/`arrayRemove`/`arrayMove`/`arrayReorder`/`arrayUpdate`) emit the `beforeUpdate` / `afterUpdate` signals of the [`HasUpdateSignals`](../models.md#lifecycle-and-hooks) trait, exactly like the other write methods of the model. `arrayContains` is a read: no signal. `arrayPurgeRef` emits none either — it is a collection-wide operation, which does not fit the "one updated document" contract.
 
 ## Propagating a change to parent documents
 

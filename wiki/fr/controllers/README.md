@@ -7,7 +7,7 @@ Le dossier [`src/oihana/arango/controllers/`](../../../src/oihana/arango/control
 | `DocumentsController` | CRUD complet sur une collection de documents. | `GET /resource`, `GET /resource/{id}`, `POST /resource`, `PATCH /resource/{id}`, `PUT /resource/{id}`, `DELETE /resource/{id}`, `GET /resource/count`, `GET /resource/last` |
 | `EdgesController` | CRUD sur une collection d'arêtes. | Mêmes verbes, sémantique edge (validation `_from`/`_to`). |
 | `PropertyController` | Exposition d'une propriété spécifique d'un document (GET / PATCH). | `GET /resource/{id}/{property}`, `PATCH /resource/{id}/{property}` |
-| `ArrayPropertyController` | Opérations élément par élément d'une propriété [champ-tableau](../db/arrays.md) (ajout / retrait / déplacement / édition / présence). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|PUT\|GET /resource/{id}/{property}/{value}` |
+| `ArrayPropertyController` | Opérations élément par élément d'une propriété [champ-tableau](../db/arrays.md) (ajout / retrait / déplacement / réordonnancement / édition / présence). | `POST\|PUT /resource/{id}/{property}`, `DELETE\|PATCH\|PUT\|GET /resource/{id}/{property}/{value}` |
 | `TraversalController` | Navigue une arête **auto-référente** (arbre/graphe) : parent, enfants, ancêtres, descendants. | `GET /resource/{id}/{parent\|children\|ancestors\|descendants}` |
 | `ConceptSchemeController` | Expose les **racines** d'un thésaurus hiérarchique en `ConceptScheme` SKOS. | `GET /resource/scheme` |
 
@@ -323,19 +323,20 @@ return
 
 ## `ArrayPropertyController`
 
-Étend [`PropertyController`](#propertycontroller) pour exposer les **opérations élément par élément** d'une propriété déclarée comme **champ-tableau embarqué** ([`AQL::ARRAYS`](../db/arrays.md)) : ajouter, retirer, déplacer, éditer un élément, tester sa présence — par-dessus le `get()` (lire tout le tableau) et `patch()` (remplacer tout le tableau) hérités.
+Étend [`PropertyController`](#propertycontroller) pour exposer les **opérations élément par élément** d'une propriété déclarée comme **champ-tableau embarqué** ([`AQL::ARRAYS`](../db/arrays.md)) : ajouter, retirer, déplacer, réordonner, éditer un élément, tester sa présence — par-dessus le `get()` (lire tout le tableau) et `patch()` (remplacer tout le tableau) hérités.
 
 | Verbe | Méthode | Route | Opération modèle |
 |---|---|---|---|
 | `addItem()` | `POST` | `/resource/{id}/{property}` | `arrayInsert` |
+| `reorderItems()` | `PUT` | `/resource/{id}/{property}` | `arrayReorder` |
 | `removeItem()` | `DELETE` | `/resource/{id}/{property}/{value}` | `arrayRemove` |
 | `moveItem()` | `PATCH` | `/resource/{id}/{property}/{value}` | `arrayMove` |
 | `updateItem()` | `PUT` | `/resource/{id}/{property}/{value}` | `arrayUpdate` |
 | `hasItem()` | `GET` | `/resource/{id}/{property}/{value}` | `arrayContains` |
 
-Les cinq méthodes vivent dans `ArrayPropertyControllerTrait`.
+Les six méthodes vivent dans `ArrayPropertyControllerTrait`.
 
-> `PATCH` et `PUT` partagent le même chemin, mais pas la même intention : c'est le **verbe** qui les distingue — `PATCH` **déplace** l'élément, `PUT` l'**édite**.
+> `PATCH` et `PUT` partagent le chemin de l'**élément**, mais pas la même intention : c'est le **verbe** qui les distingue — `PATCH` **déplace** l'élément, `PUT` l'**édite**. Sur le chemin de la **propriété**, `PUT` remplace l'**ordre** du tableau entier.
 
 ### Valeur de l'élément : URL ou body
 
@@ -363,15 +364,30 @@ Content-Type: application/json
 
 Le verbe dit déjà qu'on édite l'élément : rien n'a besoin de le renommer dans le corps. La fusion est partielle — les attributs du patch écrasent les leurs, les autres sont conservés.
 
+### `reorderItems` : tout l'ordre en une requête
+
+`PUT /resource/{id}/{property}` applique **tout un ordre d'un coup**, là où `moveItem` déplace un élément à la fois — ce dont une interface en glisser-déposer a besoin quand elle connaît déjà l'ordre final. Les clés ordonnées voyagent dans le **corps**, sous `value`, comme pour `addItem` — l'autre opération qui vise la **propriété** et non l'un de ses éléments :
+
+```http
+PUT /invoices/42/lines
+Content-Type: application/json
+
+{ "value": [ "l3", "l1", "l2" ] }
+```
+
+Une liste **partielle** réordonne ce qu'elle nomme et **conserve le reste**, rappendu derrière : un bug d'interface qui n'enverrait qu'un sous-ensemble ne peut pas effacer des lignes. Une clé inconnue est ignorée, une liste vide ne change rien. Voir [`arrayReorder`](../db/arrays.md#arrayreorder) pour le détail.
+
 ### Codes d'erreur
 
 | Code | Quand |
 |---|---|
 | `400 Bad Request` | la propriété ciblée n'est pas déclarée dans `AQL::ARRAYS` du modèle |
 | `404 Not Found` | le document propriétaire n'existe pas ; ou (`hasItem`) la valeur est absente du tableau ; ou (`moveItem`/`updateItem` par clé) aucun élément ne porte la clé demandée |
-| `422 Unprocessable Entity` | `moveItem` sur un champ `sortedSet` (le tri par valeur rend la position absurde) ; ou `updateItem` sur une propriété sans clé d'élément (voir ci-dessous) |
+| `422 Unprocessable Entity` | l'opération **n'existe pas** sur cette propriété : `moveItem`/`reorderItems` sur un champ `sortedSet`, `updateItem`/`reorderItems` sur une propriété sans clé d'élément, ou une propriété déclarée à la fois `sortedSet` et [numérotée](../db/arrays.md#numéroter-les-éléments-arangoposition_key) |
 
-> **Pourquoi `updateItem` refuse une propriété sans clé.** Sans clé, l'élément ne pourrait être désigné que par une copie octet pour octet de lui-même — que le patch qu'on applique invalide aussitôt. Le deuxième appel identique ne matcherait plus rien. Le contrôleur refuse donc explicitement, plutôt que de servir une opération qui ne marche qu'une fois.
+**La règle des 422, en une phrase :** « cette opération n'existe pas sur ce champ » est une **requête** que la propriété ne peut pas satisfaire, pas une panne serveur. Le modèle énonce la règle **une seule fois** — il lève une `UnsupportedOperationException` — et le squelette partagé du contrôleur traduit chacune d'elles en ce même statut. Aucune garde n'est réécrite opération par opération.
+
+> **Pourquoi `updateItem` et `reorderItems` refusent une propriété sans clé.** Pour `updateItem`, l'élément ne pourrait être désigné que par une copie octet pour octet de lui-même — que le patch qu'on applique invalide aussitôt : le deuxième appel identique ne matcherait plus rien. Pour `reorderItems`, sans attribut identifiant les éléments, il n'y a tout simplement rien à ordonner. Mieux vaut refuser que de servir une opération qui ne marche qu'une fois, ou pas du tout.
 
 ### Câblage complet (modèle + controller + routes)
 
@@ -409,7 +425,7 @@ Routes::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyRoute( $c ,
 ]) ,
 ```
 
-Génère `POST /playlists/{id}/tracks` (addItem) et `DELETE|PATCH|PUT|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / updateItem / hasItem).
+Génère `POST|PUT /playlists/{id}/tracks` (addItem / reorderItems) et `DELETE|PATCH|PUT|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / updateItem / hasItem).
 
 > `arrayPurgeRef` (retirer une valeur de **tous** les documents qui la référencent) n'est **pas** exposé en HTTP : c'est une opération de cascade, à déclencher côté application via un listener `afterUpdate`/`afterDelete` (cf. [Champs-tableaux embarqués](../db/arrays.md#propager-une-modification-aux-documents-parents)).
 

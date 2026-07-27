@@ -56,7 +56,7 @@ Chaque opération CRUD expose deux propriétés publiques `oihana\signals\Signal
 
 > **Initialisation automatique.** Contrairement à la lib amont (où il faut appeler `initialize*Signals()` à la main), les modèles `Documents`/`Edges` **initialisent leurs six signaux dans le constructeur** (via `initializeDocumentsMethods()`). Vous pouvez donc `connect()` directement après l'instanciation, sans étape préalable.
 
-> **Les écritures de tableaux émettent `*Update`.** `arrayInsert` / `arrayRemove` / `arrayMove` / `arrayPurgeRef` émettent `beforeUpdate` / `afterUpdate`, exactement comme `update()` (voir [Champs-tableaux](db/arrays.md#signaux)). `arrayContains` est une lecture : aucun signal.
+> **Les écritures de tableaux émettent `*Update`.** `arrayInsert` / `arrayRemove` / `arrayMove` / `arrayReorder` / `arrayUpdate` émettent `beforeUpdate` / `afterUpdate`, exactement comme `update()` (voir [Champs-tableaux](db/arrays.md#signaux)). `arrayContains` est une lecture : aucun signal. `arrayPurgeRef` n'en émet pas non plus — c'est une opération à l'échelle de la collection, qui ne rentre pas dans le contrat « un document mis à jour ».
 
 ## Connecter un écouteur
 

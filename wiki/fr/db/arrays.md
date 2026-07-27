@@ -1,6 +1,6 @@
 # Champs-tableaux embarqués `AQL::ARRAYS`
 
-> Gérer un **tableau stocké à l'intérieur d'un document** (ajouter, retirer, déplacer, éditer, tester) côté serveur, de façon atomique, en une seule requête AQL `UPDATE`.
+> Gérer un **tableau stocké à l'intérieur d'un document** (ajouter, retirer, déplacer, réordonner, éditer, tester) côté serveur, de façon atomique, en une seule requête AQL `UPDATE`.
 
 Le trait [`DocumentsArrayTrait`](../../../src/oihana/arango/models/traits/DocumentsArrayTrait.php) — composé par [`Documents`](../models.md) — expose un petit jeu de méthodes pour muter un champ-liste embarqué (par ex. `tracks`, `tags`, `hasPart`…) sans rapatrier le tableau côté PHP. Le comportement de chaque champ (ordre, unicité, compteur de longueur optionnel) se déclare **une seule fois** sur le modèle, via l'option `AQL::ARRAYS`.
 
@@ -9,9 +9,10 @@ Cette page documente :
 1. [Quand l'utiliser](#quand-lutiliser) (vs *edges*).
 2. La [déclaration `AQL::ARRAYS`](#déclaration-aqlarrays) et les [modes d'ordre](#modes-dordre-arraymode).
 3. Le [ciblage par clé d'élément](#cibler-un-élément-par-sa-clé-arangoitem_key), pour les tableaux d'**objets**.
-4. Les [six méthodes](#les-méthodes) et leurs clés `$init`.
-5. Les [signaux](#signaux) et la [propagation aux parents](#propager-une-modification-aux-documents-parents).
-6. La [migration](#migration-depuis-listitemtrait--multifieldtrait) depuis les anciens traits.
+4. La [numérotation des éléments](#numéroter-les-éléments-arangoposition_key), pour un glisser-déposer.
+5. Les [sept méthodes](#les-méthodes) et leurs clés `$init`.
+6. Les [signaux](#signaux) et la [propagation aux parents](#propager-une-modification-aux-documents-parents).
+7. La [migration](#migration-depuis-listitemtrait--multifieldtrait) depuis les anciens traits.
 
 ## Quand l'utiliser
 
@@ -67,7 +68,7 @@ Le mode pilote **l'unicité ET le tri** en un seul réglage — vous ne passez d
 | `ArrayMode::SET` | non | insertion | ✅ | `APPEND(doc.f, @value, true)` |
 | `ArrayMode::SORTED_SET` | non | par valeur | ❌ (lève une exception) | `SORTED_UNIQUE(APPEND(doc.f, @value, true))` |
 
-> Sur un champ `SORTED_SET`, [`arrayMove()`](#arraymove) n'a aucun sens (le tri par valeur écrase toute position) et lève une `UnsupportedOperationException`.
+> Sur un champ `SORTED_SET`, tout ce qui touche à l'ordre manuel n'a aucun sens (le tri par valeur écrase toute position) et lève une `UnsupportedOperationException` : [`arrayMove()`](#arraymove), [`arrayReorder()`](#arrayreorder), et la [numérotation](#numéroter-les-éléments-arangoposition_key).
 
 ## Cibler un élément par sa clé (`Arango::ITEM_KEY`)
 
@@ -160,6 +161,87 @@ Une par une :
 - **`arrayContains` prend une clé, pas une liste.** Seul `arrayRemove` accepte plusieurs clés d'un coup (`CURRENT.id NOT IN @value`).
 - **Le nom de la clé est interpolé verbatim** dans l'AQL — les helpers d'expansion de tableau n'échappent rien. Il est donc validé par `assertAttributeName()` **quelle que soit son origine** (configuration ou override d'appel) : un nom qui n'est pas un identifiant d'attribut sûr lève une `ValidationException` avant d'atteindre la moindre requête.
 
+## Numéroter les éléments (`Arango::POSITION_KEY`)
+
+Imaginez un classeur à anneaux. Il y a deux façons d'y ranger les feuilles.
+
+- **L'ordre physique** : vous sortez une feuille, vous la remettez trois crans plus haut. Rien d'autre à toucher.
+- **Le numéro écrit en haut de chaque feuille** : dès que vous en bougez une, il faut **regommer et réécrire le numéro de toutes les autres**.
+
+Un tableau embarqué connaît déjà le premier : ArangoDB conserve l'ordre des éléments, et [`arrayMove`](#arraymove) suffit à le changer. Le second — un attribut `position` porté par chaque élément — demande une renumérotation complète à chaque écriture. C'est ce que déclare `Arango::POSITION_KEY`.
+
+> **Avez-vous vraiment besoin de cet attribut ?** L'ordre du tableau vous revient tel quel : le rang n'est nécessaire que si vos éléments sont consommés **détachés** de leur document parent, si un schéma existant l'impose, ou si un client trie dessus. Dans les autres cas, `arrayMove` seul fait le travail, sans rien à regommer.
+
+**Le décor.** Une facture porte ses lignes dans un tableau embarqué, chaque ligne portant son rang :
+
+```json
+{
+  "_key"  : "invoice-42",
+  "lines" : [
+    { "id": "l1", "label": "Alpha", "position": 0 },
+    { "id": "l2", "label": "Beta" , "position": 1 },
+    { "id": "l3", "label": "Gamma", "position": 2 }
+  ]
+}
+```
+
+**La situation.** L'utilisateur fait glisser `l3` en tête. L'ordre du tableau change tout seul — mais les trois `position` deviennent fausses **en même temps**, pas seulement celle de la ligne déplacée.
+
+**La déclaration.** Le champ nomme l'attribut qui porte le rang, à côté du mode et de la clé d'élément :
+
+```php
+AQL::ARRAYS =>
+[
+    'lines'  => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfLines' , Arango::ITEM_KEY => 'id' , Arango::POSITION_KEY => 'position' ],
+    'tracks' => [ ArrayMode::LIST ], // rien de déclaré → aucun élément n'est jamais renuméroté
+]
+```
+
+À partir de là, **toute** écriture sur `lines` renumérote le tableau entier, à partir des index :
+
+```aql
+LET __arr = …            -- ce que l'opération a produit (ajout, retrait, déplacement, édition…)
+LET __pos = LENGTH(__arr) == 0 ? []
+          : (FOR __i IN 0 .. LENGTH(__arr) - 1 RETURN MERGE(NTH(__arr, __i), { position: __i }))
+UPDATE doc WITH { lines: __pos, numberOfLines: LENGTH(__pos), modified: … }
+```
+
+La numérotation est **à base 0**, comme `Arango::POSITION` et comme `SLICE`/`NTH` en AQL.
+
+### Ce qui est renuméroté
+
+**Tout**, y compris la purge à l'échelle de la collection :
+
+| Opération | Effet sur les rangs |
+|---|---|
+| [`arrayInsert`](#arrayinsert) | l'élément ajouté prend son rang, les autres sont confirmés |
+| [`arrayRemove`](#arrayremove) | le trou se referme (`0,1,3` devient `0,1,2`) |
+| [`arrayMove`](#arraymove) / [`arrayReorder`](#arrayreorder) | tout le nouvel ordre est réécrit |
+| [`arrayUpdate`](#arrayupdate) | le patch s'applique, puis les rangs sont réécrits **par-dessus** |
+| [`arrayPurgeRef`](#arraypurgeref) | renumérote aussi — retirer une référence ne laisse pas de trou |
+
+**Rétrocompatibilité.** Un champ qui ne déclare aucun `POSITION_KEY` garde exactement son AQL, à l'octet près.
+
+### La garde du tableau vide
+
+Le ternaire `LENGTH(__arr) == 0 ? []` n'est pas cosmétique. Sur un tableau vide, `0 .. LENGTH(__arr) - 1` devient `0 .. -1` — et AQL lit cet intervalle **à l'envers**, comme une descente : il produit `[0, -1]`. Sans la garde, vider le tableau y écrirait donc **deux éléments fantômes `null`**, au lieu de le laisser vide.
+
+### L'ordre des opérations
+
+La renumérotation est le **dernier** `LET`, appliqué sur le tableau que l'opération vient de produire. Deux conséquences, et elles sont voulues :
+
+- **L'invariant du champ passe avant.** Sur un `ArrayMode::SET`, `UNIQUE()` s'applique d'abord : si les rangs étaient écrits avant, deux éléments identiques deviendraient distincts (`position: 0` et `position: 1`) et l'unicité ne fusionnerait plus rien.
+- **Un patch ne choisit jamais son rang.** `arrayUpdate` fusionne d'abord, la renumérotation réécrit ensuite — un corps de requête qui porte `"position": 99` est donc sans effet sur le rang. Le serveur reste seul maître de la numérotation.
+
+### Les limites
+
+Une par une :
+
+- **Interdit sur un `SORTED_SET`.** Écrire le rang **dans** l'élément nourrit le tri qui décide de ce rang : l'ordre ne se stabiliserait jamais. La combinaison lève une `UnsupportedOperationException`.
+- **Le nom doit être plat.** Une clé d'élément pointée (`meta.id`) est acceptée, parce qu'elle n'est jamais que **lue** — AQL descend d'un niveau. Une clé de position pointée est **refusée** : elle est **réécrite**, et dans un objet AQL la clé est une chaîne, pas un chemin. `MERGE(CURRENT, { "meta.position": 3 })` créerait un attribut dont le *nom* contient un point, à côté du vrai `meta` resté périmé — silencieusement. Un `MERGE` imbriqué (`MERGE(CURRENT, { meta: MERGE(CURRENT.meta, { position: 3 }) })`) le permettrait un jour ; en attendant, une clé pointée lève une `ValidationException`.
+- **La base est 0, en dur.** Pas d'option pour numéroter à partir de 1.
+- **Le nom est interpolé verbatim** dans l'AQL, donc validé par `assertAttributeName()` quelle que soit son origine — même règle que la clé d'élément.
+
 ## Les méthodes
 
 | Méthode | Rôle | Retour |
@@ -167,6 +249,7 @@ Une par une :
 | [`arrayInsert`](#arrayinsert) | ajoute une ou plusieurs valeurs | `?object` (doc modifié) |
 | [`arrayRemove`](#arrayremove) | retire une ou plusieurs valeurs | `?object` |
 | [`arrayMove`](#arraymove) | déplace une valeur à une position | `?object` |
+| [`arrayReorder`](#arrayreorder) | applique **tout un ordre** depuis une liste de clés | `?object` |
 | [`arrayUpdate`](#arrayupdate) | fusionne un patch dans un élément, **sur place** | `?object` |
 | [`arrayContains`](#arraycontains) | teste la présence d'une valeur | `bool` |
 | [`arrayPurgeRef`](#arraypurgeref) | retire une valeur dans **tous** les documents qui la contiennent | `object[]` ou `int` |
@@ -181,6 +264,7 @@ Une par une :
 | `Arango::FIELD` | — | Le champ-tableau visé. |
 | `Arango::VALUE` | — | L'élément (ou les éléments) concerné(s) — ou **sa clé**, si le champ déclare un `ITEM_KEY`. |
 | `Arango::ITEM_KEY` | *(config du champ)* | Override ponctuel de l'attribut qui identifie un élément. Voir [ciblage par clé](#cibler-un-élément-par-sa-clé-arangoitem_key). |
+| `Arango::POSITION_KEY` | *(config du champ)* | Override ponctuel de l'attribut qui porte le rang. Voir [numérotation](#numéroter-les-éléments-arangoposition_key). |
 | `Arango::TOUCH` | `true` | Met `modified` à `DATE_ISO8601(DATE_NOW())` ; `false` pour ne pas y toucher. |
 | `Arango::DEBUG` | `false` | Journalise la requête AQL compilée. |
 
@@ -258,6 +342,43 @@ LET __arr = __el == null ? doc.chapters
 
 Une clé inconnue laisse donc `__el` à `null`, et le tableau est réécrit **inchangé** — jamais un `null` fantôme à la position demandée.
 
+### `arrayReorder`
+
+Applique **tout un ordre d'un coup**, depuis la liste des clés d'éléments — là où `arrayMove` en déplace un seul. C'est la forme qui convient quand le client connaît déjà l'ordre final : elle est idempotente, elle tient en un aller-retour, et elle ne laisse aucune ambiguïté sur l'intention.
+
+**La situation.** L'utilisateur a fini de réarranger les lignes de `invoice-42` ; l'interface envoie l'ordre obtenu.
+
+```php
+$invoices->arrayReorder([
+    Arango::OWNER => 'invoice-42',
+    Arango::FIELD => 'lines',
+    Arango::VALUE => [ 'l3' , 'l1' , 'l2' ], // les clés, dans l'ordre voulu
+]);
+```
+```aql
+LET __ord = (FOR __k IN @value
+             LET __el = FIRST(doc.lines[* FILTER CURRENT.id == __k])
+             FILTER __el != null
+             RETURN __el)
+LET __arr = APPEND(__ord, doc.lines[* FILTER CURRENT.id NOT IN @value])
+```
+
+**Une liste partielle réordonne, elle ne supprime pas.** Les éléments que la liste ne nomme pas sont **conservés** et rappendus derrière, dans leur ordre relatif. Envoyer `[ 'l3' ]` remonte `l3` en tête et laisse `l1`, `l2` à la suite — un bug d'interface qui n'enverrait qu'un sous-ensemble ne peut donc pas effacer des lignes.
+
+Les autres cas limites vont dans le même sens :
+
+| Envoyé | Résultat |
+|---|---|
+| une clé inconnue | ignorée (`FILTER __el != null`), le reste s'applique |
+| une liste vide | rien n'est nommé, donc tout est « reste » : le tableau est intact |
+| une clé en double | écrasée avant la requête, première occurrence gagnante |
+
+> **Pourquoi dédoublonner en PHP plutôt qu'avec `UNIQUE()`.** Résoudre deux fois la même clé pousserait deux fois son élément, alors que le `NOT IN` ne le retire qu'une fois des restants : le tableau gagnerait un clone. Et l'`UNIQUE()` d'AQL ne garantit **aucun ordre** de sortie — or l'ordre est précisément le sujet de cette opération.
+
+**Une clé d'élément est obligatoire** (comme pour [`arrayUpdate`](#arrayupdate)) : sans attribut identifiant les éléments, il n'y a rien à ordonner. Et l'opération est **refusée sur un `SORTED_SET`** (comme [`arrayMove`](#arraymove)) : le tri par valeur écraserait l'ordre demandé. Les deux cas lèvent une `UnsupportedOperationException`.
+
+Enfin, `arrayReorder` **ne réapplique pas** l'invariant du champ : c'est une permutation d'éléments existants, elle ne peut pas introduire un doublon qui n'était pas déjà là.
+
 ### `arrayContains`
 
 Teste la présence d'une valeur dans le tableau d'un document. Retourne un `bool`.
@@ -333,7 +454,7 @@ Le retour est **au choix** :
 
 ## Signaux
 
-Les méthodes d'écriture sur un document (`arrayInsert`/`arrayRemove`/`arrayMove`/`arrayUpdate`) émettent les signaux `beforeUpdate` / `afterUpdate` du trait [`HasUpdateSignals`](../models.md#cycle-de-vie-et-hooks), exactement comme les autres méthodes d'écriture du modèle. `arrayContains` est une lecture : aucun signal. `arrayPurgeRef` n'en émet pas non plus — c'est une opération à l'échelle de la collection, qui ne rentre pas dans le contrat « un document mis à jour ».
+Les méthodes d'écriture sur un document (`arrayInsert`/`arrayRemove`/`arrayMove`/`arrayReorder`/`arrayUpdate`) émettent les signaux `beforeUpdate` / `afterUpdate` du trait [`HasUpdateSignals`](../models.md#cycle-de-vie-et-hooks), exactement comme les autres méthodes d'écriture du modèle. `arrayContains` est une lecture : aucun signal. `arrayPurgeRef` n'en émet pas non plus — c'est une opération à l'échelle de la collection, qui ne rentre pas dans le contrat « un document mis à jour ».
 
 ## Propager une modification aux documents parents
 

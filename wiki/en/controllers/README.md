@@ -7,7 +7,7 @@ The [`src/oihana/arango/controllers/`](../../../src/oihana/arango/controllers/) 
 | `DocumentsController` | Full CRUD on a document collection. | `GET /resource`, `GET /resource/{id}`, `POST /resource`, `PATCH /resource/{id}`, `PUT /resource/{id}`, `DELETE /resource/{id}`, `GET /resource/count`, `GET /resource/last` |
 | `EdgesController` | CRUD on an edge collection. | Same verbs, edge semantics (validation `_from`/`_to`). |
 | `PropertyController` | Exposes a specific property of a document (GET / PATCH). | `GET /resource/{id}/{property}`, `PATCH /resource/{id}/{property}` |
-| `ArrayPropertyController` | Element-level operations of an [array-field](../db/arrays.md) property (add / remove / move / edit / contains). | `POST /resource/{id}/{property}`, `DELETE\|PATCH\|PUT\|GET /resource/{id}/{property}/{value}` |
+| `ArrayPropertyController` | Element-level operations of an [array-field](../db/arrays.md) property (add / remove / move / reorder / edit / contains). | `POST\|PUT /resource/{id}/{property}`, `DELETE\|PATCH\|PUT\|GET /resource/{id}/{property}/{value}` |
 | `TraversalController` | Navigates a **self-referential** edge (a tree/graph): parent, children, ancestors, descendants. | `GET /resource/{id}/{parent\|children\|ancestors\|descendants}` |
 | `ConceptSchemeController` | Exposes a hierarchical thesaurus's **roots** as a SKOS `ConceptScheme`. | `GET /resource/scheme` |
 
@@ -321,19 +321,20 @@ return
 
 ## `ArrayPropertyController`
 
-Extends [`PropertyController`](#propertycontroller) to expose the **element-level operations** of a property declared as an **embedded array field** ([`AQL::ARRAYS`](../db/arrays.md)): add, remove, move, edit an element, test its presence — on top of the inherited `get()` (read the whole array) and `patch()` (replace the whole array).
+Extends [`PropertyController`](#propertycontroller) to expose the **element-level operations** of a property declared as an **embedded array field** ([`AQL::ARRAYS`](../db/arrays.md)): add, remove, move, reorder, edit an element, test its presence — on top of the inherited `get()` (read the whole array) and `patch()` (replace the whole array).
 
 | Verb | Method | Route | Model operation |
 |---|---|---|---|
 | `addItem()` | `POST` | `/resource/{id}/{property}` | `arrayInsert` |
+| `reorderItems()` | `PUT` | `/resource/{id}/{property}` | `arrayReorder` |
 | `removeItem()` | `DELETE` | `/resource/{id}/{property}/{value}` | `arrayRemove` |
 | `moveItem()` | `PATCH` | `/resource/{id}/{property}/{value}` | `arrayMove` |
 | `updateItem()` | `PUT` | `/resource/{id}/{property}/{value}` | `arrayUpdate` |
 | `hasItem()` | `GET` | `/resource/{id}/{property}/{value}` | `arrayContains` |
 
-The five methods live in `ArrayPropertyControllerTrait`.
+The six methods live in `ArrayPropertyControllerTrait`.
 
-> `PATCH` and `PUT` share the same path, but not the same intent: the **verb** is what tells them apart — `PATCH` **moves** the element, `PUT` **edits** it.
+> `PATCH` and `PUT` share the **element** path, but not the same intent: the **verb** is what tells them apart — `PATCH` **moves** the element, `PUT` **edits** it. On the **property** path, `PUT` replaces the **order** of the whole array.
 
 ### Element value: URL or body
 
@@ -361,15 +362,30 @@ Content-Type: application/json
 
 The verb already says the element is being edited: nothing needs to name it again in the body. The merge is partial — the patch attributes overwrite theirs, the others are kept.
 
+### `reorderItems`: the whole order in one request
+
+`PUT /resource/{id}/{property}` applies **a whole order at once**, where `moveItem` moves one element at a time — what a drag and drop interface needs once it knows the final order. The ordered keys travel in the **body**, under `value`, like `addItem` — the other operation targeting the **property** rather than one of its elements:
+
+```http
+PUT /invoices/42/lines
+Content-Type: application/json
+
+{ "value": [ "l3", "l1", "l2" ] }
+```
+
+A **partial** list reorders what it names and **keeps the rest**, appended behind it: an interface bug sending only a subset cannot wipe lines out. An unknown key is skipped, an empty list changes nothing. See [`arrayReorder`](../db/arrays.md#arrayreorder) for the details.
+
 ### Error codes
 
 | Code | When |
 |---|---|
 | `400 Bad Request` | the targeted property is not declared in the model's `AQL::ARRAYS` |
 | `404 Not Found` | the owner document does not exist; or (`hasItem`) the value is absent from the array; or (`moveItem`/`updateItem` by key) no element carries the requested key |
-| `422 Unprocessable Entity` | `moveItem` on a `sortedSet` field (sorting by value makes a manual position meaningless); or `updateItem` on a property with no item key (see below) |
+| `422 Unprocessable Entity` | the operation **does not exist** on that property: `moveItem`/`reorderItems` on a `sortedSet` field, `updateItem`/`reorderItems` on a property with no item key, or a property declared both `sortedSet` and [numbered](../db/arrays.md#numbering-the-elements-arangoposition_key) |
 
-> **Why `updateItem` refuses a property with no key.** Without a key, the element could only be designated by a byte-for-byte copy of itself — which the patch being applied invalidates at once. The second identical call would match nothing. The controller therefore refuses explicitly, rather than serving an operation that only works once.
+**The 422 rule, in one sentence:** "this operation does not exist on that field" is a **request** the property cannot satisfy, not a server failure. The model states the rule **once** — it raises an `UnsupportedOperationException` — and the controller's shared skeleton turns every one of them into that same status. No guard is rewritten operation by operation.
+
+> **Why `updateItem` and `reorderItems` refuse a property with no key.** For `updateItem`, the element could only be designated by a byte-for-byte copy of itself — which the patch being applied invalidates at once: the second identical call would match nothing. For `reorderItems`, without an attribute identifying the elements there is simply nothing to order. Better to refuse than to serve an operation that only works once, or not at all.
 
 ### Full wiring (model + controller + routes)
 
@@ -407,7 +423,7 @@ Routes::PLAYLIST_TRACKS => fn( Container $c ) => new ArrayPropertyRoute( $c ,
 ]) ,
 ```
 
-Generates `POST /playlists/{id}/tracks` (addItem) and `DELETE|PATCH|PUT|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / updateItem / hasItem).
+Generates `POST|PUT /playlists/{id}/tracks` (addItem / reorderItems) and `DELETE|PATCH|PUT|GET /playlists/{id}/tracks/{value}` (removeItem / moveItem / updateItem / hasItem).
 
 > `arrayPurgeRef` (remove a value from **every** document that references it) is **not** exposed over HTTP: it is a cascade operation, triggered application-side through an `afterUpdate`/`afterDelete` listener (see [Embedded array fields](../db/arrays.md#propagating-a-change-to-parent-documents)).
 
