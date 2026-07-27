@@ -140,6 +140,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The traversal entry point is stated once, in `TraversalController::prepareTraversal()`.** `many()` — behind `getChildren()`, `getAncestors()` and `getDescendants()` — and `single()` — behind `getParent()` — opened on the same sixteen lines: resolve the `{id}` or refuse with a `400`, refuse with a `500` when no edge model is wired, decode `?prune=` and refuse it with a `400` on an inbound traversal. Three refusals and two resolved values, duplicated verbatim in the two methods that back the four public ones.
+  - **The verdict travels through the return value, the refusal through a reference.** `fail()` returns `null` when `$response` is null (a non-HTTP call), so a helper handing back "the failure response, or null when it passes" could not tell a refusal from a pass — the same ambiguity documented on `prepareWritePayload()` below, avoided here rather than inherited. The helper returns a `bool`, and writes the resolved `$id`, the decoded `$prune` and the failure response into three reference parameters. Both callers open the same way:
+    ```php
+    if ( !$this->prepareTraversal( $request , $response , $args , $inbound , $id , $prune , $failure ) )
+    {
+        return $failure ;
+    }
+    ```
+  - **Behaviour preserved exactly**, refusal order included: the missing `{id}` is still checked before the unconfigured edge, and `?prune=` is still read after both — so a request with neither an id nor an edge keeps answering `400` rather than `500`.
+  - **Tests:** the existing cases pin the three refusals with a **null** response, where every branch returns null whether or not the failure travels. Three new ones drive both surfaces with a **real** response and assert the status carried out of the helper — `400` on a missing id, `500` on an unconfigured edge, `400` on `?prune=` inbound — which is precisely what a reference parameter dropped on the way back would lose.
+
 - **The write-payload preparation is stated once, in `PayloadsTrait`.** `post()` and `update()` ran the same four steps, in the same order, with the same early returns — the i18n shape guard, the payload extraction, the rule validation, the stripping of the relation keys — twenty lines duplicated verbatim in the two handlers most likely to gain a fifth step later. `PayloadsTrait` already owned every method that block calls (`preparePayload()`, `enforceI18nShape()`, `propertyPayload()`) and is composed by both `DocumentsController` and `PropertyController`, so the sequence belongs there rather than in a new trait.
   - **`stripRelationKeys( $payload , $relations )`** is pure, and serves **three** call sites: `post()`, `update()`, and `PropertyController::patch()` — which extracts its payload differently and cannot use the orchestration. An attribute declared `EDGE` names an edge to create, not a field of the document, so writing it as a plain attribute would store the target reference twice.
   - **`prepareWritePayload()`** runs the whole sequence for the two handlers that share it, returning `null` when the payload is ready and the response to hand back otherwise. The order is load-bearing and now stated once: the shape guard **before** extraction, the stripping **after** validation, so the rules still see the relation attributes the caller sent. Both handlers also lose their `else` branch, so their whole body moves back one indentation level.

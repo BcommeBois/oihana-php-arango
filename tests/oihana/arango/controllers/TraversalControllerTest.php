@@ -14,6 +14,7 @@ use oihana\arango\enums\Arango;
 use oihana\controllers\enums\ControllerParam;
 
 use oihana\enums\Output;
+use oihana\enums\http\HttpStatusCode;
 
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
@@ -369,6 +370,49 @@ final class TraversalControllerTest extends ControllerTestCase
     public function testSingleWithoutEdgeReturnsNull() :void
     {
         $this->assertNull( $this->makeControllerWithoutEdge()->getParent( null , null , [ Schema::ID => '5' ] ) ) ;
+    }
+
+    // ---- guards, with a real response -----------------------------------
+
+    /**
+     * The three refusals are resolved once, for both surfaces, by the shared
+     * traversal entry point : with a real response they must carry the status
+     * out of it — the verdict travels through the return value, the response
+     * through the by-reference failure slot.
+     */
+    public function testMissingIdFailsWithABadRequestOnBothSurfaces() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+
+        $many   = $this->makeController( $edges )->getChildren( $this->makeRequest() , $this->makeResponse() , [] ) ;
+        $single = $this->makeController( $edges )->getParent  ( $this->makeRequest() , $this->makeResponse() , [] ) ;
+
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $many  ->getStatusCode() ) ;
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $single->getStatusCode() ) ;
+        $this->assertSame( [] , $edges->calls ) ;
+    }
+
+    public function testAnUnconfiguredEdgeFailsWithAServerErrorOnBothSurfaces() :void
+    {
+        $many   = $this->makeControllerWithoutEdge()->getChildren( $this->makeRequest() , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+        $single = $this->makeControllerWithoutEdge()->getParent  ( $this->makeRequest() , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+
+        $this->assertSame( HttpStatusCode::INTERNAL_SERVER_ERROR , $many  ->getStatusCode() ) ;
+        $this->assertSame( HttpStatusCode::INTERNAL_SERVER_ERROR , $single->getStatusCode() ) ;
+    }
+
+    public function testPruneOnAnInboundTraversalFailsWithABadRequestOnBothSurfaces() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+
+        $params  = [ TraversalController::PRUNE_PARAM => json_encode( [ 'key' => 'status' , 'val' => 'published' ] ) ] ;
+
+        $many   = $this->makeController( $edges )->getAncestors( $this->makeRequest( $params ) , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+        $single = $this->makeController( $edges )->getParent   ( $this->makeRequest( $params ) , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $many  ->getStatusCode() ) ;
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $single->getStatusCode() ) ;
+        $this->assertSame( [] , $edges->calls ) ;
     }
 
     // ---- response envelope ----------------------------------------------

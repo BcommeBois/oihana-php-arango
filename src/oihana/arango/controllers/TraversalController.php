@@ -252,6 +252,48 @@ class TraversalController extends Controller
     }
 
     /**
+     * Compiles one JSON predicate into an AQL fragment against the traversed
+     * `vertex` variable (matching `aqlTraversal`'s `FOR vertex …` and
+     * `getVertices`' `RETURN vertex`), accumulating its binds into `$binds`.
+     *
+     * Returns null when nothing is filterable — an undeclared attribute or an
+     * empty `AQL::FILTERS` whitelist — so the caller drops the fragment.
+     *
+     * @param array $predicate  The decoded JSON predicate.
+     * @param mixed $authorizer The request-scoped authorizer (or null).
+     * @param array $binds      The accumulating bind variables (by reference).
+     *
+     * @return string|null The compiled `vertex.<field> …` fragment, or null.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    private function compileVertexPredicate( array $predicate , mixed $authorizer , array &$binds ) :?string
+    {
+        $local    = [] ;
+        $fragment = $this->edges->prepareFilter
+        (
+            [ Arango::FILTER => $predicate , Arango::AUTHORIZER => $authorizer ] ,
+            $local ,
+            AQL::VERTEX
+        ) ;
+
+        if ( $fragment !== null && $local !== [] )
+        {
+            $binds = [ ...$binds , ...$local ] ;
+        }
+
+        return $fragment ;
+    }
+
+    /**
      * Resolves the `{id}` placeholder, or fails.
      */
     private function id( array $args ) :?string
@@ -285,21 +327,9 @@ class TraversalController extends Controller
      */
     private function many( ?Request $request , ?Response $response , array $args , bool $inbound , bool $transitive , array $init = [] ) :mixed
     {
-        if ( ( $id = $this->id( $args ) ) === null )
+        if ( !$this->prepareTraversal( $request , $response , $args , $inbound , $id , $prune , $failure ) )
         {
-            return $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'Missing id' ) ;
-        }
-
-        if ( !$this->edges )
-        {
-            return $this->fail( $request , $response , HttpStatusCode::INTERNAL_SERVER_ERROR , 'Traversal edge not configured' ) ;
-        }
-
-        $prune = $this->readPrune( $request ) ;
-
-        if ( $prune !== null && $inbound )
-        {
-            return $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'The ?prune= parameter is not supported on inbound traversals' ) ;
+            return $failure ;
         }
 
         $modelInit = [] ;
@@ -325,6 +355,56 @@ class TraversalController extends Controller
         $total = count( $vertices ) ;
 
         return $this->success( $request , $response , $vertices , [ Output::COUNT => $total , Output::TOTAL => $total ] ) ;
+    }
+
+    /**
+     * Resolves the traversal entry point shared by {@see self::single()} and
+     * {@see self::many()} : the `{id}`, the decoded `?prune=` predicate, and the
+     * three refusals both surfaces have in common — a missing `{id}`, an
+     * unconfigured edge, and `?prune=` on an inbound traversal.
+     *
+     * The verdict travels through the **return value**, never through `$failure` :
+     * {@see \oihana\controllers\traits\StatusTrait::fail()} yields `null` when no
+     * `$response` was provided (a non-HTTP call), so a null `$failure` cannot tell
+     * a refusal from a pass.
+     *
+     * @param Request|null  $request  The current PSR-7 request.
+     * @param Response|null $response The PSR-7 response, or null out of HTTP.
+     * @param array         $args     The route placeholders — expects {@see Schema::ID}.
+     * @param bool          $inbound  Whether the traversal walks INBOUND.
+     * @param string|null   $id       Receives the resolved `{id}` when the entry passes.
+     * @param array|null    $prune    Receives the decoded `?prune=` predicate, or null.
+     * @param mixed         $failure  Receives the failure response when the entry is
+     *                                refused — itself null when `$response` is null.
+     *
+     * @return bool True when the traversal may proceed, false when it is refused.
+     */
+    private function prepareTraversal( ?Request $request , ?Response $response , array $args , bool $inbound , ?string &$id , ?array &$prune , mixed &$failure ) :bool
+    {
+        $prune   = null ;
+        $failure = null ;
+
+        if ( ( $id = $this->id( $args ) ) === null )
+        {
+            $failure = $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'Missing id' ) ;
+            return false ;
+        }
+
+        if ( !$this->edges )
+        {
+            $failure = $this->fail( $request , $response , HttpStatusCode::INTERNAL_SERVER_ERROR , 'Traversal edge not configured' ) ;
+            return false ;
+        }
+
+        $prune = $this->readPrune( $request ) ;
+
+        if ( $prune !== null && $inbound )
+        {
+            $failure = $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'The ?prune= parameter is not supported on inbound traversals' ) ;
+            return false ;
+        }
+
+        return true ;
     }
 
     /**
@@ -426,48 +506,6 @@ class TraversalController extends Controller
     }
 
     /**
-     * Compiles one JSON predicate into an AQL fragment against the traversed
-     * `vertex` variable (matching `aqlTraversal`'s `FOR vertex …` and
-     * `getVertices`' `RETURN vertex`), accumulating its binds into `$binds`.
-     *
-     * Returns null when nothing is filterable — an undeclared attribute or an
-     * empty `AQL::FILTERS` whitelist — so the caller drops the fragment.
-     *
-     * @param array $predicate  The decoded JSON predicate.
-     * @param mixed $authorizer The request-scoped authorizer (or null).
-     * @param array $binds      The accumulating bind variables (by reference).
-     *
-     * @return string|null The compiled `vertex.<field> …` fragment, or null.
-     *
-     * @throws BindException
-     * @throws ConstantException
-     * @throws ContainerExceptionInterface
-     * @throws DependencyException
-     * @throws NotFoundException
-     * @throws NotFoundExceptionInterface
-     * @throws ReflectionException
-     * @throws UnsupportedOperationException
-     * @throws ValidationException
-     */
-    private function compileVertexPredicate( array $predicate , mixed $authorizer , array &$binds ) :?string
-    {
-        $local    = [] ;
-        $fragment = $this->edges->prepareFilter
-        (
-            [ Arango::FILTER => $predicate , Arango::AUTHORIZER => $authorizer ] ,
-            $local ,
-            AQL::VERTEX
-        ) ;
-
-        if ( $fragment !== null && $local !== [] )
-        {
-            $binds = [ ...$binds , ...$local ] ;
-        }
-
-        return $fragment ;
-    }
-
-    /**
      * Reads and decodes the `?prune=` query parameter (a JSON predicate).
      *
      * Malformed or non-array JSON degrades to null (no prune), mirroring the
@@ -513,21 +551,9 @@ class TraversalController extends Controller
      */
     private function single( ?Request $request , ?Response $response , array $args , bool $inbound , array $init = [] ) :mixed
     {
-        if ( ( $id = $this->id( $args ) ) === null )
+        if ( !$this->prepareTraversal( $request , $response , $args , $inbound , $id , $prune , $failure ) )
         {
-            return $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'Missing id' ) ;
-        }
-
-        if ( !$this->edges )
-        {
-            return $this->fail( $request , $response , HttpStatusCode::INTERNAL_SERVER_ERROR , 'Traversal edge not configured' ) ;
-        }
-
-        $prune = $this->readPrune( $request ) ;
-
-        if ( $prune !== null && $inbound )
-        {
-            return $this->fail( $request , $response , HttpStatusCode::BAD_REQUEST , 'The ?prune= parameter is not supported on inbound traversals' ) ;
+            return $failure ;
         }
 
         $modelInit = $this->prepareVertexFilter( $request , $init , [] , $prune ) ;
