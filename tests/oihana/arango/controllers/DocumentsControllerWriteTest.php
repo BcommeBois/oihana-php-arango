@@ -77,6 +77,24 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $this->assertNull( $controller->post( $request , null , [] ) ) ;
     }
 
+    /**
+     * `INSERT … RETURN NEW` always yields the created document, so a null is not a
+     * client mistake to translate into a 4xx: the write reported success and
+     * produced nothing. The guard exists because the reload dereferences it, and
+     * an `Error` would escape `catch( Exception )` instead of the error envelope.
+     */
+    public function testPostAnswers500WhenTheInsertReturnsNothing() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->objectResult = null ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'name' => 'Alice' ] ) ;
+        $response   = $controller->post( $request , $this->makeResponse() , [] ) ;
+
+        $this->assertSame( HttpStatusCode::INTERNAL_SERVER_ERROR , $response->getStatusCode() ) ;
+    }
+
     public function testPostReturnsUnprocessableWhenI18nFieldIsFlat() :void
     {
         $model = new MockDocuments( 'users' ) ;
@@ -313,6 +331,57 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 ] ) ;
 
         $this->assertNull( $controller->patch( $request , null , [ 'id' => 'ghost' ] ) ) ;
+    }
+
+    /**
+     * The document passed the existence probe, then vanished before the write ran
+     * (another request deleted it). `UPDATE … RETURN NEW` matches nothing and
+     * yields null, which the reload used to dereference — raising an `Error`,
+     * which `catch( Exception )` does not intercept. It is the same fact the probe
+     * reports, so it answers with the same status.
+     */
+    public function testPatchAnswers404WhenTheDocumentVanishedBeforeTheWrite() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;    // exist() → true
+        $model->objectResult = null ; // … but the write matched nothing
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 ] ) ;
+        $response   = $controller->patch( $request , $this->makeResponse() , [ 'id' => 'k1' ] ) ;
+
+        $this->assertSame( HttpStatusCode::NOT_FOUND , $response->getStatusCode() ) ;
+    }
+
+    public function testPutAnswers404WhenTheDocumentVanishedBeforeTheWrite() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = null ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'a' => 2 ] ) ;
+        $response   = $controller->put( $request , $this->makeResponse() , [ 'id' => 'k1' ] ) ;
+
+        $this->assertSame( HttpStatusCode::NOT_FOUND , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * Raw mode never crashed — it returns the write result without reloading — but
+     * it answered 200 with a null body for a write that touched nothing, which
+     * reads as success. It is gated by the same gu ard.
+     */
+    public function testUpdateRawAlsoAnswers404WhenTheWriteMatchedNothing() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = null ;
+
+        $controller = $this->makeDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'a' => 1 ] ) ;
+        $response   = $controller->patch( $request , $this->makeResponse() , [ 'id' => 'k1' ] , [ Arango::RAW => true ] ) ;
+
+        $this->assertSame( HttpStatusCode::NOT_FOUND , $response->getStatusCode() ) ;
     }
 
     public function testUpdateReturnsValidatorErrorWhenPayloadInvalid() :void

@@ -101,6 +101,25 @@ trait PropertyControllerPatchTrait
                 // 404 and this write is never reached.
                 $document = $this->model->update( $updateInit )  ;
 
+                // `UPDATE … RETURN NEW` yields a row only when its FILTER matched, so a
+                // null document means the target was gone by the time the write ran —
+                // deleted between the existence probe above and this line. Same fact the
+                // probe reports, hence the same status and the same wording. Without this
+                // guard the reload below dereferences null and raises an `Error`, which
+                // `catch( Exception )` does not intercept; in raw mode nothing would
+                // crash at all and the response would claim success for a write that
+                // touched nothing.
+                if( $document === null )
+                {
+                    return $this->fail
+                    (
+                        request  : $request ,
+                        response : $response ,
+                        code     : HttpStatusCode::NOT_FOUND ,
+                        details  : sprintf( 'The document "%s" does not exist' , ( $value ?? 'undefined' ) )
+                    ) ;
+                }
+
                 $raw = (bool) ( $init[ Arango::RAW ] ?? false ) ;
 
                 return $this->success

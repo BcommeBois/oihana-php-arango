@@ -83,6 +83,23 @@ trait DocumentsControllerPostTrait
 
                 $this->afterModelCall( $request , $modelInit , $document ) ;
 
+                // `INSERT … RETURN NEW` always yields the created document, so a null here
+                // is not a client mistake to translate into a 4xx — it means the write
+                // reported success and produced nothing, which is a server-side anomaly.
+                // The guard exists because the reload below dereferences it: `Error` is
+                // not an `Exception`, so `catch( Exception )` would let a fatal escape
+                // instead of the controller's own error envelope.
+                if( $document === null )
+                {
+                    return $this->fail
+                    (
+                        request  : $request ,
+                        response : $response ,
+                        code     : HttpStatusCode::INTERNAL_SERVER_ERROR ,
+                        details  : 'The document was not created'
+                    ) ;
+                }
+
                 return $this->success
                 (
                     $request ,

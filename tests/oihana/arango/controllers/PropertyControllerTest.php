@@ -6,6 +6,7 @@ use oihana\arango\controllers\PropertyController;
 use oihana\arango\controllers\enums\AQLType;
 use oihana\arango\enums\Arango;
 use oihana\controllers\enums\ControllerParam;
+use oihana\enums\http\HttpStatusCode;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
@@ -125,6 +126,43 @@ class PropertyControllerTest extends ControllerTestCase
         $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'emails' => [] ] ) ;
 
         $this->assertNull( $controller->patch( $request , null , [ Arango::ID => 'k1' ] ) ) ;
+    }
+
+    /**
+     * The document passed the existence probe, then vanished before the write ran.
+     * `UPDATE … RETURN NEW` matches nothing and yields null, which the reload used
+     * to dereference — raising an `Error`, which `catch( Exception )` does not
+     * intercept. Same fact as the probe reports, so same status.
+     */
+    public function testPatchAnswers404WhenTheDocumentVanishedBeforeTheWrite() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;    // exist() → true
+        $model->objectResult = null ; // … but the write matched nothing
+
+        $controller = $this->makePropertyController( $model , [ self::PROPERTY => 'emails' ] ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'emails' => [ 'new@x' ] ] ) ;
+        $response   = $controller->patch( $request , $this->makeResponse() , [ Arango::ID => 'k1' ] ) ;
+
+        $this->assertSame( HttpStatusCode::NOT_FOUND , $response->getStatusCode() ) ;
+    }
+
+    /**
+     * Raw mode never crashed — it returns the submitted payload without reloading —
+     * but it answered 200 for a write that touched nothing, claiming a success that
+     * did not happen. It is gated by the same guard.
+     */
+    public function testPatchRawAlsoAnswers404WhenTheWriteMatchedNothing() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = null ;
+
+        $controller = $this->makePropertyController( $model , [ self::PROPERTY => 'emails' ] ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'raw@x' ] ) ;
+        $response   = $controller->patch( $request , $this->makeResponse() , [ Arango::ID => 'k1' ] , [ Arango::RAW => true ] ) ;
+
+        $this->assertSame( HttpStatusCode::NOT_FOUND , $response->getStatusCode() ) ;
     }
 
     public function testPatchReturnsValidatorErrorWhenPayloadInvalid() :void
