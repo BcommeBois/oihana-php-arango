@@ -222,13 +222,17 @@ class Arango extends AQL
      * ]) ;
      * ```
      *
-     * **It replaces {@see Arango::CONDITIONS} on the write path.** That key is read
-     * as AQL predicate strings everywhere else — `get()`, `list()`, `last()`,
-     * `count()`, `exist()`, `delete()` — and carrying two meanings under one name
-     * meant a cross-cutting hook posing a scope on every model call answered
-     * `All conditions in the array must be callable` on the writes. `CONDITIONS` is
-     * still honoured here when it carries callables, with a deprecation logged;
-     * strings keep raising, since the write `FILTER` does not read them yet.
+     * **It replaces {@see Arango::CONDITIONS} on the write path.** That key now means
+     * one thing everywhere — AQL predicate strings appended to the query's `FILTER`,
+     * on the reads, on `delete()`, and on `update()` / `replace()` too. Carrying two
+     * meanings under one name meant a cross-cutting hook posing a scope on every
+     * model call answered `All conditions in the array must be callable` on the
+     * writes; posing one now scopes them.
+     *
+     * `CONDITIONS` is still honoured here when it carries callables, with a
+     * deprecation logged, until the next release removes that fallback. A mixed
+     * array is split rather than refused: the callables compress the payload, the
+     * strings go to the `FILTER`.
      */
     public const string OMIT_WHEN = 'omitWhen' ;
 

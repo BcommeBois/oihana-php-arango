@@ -35,6 +35,79 @@ final class DocumentsUpdateTraitTest extends TestCase
         $this->assertSame( [ 'name' , 'modified' ] , array_keys( $model->lastBinds[ 'update' ] ) ) ;
     }
 
+    /**
+     * A write is scopeable: the caller's AQL predicates join the FILTER, so an
+     * UPDATE aimed at a document outside the scope matches nothing, writes nothing,
+     * and `RETURN NEW` yields null. `delete()` already worked this way; update and
+     * replace now do too.
+     */
+    public function testUpdateAppendsTheCallerConditionsToItsFilter() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $model->update
+        ([
+            Arango::VALUE      => 'k1' ,
+            Arango::DOC        => [ 'name' => 'New' ] ,
+            Arango::CONDITIONS => [ 'doc.published == @published' ] ,
+            Arango::BINDS      => [ 'published' => true ] ,
+        ]) ;
+
+        $this->assertStringStartsWith
+        (
+            'FOR doc IN @@collection FILTER doc._key == @key && doc.published == @published UPDATE' ,
+            $model->lastQuery ,
+        ) ;
+        $this->assertTrue( $model->lastBinds[ 'published' ] ) ;
+    }
+
+    public function testReplaceAppendsTheCallerConditionsToItsFilter() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $model->replace
+        ([
+            Arango::VALUE      => 'k1' ,
+            Arango::DOC        => [ 'name' => 'New' ] ,
+            Arango::CONDITIONS => [ 'doc.published == @published' ] ,
+            Arango::BINDS      => [ 'published' => true ] ,
+        ]) ;
+
+        $this->assertStringStartsWith
+        (
+            'FOR doc IN @@collection FILTER doc._key == @key && doc.published == @published REPLACE' ,
+            $model->lastQuery ,
+        ) ;
+    }
+
+    /**
+     * The deprecated write meaning of the same key must not reach the FILTER —
+     * `predicates()` joins strings, a Closure there would break the query.
+     */
+    public function testUpdateKeepsTheDeprecatedCallablesOutOfItsFilter() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $model->update
+        ([
+            Arango::VALUE      => 'k1' ,
+            Arango::DOC        => [ 'name' => 'New' , 'nickname' => null ] ,
+            Arango::CONDITIONS => [ static fn( mixed $value ) :bool => $value === null ] ,
+        ]) ;
+
+        $this->assertStringStartsWith
+        (
+            'FOR doc IN @@collection FILTER doc._key == @key UPDATE' ,
+            $model->lastQuery ,
+        ) ;
+
+        // … and it still compressed the payload, which is what it was asking for
+        $this->assertSame( [ 'name' , 'modified' ] , array_keys( $model->lastBinds[ 'update' ] ) ) ;
+    }
+
     public function testUpdateCanReturnOld() :void
     {
         $model = new MockDocuments( 'users' ) ;

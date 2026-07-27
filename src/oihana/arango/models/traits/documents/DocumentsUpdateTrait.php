@@ -334,7 +334,7 @@ trait DocumentsUpdateTrait
         ) ;
 
         $for    = aqlFor    ( [ AQL::IN => [AQL::IN => $this->bindCollection( $binds ) ] ] ) ;
-        $filter = aqlFilter ( equal( $key , $value ) ) ;
+        $filter = aqlFilter ( [ equal( $key , $value ) , ...$this->resolveAqlConditions( $init ) ] ) ;
         $write  = aqlUpdate ( [ AQL::WITH => $docClause , AQL::OPTIONS => $options ] , $operation ) ;
         $return = aqlReturn ($return === Clause::OLD ? Clause::OLD : Clause::NEW ) ;
 

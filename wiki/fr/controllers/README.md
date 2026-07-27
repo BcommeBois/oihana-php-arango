@@ -191,10 +191,12 @@ Avantage : **un seul override couvre tous les verbes HTTP**. Pas besoin de rép�
 
 Cet avantage a un angle vif, et mieux vaut le connaître avant d'écrire son premier hook : `conditions` s'écrit pareil dans tous les `$init`, mais le modèle le lit avec **deux dictionnaires différents** selon l'opération.
 
+> **En grande partie résolu.** `Arango::CONDITIONS` signifie désormais « prédicats AQL » sur `update()` et `replace()` aussi, et les prédicats de compression ont leur propre clé, `Arango::OMIT_WHEN`. Le tableau ci-dessous décrit l'état de transition : l'ancien sens d'écriture reste accepté, avec une dépréciation loguée, jusqu'à la prochaine version.
+
 | Opération | Type attendu | Sens |
 |---|---|---|
-| `get()`, `list()`, `last()`, `count()`, `exist()`, `delete()` | `string[]` | prédicats AQL ajoutés au `FILTER` de la requête |
-| `insert()`, `update()`, `replace()` | `callable[]` | quels **attributs retirer du payload** avant l'écriture (les gardes de compression des nulls) |
+| `get()`, `list()`, `last()`, `count()`, `exist()`, `delete()`, `update()`, `replace()` | `string[]` | prédicats AQL ajoutés au `FILTER` de la requête |
+| `insert()`, `update()`, `replace()`, `upsert()` | `callable[]` — **déprécié**, utiliser `Arango::OMIT_WHEN` | quels **attributs retirer du payload** avant l'écriture (les gardes de compression des nulls) |
 
 La situation. Un hook qui pose un périmètre sur tous les appels modèle — exactement le patron que cette section recommande :
 
@@ -208,14 +210,14 @@ protected function beforeModelCall( ?Request $request , array &$init ) : void
 }
 ```
 
-Sur `GET`, il fait précisément ce qu'on attend. Sur `POST`, `PATCH` et `PUT`, la chaîne arrive dans `compress()`, qui attend des callables :
+Il fait désormais ce qu'on attend sur `GET`, sur `PATCH` et sur `PUT` indifféremment — le prédicat rejoint le `FILTER` de l'écriture, donc un update visant un document hors périmètre n'apparie rien et n'écrit rien. Avant, la chaîne arrivait dans `compress()`, qui attend des callables, et répondait :
 
 ```
 InvalidArgumentException: All conditions in the array must be callable.
 → HTTP 500
 ```
 
-L'erreur tombe trois couches sous le contrôleur, dans un utilitaire de tableaux, et ne nomme ni le hook ni l'option fautive.
+`POST` reste l'exception, et le restera : un `INSERT` crée un document, il n'y en a donc aucun d'existant à filtrer. Un périmètre sur une création se pose en amont, pas en rétrécissant une requête qui n'a pas de `FILTER`.
 
 **Le sens « écriture » a désormais un nom à lui : `Arango::OMIT_WHEN`.** Utilisez-le pour les prédicats de compression, et la clé partagée cesse d'être ambiguë de votre côté :
 
@@ -228,9 +230,9 @@ $model->update
 ]) ;
 ```
 
-`Arango::CONDITIONS` reste honoré sur les quatre écritures quand il porte des callables, avec une dépréciation loguée — de quoi mesurer une migration au lieu de la deviner. Les chaînes, elles, continuent de lever : le `FILTER` des écritures ne les lit pas encore, et les ignorer en silence laisserait passer une écriture sans le périmètre voulu par son auteur. Mieux vaut un échec bruyant qu'un échec muet.
+`Arango::CONDITIONS` reste honoré sur les quatre écritures quand il porte des callables, avec une dépréciation loguée — de quoi mesurer une migration au lieu de la deviner. Un tableau mixte est séparé plutôt que refusé : les callables compressent le payload, les chaînes partent au `FILTER`.
 
-Le contournement pour un hook transverse, tant que les chaînes n'ont pas de sens à l'écriture. Les `$init` d'écriture portent `Arango::DOC` — le payload sur le point d'être écrit — et ceux de lecture jamais. C'est le discriminant fiable, disponible à l'intérieur du hook :
+Si vous avez malgré tout besoin de distinguer lectures et écritures dans un hook — pour ne poser un prédicat que sur les lectures, ou un différent sur chacune — les `$init` d'écriture portent `Arango::DOC`, le payload sur le point d'être écrit, et ceux de lecture jamais :
 
 ```php
 protected function beforeModelCall( ?Request $request , array &$init ) : void
@@ -245,7 +247,7 @@ protected function beforeModelCall( ?Request $request , array &$init ) : void
 }
 ```
 
-Conséquence à assumer : l'écriture elle-même n'est alors **pas** périmétrée. Il faut la garder en amont — sonder le document par un `exist()` périmétré avant d'écrire, ce que fait [`PropertyController`](#périmétrer-un-contrôleur-de-propriété). À noter : le `FILTER` des écritures ignore de toute façon `Arango::CONDITIONS` aujourd'hui (`delete()` étant la seule exception), donc on ne perd rien à l'en retirer.
+Conséquence à assumer si vous la gardez ainsi : l'écriture n'est alors pas périmétrée par son propre `FILTER`, et doit l'être en amont — sonder le document par un `exist()` périmétré avant d'écrire, ce que fait [`PropertyController`](#périmétrer-un-contrôleur-de-propriété). Sauf raison particulière, poser le prédicat sur les deux est plus simple et périmètre directement l'écriture.
 
 ## Les paramètres de route atteignent le modèle (`Arango::ARGS`)
 

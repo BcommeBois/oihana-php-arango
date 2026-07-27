@@ -191,10 +191,12 @@ Advantage: **a single override covers all HTTP verbs**. No need to repeat cross-
 
 That advantage has one sharp edge, and it is worth knowing before you write your first hook: `conditions` is spelled the same in every `$init`, but the model reads it with **two different dictionaries** depending on the operation.
 
+> **Mostly resolved.** `Arango::CONDITIONS` now means AQL predicates on `update()` and `replace()` too, and the compression predicates have their own key, `Arango::OMIT_WHEN`. The table below describes the transition state: the old write meaning is still accepted, with a deprecation logged, until the next release.
+
 | Operation | Expected type | Meaning |
 |---|---|---|
-| `get()`, `list()`, `last()`, `count()`, `exist()`, `delete()` | `string[]` | AQL predicates appended to the query's `FILTER` |
-| `insert()`, `update()`, `replace()` | `callable[]` | which **attributes to drop from the payload** before writing (the null-compression guards) |
+| `get()`, `list()`, `last()`, `count()`, `exist()`, `delete()`, `update()`, `replace()` | `string[]` | AQL predicates appended to the query's `FILTER` |
+| `insert()`, `update()`, `replace()`, `upsert()` | `callable[]` — **deprecated**, use `Arango::OMIT_WHEN` | which **attributes to drop from the payload** before writing (the null-compression guards) |
 
 The situation. A hook posing a scope on every model call — the very pattern this section recommends:
 
@@ -208,14 +210,14 @@ protected function beforeModelCall( ?Request $request , array &$init ) : void
 }
 ```
 
-On `GET` it does exactly what you want. On `POST`, `PATCH` and `PUT` the string reaches `compress()`, which expects callables:
+It now does what you want on `GET`, on `PATCH` and on `PUT` alike — the predicate joins the write's `FILTER`, so an update aimed at a document outside the scope matches nothing and writes nothing. It used to reach `compress()`, which expects callables, and answer:
 
 ```
 InvalidArgumentException: All conditions in the array must be callable.
 → HTTP 500
 ```
 
-The error surfaces three layers below the controller, in an array helper, and names neither the hook nor the option at fault.
+`POST` remains the exception, and always will: an `INSERT` creates a document, so there is no existing one to filter. Scope a creation by refusing it upstream, not by narrowing a query that has no `FILTER`.
 
 **The write meaning now has a name of its own: `Arango::OMIT_WHEN`.** Use it for the compression predicates, and the shared key stops being ambiguous on your side:
 
@@ -228,9 +230,9 @@ $model->update
 ]) ;
 ```
 
-`Arango::CONDITIONS` is still honoured on the four writes when it carries callables, with a deprecation logged so a migration can be measured rather than guessed. Strings still raise: the write `FILTER` does not read them yet, and silently dropping them would let a write proceed without the scope its author intended — a loud failure beats a silent one.
+`Arango::CONDITIONS` is still honoured on the four writes when it carries callables, with a deprecation logged so a migration can be measured rather than guessed. A mixed array is split rather than refused: the callables compress the payload, the strings go to the `FILTER`.
 
-The workaround for a cross-cutting hook, until strings become meaningful on writes too. Write inits carry `Arango::DOC` — the payload about to be written — and read inits never do. That is the reliable discriminator, available inside the hook:
+If you need to tell reads from writes inside a hook anyway — to pose a predicate only on reads, or a different one on each — write inits carry `Arango::DOC`, the payload about to be written, and read inits never do:
 
 ```php
 protected function beforeModelCall( ?Request $request , array &$init ) : void
@@ -245,7 +247,7 @@ protected function beforeModelCall( ?Request $request , array &$init ) : void
 }
 ```
 
-Consequence to accept: the write itself is then **not** scoped. Gate it upstream instead — probe the document through a scoped `exist()` before writing, which is the pattern [`PropertyController` applies](#scoping-a-property-controller). Note that the write `FILTER` ignores `Arango::CONDITIONS` today anyway (`delete()` being the one exception), so nothing is lost by leaving it out.
+Consequence to accept if you do gate it that way: the write is then not scoped by its own `FILTER`, and must be gated upstream — probe the document through a scoped `exist()` before writing, which is the pattern [`PropertyController` applies](#scoping-a-property-controller). Unless you have a reason to, posing the predicate on both is simpler and scopes the write directly.
 
 ## Route args reach the model (`Arango::ARGS`)
 

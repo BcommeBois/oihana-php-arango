@@ -69,6 +69,18 @@ class PrepareDocumentTraitStub
     }
 
     /**
+     * Public proxy over the protected resolveAqlConditions().
+     *
+     * @param array $init
+     *
+     * @return array
+     */
+    public function callResolveAqlConditions( array $init ) :array
+    {
+        return $this->resolveAqlConditions( $init ) ;
+    }
+
+    /**
      * Public proxy over the protected resolveOmitWhen().
      *
      * @param array $init
@@ -173,21 +185,106 @@ class PrepareDocumentTraitTest extends TestCase
     }
 
     /**
-     * AQL predicate strings are the **read** meaning of the shared key. They are
-     * handed through untouched so `compress()` keeps raising on them: the write
-     * FILTER does not read them yet, and silently dropping them would let a write
-     * proceed without the scope its author intended. No deprecation is logged
-     * either — the caller is not using the legacy write form.
+     * AQL predicate strings are the **read** meaning of the shared key, and the
+     * write's FILTER now consumes them through {@see resolveAqlConditions()}. There
+     * is nothing to compress here, so the caller's default applies — and no
+     * deprecation is logged, since the caller is not using the legacy write form.
      */
-    public function testResolveOmitWhenHandsAqlStringsThroughWithoutDeprecating() :void
+    public function testResolveOmitWhenLeavesAqlStringsToTheFilter() :void
     {
         $stub         = $this->stub() ;
         $stub->logger = $logger = new PrepareDocumentSpyLogger() ;
 
         $resolved = $stub->callResolveOmitWhen( [ Arango::CONDITIONS => [ 'doc.published == @published' ] ] , [] ) ;
 
-        $this->assertSame( [ 'doc.published == @published' ] , $resolved ) ;
+        $this->assertSame( [] , $resolved ) ;
         $this->assertSame( [] , $logger->messages ) ;
+    }
+
+    /**
+     * An explicit empty array means "compress nothing". It must survive as-is
+     * rather than fall back on a default that would switch the compression back on
+     * — which is exactly what `insert()` would do, its own default being null.
+     */
+    public function testResolveOmitWhenKeepsAnExplicitEmptyDeprecatedKey() :void
+    {
+        $stub = $this->stub() ;
+
+        $this->assertSame( [] , $stub->callResolveOmitWhen( [ Arango::CONDITIONS => [] ] , null ) ) ;
+    }
+
+    /**
+     * A mixed array is split rather than refused: the callables compress the
+     * payload, the strings go to the FILTER.
+     */
+    public function testResolveOmitWhenKeepsOnlyTheCallablesOfAMixedDeprecatedKey() :void
+    {
+        $stub         = $this->stub() ;
+        $stub->logger = $logger = new PrepareDocumentSpyLogger() ;
+
+        $predicate = static fn( mixed $value ) :bool => $value === null ;
+
+        $resolved = $stub->callResolveOmitWhen
+        (
+            [ Arango::CONDITIONS => [ 'doc.published == @published' , $predicate ] ] ,
+            []
+        ) ;
+
+        $this->assertSame( [ $predicate ] , $resolved ) ;
+        $this->assertContains( PrepareDocumentTraitStub::OMIT_WHEN_DEPRECATION , $logger->messages ) ;
+    }
+
+    // ---------------------------------------------------------------- resolveAqlConditions
+
+    public function testResolveAqlConditionsKeepsThePredicateStrings() :void
+    {
+        $stub = $this->stub() ;
+
+        $resolved = $stub->callResolveAqlConditions( [ Arango::CONDITIONS => [ 'doc.a == 1' , 'doc.b == @b' ] ] ) ;
+
+        $this->assertSame( [ 'doc.a == 1' , 'doc.b == @b' ] , $resolved ) ;
+    }
+
+    public function testResolveAqlConditionsReturnsAnEmptyListWhenTheKeyIsAbsent() :void
+    {
+        $this->assertSame( [] , $this->stub()->callResolveAqlConditions( [] ) ) ;
+    }
+
+    /**
+     * The write-side callables belong to {@see resolveOmitWhen()}: reaching the
+     * FILTER they would break `predicates()`, which joins strings.
+     */
+    public function testResolveAqlConditionsDropsTheDeprecatedCallables() :void
+    {
+        $stub = $this->stub() ;
+
+        $resolved = $stub->callResolveAqlConditions
+        ([
+            Arango::CONDITIONS => [ 'doc.a == 1' , static fn( mixed $value ) :bool => true ] ,
+        ]) ;
+
+        $this->assertSame( [ 'doc.a == 1' ] , $resolved ) ;
+    }
+
+    /**
+     * The surviving strings are re-indexed, so a spread into `aqlFilter()` yields a
+     * list and not an object.
+     */
+    public function testResolveAqlConditionsReindexesTheSurvivors() :void
+    {
+        $stub = $this->stub() ;
+
+        $resolved = $stub->callResolveAqlConditions
+        ([
+            Arango::CONDITIONS => [ static fn( mixed $value ) :bool => true , 'doc.a == 1' ] ,
+        ]) ;
+
+        $this->assertSame( [ 0 => 'doc.a == 1' ] , $resolved ) ;
+    }
+
+    public function testResolveAqlConditionsIgnoresANonArrayKey() :void
+    {
+        $this->assertSame( [] , $this->stub()->callResolveAqlConditions( [ Arango::CONDITIONS => 'doc.a == 1' ] ) ) ;
     }
 
     public function testResolveOmitWhenLogsNothingWhenNoKeyIsGiven() :void

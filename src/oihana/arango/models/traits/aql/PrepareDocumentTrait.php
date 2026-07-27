@@ -209,6 +209,31 @@ trait PrepareDocumentTrait
     }
 
     /**
+     * Resolves the **AQL predicates** a write adds to its `FILTER`, from
+     * {@see Arango::CONDITIONS} — the same key, and the same meaning, as every read
+     * of the model and as `delete()`, which carried them alone until now.
+     *
+     * This is what makes a write scopeable: an `UPDATE` / `REPLACE` narrowed by the
+     * caller's predicate matches nothing when the document is outside the scope, so
+     * it writes nothing and `RETURN NEW` yields null.
+     *
+     * Only the **strings** are kept. During the deprecation window the key can still
+     * carry the write-side callables, which belong to {@see resolveOmitWhen()} and
+     * would break `predicates()` if they reached the `FILTER`. Once the deprecation
+     * is removed the filter becomes unnecessary and the key can be spread as-is,
+     * exactly like the reads do.
+     *
+     * @param array $init The write configuration.
+     *
+     * @return array The AQL predicate strings to append to the write's FILTER.
+     */
+    protected function resolveAqlConditions( array $init ) :array
+    {
+        $conditions = $init[ Arango::CONDITIONS ] ?? [] ;
+        return is_array( $conditions ) ? array_values( array_filter( $conditions , 'is_string' ) ) : [] ;
+    }
+
+    /**
      * Resolves the predicates deciding which attributes of the payload are dropped
      * before a write, from the new {@see Arango::OMIT_WHEN} key or the deprecated
      * {@see Arango::CONDITIONS} one.
@@ -246,11 +271,26 @@ trait PrepareDocumentTrait
 
         $legacy = $init[ Arango::CONDITIONS ] ?? $default ;
 
-        if ( is_array( $legacy ) && count( array_filter( $legacy , 'is_callable' ) ) > 0 )
+        // An empty array is not a list of predicates, it is an explicit "compress
+        // nothing" — it must reach the caller untouched rather than fall back on a
+        // default that would switch the compression back on.
+        if ( is_array( $legacy ) && $legacy !== [] )
         {
+            $callables = array_values( array_filter( $legacy , 'is_callable' ) ) ;
+
+            if ( count( $callables ) === 0 )
+            {
+                // AQL predicate strings: the read meaning, now consumed by the write
+                // FILTER through resolveAqlConditions(). Nothing to compress here.
+                return $default ;
+            }
+
             // Reached the same way prepareDocument() reports a non-fillable attribute,
             // nullsafe so a model wired without a logger still writes.
             $this->logger?->warning( self::OMIT_WHEN_DEPRECATION ) ;
+
+            // Only the callables — any string alongside them is a FILTER predicate.
+            return $callables ;
         }
 
         return $legacy ;
