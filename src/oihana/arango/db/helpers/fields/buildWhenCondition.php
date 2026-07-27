@@ -91,6 +91,16 @@ function buildWhenCondition( mixed $when , string $doc = AQL::DOC ): string
             return logicalNot( buildWhenCondition( $when[0] , $doc ) , true ) ;
         }
 
+        // Symmetric with the arity guard of 'not' above: a keyword with no
+        // operand has nothing to combine. Without this, predicates() rightly
+        // returns null on an empty list and the null surfaces as a TypeError on
+        // this function's string return type — loud, but naming neither the
+        // option nor the mistake.
+        if ( $when === [] )
+        {
+            throw new UnsupportedOperationException( __FUNCTION__ . " failed, the '" . $operator . "' group expects at least one condition." ) ;
+        }
+
         $parts = array_map( fn( $condition ) => buildWhenCondition( $condition , $doc ) , $when ) ;
         return predicates( $parts , FilterLogic::getAlias( $operator ) , true ) ;
     }

@@ -18,38 +18,73 @@ final class AqlFieldConditionalTest extends TestCase
 {
     // ---------------------------------------------------------------- buildWhenLeaf
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafTruthyFromString() : void
     {
         $this->assertSame( 'TO_BOOL(doc.active)' , buildWhenLeaf( [ 'active' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafEqualityFromPair() : void
     {
         $this->assertSame( "doc.visibility == 'public'" , buildWhenLeaf( [ 'visibility' , 'public' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafExplicitOperatorFromTriple() : void
     {
         $this->assertSame( 'doc.stock > 0' , buildWhenLeaf( [ 'stock' , 'gt' , 0 ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafBooleanAndNullValues() : void
     {
         $this->assertSame( 'doc.owner == true'  , buildWhenLeaf( [ 'owner' , 'eq' , true ] ) ) ;
         $this->assertSame( 'doc.deleted != null' , buildWhenLeaf( [ 'deleted' , 'ne' , null ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafInOperatorWithList() : void
     {
         $this->assertSame( "doc.status IN ['gold','platinum']" , buildWhenLeaf( [ 'status' , 'in' , [ 'gold' , 'platinum' ] ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafAttributeVersusAttribute() : void
     {
         // aqlValue keeps a doc reference raw → compare two attributes.
         $this->assertSame( 'doc.price > doc.minPrice' , buildWhenLeaf( [ 'price' , 'gt' , 'doc.minPrice' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafAssociativeForm() : void
     {
         $leaf =
@@ -59,13 +94,24 @@ final class AqlFieldConditionalTest extends TestCase
             FilterParam::VAL => 'public' ,
         ] ;
         $this->assertSame( "doc.status == 'public'" , buildWhenLeaf( $leaf ) ) ;
+
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafAssociativeWithoutValueIsTruthy() : void
     {
         $this->assertSame( 'TO_BOOL(doc.active)' , buildWhenLeaf( [ FilterParam::KEY => 'active' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafAltWrapsLeftSideOnly() : void
     {
         $leaf =
@@ -77,6 +123,11 @@ final class AqlFieldConditionalTest extends TestCase
         $this->assertSame( "LOWER(doc.status) == 'public'" , buildWhenLeaf( $leaf ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafAltMirrorsBothSides() : void
     {
         $leaf =
@@ -88,24 +139,44 @@ final class AqlFieldConditionalTest extends TestCase
         $this->assertSame( "LOWER(doc.status) == LOWER('PUBLIC')" , buildWhenLeaf( $leaf ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafUsesCustomDocReference() : void
     {
         $this->assertSame( "edge.role == 'admin'" , buildWhenLeaf( [ 'role' , 'admin' ] , 'edge' ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafEmptyThrows() : void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
         buildWhenLeaf( [] ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafFunctionFormOperatorThrows() : void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
-        $this->expectExceptionMessage( 'infix comparators only' ) ;
+        $this->expectExceptionMessageIsOrContains( 'infix comparators only' ) ;
         buildWhenLeaf( [ 'name' , 'sw' , 'Jo' ] ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testLeafUnsafeAttributeThrows() : void
     {
         $this->expectException( ValidationException::class ) ;
@@ -114,16 +185,31 @@ final class AqlFieldConditionalTest extends TestCase
 
     // ---------------------------------------------------------------- buildWhenCondition (groups)
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionStringShorthand() : void
     {
         $this->assertSame( 'TO_BOOL(doc.active)' , buildWhenCondition( 'active' ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionSingleLeaf() : void
     {
         $this->assertSame( "doc.visibility == 'public'" , buildWhenCondition( [ 'visibility' , 'public' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionAssociativeLeaf() : void
     {
         $this->assertSame
@@ -133,6 +219,11 @@ final class AqlFieldConditionalTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionImplicitAnd() : void
     {
         $this->assertSame
@@ -142,6 +233,11 @@ final class AqlFieldConditionalTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionExplicitAnd() : void
     {
         $this->assertSame
@@ -151,6 +247,11 @@ final class AqlFieldConditionalTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionOr() : void
     {
         $this->assertSame
@@ -160,11 +261,21 @@ final class AqlFieldConditionalTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionNot() : void
     {
         $this->assertSame( '!(doc.anonymized == true)' , buildWhenCondition( [ 'not' , [ 'anonymized' , true ] ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionNested() : void
     {
         $this->assertSame
@@ -174,19 +285,71 @@ final class AqlFieldConditionalTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionNotWrongArityThrows() : void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
-        $this->expectExceptionMessage( "'not' group expects exactly one condition" ) ;
+        $this->expectExceptionMessageIsOrContains( "'not' group expects exactly one condition" ) ;
         buildWhenCondition( [ 'not' , [ 'a' , 1 ] , [ 'b' , 2 ] ] ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testConditionAndGroupWithoutOperandThrows() : void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( "'and' group expects at least one condition" ) ;
+        buildWhenCondition( [ 'and' ] ) ;
+    }
+
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testConditionOrGroupWithoutOperandThrows() : void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( "'or' group expects at least one condition" ) ;
+        buildWhenCondition( [ 'or' ] ) ;
+    }
+
+    /**
+     * The empty `not` group keeps its own arity message: it is wrong for a
+     * reason of its own, not for lacking any operand at all.
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testConditionNotGroupWithoutOperandKeepsItsArityMessage() : void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( "'not' group expects exactly one condition" ) ;
+        buildWhenCondition( [ 'not' ] ) ;
+    }
+
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionEmptyThrows() : void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
         buildWhenCondition( [] ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionNonArrayNonStringThrows() : void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
@@ -195,27 +358,52 @@ final class AqlFieldConditionalTest extends TestCase
 
     // ---------------------------------------------------------------- resolveWhenElse
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testElseDefaultsToNull() : void
     {
         $this->assertSame( 'null' , resolveWhenElse() ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testElseLiteralScalar() : void
     {
         $this->assertSame( '0' , resolveWhenElse( 0 ) ) ;
         $this->assertSame( "'unknown'" , resolveWhenElse( 'unknown' ) ) ; // plain string is quoted
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testElseAttributeReference() : void
     {
         $this->assertSame( 'doc.basePrice' , resolveWhenElse( [ Field::PROPERTY => 'basePrice' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testElseAttributeUsesCustomDocReference() : void
     {
         $this->assertSame( 'edge.fallback' , resolveWhenElse( [ Field::PROPERTY => 'fallback' ] , 'edge' ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testElseUnsafeAttributeThrows() : void
     {
         $this->expectException( ValidationException::class ) ;
@@ -224,6 +412,11 @@ final class AqlFieldConditionalTest extends TestCase
 
     // ---------------------------------------------------------------- aqlFieldConditional (assembly)
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionalAssemblesTernary() : void
     {
         $this->assertSame
@@ -233,6 +426,11 @@ final class AqlFieldConditionalTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionalWithElseAttribute() : void
     {
         $this->assertSame
@@ -242,6 +440,11 @@ final class AqlFieldConditionalTest extends TestCase
         ) ;
     }
 
+    /**
+     * @return void
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testConditionalWithAlteredThenBranch() : void
     {
         // The caller pre-builds the `then` expression (here an alt chain).
