@@ -229,7 +229,7 @@ class ArangoRotationTraitTest extends TestCase
     public function testResolvePolicyInvalidMaxAgeThrows() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'ISO 8601 duration' ) ;
+        $this->expectExceptionMessageIsOrContains( 'ISO 8601 duration' ) ;
         $this->host()->resolveRetentionPolicy( [ 'max_age' => '30 days' ] ) ;
     }
 
@@ -271,7 +271,7 @@ class ArangoRotationTraitTest extends TestCase
     public function testParseRetentionSizeInvalidThrows() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'max_total' ) ;
+        $this->expectExceptionMessageIsOrContains( 'max_total' ) ;
         $this->host()->size( 'huge' ) ;
     }
 

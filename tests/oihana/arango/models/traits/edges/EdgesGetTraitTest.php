@@ -194,7 +194,7 @@ final class EdgesGetTraitTest extends TestCase
         $init  = [] ;
 
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'Vertex ID cannot be null or empty' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Vertex ID cannot be null or empty' ) ;
         $edges->prepareTraversal( Traversal::OUTBOUND , null , $init ) ;
     }
 

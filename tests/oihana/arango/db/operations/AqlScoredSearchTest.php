@@ -134,21 +134,21 @@ final class AqlScoredSearchTest extends TestCase
     public function testUnknownScorerThrows(): void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( "unsupported scorer 'bogus'" ) ;
+        $this->expectExceptionMessageIsOrContains( "unsupported scorer 'bogus'" ) ;
         aqlScoredSearch( view: 'myView' , search: 'doc.x == 1' , limit: 5 , scorer: 'bogus' ) ;
     }
 
     public function testKOrBWithTfidfThrows(): void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( "'k' and 'b' arguments only apply to the 'bm25' scorer" ) ;
+        $this->expectExceptionMessageIsOrContains( "'k' and 'b' arguments only apply to the 'bm25' scorer" ) ;
         aqlScoredSearch( view: 'myView' , search: 'doc.x == 1' , limit: 5 , scorer: SearchScorer::TFIDF , k: 1.2 ) ;
     }
 
     public function testNormalizeWithBm25Throws(): void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( "'normalize' argument only applies to the 'tfidf' scorer" ) ;
+        $this->expectExceptionMessageIsOrContains( "'normalize' argument only applies to the 'tfidf' scorer" ) ;
         aqlScoredSearch( view: 'myView' , search: 'doc.x == 1' , limit: 5 , normalize: false ) ;
     }
 

@@ -226,7 +226,7 @@ class DateFunctionsTest extends TestCase
     public function testDateLocalToUTCThrowsOnInvalidTimezone(): void
     {
         $this->expectException( InvalidArgumentException::class );
-        $this->expectExceptionMessage( 'Invalid timezone Not/AZone.' );
+        $this->expectExceptionMessageIsOrContains( 'Invalid timezone Not/AZone.' );
         dateLocalToUTC( null, 'Not/AZone' );
     }
 
@@ -242,7 +242,7 @@ class DateFunctionsTest extends TestCase
     public function testDateUtcToLocalThrowsOnInvalidTimezone(): void
     {
         $this->expectException( InvalidArgumentException::class );
-        $this->expectExceptionMessage( 'Invalid timezone Not/AZone.' );
+        $this->expectExceptionMessageIsOrContains( 'Invalid timezone Not/AZone.' );
         dateUTCToLocal( null, 'Not/AZone', true );
     }
 

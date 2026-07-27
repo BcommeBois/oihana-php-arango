@@ -29,7 +29,7 @@ final class AssertDocumentsTest extends TestCase
     public function testInvalidInstanceThrowsException(): void
     {
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Documents (arango).');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Documents (arango).');
 
         assertDocuments('not a documents instance'); // string invalide
     }
@@ -38,7 +38,7 @@ final class AssertDocumentsTest extends TestCase
     {
         $invalidObject = new class {};
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Documents (arango).');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Documents (arango).');
 
         assertDocuments($invalidObject);
     }
@@ -46,7 +46,7 @@ final class AssertDocumentsTest extends TestCase
     public function testNullThrowsException(): void
     {
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Documents (arango).');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Documents (arango).');
 
         assertDocuments(null);
     }
@@ -54,7 +54,7 @@ final class AssertDocumentsTest extends TestCase
     public function testIntegerThrowsException(): void
     {
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Documents (arango).');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Documents (arango).');
 
         assertDocuments(123);
     }

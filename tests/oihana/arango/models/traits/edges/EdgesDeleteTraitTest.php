@@ -104,7 +104,7 @@ final class EdgesDeleteTraitTest extends TestCase
         $edges = $this->createEdges( returnDocuments: [] ) ;
 
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'No valid vertex IDs provided.' ) ;
+        $this->expectExceptionMessageIsOrContains( 'No valid vertex IDs provided.' ) ;
         $edges->deleteEdges( [] ) ;
     }
 

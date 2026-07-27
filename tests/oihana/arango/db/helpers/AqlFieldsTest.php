@@ -662,7 +662,7 @@ final class AqlFieldsTest extends TestCase
     public function testWhenOnStructuralFilterThrows(): void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
-        $this->expectExceptionMessage( 'only valid on the default scalar projection' ) ;
+        $this->expectExceptionMessageIsOrContains( 'only valid on the default scalar projection' ) ;
         aqlFields( [ 'tags' => [ Field::FILTER => Filter::EDGES , Field::WHEN => [ 'a' , 'b' ] ] ] , 'doc' ) ;
     }
 }

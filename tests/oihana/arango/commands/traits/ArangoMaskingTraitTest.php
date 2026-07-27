@@ -140,35 +140,35 @@ class ArangoMaskingTraitTest extends TestCase
     public function testUnknownModeThrows() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'Invalid masking mode' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Invalid masking mode' ) ;
         $this->host()->compileMaskings( [ 'users' => 'nope' ] ) ;
     }
 
     public function testUnknownMaskerThrows() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'Invalid masking function' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Invalid masking function' ) ;
         $this->host()->compileMaskings( [ 'users.email' => 'obfuscate' ] ) ;
     }
 
     public function testInlineTableWithoutTypeThrows() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'Invalid masking function' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Invalid masking function' ) ;
         $this->host()->compileMaskings( [ 'users.card' => [ 'unmaskedLength' => 4 ] ] ) ;
     }
 
     public function testScalarRuleValueThatIsNeitherStringNorArrayThrows() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'expected a masker name or an inline table' ) ;
+        $this->expectExceptionMessageIsOrContains( 'expected a masker name or an inline table' ) ;
         $this->host()->compileMaskings( [ 'users.email' => 123 ] ) ;
     }
 
     public function testMalformedKeyWithTrailingDotThrows() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'Malformed masking key' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Malformed masking key' ) ;
         $this->host()->compileMaskings( [ 'users.' => 'email' ] ) ;
     }
 
@@ -245,7 +245,7 @@ class ArangoMaskingTraitTest extends TestCase
         $dir = $this->dumpDirWith( [ 'people' => [ json_encode( [ 'email' => 'x' ] ) ] ] ) ;
 
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'not supported by the PHP masking engine' ) ;
+        $this->expectExceptionMessageIsOrContains( 'not supported by the PHP masking engine' ) ;
         $this->host()->maskDumpDirectory( $dir , $this->host()->compileMaskings( [ 'people' => 'structure' ] ) ) ;
     }
 

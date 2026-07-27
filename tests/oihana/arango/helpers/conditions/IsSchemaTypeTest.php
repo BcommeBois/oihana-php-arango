@@ -69,7 +69,7 @@ class IsSchemaTypeTest extends TestCase
     public function testNonThingClassThrowsInvalidArgumentException() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( stdClass::class ) ;
+        $this->expectExceptionMessageIsOrContains( stdClass::class ) ;
         isSchemaType( stdClass::class ) ;
     }
 

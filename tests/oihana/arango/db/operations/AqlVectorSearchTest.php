@@ -79,7 +79,7 @@ class AqlVectorSearchTest extends TestCase
     public function testUnsupportedMetricThrows(): void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( "unsupported metric 'hamming'" ) ;
+        $this->expectExceptionMessageIsOrContains( "unsupported metric 'hamming'" ) ;
         aqlVectorSearch
         (
             collection : 'items' ,

@@ -26,7 +26,7 @@ final class AssertEdgesTest extends TestCase
     public function testInvalidInstanceThrowsException(): void
     {
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Edges.');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Edges.');
 
         assertEdges('not a Edges instance'); // string invalide
     }
@@ -35,7 +35,7 @@ final class AssertEdgesTest extends TestCase
     {
         $invalidObject = new class {};
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Edges.');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Edges.');
 
         assertEdges($invalidObject);
     }
@@ -43,7 +43,7 @@ final class AssertEdgesTest extends TestCase
     public function testNullThrowsException(): void
     {
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Edges.');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Edges.');
 
         assertEdges(null);
     }
@@ -51,7 +51,7 @@ final class AssertEdgesTest extends TestCase
     public function testIntegerThrowsException(): void
     {
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The value property must be an instance of Edges.');
+        $this->expectExceptionMessageIsOrContains('The value property must be an instance of Edges.');
 
         assertEdges(123);
     }

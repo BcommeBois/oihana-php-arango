@@ -88,7 +88,7 @@ final class AqlRemoveTest extends TestCase
     public function testRemoveThrowsExceptionWhenCollectionMissing(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Collection name is required for REMOVE');
+        $this->expectExceptionMessageIsOrContains('Collection name is required for REMOVE');
 
         aqlRemove();
     }

@@ -541,7 +541,7 @@ class ArangoRestoreActionTest extends TestCase
         $host = $this->restoreHostWithProfile( 'p' , [ ArangoCommandParam::PROFILE_EXCLUDE => [ 'users' ] ] ) ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'profile selects no collection' ) ;
+        $this->expectExceptionMessageIsOrContains( 'profile selects no collection' ) ;
         $host->restore( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' , '--' . ArangoCommandOption::FILE => $archive ] ) , new BufferedOutput() ) ;
     }
 

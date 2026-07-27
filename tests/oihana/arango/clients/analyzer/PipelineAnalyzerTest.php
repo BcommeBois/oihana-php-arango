@@ -84,7 +84,7 @@ class PipelineAnalyzerTest extends TestCase
     public function testNonAnalyzerOptionsMemberIsRejected() :void
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'index 1' ) ;
+        $this->expectExceptionMessageIsOrContains( 'index 1' ) ;
 
         new PipelineAnalyzer
         ([

@@ -114,7 +114,7 @@ class AqlUpsertTest extends TestCase
     public function testUpsertThrowsWithoutSearchOrFilter()
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Either FILTER or SEARCH option is required.');
+        $this->expectExceptionMessageIsOrContains('Either FILTER or SEARCH option is required.');
 
         aqlUpsert
         ([
@@ -130,7 +130,7 @@ class AqlUpsertTest extends TestCase
     public function testUpsertThrowsWithoutInsert()
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('INSERT option is required');
+        $this->expectExceptionMessageIsOrContains('INSERT option is required');
 
         aqlUpsert
         ([
@@ -146,7 +146,7 @@ class AqlUpsertTest extends TestCase
     public function testRepsertThrowsWithoutReplace()
     {
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage('REPLACE option is required');
+        $this->expectExceptionMessageIsOrContains('REPLACE option is required');
 
         aqlRepsert
         ([

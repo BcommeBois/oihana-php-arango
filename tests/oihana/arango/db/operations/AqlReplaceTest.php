@@ -99,7 +99,7 @@ final class AqlReplaceTest extends TestCase
     public function testReplaceWithoutCollectionThrownInvalidArgumentException(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Collection name is required and cannot be empty for REPLACE');
+        $this->expectExceptionMessageIsOrContains('Collection name is required and cannot be empty for REPLACE');
         $result = aqlReplace([ AQL::COLLECTION => '' ]);
     }
 }

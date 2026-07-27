@@ -292,7 +292,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( "Unknown dump/restore profile 'ghost'" ) ;
+        $this->expectExceptionMessageIsOrContains( "Unknown dump/restore profile 'ghost'" ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::LIST => true , '--' . ArangoCommandOption::PROFILE => 'ghost' ] ) , $output ) ;
     }
 
@@ -358,7 +358,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'Unknown collection' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Unknown collection' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::COLLECTION => [ 'ghost' ] ] ) , $output ) ;
     }
 
@@ -412,7 +412,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'requires the ArangoDB HTTP API' ) ;
+        $this->expectExceptionMessageIsOrContains( 'requires the ArangoDB HTTP API' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'logs' ] ] ) , $output ) ;
     }
 
@@ -426,7 +426,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'unreachable' ) ;
+        $this->expectExceptionMessageIsOrContains( 'unreachable' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'logs' ] ] ) , $output ) ;
     }
 
@@ -437,7 +437,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'Unknown collection' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Unknown collection' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'ghost' ] ] ) , $output ) ;
     }
 
@@ -448,7 +448,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'Nothing to dump' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Nothing to dump' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::IGNORE_COLLECTION => [ 'users' , 'orders' ] ] ) , $output ) ;
     }
 
@@ -606,7 +606,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'profile selects no collection' ) ;
+        $this->expectExceptionMessageIsOrContains( 'profile selects no collection' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::PROFILE => 'p' ] ) , $output ) ;
     }
 
@@ -660,7 +660,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( '--complete requires the ArangoDB HTTP API' ) ;
+        $this->expectExceptionMessageIsOrContains( '--complete requires the ArangoDB HTTP API' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::COMPLETE => true ] ) , $output ) ;
     }
 
@@ -674,7 +674,7 @@ class ArangoDumpActionTest extends TestCase
         $output = new BufferedOutput() ;
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'unreachable' ) ;
+        $this->expectExceptionMessageIsOrContains( 'unreachable' ) ;
         $host->dump( $this->input( [ '--' . ArangoCommandOption::COMPLETE => true ] ) , $output ) ;
     }
 
@@ -840,7 +840,7 @@ class ArangoDumpActionTest extends TestCase
         $host->initializeArangoOptions( [ ArangoCommandParam::DUMP => [ ArangoCommandParam::MASKING => [ 'people' => 'structure' ] ] ] ) ;
 
         $this->expectException( InvalidArgumentException::class ) ;
-        $this->expectExceptionMessage( 'not supported by the PHP masking engine' ) ;
+        $this->expectExceptionMessageIsOrContains( 'not supported by the PHP masking engine' ) ;
         $host->dump( $this->input() , new BufferedOutput() ) ;
     }
 

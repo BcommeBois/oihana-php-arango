@@ -938,7 +938,7 @@ class HttpTransportTest extends TestCase
         $transport = $this->transport( $options , $client ) ;
 
         $this->expectException( ArangoException::class ) ;
-        $this->expectExceptionMessage( 'returned no JWT' ) ;
+        $this->expectExceptionMessageIsOrContains( 'returned no JWT' ) ;
         $transport->login( 'root' , 'secret' ) ;
     }
 

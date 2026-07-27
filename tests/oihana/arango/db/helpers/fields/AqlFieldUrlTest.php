@@ -227,7 +227,7 @@ final class AqlFieldUrlTest extends TestCase
     public function testDiscriminantPathsThrowsWithoutDefault()
     {
         $this->expectException(UnsupportedOperationException::class);
-        $this->expectExceptionMessage('Field::PATHS requires an explicit Field::PATH fallback');
+        $this->expectExceptionMessageIsOrContains('Field::PATHS requires an explicit Field::PATH fallback');
 
         aqlFieldUrl('url', 'doc', [ Field::PATHS => [ 'Place' => '/places' ] ]);
     }
@@ -241,7 +241,7 @@ final class AqlFieldUrlTest extends TestCase
     public function testDiscriminantPathsThrowsWhenEmptyMap()
     {
         $this->expectException(UnsupportedOperationException::class);
-        $this->expectExceptionMessage('Field::PATHS must be a non-empty associative map');
+        $this->expectExceptionMessageIsOrContains('Field::PATHS must be a non-empty associative map');
 
         aqlFieldUrl('url', 'doc', [ Field::PATH => '/thing' , Field::PATHS => [] ]);
     }
@@ -257,7 +257,7 @@ final class AqlFieldUrlTest extends TestCase
     public function testDiscriminantPathsThrowsWhenListMap()
     {
         $this->expectException(UnsupportedOperationException::class);
-        $this->expectExceptionMessage('Field::PATHS must be a non-empty associative map');
+        $this->expectExceptionMessageIsOrContains('Field::PATHS must be a non-empty associative map');
 
         aqlFieldUrl('url', 'doc', [ Field::PATH => '/thing' , Field::PATHS => [ '/a' , '/b' ] ]);
     }

@@ -154,7 +154,7 @@ final class ExpandArrayPathTest extends TestCase
     public function testDoubledMarkerIsRejected() :void
     {
         $this->expectException( ValidationException::class ) ;
-        $this->expectExceptionMessage( 'Invalid AQL attribute name' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Invalid AQL attribute name' ) ;
 
         expandArrayPath( 'a[*][*]' , AQL::DOC ) ;
     }

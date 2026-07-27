@@ -31,7 +31,7 @@ final class AqlUpdateExpressionTest extends TestCase
     public function testThrowsWhenUpdateMissing(): void
     {
         $this->expectException( InvalidArgumentException::class );
-        $this->expectExceptionMessage( 'UPDATE option is required' );
+        $this->expectExceptionMessageIsOrContains( 'UPDATE option is required' );
         aqlUpdateExpression( [] );
     }
 }

@@ -149,28 +149,28 @@ final class DecodeRevisionTest extends TestCase
     public function testThrowsOnInvalidLengthWhenThrowable(): void
     {
         $this->expectException( RuntimeException::class );
-        $this->expectExceptionMessage( 'decodeRevision("short") failed, invalid revision length.' );
+        $this->expectExceptionMessageIsOrContains( 'decodeRevision("short") failed, invalid revision length.' );
         decodeRevision( 'short', true );
     }
 
     public function testThrowsOnInvalidFormatWhenThrowable(): void
     {
         $this->expectException( RuntimeException::class );
-        $this->expectExceptionMessage( 'decodeRevision("a234567890") failed, invalid revision format.' );
+        $this->expectExceptionMessageIsOrContains( 'decodeRevision("a234567890") failed, invalid revision format.' );
         decodeRevision( 'a234567890', true );
     }
 
     public function testThrowsOnInvalidContentWhenThrowable(): void
     {
         $this->expectException( RuntimeException::class );
-        $this->expectExceptionMessage( 'decodeRevision("_123456789") failed, invalid revision content.' );
+        $this->expectExceptionMessageIsOrContains( 'decodeRevision("_123456789") failed, invalid revision content.' );
         decodeRevision( '_123456789', true );
     }
 
     public function testThrowsOnInvalidCharacterWhenThrowable(): void
     {
         $this->expectException( RuntimeException::class );
-        $this->expectExceptionMessage( 'decodeRevision("_ABCDEF*--") failed, invalid character.' );
+        $this->expectExceptionMessageIsOrContains( 'decodeRevision("_ABCDEF*--") failed, invalid character.' );
         decodeRevision( '_ABCDEF*--', true );
     }
 

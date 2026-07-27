@@ -150,7 +150,7 @@ class AqlInsertTest extends TestCase
     public function testAqlInvalidCollectionThrows(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Collection name is required for INSERT');
+        $this->expectExceptionMessageIsOrContains('Collection name is required for INSERT');
         aqlInsert([
             AQL::COLLECTION => null,
             AQL::DOC => aqlDocument(['name'=>'Eka'])

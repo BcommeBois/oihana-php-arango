@@ -92,7 +92,7 @@ class ArangoProfileTraitTest extends TestCase
     {
         $host = $this->host( [ 'a' => [] ] ) ;
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( "Unknown dump/restore profile 'ghost'" ) ;
+        $this->expectExceptionMessageIsOrContains( "Unknown dump/restore profile 'ghost'" ) ;
         $host->resolveProfile( 'ghost' ) ;
     }
 

@@ -984,7 +984,7 @@ class HasHierarchicalFilterTest extends TestCase
         ]);
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'No model for join' ) ;
+        $this->expectExceptionMessageIsOrContains( 'No model for join' ) ;
         $model->prepareFilter( [ 'key' => 'company.name' , 'val' => 'Acme' ] , $this->binds ) ;
     }
 
@@ -1119,7 +1119,7 @@ class HasHierarchicalFilterTest extends TestCase
         ]);
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'Invalid edge model' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Invalid edge model' ) ;
         $model->prepareFilter( [ 'key' => 'employee[*].name' , 'val' => 'Bob' ] , $this->binds ) ;
     }
 
@@ -1170,6 +1170,8 @@ class HasHierarchicalFilterTest extends TestCase
      * The public prepareFilter() short-circuits a missing key before dispatch,
      * so this guard is reached only by calling the method directly — done here
      * through a thin subclass that re-exposes it.
+     *
+     * @return void
      *
      * @throws BindException
      * @throws ConstantException
@@ -1235,7 +1237,7 @@ class HasHierarchicalFilterTest extends TestCase
         ]);
 
         $this->expectException( RuntimeException::class ) ;
-        $this->expectExceptionMessage( 'Cannot resolve collection' ) ;
+        $this->expectExceptionMessageIsOrContains( 'Cannot resolve collection' ) ;
         $model->prepareFilter( [ 'key' => 'company.name' , 'val' => 'Acme' ] , $this->binds ) ;
     }
 
@@ -1285,6 +1287,7 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     private function joinQuantifierModel(): Documents
     {

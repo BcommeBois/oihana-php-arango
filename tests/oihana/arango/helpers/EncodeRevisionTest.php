@@ -93,7 +93,7 @@ final class EncodeRevisionTest extends TestCase
     public function testThrowsInvalidArgumentOnUnparseableDateWhenThrowable(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('failed to parse date');
+        $this->expectExceptionMessageIsOrContains('failed to parse date');
         encodeRevision('not-a-date', null, true);
     }
 
@@ -105,7 +105,7 @@ final class EncodeRevisionTest extends TestCase
     public function testThrowsInvalidArgumentWhenCountNegativeAndThrowable(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('count must be between');
+        $this->expectExceptionMessageIsOrContains('count must be between');
         encodeRevision('2025-10-25T12:00:00.000Z', -1, true);
     }
 

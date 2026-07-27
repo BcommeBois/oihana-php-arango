@@ -43,7 +43,7 @@ final class AqlUpsertExpressionTest extends TestCase
     public function testThrowsWhenNeitherFilterNorSearch(): void
     {
         $this->expectException( InvalidArgumentException::class );
-        $this->expectExceptionMessage( 'Either FILTER or SEARCH option is required.' );
+        $this->expectExceptionMessageIsOrContains( 'Either FILTER or SEARCH option is required.' );
         aqlUpsertExpression( [] );
     }
 
@@ -53,7 +53,7 @@ final class AqlUpsertExpressionTest extends TestCase
     public function testThrowsWhenBothFilterAndSearch(): void
     {
         $this->expectException( InvalidArgumentException::class );
-        $this->expectExceptionMessage( 'FILTER and SEARCH cannot be defined at the same time.' );
+        $this->expectExceptionMessageIsOrContains( 'FILTER and SEARCH cannot be defined at the same time.' );
         aqlUpsertExpression
         ([
             AQL::FILTER => [ [ 'foo' , 'bar' ] ] ,
