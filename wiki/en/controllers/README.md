@@ -406,16 +406,19 @@ final class AvatarController extends PropertyController
 
 Conditions that do not depend on the request need no subclass at all: declare them once in the controller's `$init` and they reach the read directly.
 
-#### Where the hook runs, and where it does not
+#### Where the hook runs
 
-| Call | Hooked | Why |
+| Call | Hooked | What the scope does there |
 |---|---|---|
-| `get()` | ✅ | the read to scope |
+| `get()` | ✅ | narrows the read |
+| the `update()` of `patch()` | ✅ | narrows the write's own `FILTER`: out of scope → matches nothing → `RETURN NEW` is null → 404 |
 | the post-`patch()` reload | ✅ | also a read — a write response that bypassed the scope would hand back what the scope withholds |
-| the existence probe of `patch()` and of the six array operations | ✅ | this is where a scope bites: out of scope → 404, and the write is never reached |
-| `update()` and the array writes | ❌ | see below |
+| the existence probe of `patch()` and of the six array operations | ✅ | reports the document missing before the operation runs |
+| the six array writes themselves | ❌ | they build their own `FILTER` and do not read `Arango::CONDITIONS`; the probe above is their gate |
 
-The writes are deliberately left alone. `Arango::CONDITIONS` is **overloaded**: a list of AQL predicates on the read path, a list of *callables* on the write path (the null-compression guards of `prepareDocumentClause()`). A hook posing a read scope on every model call would therefore raise `All conditions in the array must be callable` instead of scoping anything. Scoping the existence probe is both safer and sufficient — a document outside the scope is reported missing before any write is attempted.
+The `update()` and the probe are **both** scoped on purpose, and it is not redundant. Two queries can disagree: a document going out of scope between the probe and the write used to be updated anyway. Now the write re-checks the predicate itself, atomically, and answers 404 rather than writing.
+
+The array operations keep the probe as their only gate: `arrayInsert()`, `arrayMove()` and their siblings compile their own `FILTER` and never read `Arango::CONDITIONS`, so enriching their init would change nothing.
 
 #### A filtered document answers 200, not 404
 

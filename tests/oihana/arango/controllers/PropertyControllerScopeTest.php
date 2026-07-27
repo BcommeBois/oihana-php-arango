@@ -267,18 +267,19 @@ final class PropertyControllerScopeTest extends ControllerTestCase
     }
 
     /**
-     * The write itself is **not** hooked, and must not be.
+     * The write carries the scope in its own `FILTER`.
      *
-     * `Arango::CONDITIONS` is overloaded: a list of AQL predicates on the read
-     * path, a list of *callables* on the write path (the null-compression guards
-     * of `prepareDocumentClause()`). A consumer hook posing a read scope on every
-     * model call would therefore make the update raise "All conditions in the
-     * array must be callable" — a 500 where a scope was intended.
+     * It used to be left unhooked: `Arango::CONDITIONS` meant AQL predicates on the
+     * read path but *callables* on the write path, so a consumer hook posing a scope
+     * on every model call made the update raise "All conditions in the array must be
+     * callable" — a 500 where a scope was intended. The write now reads the same
+     * predicates as the reads, and the compression predicates have their own key.
      *
-     * This test pins the boundary: the update receives the route init untouched
-     * by the hook, and the patch completes normally.
+     * What this buys, beyond symmetry: the existence probe and the write no longer
+     * have to agree across two queries. A document going out of scope between them
+     * makes the `UPDATE` match nothing rather than write anyway.
      */
-    public function testTheWriteIsNotHookedSoTheReadScopeCannotPoisonIt() :void
+    public function testTheScopeReachesTheWriteItself() :void
     {
         $model      = $this->recordingModel() ;
         $controller = $this->makeScopedController( $model ) ;
@@ -286,7 +287,29 @@ final class PropertyControllerScopeTest extends ControllerTestCase
         $response   = $controller->patch( $request , $this->makeResponse() , [ Arango::ID => 'k1' ] ) ;
 
         $this->assertSame( 200 , $response->getStatusCode() ) ;
-        $this->assertArrayNotHasKey( Arango::CONDITIONS , $model->initOf( 'update' ) ) ;
+
+        $init = $model->initOf( 'update' ) ;
+
+        $this->assertSame( [ ScopedPropertyController::CONDITION ] , $init[ Arango::CONDITIONS ] ?? null ) ;
+        $this->assertSame( ScopedPropertyController::BINDS , $init[ Arango::BINDS ] ?? null ) ;
+    }
+
+    /**
+     * The end-to-end shape of the previous test: a document the scope excludes makes
+     * the `UPDATE` match nothing, so `RETURN NEW` yields null and the handler answers
+     * 404 — without the existence probe having to have caught it first.
+     */
+    public function testAWriteExcludedByItsOwnFilterAnswers404() :void
+    {
+        $model = $this->recordingModel() ;
+        $model->firstResult  = 1 ;    // the probe passes …
+        $model->objectResult = null ; // … but the scoped UPDATE matches nothing
+
+        $controller = $this->makeScopedController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'emails' => [ 'new@x' ] ] ) ;
+        $response   = $controller->patch( $request , $this->makeResponse() , [ Arango::ID => 'k1' ] ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
     }
 
     /**

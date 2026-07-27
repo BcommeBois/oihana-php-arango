@@ -86,24 +86,18 @@ trait PropertyControllerPatchTrait
                     Arango::VALUE     => $value ,
                 ] ;
 
-                // No hook here, on purpose. `Arango::CONDITIONS` means two different
-                // things: a list of AQL predicates on the read path, a list of
-                // **callables** on the write path (the null-compression guards of
-                // prepareDocumentClause()). Pushing a read scope into the update would
-                // therefore raise "All conditions in the array must be callable"
-                // instead of scoping anything. The scope is enforced upstream — the
-                // existence probe above is scoped, so an out-of-scope document answers
-                // 404 and this write is never reached.
+                $this->beforeModelCall( $request , $updateInit ) ;
                 $document = $this->model->update( $updateInit )  ;
+                $this->afterModelCall( $request , $updateInit , $document ) ;
 
                 // `UPDATE … RETURN NEW` yields a row only when its FILTER matched, so a
-                // null document means the target was gone by the time the write ran —
-                // deleted between the existence probe above and this line. Same fact the
-                // probe reports, hence the same status and the same wording. Without this
-                // guard the reload below dereferences null and raises an `Error`, which
-                // `catch( Exception )` does not intercept; in raw mode nothing would
-                // crash at all and the response would claim success for a write that
-                // touched nothing.
+                // null document means the write reached nothing: the target was deleted
+                // between the existence probe above and this line, or the scope the hook
+                // just posed excludes it. Both are the fact the probe reports, hence the
+                // same status and the same wording. Without this guard the reload below
+                // dereferences null and raises an `Error`, which `catch( Exception )`
+                // does not intercept; in raw mode nothing would crash at all and the
+                // response would claim success for a write that touched nothing.
                 if( $document === null )
                 {
                     return $this->fail

@@ -37,13 +37,16 @@ use oihana\controllers\traits\ModelCallTrait;
  * seat into an actual scope (extra `Arango::CONDITIONS`, extra `Arango::BINDS`),
  * both of which the model already honours.
  *
- * **Reads carry the scope, writes are gated by a scoped read.** The hook runs
- * around every read, and around the existence probe that precedes each write —
- * so a document outside the scope answers 404 and the write is never reached. It
- * deliberately does **not** run around the write itself: `Arango::CONDITIONS`
- * carries AQL predicates on the read path but *callables* on the write path
- * (the null-compression guards), so the same enrichment would be a type error
- * there rather than a scope.
+ * **Every query carries the scope.** The hook runs around each read, around the
+ * existence probe that precedes each write, and around the write itself — whose
+ * `FILTER` now reads the same `Arango::CONDITIONS` as the reads. A document
+ * outside the scope is therefore reported missing by the probe, and would match
+ * nothing in the `UPDATE` even if it slipped past it: the two no longer have to
+ * agree across a window in which the document may have moved.
+ *
+ * The six array operations of {@see ArrayPropertyController} are the exception:
+ * they build their own `FILTER` and do not read `Arango::CONDITIONS`, so the
+ * scoped existence probe remains their only gate.
  */
 class PropertyController extends Controller
 {
@@ -85,9 +88,9 @@ class PropertyController extends Controller
      * payload before every model call.
      *
      * Overrides the no-op {@see ModelCallTrait::beforeModelCall()}, invoked
-     * around each model **read** of this controller — `get()`, the post-write
-     * reload, and the existence probe that gates `patch()` and the six array
-     * operations of {@see ArrayPropertyController}. It builds a
+     * around each model call of this controller — `get()`, the post-write reload,
+     * the `update()` of `patch()`, and the existence probe that gates `patch()`
+     * and the six array operations of {@see ArrayPropertyController}. It builds a
      * request-scoped `Closure(string $subject): bool` through
      * {@see PermissionAuthorizerTrait::buildPermissionAuthorizer()} and stores it
      * under `Arango::AUTHORIZER`, where the projection layer

@@ -408,16 +408,19 @@ final class AvatarController extends PropertyController
 
 Une condition qui ne dépend pas de la requête n'a besoin d'aucune sous-classe : déclarez-la une fois dans le `$init` du contrôleur, elle atteint la lecture directement.
 
-#### Où le hook passe, et où il ne passe pas
+#### Où le hook passe
 
-| Appel | Encadré | Pourquoi |
+| Appel | Encadré | Ce que le périmètre y fait |
 |---|---|---|
-| `get()` | ✅ | la lecture à périmétrer |
+| `get()` | ✅ | rétrécit la lecture |
+| l'`update()` de `patch()` | ✅ | rétrécit le `FILTER` de l'écriture : hors périmètre → n'apparie rien → `RETURN NEW` rend `null` → 404 |
 | la relecture qui suit `patch()` | ✅ | c'est aussi une lecture — une réponse d'écriture qui contournerait le périmètre rendrait précisément ce que le périmètre retient |
-| la sonde d'existence de `patch()` et des six opérations de tableau | ✅ | c'est là qu'un périmètre mord : hors périmètre → 404, et l'écriture n'est jamais atteinte |
-| `update()` et les écritures de tableau | ❌ | voir ci-dessous |
+| la sonde d'existence de `patch()` et des six opérations de tableau | ✅ | déclare le document absent avant que l'opération ne parte |
+| les six écritures de tableau elles-mêmes | ❌ | elles compilent leur propre `FILTER` et ne lisent pas `Arango::CONDITIONS` ; la sonde ci-dessus est leur garde |
 
-Les écritures sont volontairement laissées de côté. `Arango::CONDITIONS` est **surchargé** : une liste de prédicats AQL côté lecture, une liste de *callables* côté écriture (les gardes de compression des nulls de `prepareDocumentClause()`). Un hook qui poserait un périmètre de lecture sur tous les appels modèle lèverait donc `All conditions in the array must be callable` au lieu de périmétrer quoi que ce soit. Périmétrer la sonde d'existence est à la fois plus sûr et suffisant : un document hors périmètre est déclaré absent avant qu'aucune écriture ne soit tentée.
+L'`update()` **et** la sonde sont périmétrés tous les deux, et ce n'est pas redondant. Deux requêtes peuvent se contredire : un document qui sortait du périmètre entre la sonde et l'écriture était mis à jour quand même. Désormais l'écriture revérifie le prédicat elle-même, atomiquement, et répond 404 au lieu d'écrire.
+
+Les opérations de tableau gardent la sonde pour seul verrou : `arrayInsert()`, `arrayMove()` et leurs sœurs compilent leur propre `FILTER` et ne lisent jamais `Arango::CONDITIONS`, donc enrichir leur init ne changerait rien.
 
 #### Un document filtré répond 200, pas 404
 
