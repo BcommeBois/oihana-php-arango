@@ -20,6 +20,8 @@ use oihana\arango\models\enums\ArrayMode;
 use oihana\arango\models\enums\Side;
 use oihana\arango\models\traits\aql\BindTrait;
 
+use oihana\enums\Char;
+
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
@@ -133,7 +135,7 @@ trait DocumentsArrayTrait
 
     /**
      * The per-field embedded-array configuration, normalised to
-     * `[ field => [ Arango::MODE => ArrayMode::*, Arango::COUNTER => ?string, Arango::ITEM_KEY => ?string ] ]`.
+     * `[ field => [ Arango::MODE => ArrayMode::*, Arango::COUNTER => ?string, Arango::ITEM_KEY => ?string, Arango::POSITION_KEY => ?string ] ]`.
      *
      * @var array
      */
@@ -650,15 +652,16 @@ trait DocumentsArrayTrait
             {
                 if ( is_string( $definition ) )
                 {
-                    $normalized[ $field ] = [ Arango::MODE => $definition , Arango::COUNTER => null , Arango::ITEM_KEY => null ] ;
+                    $normalized[ $field ] = [ Arango::MODE => $definition , Arango::COUNTER => null , Arango::ITEM_KEY => null , Arango::POSITION_KEY => null ] ;
                 }
                 else if ( is_array( $definition ) )
                 {
                     $normalized[ $field ] =
                     [
-                        Arango::MODE     => $definition[ Arango::MODE ] ?? $definition[ 0 ] ?? ArrayMode::LIST ,
-                        Arango::COUNTER  => $definition[ Arango::COUNTER  ] ?? null ,
-                        Arango::ITEM_KEY => $definition[ Arango::ITEM_KEY ] ?? null ,
+                        Arango::MODE         => $definition[ Arango::MODE ] ?? $definition[ 0 ] ?? ArrayMode::LIST ,
+                        Arango::COUNTER      => $definition[ Arango::COUNTER      ] ?? null ,
+                        Arango::ITEM_KEY     => $definition[ Arango::ITEM_KEY     ] ?? null ,
+                        Arango::POSITION_KEY => $definition[ Arango::POSITION_KEY ] ?? null ,
                     ] ;
                 }
             }
@@ -724,6 +727,44 @@ trait DocumentsArrayTrait
     protected function arrayMode( ?string $field , array $init = [] ) : string
     {
         return $init[ Arango::MODE ] ?? $this->arrays[ $field ][ Arango::MODE ] ?? ArrayMode::LIST ;
+    }
+
+    /**
+     * Resolves the position-key attribute of an array field — the attribute of each
+     * element carrying its rank — honouring an optional per-call `positionKey` override,
+     * then the declared configuration, then defaulting to null.
+     *
+     * A null result means the field is never renumbered (the historical behaviour); a
+     * non-null one makes every write rewrite that attribute from the element indices.
+     *
+     * The resolved name is interpolated verbatim into the generated AQL, so it is
+     * validated here — whatever its origin — against {@see assertAttributeName()}. It is
+     * additionally required to be a **flat** name: unlike an item key, which is only ever
+     * read, a position key is *written back*, and a dotted path would produce a single
+     * attribute literally named `meta.position` instead of a nested one.
+     *
+     * @param string|null $field
+     * @param array       $init
+     *
+     * @return string|null The validated position-key attribute, or null when the field is not renumbered.
+     *
+     * @throws ValidationException When the configured position key is not a safe flat attribute name.
+     */
+    protected function arrayPositionKey( ?string $field , array $init = [] ) : ?string
+    {
+        $positionKey = $init[ Arango::POSITION_KEY ] ?? $this->arrays[ $field ][ Arango::POSITION_KEY ] ?? null ;
+
+        if ( $positionKey !== null )
+        {
+            assertAttributeName( $positionKey ) ; // interpolated verbatim → guard against AQL injection
+
+            if ( str_contains( $positionKey , Char::DOT ) ) // a safe name, but possibly a nested path
+            {
+                throw new ValidationException( 'The position key "' . $positionKey . '" must be a flat attribute name (a nested path cannot be written back).' ) ;
+            }
+        }
+
+        return $positionKey ;
     }
 
     /**

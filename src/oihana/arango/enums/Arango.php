@@ -203,8 +203,7 @@ class Arango extends AQL
 
     /**
      * The 'patch' parameter — the partial object merged into the array element
-     * targeted by {@see Arango::ITEM_KEY}, consumed by
-     * {@see \oihana\arango\models\traits\DocumentsArrayTrait::arrayUpdate()}.
+     * targeted by {@see Arango::ITEM_KEY}, consumed by {@see DocumentsArrayTrait::arrayUpdate()}.
      *
      * The merge is shallow (`MERGE(CURRENT, @patch)`): the attributes it carries are
      * overwritten, the others are left untouched.
@@ -215,6 +214,24 @@ class Arango extends AQL
      * The 'position' parameter.
      */
     public const string POSITION = 'position' ;
+
+    /**
+     * The 'positionKey' parameter — the attribute of each element of an embedded array
+     * field that carries its **rank**, kept in sync with the element order.
+     *
+     * Declared per field in the `AQL::ARRAYS` option
+     * (`'lines' => [ ArrayMode::LIST , Arango::ITEM_KEY => 'id' , Arango::POSITION_KEY => 'position' ]`),
+     * it makes every write of {@see DocumentsArrayTrait}
+     * renumber the whole array from its indices — so an element moved by drag and drop
+     * never leaves a stale rank behind.
+     *
+     * The numbering is **zero-based**, and the attribute must be a flat name (a nested
+     * path could not be written back). When absent, no element is ever renumbered.
+     *
+     * Unlike {@see Arango::POSITION} — the target index of a single move — this names an
+     * attribute of the elements themselves.
+     */
+    public const string POSITION_KEY = 'positionKey' ;
 
     /**
      * The 'profile' parameter — when truthy, `list()` / `get()` run the query in

@@ -56,14 +56,25 @@ class DocumentsArrayTraitStub
                 'tags'     => ArrayMode::SET ,
                 'genres'   => ArrayMode::SORTED_SET ,
                 'chapters' => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfChapters' , Arango::ITEM_KEY => 'id' ] ,
+                'lines'    => [ ArrayMode::LIST , Arango::COUNTER => 'numberOfLines'    , Arango::ITEM_KEY => 'id' , Arango::POSITION_KEY => 'position' ] ,
             ] ,
         ]) ;
     }
 
-    /** Exposes the protected item-key resolver, which nothing else calls yet. */
+    /**
+     * Exposes the protected item-key resolver, which nothing else calls yet.
+     */
     public function itemKey( ?string $field , array $init = [] ) : ?string
     {
         return $this->arrayItemKey( $field , $init ) ;
+    }
+
+    /**
+     * Exposes the protected position-key resolver, which no operation honours yet.
+     */
+    public function positionKey( ?string $field , array $init = [] ) : ?string
+    {
+        return $this->arrayPositionKey( $field , $init ) ;
     }
 
     public function getObject( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null , array $context = [] ) :?object
@@ -988,7 +999,7 @@ final class DocumentsArrayTraitTest extends TestCase
     {
         $this->assertSame
         (
-            [ 'tracks' => [] , 'numberOfTracks' => 0 , 'tags' => [] , 'genres' => [] , 'chapters' => [] , 'numberOfChapters' => 0 ] ,
+            [ 'tracks' => [] , 'numberOfTracks' => 0 , 'tags' => [] , 'genres' => [] , 'chapters' => [] , 'numberOfChapters' => 0 , 'lines' => [] , 'numberOfLines' => 0 ] ,
             $this->stub()->arrayDefaults() ,
         ) ;
     }
@@ -1000,10 +1011,11 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame
         (
             [
-                'tracks'   => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfTracks'   , Arango::ITEM_KEY => null ] ,
-                'tags'     => [ Arango::MODE => ArrayMode::SET        , Arango::COUNTER => null               , Arango::ITEM_KEY => null ] ,
-                'genres'   => [ Arango::MODE => ArrayMode::SORTED_SET , Arango::COUNTER => null               , Arango::ITEM_KEY => null ] ,
-                'chapters' => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfChapters' , Arango::ITEM_KEY => 'id' ] ,
+                'tracks'   => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfTracks'   , Arango::ITEM_KEY => null , Arango::POSITION_KEY => null       ] ,
+                'tags'     => [ Arango::MODE => ArrayMode::SET        , Arango::COUNTER => null               , Arango::ITEM_KEY => null , Arango::POSITION_KEY => null       ] ,
+                'genres'   => [ Arango::MODE => ArrayMode::SORTED_SET , Arango::COUNTER => null               , Arango::ITEM_KEY => null , Arango::POSITION_KEY => null       ] ,
+                'chapters' => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfChapters' , Arango::ITEM_KEY => 'id' , Arango::POSITION_KEY => null       ] ,
+                'lines'    => [ Arango::MODE => ArrayMode::LIST       , Arango::COUNTER => 'numberOfLines'    , Arango::ITEM_KEY => 'id' , Arango::POSITION_KEY => 'position' ] ,
             ] ,
             $stub->arrays ,
         ) ;
@@ -1065,6 +1077,87 @@ final class DocumentsArrayTraitTest extends TestCase
             'leading digit'=> [ '1id' ] ,
             'trailing dot' => [ 'meta.' ] ,
         ] ;
+    }
+
+    // ---------------------------------------------------------------- arrayPositionKey
+
+    public function testPositionKeyIsNullWhenTheFieldDeclaresNone() :void
+    {
+        $stub = $this->stub() ;
+
+        $this->assertNull( $stub->positionKey( 'chapters'  ) ) ; // keyed, but never renumbered
+        $this->assertNull( $stub->positionKey( 'tracks'    ) ) ;
+        $this->assertNull( $stub->positionKey( 'undefined' ) ) ; // not declared at all
+        $this->assertNull( $stub->positionKey( null        ) ) ;
+    }
+
+    public function testPositionKeyIsResolvedFromTheFieldConfiguration() :void
+    {
+        $this->assertSame( 'position' , $this->stub()->positionKey( 'lines' ) ) ;
+    }
+
+    public function testPositionKeyHonoursThePerCallOverride() :void
+    {
+        $stub = $this->stub() ;
+
+        $this->assertSame( 'rank' , $stub->positionKey( 'lines'  , [ Arango::POSITION_KEY => 'rank' ] ) ) ;
+        $this->assertSame( 'rank' , $stub->positionKey( 'tracks' , [ Arango::POSITION_KEY => 'rank' ] ) ) ;
+    }
+
+    /**
+     * The position key is **written back** into every element, where an item key is only
+     * ever read: a dotted path would create one attribute literally named `meta.position`
+     * instead of a nested one, so it is refused rather than silently honoured.
+     *
+     * @return void
+     */
+    public function testPositionKeyRejectsADottedAttributeName() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->positionKey( 'lines' , [ Arango::POSITION_KEY => 'meta.position' ] ) ;
+    }
+
+    /**
+     * The position key is interpolated verbatim into the generated AQL, so an unsafe
+     * attribute name must be rejected before it ever reaches a query.
+     *
+     * @param mixed $positionKey
+     *
+     * @return void
+     */
+    #[DataProvider( 'unsafeItemKeyProvider' )]
+    public function testPositionKeyRejectsAnUnsafeAttributeName( mixed $positionKey ) :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->positionKey( 'lines' , [ Arango::POSITION_KEY => $positionKey ] ) ;
+    }
+
+    /**
+     * Nothing honours the marker yet: a field declaring a position key generates exactly
+     * the AQL it would generate without one.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testPositionKeyDoesNotChangeTheGeneratedAqlYet() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayInsert( [ Arango::OWNER => 'p42' , Arango::FIELD => 'lines' , Arango::VALUE => [ 'id' => 'l1' ] ] ) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection FILTER doc._key == @q_0 LET __arr = APPEND(doc.lines,@q_1) UPDATE doc WITH { lines: __arr, numberOfLines: LENGTH(__arr), modified: DATE_ISO8601(DATE_NOW()) } IN @@collection RETURN NEW' ,
+            $query ,
+        ) ;
     }
 
     /**
