@@ -64,7 +64,7 @@ trait UpsertQueryTrait
     : string
     {
         $collection = $init[ Arango::COLLECTION  ] ?? $this->collection ;
-        $conditions = $init[ Arango::CONDITIONS  ] ?? [] ;
+        $conditions = $this->resolveOmitWhen( $init , [] ) ; // default []: the null-compression is off
         $debug      = $init[ Arango::DEBUG       ] ?? $this->debug ;
         $removeKeys = $init[ Arango::REMOVE_KEYS ] ?? null ;
         $filter     = $init[ Arango::FILTER      ] ?? null ;

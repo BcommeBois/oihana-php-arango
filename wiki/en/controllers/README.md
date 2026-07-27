@@ -217,7 +217,20 @@ InvalidArgumentException: All conditions in the array must be callable.
 
 The error surfaces three layers below the controller, in an array helper, and names neither the hook nor the option at fault.
 
-The workaround, until the two meanings are split. Write inits carry `Arango::DOC` — the payload about to be written — and read inits never do. That is the reliable discriminator, available inside the hook:
+**The write meaning now has a name of its own: `Arango::OMIT_WHEN`.** Use it for the compression predicates, and the shared key stops being ambiguous on your side:
+
+```php
+$model->update
+([
+    Arango::VALUE     => 'k1' ,
+    Arango::DOC       => [ 'name' => 'Marc' , 'nickname' => null ] ,
+    Arango::OMIT_WHEN => [ fn( $value ) => $value === null || $value === '' ] ,
+]) ;
+```
+
+`Arango::CONDITIONS` is still honoured on the four writes when it carries callables, with a deprecation logged so a migration can be measured rather than guessed. Strings still raise: the write `FILTER` does not read them yet, and silently dropping them would let a write proceed without the scope its author intended — a loud failure beats a silent one.
+
+The workaround for a cross-cutting hook, until strings become meaningful on writes too. Write inits carry `Arango::DOC` — the payload about to be written — and read inits never do. That is the reliable discriminator, available inside the hook:
 
 ```php
 protected function beforeModelCall( ?Request $request , array &$init ) : void

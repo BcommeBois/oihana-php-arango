@@ -311,7 +311,7 @@ trait DocumentsUpdateTrait
         }
 
         $binds      = $init[ Arango::BINDS       ] ?? [] ;
-        $conditions = $init[ Arango::CONDITIONS  ] ?? [] ;
+        $conditions = $this->resolveOmitWhen( $init , [] ) ; // default []: the null-compression is off
         $debug      = $init[ Arango::DEBUG       ] ?? false ;
         $doc        = $init[ Arango::DOC         ] ?? null ;
         $ensure     = $init[ Arango::ENSURE      ] ?? null ;

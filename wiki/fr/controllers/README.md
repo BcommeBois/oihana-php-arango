@@ -217,7 +217,20 @@ InvalidArgumentException: All conditions in the array must be callable.
 
 L'erreur tombe trois couches sous le contrôleur, dans un utilitaire de tableaux, et ne nomme ni le hook ni l'option fautive.
 
-Le contournement, tant que les deux sens ne sont pas séparés. Les `$init` d'écriture portent `Arango::DOC` — le payload sur le point d'être écrit — et ceux de lecture jamais. C'est le discriminant fiable, disponible à l'intérieur du hook :
+**Le sens « écriture » a désormais un nom à lui : `Arango::OMIT_WHEN`.** Utilisez-le pour les prédicats de compression, et la clé partagée cesse d'être ambiguë de votre côté :
+
+```php
+$model->update
+([
+    Arango::VALUE     => 'k1' ,
+    Arango::DOC       => [ 'name' => 'Marc' , 'nickname' => null ] ,
+    Arango::OMIT_WHEN => [ fn( $value ) => $value === null || $value === '' ] ,
+]) ;
+```
+
+`Arango::CONDITIONS` reste honoré sur les quatre écritures quand il porte des callables, avec une dépréciation loguée — de quoi mesurer une migration au lieu de la deviner. Les chaînes, elles, continuent de lever : le `FILTER` des écritures ne les lit pas encore, et les ignorer en silence laisserait passer une écriture sans le périmètre voulu par son auteur. Mieux vaut un échec bruyant qu'un échec muet.
+
+Le contournement pour un hook transverse, tant que les chaînes n'ont pas de sens à l'écriture. Les `$init` d'écriture portent `Arango::DOC` — le payload sur le point d'être écrit — et ceux de lecture jamais. C'est le discriminant fiable, disponible à l'intérieur du hook :
 
 ```php
 protected function beforeModelCall( ?Request $request , array &$init ) : void

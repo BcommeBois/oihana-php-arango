@@ -6,6 +6,7 @@ use Closure;
 use DateInvalidTimeZoneException;
 use DateMalformedStringException;
 use oihana\arango\db\enums\Operation;
+use oihana\arango\enums\Arango;
 use oihana\arango\models\traits\aql\PrepareDocumentTrait;
 
 use InvalidArgumentException;
@@ -66,6 +67,19 @@ class PrepareDocumentTraitStub
     {
         return $this->prepareDocumentClause( $doc , $operation , $binds , $removeKeys , $conditions , $ensure ) ;
     }
+
+    /**
+     * Public proxy over the protected resolveOmitWhen().
+     *
+     * @param array $init
+     * @param mixed $default
+     *
+     * @return mixed
+     */
+    public function callResolveOmitWhen( array $init , mixed $default = null ) :mixed
+    {
+        return $this->resolveOmitWhen( $init , $default ) ;
+    }
 }
 
 /**
@@ -84,6 +98,120 @@ class PrepareDocumentTraitTest extends TestCase
     private function stub() :PrepareDocumentTraitStub
     {
         return new PrepareDocumentTraitStub() ;
+    }
+
+    // ---------------------------------------------------------------- resolveOmitWhen
+
+    public function testResolveOmitWhenReturnsTheNewKeyWhenPresent() :void
+    {
+        $stub      = $this->stub() ;
+        $predicate = static fn( mixed $value ) :bool => $value === '' ;
+
+        $this->assertSame( [ $predicate ] , $stub->callResolveOmitWhen( [ Arango::OMIT_WHEN => [ $predicate ] ] ) ) ;
+    }
+
+    /**
+     * An explicit null under the new key means "restore the default null-compression",
+     * and must not fall through to the deprecated key — hence `array_key_exists`
+     * rather than the null-coalescing operator.
+     */
+    public function testResolveOmitWhenHonoursAnExplicitNullUnderTheNewKey() :void
+    {
+        $stub = $this->stub() ;
+
+        $init = [ Arango::OMIT_WHEN => null , Arango::CONDITIONS => [ static fn( $v ) => false ] ] ;
+
+        $this->assertNull( $stub->callResolveOmitWhen( $init , [] ) ) ;
+    }
+
+    public function testResolveOmitWhenHonoursAnExplicitEmptyArrayUnderTheNewKey() :void
+    {
+        $stub = $this->stub() ;
+
+        $this->assertSame( [] , $stub->callResolveOmitWhen( [ Arango::OMIT_WHEN => [] ] ) ) ;
+    }
+
+    public function testResolveOmitWhenTakesTheNewKeyOverTheDeprecatedOne() :void
+    {
+        $stub    = $this->stub() ;
+        $winner  = static fn( mixed $value ) :bool => true ;
+        $ignored = static fn( mixed $value ) :bool => false ;
+
+        $resolved = $stub->callResolveOmitWhen
+        ([
+            Arango::OMIT_WHEN  => [ $winner  ] ,
+            Arango::CONDITIONS => [ $ignored ] ,
+        ]) ;
+
+        $this->assertSame( [ $winner ] , $resolved ) ;
+    }
+
+    /**
+     * The caller's own default is returned untouched — `null` on insert (the
+     * null-compression applies) and `[]` on update / upsert (it is off).
+     */
+    public function testResolveOmitWhenFallsBackOnTheCallerDefault() :void
+    {
+        $stub = $this->stub() ;
+
+        $this->assertNull  ( $stub->callResolveOmitWhen( [] , null ) ) ;
+        $this->assertSame  ( [] , $stub->callResolveOmitWhen( [] , [] ) ) ;
+    }
+
+    public function testResolveOmitWhenStillHonoursTheDeprecatedKeyAndLogsIt() :void
+    {
+        $stub         = $this->stub() ;
+        $stub->logger = $logger = new PrepareDocumentSpyLogger() ;
+
+        $predicate = static fn( mixed $value ) :bool => $value === null ;
+
+        $resolved = $stub->callResolveOmitWhen( [ Arango::CONDITIONS => [ $predicate ] ] , [] ) ;
+
+        $this->assertSame( [ $predicate ] , $resolved ) ;
+        // through the consuming class: PHP 8.4 forbids reaching a trait constant directly
+        $this->assertContains( PrepareDocumentTraitStub::OMIT_WHEN_DEPRECATION , $logger->messages ) ;
+    }
+
+    /**
+     * AQL predicate strings are the **read** meaning of the shared key. They are
+     * handed through untouched so `compress()` keeps raising on them: the write
+     * FILTER does not read them yet, and silently dropping them would let a write
+     * proceed without the scope its author intended. No deprecation is logged
+     * either — the caller is not using the legacy write form.
+     */
+    public function testResolveOmitWhenHandsAqlStringsThroughWithoutDeprecating() :void
+    {
+        $stub         = $this->stub() ;
+        $stub->logger = $logger = new PrepareDocumentSpyLogger() ;
+
+        $resolved = $stub->callResolveOmitWhen( [ Arango::CONDITIONS => [ 'doc.published == @published' ] ] , [] ) ;
+
+        $this->assertSame( [ 'doc.published == @published' ] , $resolved ) ;
+        $this->assertSame( [] , $logger->messages ) ;
+    }
+
+    public function testResolveOmitWhenLogsNothingWhenNoKeyIsGiven() :void
+    {
+        $stub         = $this->stub() ;
+        $stub->logger = $logger = new PrepareDocumentSpyLogger() ;
+
+        $stub->callResolveOmitWhen( [] , [] ) ;
+
+        $this->assertSame( [] , $logger->messages ) ;
+    }
+
+    /**
+     * A model wired without a logger must still write — the deprecation is a
+     * notice, not a reason to fail.
+     */
+    public function testResolveOmitWhenSurvivesWithoutALogger() :void
+    {
+        $stub         = $this->stub() ;
+        $stub->logger = null ;
+
+        $predicate = static fn( mixed $value ) :bool => true ;
+
+        $this->assertSame( [ $predicate ] , $stub->callResolveOmitWhen( [ Arango::CONDITIONS => [ $predicate ] ] ) ) ;
     }
 
     // ---------------------------------------------------------------- initializeFillable

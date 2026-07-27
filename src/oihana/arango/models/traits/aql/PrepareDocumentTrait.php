@@ -8,6 +8,7 @@ use DateMalformedStringException;
 use InvalidArgumentException;
 
 use oihana\arango\db\enums\Operation;
+use oihana\arango\enums\Arango;
 use oihana\core\options\CompressOption;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
@@ -41,6 +42,12 @@ trait PrepareDocumentTrait
      * The 'fillable' parameter key.
      */
     public const string FILLABLE = 'fillable' ;
+
+    /**
+     * The deprecation logged when a write still carries its compression predicates
+     * under the shared `Arango::CONDITIONS` key.
+     */
+    public const string OMIT_WHEN_DEPRECATION = 'Arango::CONDITIONS carrying callables on a write is deprecated, use Arango::OMIT_WHEN — the key means AQL predicates everywhere else.' ;
 
     /**
      * Initialize the 'fillable' property.
@@ -199,5 +206,53 @@ trait PrepareDocumentTrait
                 $operation . ' failed, the `doc` option must be a non-empty string, an object, or an associative array.'
             ) ;
         }
+    }
+
+    /**
+     * Resolves the predicates deciding which attributes of the payload are dropped
+     * before a write, from the new {@see Arango::OMIT_WHEN} key or the deprecated
+     * {@see Arango::CONDITIONS} one.
+     *
+     * `CONDITIONS` is read as **AQL predicate strings** by every read of the model
+     * — and by `delete()` — but as **callables** by the four writes, which is why a
+     * cross-cutting hook posing a scope on every model call used to answer
+     * `All conditions in the array must be callable` on `POST` / `PATCH` / `PUT`.
+     * `OMIT_WHEN` gives the write meaning a name of its own, so the shared key can
+     * eventually mean one thing everywhere.
+     *
+     * Resolution, in order:
+     * - `OMIT_WHEN` present → used as-is, including an explicit `null` (restore the
+     *   default null-compression) or `[]` (disable it) ;
+     * - otherwise `CONDITIONS` is read with the caller's own default, and a
+     *   deprecation is logged **only** when it actually carries callables — the
+     *   legacy write usage. A caller that never used it sees nothing.
+     *
+     * Strings are handed through untouched, so they keep raising in `compress()`
+     * rather than being silently ignored: the write `FILTER` does not read them
+     * yet, and turning a loud failure into a write that proceeds without the scope
+     * its author intended would be the worse outcome.
+     *
+     * @param array $init    The write configuration.
+     * @param mixed $default The caller's own default — `null` restores the null-compression, `[]` disables it.
+     *
+     * @return mixed The compression predicates to hand to `prepareDocumentClause()`.
+     */
+    protected function resolveOmitWhen( array $init , mixed $default = null ) :mixed
+    {
+        if ( array_key_exists( Arango::OMIT_WHEN , $init ) )
+        {
+            return $init[ Arango::OMIT_WHEN ] ;
+        }
+
+        $legacy = $init[ Arango::CONDITIONS ] ?? $default ;
+
+        if ( is_array( $legacy ) && count( array_filter( $legacy , 'is_callable' ) ) > 0 )
+        {
+            // Reached the same way prepareDocument() reports a non-fillable attribute,
+            // nullsafe so a model wired without a logger still writes.
+            $this->logger?->warning( self::OMIT_WHEN_DEPRECATION ) ;
+        }
+
+        return $legacy ;
     }
 }

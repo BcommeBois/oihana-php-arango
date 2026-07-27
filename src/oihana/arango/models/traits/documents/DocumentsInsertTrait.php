@@ -76,7 +76,7 @@ trait DocumentsInsertTrait
 
         // INSERT document INTO @@collection RETURN NEW
         $bindVars   = $init[ Arango::BINDS       ] ?? [] ;
-        $conditions = $init[ Arango::CONDITIONS  ] ?? null ;
+        $conditions = $this->resolveOmitWhen( $init ) ; // default null: the null-compression applies
         $debug      = $init[ Arango::DEBUG       ] ?? false ;
         $doc        = $init[ Arango::DOC         ] ?? null ;
         $removeKeys = $init[ Arango::REMOVE_KEYS ] ?? null ;

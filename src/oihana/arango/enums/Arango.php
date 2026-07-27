@@ -202,6 +202,37 @@ class Arango extends AQL
     public const string NUM = 'num' ;
 
     /**
+     * The 'omitWhen' parameter — the predicates deciding which **attributes of the
+     * payload are dropped before a write**, consumed by
+     * {@see \oihana\arango\models\traits\aql\PrepareDocumentTrait::prepareDocumentClause()}
+     * on `insert`, `update`, `replace` and `upsert`.
+     *
+     * Each entry is a `callable( mixed $value , string $key = ) : bool` answering
+     * "do I drop this attribute?". Omitting the key entirely applies the default —
+     * `fn( $value ) => is_null( $value )`, which is what keeps a `PATCH` carrying
+     * only some fields from overwriting the others with null. Passing `[]`
+     * disables the compression, so every attribute is written as submitted.
+     *
+     * ```php
+     * $model->update
+     * ([
+     *     Arango::VALUE     => 'k1' ,
+     *     Arango::DOC       => [ 'name' => 'Marc' , 'nickname' => null ] ,
+     *     Arango::OMIT_WHEN => [ fn( $value ) => $value === null || $value === '' ] ,
+     * ]) ;
+     * ```
+     *
+     * **It replaces {@see Arango::CONDITIONS} on the write path.** That key is read
+     * as AQL predicate strings everywhere else — `get()`, `list()`, `last()`,
+     * `count()`, `exist()`, `delete()` — and carrying two meanings under one name
+     * meant a cross-cutting hook posing a scope on every model call answered
+     * `All conditions in the array must be callable` on the writes. `CONDITIONS` is
+     * still honoured here when it carries callables, with a deprecation logged;
+     * strings keep raising, since the write `FILTER` does not read them yet.
+     */
+    public const string OMIT_WHEN = 'omitWhen' ;
+
+    /**
      * The 'patch' parameter — the partial object merged into the array element
      * targeted by {@see Arango::ITEM_KEY}, consumed by {@see DocumentsArrayTrait::arrayUpdate()}.
      *
