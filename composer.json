@@ -79,6 +79,7 @@
             "src/oihana/arango/clients/aql/helpers/aqlLiteral.php",
             "src/oihana/arango/clients/aql/helpers/join.php",
             "src/oihana/arango/clients/helpers/mergeWrittenPayload.php",
+            "src/oihana/arango/clients/helpers/probeExists.php",
             "src/oihana/arango/clients/helpers/stringifyOptions.php",
             "src/oihana/arango/clients/helpers/unwrapField.php",
             "src/oihana/arango/db/binds/aqlBind.php",

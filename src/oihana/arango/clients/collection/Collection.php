@@ -21,6 +21,7 @@ use oihana\arango\clients\enums\ArangoRoute ;
 use oihana\arango\clients\exceptions\ArangoException ;
 
 use function oihana\arango\clients\helpers\mergeWrittenPayload ;
+use function oihana\arango\clients\helpers\probeExists ;
 use function oihana\arango\clients\helpers\stringifyOptions ;
 
 /**
@@ -299,23 +300,7 @@ readonly class Collection
      */
     public function documentExists( string $key ) : bool
     {
-        try
-        {
-            $this->database->request
-            (
-                method : HttpMethod::HEAD ,
-                path   : $this->documentPath( $key ) ,
-            ) ;
-            return true ;
-        }
-        catch ( ArangoException $e )
-        {
-            if ( $e->getCode() === 404 )
-            {
-                return false ;
-            }
-            throw $e ;
-        }
+        return probeExists( fn() => $this->database->request( HttpMethod::HEAD , $this->documentPath( $key ) ) ) ;
     }
 
     /**
@@ -377,23 +362,7 @@ readonly class Collection
      */
     public function exists() : bool
     {
-        try
-        {
-            $this->database->request
-            (
-                method : HttpMethod::GET ,
-                path   : $this->collectionPath() ,
-            ) ;
-            return true ;
-        }
-        catch ( ArangoException $e )
-        {
-            if ( $e->getCode() === 404 )
-            {
-                return false ;
-            }
-            throw $e ;
-        }
+        return probeExists( fn() => $this->database->request( HttpMethod::GET , $this->collectionPath() ) ) ;
     }
 
     /**

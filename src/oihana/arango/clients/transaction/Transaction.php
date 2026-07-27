@@ -7,9 +7,10 @@ use oihana\enums\http\HttpMethod ;
 use oihana\arango\clients\Database ;
 use oihana\arango\clients\enums\ArangoRoute ;
 use oihana\arango\clients\exceptions\ArangoException ;
-use oihana\arango\clients\exceptions\HttpException ;
 use oihana\arango\clients\transaction\enums\TransactionStatus ;
 
+use Throwable;
+use function oihana\arango\clients\helpers\probeExists ;
 use function oihana\arango\clients\helpers\unwrapField ;
 
 /**
@@ -149,23 +150,7 @@ class Transaction
      */
     public function exists() : bool
     {
-        try
-        {
-            $this->database->request
-            (
-                method : HttpMethod::GET ,
-                path   : $this->path() ,
-            ) ;
-            return true ;
-        }
-        catch ( HttpException $e )
-        {
-            if ( $e->getCode() === 404 )
-            {
-                return false ;
-            }
-            throw $e ;
-        }
+        return probeExists( fn() => $this->database->request( HttpMethod::GET , $this->path() ) ) ;
     }
 
     /**
@@ -210,7 +195,7 @@ class Transaction
      *
      * @return mixed The value returned by `$callback`.
      *
-     * @throws \Throwable Whatever the callback throws.
+     * @throws Throwable Whatever the callback throws.
      */
     public function step( callable $callback ) : mixed
     {

@@ -91,6 +91,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The seven existence probes of the client share one helper, `probeExists()`.** `Analyzer::exists()`, `View::exists()`, `Graph::exists()`, `Transaction::exists()`, `Collection::exists()`, `Collection::documentExists()` and `GraphCollection::documentExists()` all answered the same question with the same twelve lines: run the request, `true` on success, `false` on a 404, rethrow anything else. Only the request differs — the verb, the path, and which handle carries the transport — so it travels as a closure rather than as parameters, the seven classes sharing no ancestor:
+  ```php
+  public function exists() : bool
+  {
+      return probeExists( fn() => $this->database->request( method : HttpMethod::GET , path : $this->path() ) ) ;
+  }
+  ```
+  - **The net is `HttpException`, not its parent `ArangoException`, and that is a deliberate narrowing of three call sites.** `ConflictException`, `MaintenanceException` and `NetworkException` are *siblings* of `HttpException`, not subclasses: they describe a server that could not answer, never a resource that is missing. Four of the seven already caught the precise type; the three that caught the parent (`Collection::exists()`, `Collection::documentExists()`, `GraphCollection::documentExists()`) now do too. **No behaviour changes today** — verified rather than assumed: a conflict carries 409, a maintenance 503, a network failure 0, so none of them could ever have been read as a 404. The choice is about the next such class, not this one.
+  - **Tests:** a new `ProbeExistsTest` (8 cases) documents the net rather than the plumbing — the success, the 404, an unrelated HTTP status rethrown *identically* (same instance), each of the three siblings passing through, a foreign `RuntimeException` untouched, and the guard that matters: a `MaintenanceException` deliberately built with a 404 is **still** not swallowed, which is precisely what the three narrowed call sites would have done before.
+  - **Known gap, left as is:** for the same question — does this document exist? — `Collection::documentExists()` sends `HEAD` while `GraphCollection::documentExists()` sends `GET`, so the graph variant downloads the document only to discard it. ArangoDB documents `HEAD` on the generic document route but not on the gharial ones, and no unit test can settle it since they all stub the transport. It stays a `GET` until a live pass confirms the server accepts `HEAD` there.
+
 - **`GraphVertexCollection` and `GraphEdgeCollection` now share a base class, `GraphCollection`.** The two were twins: 123 lines of code each, thirteen methods, and a diff that consisted **entirely** of `Document` ↔ `Edge`, two constants (`/vertex` ↔ `/edge`, `vertex` ↔ `edge`), the class name, and one stray space of indentation. Every HTTP call, every gharial-envelope unwrapping, the `returnNew` / `returnOld` merge and the 404 branch of the existence probe were written twice. They now live once, and a subclass supplies only what actually differs:
   ```php
   readonly class GraphEdgeCollection extends GraphCollection

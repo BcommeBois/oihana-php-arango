@@ -9,7 +9,8 @@ use oihana\arango\clients\Database ;
 use oihana\arango\clients\analyzer\enums\AnalyzerField ;
 use oihana\arango\clients\enums\ArangoRoute ;
 use oihana\arango\clients\exceptions\ArangoException ;
-use oihana\arango\clients\exceptions\HttpException ;
+
+use function oihana\arango\clients\helpers\probeExists ;
 
 /**
  * Operations scoped to a single ArangoSearch analyzer on the server.
@@ -136,19 +137,7 @@ readonly class Analyzer
      */
     public function exists() : bool
     {
-        try
-        {
-            $this->database->request( method : HttpMethod::GET , path : $this->path() ) ;
-            return true ;
-        }
-        catch ( HttpException $e )
-        {
-            if ( $e->getCode() === 404 )
-            {
-                return false ;
-            }
-            throw $e ;
-        }
+        return probeExists( fn() => $this->database->request( HttpMethod::GET , $this->path() ) ) ;
     }
 
     /**

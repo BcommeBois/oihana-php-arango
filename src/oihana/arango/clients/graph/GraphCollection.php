@@ -9,6 +9,7 @@ use oihana\arango\clients\document\enums\DocumentField ;
 use oihana\arango\clients\enums\ArangoRoute ;
 use oihana\arango\clients\exceptions\ArangoException ;
 
+use function oihana\arango\clients\helpers\probeExists ;
 use function oihana\arango\clients\helpers\stringifyOptions ;
 use function oihana\arango\clients\helpers\unwrapField ;
 
@@ -87,8 +88,8 @@ abstract readonly class GraphCollection
      * Returns true when a document with the given key exists in this collection
      * inside the graph.
      *
-     * Uses `GET /_api/gharial/{graph}/{surface}/{collection}/{key}` and swallows
-     * the 404 branch. Any other failure rethrows as an {@see ArangoException}.
+     * Uses `GET /_api/gharial/{graph}/{surface}/{collection}/{key}` and swallows the 404 branch.
+     * Any other failure rethrows as an {@see ArangoException}.
      *
      * @param string $key The document key.
      *
@@ -98,23 +99,7 @@ abstract readonly class GraphCollection
      */
     public function documentExists( string $key ) : bool
     {
-        try
-        {
-            $this->graph->database->request
-            (
-                method : HttpMethod::GET ,
-                path   : $this->documentPath( $key ) ,
-            ) ;
-            return true ;
-        }
-        catch ( ArangoException $e )
-        {
-            if ( $e->getCode() === 404 )
-            {
-                return false ;
-            }
-            throw $e ;
-        }
+        return probeExists( fn() => $this->graph->database->request( HttpMethod::GET , $this->documentPath( $key ) ) ) ;
     }
 
     /**
