@@ -19,6 +19,7 @@ use oihana\auth\controllers\traits\PermissionAuthorizerTrait;
 
 use oihana\controllers\Controller;
 use oihana\controllers\enums\Skin;
+use oihana\controllers\traits\ModelCallTrait;
 use oihana\controllers\traits\prepare\PrepareFilter;
 use oihana\controllers\traits\prepare\PrepareSearch;
 use oihana\controllers\traits\prepare\PrepareSort;
@@ -61,6 +62,19 @@ use function oihana\core\container\resolveDependency;
  * authorizer gates `Field::REQUIRES` so a hidden attribute cannot be probed
  * through `?filter=`. Nothing is persisted.
  *
+ * Like {@see DocumentsController} and {@see PropertyController}, it carries an
+ * **authorization seat**: the model call is wrapped by the
+ * {@see ModelCallTrait} hooks, so a consumer can impose a server-side scope the
+ * caller cannot widen — `?filter=` is the *caller's* lever, and it is folded in
+ * before the hook runs. The class poses no scope of its own: a subclass
+ * overriding {@see beforeModelCall()} appends its predicate to `Arango::FILTER`
+ * (as one operand of an explicit `and`, never spliced) or its AQL fragments to
+ * `Arango::CONDITIONS` — `list()` honours both.
+ *
+ * The request-scoped authorizer is posed **before** the hook rather than by it,
+ * so an override calling `parent::beforeModelCall()` reaches the trait's no-op :
+ * harmless, and the authorizer is already there.
+ *
  * @package oihana\arango\controllers
  * @author  Marc Alcaraz
  */
@@ -101,6 +115,7 @@ class ConceptSchemeController extends Controller
 
     use AuthorizationContextTrait ,
         CapabilityContextTrait    ,
+        ModelCallTrait            ,
         PermissionAuthorizerTrait ,
         PrepareFilter             ,
         PrepareSearch             ,
@@ -189,8 +204,8 @@ class ConceptSchemeController extends Controller
         $urlFilter  = $this->prepareFilter( $request , $init , $params ) ;
         $filter     = $urlFilter === null ? $rootFilter : [ FilterLogic::AND , $rootFilter , $urlFilter ] ;
 
-        $roots = $this->model->list
-        ([
+        $modelInit =
+        [
             // Fail-closed : the request-scoped authorizer gates Field::REQUIRES on the
             // filtered attributes (no filter oracle on a hidden field). It falls open
             // when no authorization stack is wired (buildPermissionAuthorizer → null).
@@ -199,7 +214,21 @@ class ConceptSchemeController extends Controller
             Arango::SEARCH     => $this->prepareSearch( $request , [] , $params ) ,
             Arango::SKIN       => $this->skin ,
             Arango::SORT       => $this->prepareSort( $request , [] , $params , Schema::NAME ) ,
-        ]) ;
+        ] ;
+
+        // The authorization seat : a subclass overriding beforeModelCall() poses its
+        // own scope here — a structured predicate ANDed into Arango::FILTER, or AQL
+        // fragments under Arango::CONDITIONS, both honoured by list(). It runs last,
+        // so the client `?filter=` can never win over the scope.
+        $this->beforeModelCall( $request , $modelInit ) ;
+
+        $roots = $this->model->list( $modelInit ) ;
+
+        $this->afterModelCall( $request , $modelInit , $roots ) ;
+
+        // afterModelCall() may replace the result outright, so the list shape the
+        // scheme and the envelope rely on is re-established rather than assumed.
+        $roots = is_array( $roots ) ? $roots : [] ;
 
         $scheme = new ConceptScheme
         ([

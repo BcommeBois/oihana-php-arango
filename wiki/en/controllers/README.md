@@ -639,6 +639,43 @@ Two guard rails, identical to the `Documents` controllers:
 - **Whitelist** — only the attributes declared in the model's `AQL::FILTERS` are filterable; anything else is dropped (logged), so `?filter=` can never reach an undeclared field.
 - **Authorizer** — when an authorization stack is wired (`CapabilityEnforcerInterface` + `PermissionSubjectResolverInterface` in the container), the request authorizer gates `Field::REQUIRES`: an attribute hidden from the caller neutralizes its predicate to `false` instead of leaking, closing the filter-oracle. Without a stack, it falls open (backward compatible).
 
+### Scoping the roots
+
+`?filter=` is the **caller's** lever. It cannot express "hide the concepts marked inactive, unless the caller holds that permission" — a rule the server imposes and the caller must not be able to widen.
+
+`ConceptSchemeController` carries the same **authorization seat** as `PropertyController`: its `list()` call is wrapped by the [lifecycle hooks](#lifecycle-hooks), and the hook runs **after** `?filter=` has been folded in, so the scope always has the last word.
+
+The lib supplies the seat, never the rule. A consumer supplies the predicate:
+
+```php
+final class PublicThesaurusController extends ConceptSchemeController
+{
+    protected function beforeModelCall( ?Request $request , array &$init ) : void
+    {
+        $scope  = [ FilterParam::KEY => 'status' , FilterParam::VAL => 'published' ] ;
+        $filter = $init[ Arango::FILTER ] ?? null ;
+
+        // ONE operand, never spliced : the client filter keeps its own parentheses.
+        $init[ Arango::FILTER ] = $filter === null ? $scope : [ FilterLogic::AND , $scope , $filter ] ;
+
+        parent::beforeModelCall( $request , $init ) ;
+    }
+}
+```
+
+Two levers, both honoured by `list()`:
+
+| Lever | Shape | When |
+|---|---|---|
+| `Arango::FILTER` | a **structured** predicate (the same JSON DSL as `?filter=`) | the scope is expressible in the DSL — it then goes through the model's whitelist and the `Field::REQUIRES` gate |
+| `Arango::CONDITIONS` | raw **AQL fragments** (`'doc.x == @x'`) + `Arango::BINDS` | anything the DSL cannot say — a sub-query, an `IN @allowed` |
+
+⚠ Wrap, never splice. `[ FilterLogic::AND , $scope , $filter ]` keeps the caller's filter as a single operand; `[ $scope , ...$filter ]` would put the caller's `or` in head position and degrade the scope into an alternative (`scope || a || b`). Same invariant as `InjectFilterTrait`.
+
+The request-scoped authorizer is posed **before** the hook (it gates the compilation of `?filter=`), so `parent::beforeModelCall()` reaches the trait's no-op: harmless, and the authorizer is already in place. An authorizer supplied by the caller in `$init` still wins over the one the controller builds.
+
+`afterModelCall( $request , $init , $roots )` receives the roots and may replace them. A non-list replacement degrades to an empty `hasTopConcept` rather than breaking the envelope's `count`.
+
 ```php
 use oihana\arango\controllers\ConceptSchemeController ;
 use oihana\routes\http\GetRoute ;
