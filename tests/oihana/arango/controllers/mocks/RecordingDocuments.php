@@ -12,6 +12,9 @@ use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
  * relations, value) and the only observable seam from the controller side is
  * what the model is finally called with — this double captures exactly that.
  *
+ * The array operations are recorded too, so a test can assert that the init
+ * enriched by `beforeModelCall()` reaches them and not only the existence probe.
+ *
  * @package tests\oihana\arango\controllers\mocks
  * @author  Marc Alcaraz
  */
@@ -23,6 +26,60 @@ class RecordingDocuments extends MockDocuments
      * @var array<int,array{0:string,1:array}>
      */
     public array $calls = [] ;
+
+    /**
+     * @inheritDoc
+     */
+    public function arrayContains( array $init = [] ) :bool
+    {
+        $this->calls[] = [ 'arrayContains' , $init ] ;
+        return parent::arrayContains( $init ) ;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function arrayInsert( array $init = [] ) :?object
+    {
+        $this->calls[] = [ 'arrayInsert' , $init ] ;
+        return parent::arrayInsert( $init ) ;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function arrayMove( array $init = [] ) :?object
+    {
+        $this->calls[] = [ 'arrayMove' , $init ] ;
+        return parent::arrayMove( $init ) ;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function arrayRemove( array $init = [] ) :?object
+    {
+        $this->calls[] = [ 'arrayRemove' , $init ] ;
+        return parent::arrayRemove( $init ) ;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function arrayReorder( array $init = [] ) :?object
+    {
+        $this->calls[] = [ 'arrayReorder' , $init ] ;
+        return parent::arrayReorder( $init ) ;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function arrayUpdate( array $init = [] ) :?object
+    {
+        $this->calls[] = [ 'arrayUpdate' , $init ] ;
+        return parent::arrayUpdate( $init ) ;
+    }
 
     /**
      * @inheritDoc
@@ -95,6 +152,29 @@ class RecordingDocuments extends MockDocuments
             }
         }
         return null ;
+    }
+
+    /**
+     * Returns the `$init` of the **last** recorded call to the given method.
+     *
+     * `patch()` reads twice (the existence probe and the post-write reload), so a
+     * test targeting the reload needs the last one, not the first.
+     *
+     * @param string $method The recorded model method name.
+     *
+     * @return array|null The captured init, or null when the method was never called.
+     */
+    public function lastInitOf( string $method ) :?array
+    {
+        $found = null ;
+        foreach( $this->calls as [ $name , $init ] )
+        {
+            if( $name === $method )
+            {
+                $found = $init ;
+            }
+        }
+        return $found ;
     }
 
     /**

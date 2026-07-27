@@ -321,6 +321,50 @@ return
 ] ;
 ```
 
+### Périmétrer un contrôleur de propriété
+
+Une route de sous-ressource est une porte sur le même document que `/resource/{id}`. Si cette route principale est périmétrée — seuls certains documents sont visibles pour l'appelant — la sous-ressource doit l'être aussi, sinon `/resource/{id}/avatar` répond pour des documents que `/resource/{id}` refuse de montrer.
+
+`PropertyController` porte le même **siège d'autorisation** que `DocumentsController` : il résout dans le conteneur l'enforcer de capacités et le résolveur de sujets de permission, pose l'autorisateur de la requête sous `Arango::AUTHORIZER` (les verrous `Field::REQUIRES` / `AQL::REQUIRES` de la projection s'appliquent donc), et encadre ses lectures modèle des [hooks de cycle de vie](#hooks-de-cycle-de-vie).
+
+La lib fournit le siège, jamais la règle. C'est le consommateur qui pose le prédicat :
+
+```php
+final class AvatarController extends PropertyController
+{
+    protected function beforeModelCall( ?Request $request , array &$init ) : void
+    {
+        $init[ Arango::CONDITIONS ] = [ ...( $init[ Arango::CONDITIONS ] ?? [] ) , 'doc.published == @published' ] ;
+        $init[ Arango::BINDS      ] = [ ...( $init[ Arango::BINDS      ] ?? [] ) , 'published' => true ] ;
+
+        parent::beforeModelCall( $request , $init ) ; // conserve l'autorisateur
+    }
+}
+```
+
+`Arango::CONDITIONS` atterrit dans le `FILTER` de la requête, `Arango::BINDS` est fusionné aux variables de liaison — le modèle honore les deux tels quels, il n'y a rien d'autre à faire.
+
+Une condition qui ne dépend pas de la requête n'a besoin d'aucune sous-classe : déclarez-la une fois dans le `$init` du contrôleur, elle atteint la lecture directement.
+
+#### Où le hook passe, et où il ne passe pas
+
+| Appel | Encadré | Pourquoi |
+|---|---|---|
+| `get()` | ✅ | la lecture à périmétrer |
+| la relecture qui suit `patch()` | ✅ | c'est aussi une lecture — une réponse d'écriture qui contournerait le périmètre rendrait précisément ce que le périmètre retient |
+| la sonde d'existence de `patch()` et des six opérations de tableau | ✅ | c'est là qu'un périmètre mord : hors périmètre → 404, et l'écriture n'est jamais atteinte |
+| `update()` et les écritures de tableau | ❌ | voir ci-dessous |
+
+Les écritures sont volontairement laissées de côté. `Arango::CONDITIONS` est **surchargé** : une liste de prédicats AQL côté lecture, une liste de *callables* côté écriture (les gardes de compression des nulls de `prepareDocumentClause()`). Un hook qui poserait un périmètre de lecture sur tous les appels modèle lèverait donc `All conditions in the array must be callable` au lieu de périmétrer quoi que ce soit. Périmétrer la sonde d'existence est à la fois plus sûr et suffisant : un document hors périmètre est déclaré absent avant qu'aucune écriture ne soit tentée.
+
+#### Un document filtré répond 200, pas 404
+
+Quand le périmètre écarte le document, `get()` répond **200 avec un résultat nul** — exactement comme un identifiant inconnu, et exactement comme un document visible dont la propriété est simplement absente. Les trois cas sont indiscernables, et c'est voulu : répondre 404 sur les deux premiers dirait à l'appelant lequel il a touché, soit précisément l'inférence que le périmètre existe pour empêcher.
+
+#### Sans pile d'autorisation
+
+Pas d'enforcer, pas de résolveur, ou pas d'utilisateur authentifié (CLI, tests, une application qui n'a jamais câblé l'authentification) → aucun autorisateur n'est posé et la couche de projection reste ouverte. Un contrôleur qui ne dérive pas et ne porte pas la pile se comporte exactement comme avant l'existence du siège.
+
 ## `ArrayPropertyController`
 
 Étend [`PropertyController`](#propertycontroller) pour exposer les **opérations élément par élément** d'une propriété déclarée comme **champ-tableau embarqué** ([`AQL::ARRAYS`](../db/arrays.md)) : ajouter, retirer, déplacer, réordonner, éditer un élément, tester sa présence — par-dessus le `get()` (lire tout le tableau) et `patch()` (remplacer tout le tableau) hérités.
@@ -384,6 +428,8 @@ Une liste **partielle** réordonne ce qu'elle nomme et **conserve le reste**, ra
 | `400 Bad Request` | la propriété ciblée n'est pas déclarée dans `AQL::ARRAYS` du modèle |
 | `404 Not Found` | le document propriétaire n'existe pas ; ou (`hasItem`) la valeur est absente du tableau ; ou (`moveItem`/`updateItem` par clé) aucun élément ne porte la clé demandée |
 | `422 Unprocessable Entity` | l'opération **n'existe pas** sur cette propriété : `moveItem`/`reorderItems` sur un champ `sortedSet`, `updateItem`/`reorderItems` sur une propriété sans clé d'élément, ou une propriété déclarée à la fois `sortedSet` et [numérotée](../db/arrays.md#numéroter-les-éléments-arangoposition_key) |
+
+Les six opérations — `hasItem` compris — passent d'abord par la sonde d'existence du document propriétaire. C'est la couture sur laquelle agit un [périmètre](#périmétrer-un-contrôleur-de-propriété) : un propriétaire hors périmètre est déclaré absent, et ni l'écriture ni la réponse d'appartenance ne sont atteintes. Dire « cette valeur est bien dans le tableau » d'un document que l'appelant n'a pas le droit de voir serait déjà une divulgation.
 
 **La règle des 422, en une phrase :** « cette opération n'existe pas sur ce champ » est une **requête** que la propriété ne peut pas satisfaire, pas une panne serveur. Le modèle énonce la règle **une seule fois** — il lève une `UnsupportedOperationException` — et le squelette partagé du contrôleur traduit chacune d'elles en ce même statut. Aucune garde n'est réécrite opération par opération.
 

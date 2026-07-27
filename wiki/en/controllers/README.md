@@ -319,6 +319,50 @@ return
 ] ;
 ```
 
+### Scoping a property controller
+
+A sub-resource route is a door onto the same document as `/resource/{id}`. If that main route is scoped — only some documents are visible to the caller — the sub-resource must be scoped too, otherwise `/resource/{id}/avatar` answers for documents `/resource/{id}` refuses to show.
+
+`PropertyController` carries the same **authorization seat** as `DocumentsController`: it resolves the capability enforcer and the permission-subject resolver from the container, poses the request-scoped authorizer under `Arango::AUTHORIZER` (so the `Field::REQUIRES` / `AQL::REQUIRES` gates of the projection layer apply), and wraps its model reads in the [lifecycle hooks](#lifecycle-hooks).
+
+The lib supplies the seat, never the rule. A consumer supplies the predicate:
+
+```php
+final class AvatarController extends PropertyController
+{
+    protected function beforeModelCall( ?Request $request , array &$init ) : void
+    {
+        $init[ Arango::CONDITIONS ] = [ ...( $init[ Arango::CONDITIONS ] ?? [] ) , 'doc.published == @published' ] ;
+        $init[ Arango::BINDS      ] = [ ...( $init[ Arango::BINDS      ] ?? [] ) , 'published' => true ] ;
+
+        parent::beforeModelCall( $request , $init ) ; // keeps the authorizer
+    }
+}
+```
+
+`Arango::CONDITIONS` lands in the query's `FILTER`, `Arango::BINDS` is merged into the bind variables — both are honoured by the model as-is, nothing else is needed.
+
+Conditions that do not depend on the request need no subclass at all: declare them once in the controller's `$init` and they reach the read directly.
+
+#### Where the hook runs, and where it does not
+
+| Call | Hooked | Why |
+|---|---|---|
+| `get()` | ✅ | the read to scope |
+| the post-`patch()` reload | ✅ | also a read — a write response that bypassed the scope would hand back what the scope withholds |
+| the existence probe of `patch()` and of the six array operations | ✅ | this is where a scope bites: out of scope → 404, and the write is never reached |
+| `update()` and the array writes | ❌ | see below |
+
+The writes are deliberately left alone. `Arango::CONDITIONS` is **overloaded**: a list of AQL predicates on the read path, a list of *callables* on the write path (the null-compression guards of `prepareDocumentClause()`). A hook posing a read scope on every model call would therefore raise `All conditions in the array must be callable` instead of scoping anything. Scoping the existence probe is both safer and sufficient — a document outside the scope is reported missing before any write is attempted.
+
+#### A filtered document answers 200, not 404
+
+When the scope filters the document out, `get()` answers **200 with a null result** — exactly like an unknown identifier, and exactly like a visible document whose property is simply absent. The three cases are indistinguishable on purpose: answering 404 on the first two would tell a caller which one it hit, which is the inference the scope exists to prevent.
+
+#### Without an authorization stack
+
+No enforcer, no resolver, or no authenticated user (CLI, tests, an application that never wired auth) → no authorizer is posed and the projection layer falls open. A controller that does not subclass and does not carry the stack behaves exactly as it did before the seat existed.
+
 ## `ArrayPropertyController`
 
 Extends [`PropertyController`](#propertycontroller) to expose the **element-level operations** of a property declared as an **embedded array field** ([`AQL::ARRAYS`](../db/arrays.md)): add, remove, move, reorder, edit an element, test its presence — on top of the inherited `get()` (read the whole array) and `patch()` (replace the whole array).
@@ -382,6 +426,8 @@ A **partial** list reorders what it names and **keeps the rest**, appended behin
 | `400 Bad Request` | the targeted property is not declared in the model's `AQL::ARRAYS` |
 | `404 Not Found` | the owner document does not exist; or (`hasItem`) the value is absent from the array; or (`moveItem`/`updateItem` by key) no element carries the requested key |
 | `422 Unprocessable Entity` | the operation **does not exist** on that property: `moveItem`/`reorderItems` on a `sortedSet` field, `updateItem`/`reorderItems` on a property with no item key, or a property declared both `sortedSet` and [numbered](../db/arrays.md#numbering-the-elements-arangoposition_key) |
+
+All six operations — `hasItem` included — run the owner existence probe first. It is the seam a [scope](#scoping-a-property-controller) acts on: an owner outside the scope is reported missing, and neither the write nor the membership answer is reached. A membership answer on a document the caller may not see would be a disclosure of its own.
 
 **The 422 rule, in one sentence:** "this operation does not exist on that field" is a **request** the property cannot satisfy, not a server failure. The model states the rule **once** — it raises an `UnsupportedOperationException` — and the controller's shared skeleton turns every one of them into that same status. No guard is rewritten operation by operation.
 

@@ -499,10 +499,25 @@ class ArrayPropertyControllerTest extends ControllerTestCase
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
+    /**
+     * The owner document exists — `exist()` is stubbed true so the scoped
+     * existence guard lets the read through — but the value is not in the array.
+     * Both answers are 404; this one must come from `arrayContains()`, so the
+     * two seams are driven apart rather than sharing the canned first result.
+     */
     public function testHasItemAbsentReturns404() :void
     {
-        $model = $this->model() ;
+        $model = new class( 'Playlist' ) extends MockDocuments
+        {
+            public function exist( array $init = [] ) :bool
+            {
+                return true ;
+            }
+        } ;
+
+        $model->arrays      = [ 'tracks' => [ Arango::MODE => ArrayMode::LIST , Arango::COUNTER => null ] ] ;
         $model->firstResult = 0 ; // arrayContains() → false
+
         $response = $this->controller( $model )->hasItem
         (
             $this->makeRequest( [] , 'GET' ) ,

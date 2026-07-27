@@ -67,17 +67,26 @@ trait PropertyControllerGetTrait
             $options = $init[ Arango::OPTIONS ] ?? [] ;
             $params  = $init[ Arango::PARAMS  ] ?? [] ;
 
-            $document = $this->model->get
-            ([
+            $modelInit =
+            [
                 Arango::ARGS       => $args ,
-                Arango::CACHEABLE  => $init[ Arango::CACHEABLE ] ?? null ,
-                Arango::VALUE      => $args[ Arango::ID        ] ?? null ,
-                Arango::KEY        => $init[ Arango::KEY       ] ?? Prop::_KEY  ,
+                Arango::CACHEABLE  => $init[ Arango::CACHEABLE  ] ?? null ,
+                Arango::VALUE      => $args[ Arango::ID         ] ?? null ,
+                Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? [] ,
+                Arango::KEY        => $init[ Arango::KEY        ] ?? Prop::_KEY  ,
                 Arango::IN         => $this->property , // returns only the specific property field
                 Arango::LANG       => $this->prepareLang( $request , $init , $params )  ,
                 Arango::SKIN       => $this->prepareSkin( $request , $init , $params , HttpMethod::get ) ,
-            ]) ;
+            ] ;
 
+            $this->beforeModelCall( $request , $modelInit ) ;
+            $document = $this->model->get( $modelInit ) ;
+            $this->afterModelCall( $request , $modelInit , $document ) ;
+
+            // A document filtered out by the scope and an unknown identifier are
+            // indistinguishable here — both answer 200 with a null result, exactly
+            // like a visible document whose property is simply absent. Saying more
+            // (a 404 on the first two) would tell a caller which of the three it hit.
             $data = $document->{ $this->property } ?? null ;
 
             return $this->success( $request , $response , $data  ,

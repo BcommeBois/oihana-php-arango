@@ -76,7 +76,7 @@ trait ArrayPropertyControllerTrait
      */
     public function addItem( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
     {
-        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
+        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model , array $init ) use ( $request , $response , $args )
         {
             $document = $model->arrayInsert
             ([
@@ -109,7 +109,7 @@ trait ArrayPropertyControllerTrait
      */
     public function hasItem( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
     {
-        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
+        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model , array $init ) use ( $request , $response , $args )
         {
             $exists = $model->arrayContains
             ([
@@ -128,7 +128,7 @@ trait ArrayPropertyControllerTrait
                        code     : HttpStatusCode::NOT_FOUND ,
                        details  : 'The value is not present in the array.' ,
                    ) ;
-        } , requireExists : false ) ;
+        }) ;
     }
 
     /**
@@ -154,7 +154,7 @@ trait ArrayPropertyControllerTrait
      */
     public function moveItem( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
     {
-        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
+        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model , array $init ) use ( $request , $response , $args )
         {
             $value = $this->resolveItemValue( $request , $args ) ;
 
@@ -189,7 +189,7 @@ trait ArrayPropertyControllerTrait
      */
     public function removeItem( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
     {
-        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
+        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model , array $init ) use ( $request , $response , $args )
         {
             $document = $model->arrayRemove
             ([
@@ -228,7 +228,7 @@ trait ArrayPropertyControllerTrait
      */
     public function reorderItems( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
     {
-        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
+        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model , array $init ) use ( $request , $response , $args )
         {
             $document = $model->arrayReorder
             ([
@@ -269,7 +269,7 @@ trait ArrayPropertyControllerTrait
      */
     public function updateItem( ?Request $request = null , ?Response $response = null , array $args = [] , array $init = [] ) : mixed
     {
-        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model ) use ( $request , $response , $args , $init )
+        return $this->runArrayOp( $request , $response , $args , $init , function( mixed $owner , Documents $model , array $init ) use ( $request , $response , $args )
         {
             $itemKey = $this->resolveItemKey( $model , $init ) ;
             $value   = $this->resolveItemValue( $request , $args ) ;
@@ -402,22 +402,38 @@ trait ArrayPropertyControllerTrait
 
     /**
      * Shared skeleton for the array operations: asserts the property is configured and
-     * declared as an array field, optionally verifies the owner document exists, then
-     * runs the given operation. Maps thrown exceptions to a standardized failure response.
+     * declared as an array field, enriches the init through
+     * {@see \oihana\controllers\traits\ModelCallTrait::beforeModelCall()}, verifies the
+     * owner document exists, then runs the given operation. Maps thrown exceptions to a
+     * standardized failure response.
+     *
+     * **The existence guard is the gate.** The array queries build their own `FILTER`
+     * and do not read `Arango::CONDITIONS` — enriching their init would change nothing.
+     * `exist()` does read it ({@see \oihana\arango\models\traits\queries\ExistQueryTrait}),
+     * so an owner document outside the scope answers 404 here and the operation is never
+     * reached. That is why the guard runs for **every** operation, reads included: a
+     * membership answer on a document the caller may not see is itself a disclosure.
+     *
+     * The enriched init is handed to the operation as its third argument rather than
+     * captured by the closure — a closure created at the call site captures `$init` by
+     * value *before* this method runs, so a captured copy would never see the enrichment.
+     *
+     * `afterModelCall()` is deliberately not invoked here: the operations return a
+     * response, not a document, so the hook would have no consistent result to receive.
+     * Post-processing a read belongs to {@see PropertyControllerGetTrait::get()}.
      *
      * @param ?Request $request
      * @param ?Response $response
      * @param array $args
      * @param array $init
-     * @param callable $operation fn(mixed $owner, Documents $model): mixed — performs the model call and returns the response.
-     * @param bool $requireExists When true (writes), a missing owner document yields a 404; reads (hasItem) pass false.
+     * @param callable $operation fn(mixed $owner, Documents $model, array $init): mixed — performs the model call and returns the response.
      *
      * @return mixed
      *
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      */
-    private function runArrayOp( ?Request $request , ?Response $response , array $args , array $init , callable $operation , bool $requireExists = true ) : mixed
+    private function runArrayOp( ?Request $request , ?Response $response , array $args , array $init , callable $operation ) : mixed
     {
         try
         {
@@ -440,7 +456,13 @@ trait ArrayPropertyControllerTrait
 
             $owner = $args[ Schema::ID ] ?? null ;
 
-            if ( $requireExists && !$model->exist( [ ...$init , Arango::VALUE => $owner ] ) )
+            // The single seam every array operation passes through: enriching the
+            // init here is what puts the six of them behind the same scope as
+            // get() and patch(). It must run *before* the existence guard — that
+            // guard is where a scope actually bites (see the method docblock).
+            $this->beforeModelCall( $request , $init ) ;
+
+            if ( !$model->exist( [ ...$init , Arango::VALUE => $owner ] ) )
             {
                 return $this->fail
                 (
@@ -451,7 +473,7 @@ trait ArrayPropertyControllerTrait
                 ) ;
             }
 
-            return $operation( $owner , $model ) ;
+            return $operation( $owner , $model , $init ) ;
         }
         catch ( Exception $e )
         {

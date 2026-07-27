@@ -52,7 +52,11 @@ trait PropertyControllerPatchTrait
 
             $value = $args[ Schema::ID ] ?? null ;
 
-            if( !$this->model->exist( [ ...$init , Arango::VALUE => $value ] ) )
+            $existInit = [ ...$init , Arango::VALUE => $value ] ;
+
+            $this->beforeModelCall( $request , $existInit ) ;
+
+            if( !$this->model->exist( $existInit ) )
             {
                 return $this->fail
                 (
@@ -79,7 +83,7 @@ trait PropertyControllerPatchTrait
                     $payload = deleteKeyValue( $payload , array_keys( $relations ) ) ;
                 }
 
-                $init =
+                $updateInit =
                 [
                     ...$init ,
                     Arango::DOC       => $payload ,
@@ -87,7 +91,15 @@ trait PropertyControllerPatchTrait
                     Arango::VALUE     => $value ,
                 ] ;
 
-                $document = $this->model->update( $init )  ;
+                // No hook here, on purpose. `Arango::CONDITIONS` means two different
+                // things: a list of AQL predicates on the read path, a list of
+                // **callables** on the write path (the null-compression guards of
+                // prepareDocumentClause()). Pushing a read scope into the update would
+                // therefore raise "All conditions in the array must be callable"
+                // instead of scoping anything. The scope is enforced upstream — the
+                // existence probe above is scoped, so an out-of-scope document answers
+                // 404 and this write is never reached.
+                $document = $this->model->update( $updateInit )  ;
 
                 $raw = (bool) ( $init[ Arango::RAW ] ?? false ) ;
 
@@ -95,13 +107,7 @@ trait PropertyControllerPatchTrait
                 (
                     $request ,
                     $response ,
-                    $raw ? getKeyValue( (array) $payload , $this->property ) : ( $this->model->get
-                    ([
-                        Arango::ARGS  => $args ,
-                        Arango::VALUE => $document->_key ,
-                        Arango::IN    => $this->property , // returns only the specific property field
-                        Arango::LANG  => $this->prepareLang( $request , $init )
-                    ])->{ $this->property } ?? null )
+                    $raw ? getKeyValue( (array) $payload , $this->property ) : $this->reloadProperty( $request , $args , $init , $document )
                 );
             }
         }
@@ -115,5 +121,42 @@ trait PropertyControllerPatchTrait
                 details  : $e->getMessage()
             ) ;
         }
+    }
+
+    /**
+     * Re-reads the updated property so the response carries the stored value
+     * rather than the submitted one (`Arango::RAW` skips this round-trip).
+     *
+     * It is a **read**, so it goes through the same hooks and carries the same
+     * `Arango::CONDITIONS` as {@see PropertyControllerGetTrait::get()} : a write
+     * whose response bypassed the scope would hand back exactly what the scope
+     * is meant to withhold.
+     *
+     * @param ?Request            $request  The current PSR-7 request.
+     * @param array               $args     The route placeholders.
+     * @param array               $init     The method init array (source of the declared conditions).
+     * @param ?object             $document The document returned by the write.
+     *
+     * @return mixed The stored property value, or null when the re-read returns nothing.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     */
+    private function reloadProperty( ?Request $request , array $args , array $init , ?object $document ) :mixed
+    {
+        $modelInit =
+        [
+            Arango::ARGS       => $args ,
+            Arango::VALUE      => $document->_key ,
+            Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? [] ,
+            Arango::IN         => $this->property , // returns only the specific property field
+            Arango::LANG       => $this->prepareLang( $request , $init ) ,
+        ] ;
+
+        $this->beforeModelCall( $request , $modelInit ) ;
+        $reloaded = $this->model->get( $modelInit ) ;
+        $this->afterModelCall( $request , $modelInit , $reloaded ) ;
+
+        return $reloaded->{ $this->property } ?? null ;
     }
 }
