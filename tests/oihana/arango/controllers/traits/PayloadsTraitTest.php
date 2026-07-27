@@ -46,6 +46,60 @@ class PayloadsTraitSub
 #[CoversTrait(PayloadsTrait::class)]
 class PayloadsTraitTest extends TestCase
 {
+    // -------------------- stripRelationKeys --------------------
+
+    public function testStripRelationKeysRemovesTheRegisteredRelations(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $payload = $subject->stripRelationKeys
+        (
+            [ 'name' => 'Alice' , 'friend' => 'users/u2' ] ,
+            [ 'friend' => [ 'collection' => 'users' ] ]
+        ) ;
+
+        $this->assertSame( [ 'name' => 'Alice' ] , $payload ) ;
+    }
+
+    /**
+     * The common case: nothing was registered as a relation, so the payload comes
+     * back untouched — and identical, not merely equal.
+     */
+    public function testStripRelationKeysIsANoOpWithoutRelations(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $payload = [ 'name' => 'Alice' ] ;
+
+        $this->assertSame( $payload , $subject->stripRelationKeys( $payload , [] ) ) ;
+    }
+
+    public function testStripRelationKeysRemovesSeveralRelationsAtOnce(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $payload = $subject->stripRelationKeys
+        (
+            [ 'name' => 'Alice' , 'friend' => 'users/u2' , 'employer' => 'orgs/o1' ] ,
+            [ 'friend' => [] , 'employer' => [] ]
+        ) ;
+
+        $this->assertSame( [ 'name' => 'Alice' ] , $payload ) ;
+    }
+
+    /**
+     * A relation registered for an attribute the payload never carried is simply
+     * not there to remove — no notice, no null left behind.
+     */
+    public function testStripRelationKeysIgnoresARelationAbsentFromThePayload(): void
+    {
+        $subject = new PayloadsTraitSub();
+
+        $payload = $subject->stripRelationKeys( [ 'name' => 'Alice' ] , [ 'friend' => [] ] ) ;
+
+        $this->assertSame( [ 'name' => 'Alice' ] , $payload ) ;
+    }
+
     // -------------------- propertyPayload --------------------
 
     public function testPropertyPayloadReturnsNullWhenPropertyIsEmpty(): void

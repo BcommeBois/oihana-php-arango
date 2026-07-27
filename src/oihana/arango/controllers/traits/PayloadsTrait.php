@@ -31,6 +31,7 @@ use function oihana\controllers\helpers\getParamI18n;
 use function oihana\controllers\helpers\getParamInt;
 use function oihana\controllers\helpers\getParamIntRange;
 use function oihana\controllers\helpers\getParamString;
+use function oihana\core\accessors\deleteKeyValue;
 use function oihana\core\arrays\compress;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\numbers\clip;
@@ -96,6 +97,143 @@ trait PayloadsTrait
      * ] ;
      */
     public string|array|null $payload = [] ;
+
+    /**
+     * Apply an alteration function to a payload value.
+     *
+     * @param mixed $value
+     * @param mixed $alter
+     *
+     * @return mixed
+     */
+    private function alterPayload( mixed $value , mixed $alter ) : mixed
+    {
+        if( is_string( $alter ) )
+        {
+            if( method_exists( $this , $alter ) )
+            {
+                return $this->{ $alter }( $value ) ;
+            }
+            else if( function_exists( $alter ) )
+            {
+                return call_user_func( $alter , $value ) ;
+            }
+        }
+        else if( is_callable( $alter ) )
+        {
+            return $alter( $value ) ;
+        }
+
+        return $value ;
+    }
+
+    /**
+     * Pre-validate the i18n-typed fields and short-circuit with a 422
+     * if any field has an invalid shape.
+     *
+     * Convenience wrapper around {@see validateI18nShape()} that builds the
+     * canonical "Unprocessable Entity" response when validation fails.
+     * Callers should `return` the response directly when this method returns
+     * a non-null value.
+     *
+     * @param ?Request $request The current HTTP request.
+     * @param ?Response $response The current HTTP response.
+     * @param ?string $method The HTTP method (POST, PATCH, PUT).
+     * @param array $init Optional override of the payload definitions.
+     *
+     * @return ?Response Null when the body is well-formed, otherwise the 422 response to return.
+     *
+     * @throws NotFoundException
+     */
+    public function enforceI18nShape
+    (
+        ?Request  $request  ,
+        ?Response $response ,
+        ?string   $method = null ,
+        array     $init   = []
+    )
+    : ?Response
+    {
+        $errors = $this->validateI18nShape( $request , $method , $init ) ;
+
+        if ( empty( $errors ) )
+        {
+            return null ;
+        }
+
+        return $this->fail
+        (
+            request  : $request ,
+            response : $response ,
+            code     : HttpStatusCode::UNPROCESSABLE_ENTITY ,
+            options  : [ Output::ERRORS => $errors ] ,
+        ) ;
+    }
+
+
+    /**
+     * Prepares a key-value payload object based on the provided request and definitions.
+     *
+     * This method processes the given definitions and extracts values
+     * from the request based on the type specified in the definitions.
+     *
+     * If a type is not specified but a value is provided in the definitions,
+     * that value is directly assigned to the document.
+     *
+     * @param Request $request     The request object that contains the input data.
+     * @param ?array  $definitions An array of definitions that specify the types and names of expected parameters or their predefined values.
+     *                             Each definition may include a type (e.g., BOOL, FLOAT, I18N, INT, etc.), a name, or a predefined value.
+     * @param array   $args        The optional arguments to initialize the document key/value.
+     * @param array   $relations   The array reference to register all payload attributes with a relation behavior (edges).
+     * @param bool    $throwable   Indicates if the method throws errors.
+     *
+     * @return array An associative array containing the processed key-value pairs extracted or derived from the request and definitions.
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    public function generatePayload
+    (
+        Request $request ,
+        ?array  $definitions = null ,
+        array   $args        = [] ,
+        array   &$relations  = [] ,
+        bool    $throwable   = false ,
+    )
+    : array
+    {
+        $payload = [] ;
+        if( is_array( $definitions ) )
+        {
+            foreach( $definitions as $key => $options )
+            {
+                if( is_string( $options ) && $options != Char::EMPTY && AQLType::includes( $options ) )
+                {
+                    $options = [ Arango::TYPE => $options ] ;
+                }
+
+                if( !is_array( $options ) )
+                {
+                    continue ;
+                }
+
+                if( array_key_exists( Arango::VALUE , $options ) )
+                {
+                    $payload[ $key ] = $options[ Arango::VALUE ] ?? null ;
+                }
+                else if( array_key_exists( Arango::TYPE , $options ) )
+                {
+                    $payload[ $key ] = $this->extractPayloadValue( $request , $key , $options , $args , $relations , $throwable ) ;
+                }
+
+                if( isset( $options[ Arango::ALTER ] ) && isset( $payload[ $key ] ) )
+                {
+                    $payload[ $key ] = $this->alterPayload( $payload[ $key ] , $options[ Arango::ALTER ] ) ;
+                }
+            }
+        }
+        return $payload ;
+    }
 
     /**
      * Initialize the 'payload' definition used to prepare a document for insertion or replace/update.
@@ -227,129 +365,77 @@ trait PayloadsTrait
         return compress( $payload , [ CompressOption::EXCLUDES => $excludes ] ) ;
     }
 
+
     /**
-     * Pre-validate the i18n-typed fields and short-circuit with a 422
-     * if any field has an invalid shape.
+     * Runs the full payload preparation of a write handler: the i18n shape guard,
+     * the payload extraction, the rule validation, and the relation stripping.
      *
-     * Convenience wrapper around {@see validateI18nShape()} that builds the
-     * canonical "Unprocessable Entity" response when validation fails.
-     * Callers should `return` the response directly when this method returns
-     * a non-null value.
+     * `post()` and `update()` performed these four steps identically, in the same
+     * order, with the same early returns. They are stated here once — the sequence
+     * matters (the shape guard must run before extraction, the stripping after
+     * validation, so the rules still see the relation attributes the caller sent).
+     *
+     * On success it returns `null` and both `$payload` and `$relations` are filled.
+     * On failure it returns the response to hand back, and `$payload` is left
+     * untouched:
+     *
+     * ```php
+     * $relations = [] ;
+     * $payload   = null ;
+     * $method    = $request?->getMethod() ;
+     *
+     * if ( $failure = $this->prepareWritePayload( $request , $response , $method , $init , $relations , $payload ) )
+     * {
+     *     return $failure ;
+     * }
+     * ```
+     *
+     * **Known limitation, inherited rather than introduced:** the failure signal is
+     * the response object, and `fail()` returns `null` when `$response` is null — so
+     * in that mode (tests, CLI) a failure is indistinguishable from a success and the
+     * caller carries on. The two inlined versions behaved exactly the same way; this
+     * method preserves it rather than changing it silently. Production handlers always
+     * receive a response, so the case is degenerate there.
      *
      * @param ?Request $request The current HTTP request.
      * @param ?Response $response The current HTTP response.
      * @param ?string $method The HTTP method (POST, PATCH, PUT).
      * @param array $init Optional override of the payload definitions.
+     * @param array $relations Reference filled with the attributes registered as relations (edges).
+     * @param mixed $payload Reference filled with the payload to write, relation keys already stripped.
      *
-     * @return ?Response Null when the body is well-formed, otherwise the 422 response to return.
+     * @return ?Response Null when the payload is ready to write, otherwise the response to return.
      *
+     * @throws DependencyException
      * @throws NotFoundException
      */
-    public function enforceI18nShape
+    public function prepareWritePayload
     (
-        ?Request  $request  ,
-        ?Response $response ,
-        ?string   $method = null ,
-        array     $init   = []
+        ?Request  $request   ,
+        ?Response $response  ,
+        ?string   $method    ,
+        array     $init      ,
+        array     &$relations ,
+        mixed     &$payload
     )
     : ?Response
     {
-        $errors = $this->validateI18nShape( $request , $method , $init ) ;
-
-        if ( empty( $errors ) )
+        if ( $shapeError = $this->enforceI18nShape( $request , $response , $method , $init ) )
         {
-            return null ;
+            return $shapeError ;
         }
 
-        return $this->fail
-        (
-            request  : $request ,
-            response : $response ,
-            code     : HttpStatusCode::UNPROCESSABLE_ENTITY ,
-            options  : [ Output::ERRORS => $errors ] ,
-        ) ;
-    }
+        $payload    = $this->preparePayload( $request , $method , $init , $relations ) ;
+        $validation = $this->validator->validate( $payload , $this->prepareRules( $method ) ) ;
 
-    /**
-     * Pre-validate the shape of i18n-typed fields in the request body.
-     *
-     * Inspects the payload definitions for fields typed as {@see AQLType::I18N}
-     * and checks the raw request body. If any such field is present with a
-     * non-array/object/null value (e.g. a flat string), an entry is returned
-     * for it. Callers should respond with a 422 when the result is non-empty,
-     * before invoking {@see preparePayload()} (which would otherwise drop the
-     * invalid value silently via {@see filterLanguages()}).
-     *
-     * @param ?Request $request The current HTTP request.
-     * @param ?string $method The HTTP method (POST, PATCH, PUT).
-     * @param array $init Optional override of the payload definitions
-     *                          (same shape as preparePayload's `$init`).
-     *
-     * @return array<string,string> Map of field name → error message. Empty when the body is well-formed.
-     * @throws NotFoundException
-     */
-    public function validateI18nShape
-    (
-        ?Request $request ,
-        ?string  $method = null ,
-        array    $init   = []
-    )
-    : array
-    {
-        if ( $request === null )
+        if( $validation->fails() )
         {
-            return [] ;
+            return $this->getValidatorError( $request , $response , $validation ) ;
         }
 
-        $definitions = $init[ Arango::PAYLOAD ] ?? $this->payload ?? [] ;
+        $payload = $this->stripRelationKeys( $payload , $relations ) ;
 
-        if ( !is_array( $definitions ) )
-        {
-            return [] ;
-        }
-
-        $definitions = array_merge( $definitions[ HttpMethod::ALL ] ?? [] , $definitions[ $method ] ?? [] ) ;
-
-        if ( empty( $definitions ) )
-        {
-            return [] ;
-        }
-
-        $errors = [] ;
-
-        foreach ( $definitions as $key => $options )
-        {
-            if ( is_string( $options ) && AQLType::includes( $options ) )
-            {
-                $options = [ Arango::TYPE => $options ] ;
-            }
-
-            if ( !is_array( $options ) )
-            {
-                continue ;
-            }
-
-            if ( ( $options[ Arango::TYPE ] ?? null ) !== AQLType::I18N )
-            {
-                continue ;
-            }
-
-            $name  = $options[ Arango::NAME ] ?? $key ;
-            $value = getParam( $request , $name , [] , $this->paramsStrategy ) ;
-
-            if ( $value === null || is_array( $value ) || is_object( $value ) )
-            {
-                continue ;
-            }
-
-            $errors[ (string) $key ] = sprintf
-            (
-                'must be a per-language object (e.g. { "fr": "...", "en": "..." }), got %s' ,
-                get_debug_type( $value )
-            ) ;
-        }
-
-        return $errors ;
+        return null ;
     }
 
     /**
@@ -435,96 +521,110 @@ trait PayloadsTrait
     }
 
     /**
-     * Prepares a key-value payload object based on the provided request and definitions.
+     * Removes from the payload the attributes registered as **relations**.
      *
-     * This method processes the given definitions and extracts values
-     * from the request based on the type specified in the definitions.
+     * An attribute declared with the `EDGE` payload type is not a field of the
+     * document: it names an edge to create, and {@see preparePayload()} /
+     * {@see propertyPayload()} register it in `$relations` rather than in the
+     * document. Writing it as a plain attribute would store the target reference
+     * twice — once in the edge, once inside the document — so the write handlers
+     * strip those keys before handing the payload to the model.
      *
-     * If a type is not specified but a value is provided in the definitions,
-     * that value is directly assigned to the document.
+     * A no-op when nothing was registered, which is the common case.
      *
-     * @param Request $request     The request object that contains the input data.
-     * @param ?array  $definitions An array of definitions that specify the types and names of expected parameters or their predefined values.
-     *                             Each definition may include a type (e.g., BOOL, FLOAT, I18N, INT, etc.), a name, or a predefined value.
-     * @param array   $args        The optional arguments to initialize the document key/value.
-     * @param array   $relations   The array reference to register all payload attributes with a relation behavior (edges).
-     * @param bool    $throwable   Indicates if the method throws errors.
+     * @param mixed $payload   The payload about to be written.
+     * @param array $relations The relations registered during the payload extraction.
      *
-     * @return array An associative array containing the processed key-value pairs extracted or derived from the request and definitions.
+     * @return mixed The payload without its relation keys.
+     */
+    public function stripRelationKeys( mixed $payload , array $relations ) :mixed
+    {
+        return count( $relations ) > 0
+            ? deleteKeyValue( $payload , array_keys( $relations ) )
+            : $payload ;
+    }
+
+
+    /**
+     * Pre-validate the shape of i18n-typed fields in the request body.
      *
-     * @throws DependencyException
+     * Inspects the payload definitions for fields typed as {@see AQLType::I18N}
+     * and checks the raw request body. If any such field is present with a
+     * non-array/object/null value (e.g. a flat string), an entry is returned
+     * for it. Callers should respond with a 422 when the result is non-empty,
+     * before invoking {@see preparePayload()} (which would otherwise drop the
+     * invalid value silently via {@see filterLanguages()}).
+     *
+     * @param ?Request $request The current HTTP request.
+     * @param ?string $method The HTTP method (POST, PATCH, PUT).
+     * @param array $init Optional override of the payload definitions
+     *                          (same shape as preparePayload's `$init`).
+     *
+     * @return array<string,string> Map of field name → error message. Empty when the body is well-formed.
      * @throws NotFoundException
      */
-    public function generatePayload
+    public function validateI18nShape
     (
-        Request $request ,
-        ?array  $definitions = null ,
-        array   $args        = [] ,
-        array   &$relations  = [] ,
-        bool    $throwable   = false ,
+        ?Request $request ,
+        ?string  $method = null ,
+        array    $init   = []
     )
     : array
     {
-        $payload = [] ;
-        if( is_array( $definitions ) )
+        if ( $request === null )
         {
-            foreach( $definitions as $key => $options )
-            {
-                if( is_string( $options ) && $options != Char::EMPTY && AQLType::includes( $options ) )
-                {
-                    $options = [ Arango::TYPE => $options ] ;
-                }
-
-                if( !is_array( $options ) )
-                {
-                    continue ;
-                }
-
-                if( array_key_exists( Arango::VALUE , $options ) )
-                {
-                    $payload[ $key ] = $options[ Arango::VALUE ] ?? null ;
-                }
-                else if( array_key_exists( Arango::TYPE , $options ) )
-                {
-                    $payload[ $key ] = $this->extractPayloadValue( $request , $key , $options , $args , $relations , $throwable ) ;
-                }
-
-                if( isset( $options[ Arango::ALTER ] ) && isset( $payload[ $key ] ) )
-                {
-                    $payload[ $key ] = $this->alterPayload( $payload[ $key ] , $options[ Arango::ALTER ] ) ;
-                }
-            }
-        }
-        return $payload ;
-    }
-
-    /**
-     * Apply an alteration function to a payload value.
-     *
-     * @param mixed $value
-     * @param mixed $alter
-     *
-     * @return mixed
-     */
-    private function alterPayload( mixed $value , mixed $alter ) : mixed
-    {
-        if( is_string( $alter ) )
-        {
-            if( method_exists( $this , $alter ) )
-            {
-                return $this->{ $alter }( $value ) ;
-            }
-            else if( function_exists( $alter ) )
-            {
-                return call_user_func( $alter , $value ) ;
-            }
-        }
-        else if( is_callable( $alter ) )
-        {
-            return $alter( $value ) ;
+            return [] ;
         }
 
-        return $value ;
+        $definitions = $init[ Arango::PAYLOAD ] ?? $this->payload ?? [] ;
+
+        if ( !is_array( $definitions ) )
+        {
+            return [] ;
+        }
+
+        $definitions = array_merge( $definitions[ HttpMethod::ALL ] ?? [] , $definitions[ $method ] ?? [] ) ;
+
+        if ( empty( $definitions ) )
+        {
+            return [] ;
+        }
+
+        $errors = [] ;
+
+        foreach ( $definitions as $key => $options )
+        {
+            if ( is_string( $options ) && AQLType::includes( $options ) )
+            {
+                $options = [ Arango::TYPE => $options ] ;
+            }
+
+            if ( !is_array( $options ) )
+            {
+                continue ;
+            }
+
+            if ( ( $options[ Arango::TYPE ] ?? null ) !== AQLType::I18N )
+            {
+                continue ;
+            }
+
+            $name  = $options[ Arango::NAME ] ?? $key ;
+            $value = getParam( $request , $name , [] , $this->paramsStrategy ) ;
+
+            if ( $value === null || is_array( $value ) || is_object( $value ) )
+            {
+                continue ;
+            }
+
+            $errors[ (string) $key ] = sprintf
+            (
+                'must be a per-language object (e.g. { "fr": "...", "en": "..." }), got %s' ,
+                get_debug_type( $value )
+            ) ;
+        }
+
+        return $errors ;
     }
 
     /**

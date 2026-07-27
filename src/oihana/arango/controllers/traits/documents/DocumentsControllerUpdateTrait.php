@@ -23,7 +23,6 @@ use oihana\models\traits\ModelTrait;
 
 use org\schema\constants\Schema;
 
-use function oihana\core\accessors\deleteKeyValue;
 
 /**
  * Provides the functionality to update or replace documents in an ArangoDB collection
@@ -96,78 +95,63 @@ trait DocumentsControllerUpdateTrait
             }
 
             $relations = [] ;
+            $payload   = null ;
             $method    = $request?->getMethod() ;
 
-            if ( $shapeError = $this->enforceI18nShape( $request , $response , $method , $init ) )
+            if ( $failure = $this->prepareWritePayload( $request , $response , $method , $init , $relations , $payload ) )
             {
-                return $shapeError ;
+                return $failure ;
             }
 
-            $payload    = $this->preparePayload( $request , $method , $init , $relations ) ;
-            $validation = $this->validator->validate( $payload , $this->prepareRules( $method ) ) ;
+            $init =
+            [
+                ...$init ,
+                Arango::DOC       => $payload ,
+                Arango::RELATIONS => $relations ,
+                Arango::VALUE     => $value ,
+            ] ;
 
-            if( $validation->fails() )
+            $this->beforeModelCall( $request , $init ) ;
+
+            $document = $method == HttpMethod::PATCH
+                      ? $this->model->update  ( $init )   // PATCH -> update
+                      : $this->model->replace ( $init ) ; // PUT   -> replace
+
+            $this->afterModelCall( $request , $init , $document ) ;
+
+            // `UPDATE`/`REPLACE … RETURN NEW` yields a row only when its FILTER
+            // matched, so a null document means the target was gone by the time the
+            // write ran — deleted between the existence probe above and this line.
+            // Same fact the probe reports, hence the same status and the same
+            // wording. Without this guard the reload below dereferences null and
+            // raises an `Error`, which `catch( Exception )` does not intercept; in
+            // raw mode nothing would crash at all and the response would claim
+            // success for a write that touched nothing.
+            if( $document === null )
             {
-                return $this->getValidatorError( $request , $response , $validation ) ;
-            }
-            else
-            {
-                // Removes all relation keys (edges)
-                if( count( $relations ) > 0 )
-                {
-                    $payload = deleteKeyValue( $payload , array_keys( $relations ) ) ;
-                }
-
-                $init =
-                [
-                    ...$init ,
-                    Arango::DOC       => $payload ,
-                    Arango::RELATIONS => $relations ,
-                    Arango::VALUE     => $value ,
-                ] ;
-
-                $this->beforeModelCall( $request , $init ) ;
-
-                $document = $method == HttpMethod::PATCH
-                          ? $this->model->update  ( $init )   // PATCH -> update
-                          : $this->model->replace ( $init ) ; // PUT   -> replace
-
-                $this->afterModelCall( $request , $init , $document ) ;
-
-                // `UPDATE`/`REPLACE … RETURN NEW` yields a row only when its FILTER
-                // matched, so a null document means the target was gone by the time the
-                // write ran — deleted between the existence probe above and this line.
-                // Same fact the probe reports, hence the same status and the same
-                // wording. Without this guard the reload below dereferences null and
-                // raises an `Error`, which `catch( Exception )` does not intercept; in
-                // raw mode nothing would crash at all and the response would claim
-                // success for a write that touched nothing.
-                if( $document === null )
-                {
-                    return $this->fail
-                    (
-                        request  : $request ,
-                        response : $response ,
-                        code     : HttpStatusCode::NOT_FOUND ,
-                        details  : sprintf( 'The document "%s" does not exist' , ( $value ?? 'undefined' ) )
-                    ) ;
-                }
-
-                $raw = (bool) ( $init[ Arango::RAW ] ?? false ) ;
-
-                return $this->success
+                return $this->fail
                 (
-                    $request ,
-                    $response ,
-                    $raw ? $document : $this->model->get
-                    ([
-                        Arango::ARGS  => $args ,
-                        Arango::VALUE => $document->_key ,
-                        Arango::LANG  => $this->prepareLang( $request , $init )  ,
-                        Arango::SKIN  => $this->prepareSkin( $request , $init , method: strtolower( $method ) ) ,
-                    ])
-                );
+                    request  : $request ,
+                    response : $response ,
+                    code     : HttpStatusCode::NOT_FOUND ,
+                    details  : sprintf( 'The document "%s" does not exist' , ( $value ?? 'undefined' ) )
+                ) ;
             }
+
+            $raw = (bool) ( $init[ Arango::RAW ] ?? false ) ;
+
+            return $this->success
+            (
+                $request ,
+                $response ,
+                $raw ? $document : $this->model->get
+                ([
+                    Arango::ARGS  => $args ,
+                    Arango::VALUE => $document->_key ,
+                    Arango::LANG  => $this->prepareLang( $request , $init )  ,
+                    Arango::SKIN  => $this->prepareSkin( $request , $init , method: strtolower( $method ) ) ,
+                ])
+            );
         }
         catch( Exception $e )
         {

@@ -15,7 +15,6 @@ use oihana\enums\http\HttpStatusCode;
 
 use org\schema\constants\Schema;
 
-use function oihana\core\accessors\deleteKeyValue;
 use function oihana\core\accessors\getKeyValue;
 
 trait PropertyControllerPatchTrait
@@ -77,11 +76,7 @@ trait PropertyControllerPatchTrait
             }
             else
             {
-                // Removes all relation keys -> special case (edges)
-                if( count( $relations ) > 0 )
-                {
-                    $payload = deleteKeyValue( $payload , array_keys( $relations ) ) ;
-                }
+                $payload = $this->stripRelationKeys( $payload , $relations ) ;
 
                 $updateInit =
                 [

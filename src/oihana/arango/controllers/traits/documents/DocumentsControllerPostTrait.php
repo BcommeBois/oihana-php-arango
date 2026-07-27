@@ -20,7 +20,6 @@ use oihana\enums\http\HttpStatusCode;
 
 use oihana\models\traits\ModelTrait;
 
-use function oihana\core\accessors\deleteKeyValue;
 
 trait DocumentsControllerPostTrait
 {
@@ -46,73 +45,58 @@ trait DocumentsControllerPostTrait
         try
         {
             $relations = [] ;
+            $payload   = null ;
             $method    = $request?->getMethod() ;
 
-            if ( $shapeError = $this->enforceI18nShape( $request , $response , $method , $init ) )
+            if ( $failure = $this->prepareWritePayload( $request , $response , $method , $init , $relations , $payload ) )
             {
-                return $shapeError ;
+                return $failure ;
             }
 
-            $payload    = $this->preparePayload( $request , $method , $init , $relations ) ;
-            $validation = $this->validator->validate( $payload , $this->prepareRules( $method ) ) ;
+            $raw = (bool) ( $init[ Arango::RAW ] ?? false ) ;
 
-            if( $validation->fails() )
+            $modelInit =
+            [
+                Arango::ARGS      => $args ,
+                Arango::DOC       => $payload ,
+                Arango::RELATIONS => $relations ,
+            ] ;
+
+            $this->beforeModelCall( $request , $modelInit ) ;
+
+            $document = $this->model->insert( $modelInit ) ;
+
+            $this->afterModelCall( $request , $modelInit , $document ) ;
+
+            // `INSERT … RETURN NEW` always yields the created document, so a null here
+            // is not a client mistake to translate into a 4xx — it means the write
+            // reported success and produced nothing, which is a server-side anomaly.
+            // The guard exists because the reload below dereferences it: `Error` is
+            // not an `Exception`, so `catch( Exception )` would let a fatal escape
+            // instead of the controller's own error envelope.
+            if( $document === null )
             {
-                return $this->getValidatorError( $request , $response , $validation ) ;
-            }
-            else
-            {
-                $raw = (bool) ( $init[ Arango::RAW ] ?? false ) ;
-
-                // Removes all relation keys (edges)
-                if( count( $relations ) > 0 )
-                {
-                    $payload = deleteKeyValue( $payload , array_keys( $relations ) ) ;
-                }
-
-                $modelInit =
-                [
-                    Arango::ARGS      => $args ,
-                    Arango::DOC       => $payload ,
-                    Arango::RELATIONS => $relations ,
-                ] ;
-
-                $this->beforeModelCall( $request , $modelInit ) ;
-
-                $document = $this->model->insert( $modelInit ) ;
-
-                $this->afterModelCall( $request , $modelInit , $document ) ;
-
-                // `INSERT … RETURN NEW` always yields the created document, so a null here
-                // is not a client mistake to translate into a 4xx — it means the write
-                // reported success and produced nothing, which is a server-side anomaly.
-                // The guard exists because the reload below dereferences it: `Error` is
-                // not an `Exception`, so `catch( Exception )` would let a fatal escape
-                // instead of the controller's own error envelope.
-                if( $document === null )
-                {
-                    return $this->fail
-                    (
-                        request  : $request ,
-                        response : $response ,
-                        code     : HttpStatusCode::INTERNAL_SERVER_ERROR ,
-                        details  : 'The document was not created'
-                    ) ;
-                }
-
-                return $this->success
+                return $this->fail
                 (
-                    $request ,
-                    $response ,
-                    $raw ? $document : $this->model->get
-                    ([
-                        Arango::ARGS  => $args ,
-                        Arango::VALUE => $document->_key ,
-                        Arango::LANG  => $this->prepareLang( $request , $init )  ,
-                        Arango::SKIN  => $this->prepareSkin( $request , $init , method : HttpMethod::post ) ,
-                    ])
-                );
+                    request  : $request ,
+                    response : $response ,
+                    code     : HttpStatusCode::INTERNAL_SERVER_ERROR ,
+                    details  : 'The document was not created'
+                ) ;
             }
+
+            return $this->success
+            (
+                $request ,
+                $response ,
+                $raw ? $document : $this->model->get
+                ([
+                    Arango::ARGS  => $args ,
+                    Arango::VALUE => $document->_key ,
+                    Arango::LANG  => $this->prepareLang( $request , $init )  ,
+                    Arango::SKIN  => $this->prepareSkin( $request , $init , method : HttpMethod::post ) ,
+                ])
+            );
         }
         catch( Exception $e )
         {
