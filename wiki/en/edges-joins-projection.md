@@ -14,8 +14,9 @@ This page describes the projection of the **relations**: following an edge, reso
 6. [Polymorphic join — target collection from a discriminator field](#polymorphic-join--target-collection-from-a-discriminator-field)
 7. [Polymorphic edge — target edge from a discriminator field](#polymorphic-edge--target-edge-from-a-discriminator-field)
 8. [Restricting the projected vertices — `AQL::WHERE` / `AQL::PRUNE`](#restricting-the-projected-vertices--aqlwhere)
-9. [Anchoring a relation elsewhere — `Arango::SOURCE`](#anchoring-a-relation-elsewhere--arangosource)
-10. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
+9. [The count always says what the list shows — `Filter::EDGES_COUNT`](#the-count-always-says-what-the-list-shows--filteredges_count)
+10. [Anchoring a relation elsewhere — `Arango::SOURCE`](#anchoring-a-relation-elsewhere--arangosource)
+11. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
 
 ## Composed projection — `AQL::FIELDS` + `AQL::EDGES` on the edge definition
 
@@ -737,6 +738,103 @@ Nothing to wire in the library. Two things to do in the consumer project:
 2. **Inject the bind** into `Arango::BINDS` when calling the model.
 
 > **The orphan bind is pruned on its own.** A relation is projected conditionally: a skin can drop it, and the declared bind would then be referenced nowhere — ArangoDB would reject the whole query. The execution layer removes that surplus automatically, deriving the prunable bind list from the model's declarations, **relation registries included**. Details in [Conditional fields](db/conditional-fields.md#skinned-field-the-orphan-bind-is-pruned-automatically).
+
+## The count always says what the list shows — `Filter::EDGES_COUNT`
+
+Beside a list of relations you often display a plain **number**: "this category has N sub-categories". That is a count (`Filter::EDGES_COUNT`), and its whole point is to know the size without loading the list.
+
+### How it is declared
+
+The count and the list talk about the **same link**, so they share the **same definition**. The registry has a shortcut for saying that: a string value dereferences to another entry.
+
+```php
+AQL::FIELDS =>
+[
+    'id'               => [] ,
+    'descendants'      => [ Field::FILTER => Filter::EDGES       ] ,  // the list
+    'descendantsCount' => [ Field::FILTER => Filter::EDGES_COUNT ] ,  // the number
+] ,
+
+AQL::EDGES =>
+[
+    'descendants' =>
+    [
+        AQL::MODEL     => 'NarrowerEdge' ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::MAX_DEPTH => 5 ,
+    ] ,
+    'descendantsCount' => 'descendants' ,   // ← the shortcut: THE SAME definition
+] ,
+```
+
+> Nothing forces the shortcut — you may declare a full definition under `descendantsCount`. But then the two entries are independent: keeping them consistent is on you, since the library cannot guess you meant them to describe the same link.
+
+### The rule, in one sentence
+
+**The count counts exactly the rows the list returns.** Everything the definition says about *which* vertices are walked — the depth, the row scope (`AQL::WHERE`), the stop condition (`AQL::PRUNE`), vertex uniqueness — is read the same way on both sides.
+
+That is not a free platitude: it was not true. Three declarations produced a number the rows contradicted, and **none of the three is visible in the AQL text** — they depend on how the server walks the graph. Hence live tests.
+
+### The three cases, measured
+
+Take this tree, with two deliberate subtleties: `d` is reachable by **two paths**, and the `a → c` link exists **twice**.
+
+```
+a ─┬─ b ── d
+   ├─ c ── d
+   └─ c          ← the same link, created twice
+```
+
+| Declaration | The list returns | The count used to say | It says |
+|---|---|---|---|
+| No depth, but a duplicated link | `[b, c]` → **2** | **3** — `c` counted twice | **2** ✅ |
+| `AQL::MAX_DEPTH => 5` | `[b, c, d]` → **3** | **2** — direct children only | **3** ✅ |
+| `MIN_DEPTH => 2` + `MAX_DEPTH => 5` | `[d]` → **1** | **2** — lower bound ignored | **1** ✅ |
+
+The three causes, one at a time:
+
+1. **The depth was not read.** The count emitted neither `AQL::MIN_DEPTH` nor `AQL::MAX_DEPTH`, so it stayed one level deep while the list descended five. On the tree above: `2` beside a list of `3`.
+2. **The traversal options were not the same.** The list has always walked with `uniqueVertices: global` — each vertex visited **once**, however many paths lead to it. The count emitted **no** options, so ArangoDB's default applied: one row per path. A duplicated link, or a diamond, made it over-count. This is the one case that **already affected depth-1 relations**.
+3. **The stop condition was not read** — a consequence of point 1. As soon as the count walks deep, it must stop where the list stops, or it counts the descent of a vertex the list cut off.
+
+> ⚠️ **The first two causes partly cancelled each other out, which is what made the bug hard to see.** On a ranged relation, missing the range *under*-counts while missing the options *over*-counts. Fixing the depth alone would have traded a wrong `2` for a wrong `6` (measured). Both were needed.
+
+### The emitted AQL
+
+```aql
+LET descendantsCount = (LENGTH(FOR descendantsCount_v IN 1..5 OUTBOUND doc term_narrower
+                                 PRUNE !(descendantsCount_v.id NOT IN @hidden)
+                                 OPTIONS { order: "bfs", uniqueVertices: "global" }
+                                 FILTER descendantsCount_v.id NOT IN @hidden
+                                 RETURN descendantsCount_v))
+```
+
+Word for word the list's traversal, minus the projection and the sort — neither of which changes *how many* rows there are.
+
+### What did not change
+
+| | |
+|---|---|
+| A definition **without** depth, scope or prune | Still counts the direct neighbours |
+| The inner loop variable | Still derived from the `LET` name (`<name>_v`), never `vertex` — otherwise it collides when the count is projected through a traversal |
+| Permissions | Unchanged: `Field::REQUIRES` on the count entry, or `AQL::REQUIRES` on the shared definition, decide **whether** the count is emitted |
+| The polymorphic count | Still unsupported (see above) |
+
+> **Only one thing moves in the AQL of an existing definition**: the traversal options now appear in the count. Concretely, a vertex reachable more than once is no longer counted more than once. A screen showing a number inflated by a duplicated link will now show the right one.
+
+> All three cases are verified **against a real server** (`EdgeCountAgreesWithListIntegrationTest`): the list and the count are produced by the real builders, executed in the same query, and compared against each other.
+
+### Under the hood: three shared doors
+
+So the divergence cannot come back, both builders read the definition through the **same** functions rather than each in its own way:
+
+| Door | What it reads |
+|---|---|
+| `resolveEdgeDepthRange()` | The `MIN_DEPTH` / `MAX_DEPTH` pair, **and its refusal rule** (`MIN_DEPTH` alone is forbidden) |
+| `resolveEdgeVertexScope()` | `AQL::WHERE` and `AQL::PRUNE`, compiled against the vertex variable it is handed |
+| `edgeTraversalOptions()` | The traversal options |
+
+Not cosmetic: the refusal rule, for instance, now holds on both sides — the count and the list can no longer disagree about what counts as a valid declaration.
 
 ## Anchoring a relation elsewhere — `Arango::SOURCE`
 

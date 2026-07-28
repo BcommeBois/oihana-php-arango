@@ -14,8 +14,9 @@ Cette page décrit la projection des **relations** : suivre une arête (edge), r
 6. [Jointure polymorphe — collection cible selon un champ discriminant](#jointure-polymorphe--collection-cible-selon-un-champ-discriminant)
 7. [Edge polymorphe — arête cible selon un champ discriminant](#edge-polymorphe--arête-cible-selon-un-champ-discriminant)
 8. [Restreindre les sommets projetés — `AQL::WHERE` / `AQL::PRUNE`](#restreindre-les-sommets-projetés--aqlwhere)
-9. [Ancrer une relation ailleurs — `Arango::SOURCE`](#ancrer-une-relation-ailleurs--arangosource)
-10. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+9. [Le compteur dit toujours la même chose que la liste — `Filter::EDGES_COUNT`](#le-compteur-dit-toujours-la-même-chose-que-la-liste--filteredges_count)
+10. [Ancrer une relation ailleurs — `Arango::SOURCE`](#ancrer-une-relation-ailleurs--arangosource)
+11. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
 
 ## Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge
 
@@ -737,6 +738,103 @@ Rien à câbler dans la lib. Deux choses à faire dans le projet consommateur :
 2. **Injecter le bind** dans `Arango::BINDS` à l'appel du modèle.
 
 > **Le bind orphelin est élagué tout seul.** Une relation est projetée conditionnellement : un skin peut l'écarter, et le bind déclaré ne serait alors référencé nulle part — ArangoDB rejetterait la requête entière. La couche d'exécution retire ce surplus automatiquement, en dérivant la liste des binds élaguables des déclarations du modèle, **registres de relations compris**. Détail dans [Champs conditionnels](db/conditional-fields.md#champ-skinné--le-bind-orphelin-est-élagué-automatiquement).
+
+## Le compteur dit toujours la même chose que la liste — `Filter::EDGES_COUNT`
+
+À côté d'une liste de relations, on affiche souvent un simple **nombre** : « cette catégorie a N sous-catégories ». C'est un compteur (`Filter::EDGES_COUNT`), et son intérêt est de ne pas charger la liste pour connaître sa taille.
+
+### Comment on le déclare
+
+Le compteur et la liste parlent du **même lien**, donc ils partagent la **même définition**. Le registre a un raccourci pour le dire : une valeur de type chaîne renvoie vers une autre entrée.
+
+```php
+AQL::FIELDS =>
+[
+    'id'               => [] ,
+    'descendants'      => [ Field::FILTER => Filter::EDGES       ] ,  // la liste
+    'descendantsCount' => [ Field::FILTER => Filter::EDGES_COUNT ] ,  // le nombre
+] ,
+
+AQL::EDGES =>
+[
+    'descendants' =>
+    [
+        AQL::MODEL     => 'NarrowerEdge' ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::MAX_DEPTH => 5 ,
+    ] ,
+    'descendantsCount' => 'descendants' ,   // ← raccourci : LA MÊME définition
+] ,
+```
+
+> Rien n'oblige à passer par le raccourci — on peut redéclarer une définition complète sous `descendantsCount`. Mais alors les deux entrées sont indépendantes : c'est à toi de les garder cohérentes, la lib ne peut pas deviner que tu voulais qu'elles parlent du même lien.
+
+### La règle, en une phrase
+
+**Le compteur compte exactement les lignes que la liste renvoie.** Tout ce que la définition dit sur *quels* sommets sont parcourus — la profondeur, le périmètre (`AQL::WHERE`), l'arrêt (`AQL::PRUNE`), l'unicité des sommets — est lu de la même façon des deux côtés.
+
+Ce n'est pas une évidence gratuite : ça ne l'était pas. Trois déclarations donnaient un nombre que les lignes contredisaient, et **aucune des trois ne se voit en lisant l'AQL** — elles dépendent de la façon dont le serveur parcourt le graphe. D'où des tests sur vraie base.
+
+### Les trois cas, mesurés
+
+Prenons cet arbre, avec deux subtilités volontaires : `d` est atteignable par **deux chemins**, et le lien `a → c` existe **en double**.
+
+```
+a ─┬─ b ── d
+   ├─ c ── d
+   └─ c          ← le même lien, créé deux fois
+```
+
+| Déclaration | La liste renvoie | Le compteur disait | Il dit |
+|---|---|---|---|
+| Aucune profondeur, mais un lien en double | `[b, c]` → **2** | **3** — `c` compté deux fois | **2** ✅ |
+| `AQL::MAX_DEPTH => 5` | `[b, c, d]` → **3** | **2** — les enfants directs seulement | **3** ✅ |
+| `MIN_DEPTH => 2` + `MAX_DEPTH => 5` | `[d]` → **1** | **2** — la borne basse ignorée | **1** ✅ |
+
+Les trois causes, une par une :
+
+1. **La profondeur n'était pas lue.** Le compteur n'émettait ni `AQL::MIN_DEPTH` ni `AQL::MAX_DEPTH`, donc il restait à un seul niveau pendant que la liste descendait sur cinq. Sur l'arbre ci-dessus : `2` contre une liste de `3`.
+2. **Les options de parcours n'étaient pas les mêmes.** La liste a toujours parcouru avec `uniqueVertices: global` — chaque sommet visité **une seule fois**, quel que soit le nombre de chemins qui y mènent. Le compteur n'émettait **aucune** option, donc le défaut d'ArangoDB s'appliquait : un sommet par chemin. Un lien en double, ou un losange, faisait sur-compter. C'est le seul cas qui **touchait déjà les relations à un niveau**.
+3. **L'arrêt de parcours n'était pas lu** — conséquence du point 1. Dès que le compteur descend en profondeur, il doit s'arrêter là où la liste s'arrête, sinon il compte la descendance d'un sommet que la liste a coupé.
+
+> ⚠️ **Les deux premières causes se compensaient partiellement, et c'est ce qui rendait le bug difficile à voir.** Sur une relation à profondeur, oublier la plage fait *sous*-compter et oublier les options fait *sur*-compter. Corriger la profondeur seule aurait échangé un `2` faux contre un `6` faux (mesuré). Il fallait les deux.
+
+### Le AQL produit
+
+```aql
+LET descendantsCount = (LENGTH(FOR descendantsCount_v IN 1..5 OUTBOUND doc term_narrower
+                                 PRUNE !(descendantsCount_v.id NOT IN @hidden)
+                                 OPTIONS { order: "bfs", uniqueVertices: "global" }
+                                 FILTER descendantsCount_v.id NOT IN @hidden
+                                 RETURN descendantsCount_v))
+```
+
+C'est mot pour mot la traversée de la liste, sans la projection ni le tri — qui ne changent pas *combien* de lignes il y a.
+
+### Ce qui n'a pas changé
+
+| | |
+|---|---|
+| Une définition **sans** profondeur, périmètre ni arrêt | Compte toujours les voisins directs |
+| La variable de boucle interne | Toujours dérivée du nom du `LET` (`<nom>_v`), jamais `vertex` — sinon collision quand le compteur est projeté à travers une traversée |
+| Les permissions | Inchangées : `Field::REQUIRES` sur l'entrée du compteur, ou `AQL::REQUIRES` sur la définition partagée, décident **si** le compteur est émis |
+| Le compteur polymorphe | Toujours non supporté (voir plus haut) |
+
+> **Une seule chose bouge dans l'AQL d'une définition existante** : les options de parcours apparaissent maintenant dans le compteur. Concrètement, un sommet atteignable plusieurs fois n'est plus compté plusieurs fois. Si un écran affichait un nombre gonflé par un lien en double, il affichera désormais le bon.
+
+> Les trois cas sont vérifiés **sur vraie base** (`EdgeCountAgreesWithListIntegrationTest`) : la liste et le compteur sont construits par les vrais constructeurs, exécutés dans la même requête, et comparés l'un à l'autre.
+
+### Sous le capot : trois portes communes
+
+Pour que la divergence ne puisse pas revenir, les deux constructeurs lisent la définition à travers les **mêmes** fonctions plutôt que chacun à sa façon :
+
+| Porte | Ce qu'elle lit |
+|---|---|
+| `resolveEdgeDepthRange()` | La plage `MIN_DEPTH` / `MAX_DEPTH`, **et sa règle de refus** (`MIN_DEPTH` seul est interdit) |
+| `resolveEdgeVertexScope()` | `AQL::WHERE` et `AQL::PRUNE`, compilés contre la variable de sommet qu'on lui passe |
+| `edgeTraversalOptions()` | Les options de parcours |
+
+Ce n'est pas de la cosmétique : la règle de refus, par exemple, vaut maintenant des deux côtés — le compteur et la liste ne peuvent plus être en désaccord sur ce qui constitue une déclaration valide.
 
 ## Ancrer une relation ailleurs — `Arango::SOURCE`
 
