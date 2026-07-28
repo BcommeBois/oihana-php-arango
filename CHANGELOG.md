@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The edge existence probe ignored the caller's `AQL::FILTER`, so it could not be narrowed — and raised when someone tried.** `deleteEdge()` assembles its `FILTER` from `[ ...$init[ AQL::FILTER ] , <the vertex equalities> ]`; `countEdgesQuery()`, which backs `existEdge()` and `countEdges()`, kept only the equalities while still seeding its bind vars from the init. A caller narrowing both calls with one predicate therefore got a query that declared a bind it never used, which the server refuses:
+  ```
+  existEdge  : HttpException -> bind parameter '__scope' was not declared in the query
+  deleteEdge : OK -> null
+  ```
+  - **The asymmetry was worse than the error.** Had the bind gone unnoticed, the probe would have answered "the edge exists" while the deletion it gates removed nothing — a `200` with an empty result where an unknown edge answers `404`, which is exactly the existence oracle a scope exists to close. The two now read the same init and cannot disagree.
+  - The caller predicates come **first**, then the `_from` / `_to` equalities, matching how `deleteEdge()` already ordered them. With no `AQL::FILTER` in the init the emitted AQL is unchanged.
+  - **Tests:** an `EdgesCountTraitTest` case pinning the inlined predicate and its bind in the executed query. Measured live with a disposable probe before and after.
+
 - **`exist()` dropped the bind variables its own conditions referenced, so a scoped existence probe raised instead of answering.** `buildExistQuery()` inlines `Arango::CONDITIONS` into the `FILTER` — that is how a controller gates a write behind a scoped probe — but `exist()` started its bind vars from an empty array where `list()`, `count()` and `delete()` all seed theirs from the init. The predicate reached the query, its value never did, and the server refused the whole thing:
   ```
   FILTER doc._key IN [@q_787547] && doc.__scope == @__scope     -- the condition arrives

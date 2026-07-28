@@ -40,6 +40,34 @@ final class EdgesCountTraitTest extends TestCase
         ) ;
     }
 
+    /**
+     * A caller predicate joins the vertex equalities, the way `deleteEdge()`
+     * assembles its own `FILTER` — so a count (and the `existEdge()` it backs) can
+     * be narrowed by the same init as the deletion it gates, and the two agree on
+     * what exists. Dropping it also left `AQL::BINDS` declared but unused, which
+     * the server refuses outright: measured live as
+     * `bind parameter '__scope' was not declared in the query`.
+     */
+    public function testCountEdgesInlinesTheCallerFilterWithItsBinds() :void
+    {
+        $edges = new MockEdges( 'follows' ) ;
+        $edges->firstResult = 0 ;
+
+        $edges->countEdges( 'users/1' , 'roles/2' ,
+        [
+            AQL::FILTER => [ 'doc.__scope == @__scope' ] ,
+            AQL::BINDS  => [ '__scope' => 'visible' ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'RETURN LENGTH(FOR doc IN @@collection FILTER doc.__scope == @__scope && doc._from == @from && doc._to == @to RETURN 1)' ,
+            $edges->lastQuery ,
+        ) ;
+
+        $this->assertSame( 'visible' , $edges->lastBinds[ '__scope' ] ?? null ) ;
+    }
+
     public function testCountEdgesFromOnly() :void
     {
         $edges = new MockEdges( 'follows' ) ;

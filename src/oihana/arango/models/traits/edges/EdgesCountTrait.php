@@ -293,7 +293,13 @@ trait EdgesCountTrait
             length
             ([
                 aqlFor    ( [ ...$init , AQL::IN => $this->bindCollection( $binds , $init ) ] ) ,
-                aqlFilter ( $this->prepareVertices( $from , $to , $binds , $init ) ) ,
+                // The caller predicates come FIRST, then the vertex equalities, like
+                // deleteEdge() assembles its own FILTER — so a count and the deletion
+                // it gates can be narrowed by the same init and agree on what exists.
+                // Dropping them here also left their AQL::BINDS declared but unused,
+                // which the server refuses outright ("bind parameter was not declared
+                // in the query").
+                aqlFilter ( [ ...( $init[ AQL::FILTER ] ?? [] ) , $this->prepareVertices( $from , $to , $binds , $init ) ] ) ,
                 aqlReturn ( 1 ) ,
             ])
         ]) ;
