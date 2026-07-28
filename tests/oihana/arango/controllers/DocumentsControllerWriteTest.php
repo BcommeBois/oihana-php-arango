@@ -302,6 +302,74 @@ class DocumentsControllerWriteTest extends ControllerTestCase
     }
 
     /**
+     * The sibling of the `delete()` case below, and the reason it is worth fixing
+     * even though **no answer changes**: an out-of-scope `PATCH` used to pass the
+     * probe, run a write query that matched nothing, and end on the same 404 through
+     * the null guard. The status was right by accident; the write ran for nothing,
+     * and the two adjacent verbs were wired opposite ways.
+     */
+    public function testUpdateScopesItsExistenceProbe() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeScopedDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $controller->update( $request , null , [ Arango::ID => 'k1' ] ) ;
+
+        $this->assertSame
+        (
+            [ ScopedDocumentsController::CONDITION ] ,
+            $model->initOf( 'exist' )[ Arango::CONDITIONS ] ?? null ,
+            'the existence probe runs outside the scope'
+        ) ;
+    }
+
+    /**
+     * The probe gets its **own** init: the write's does not exist yet when the probe
+     * runs, and a hook reading the submitted payload must still find it. So the
+     * write keeps both its own hook and its `Arango::DOC`.
+     */
+    public function testUpdateKeepsThePayloadVisibleToTheWriteHook() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeScopedDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $controller->update( $request , null , [ Arango::ID => 'k1' ] ) ;
+
+        $init = $model->initOf( 'update' ) ;
+
+        $this->assertSame( [ 'name' => 'X' ]                        , $init[ Arango::DOC        ] ?? null ) ;
+        $this->assertSame( [ ScopedDocumentsController::CONDITION ] , $init[ Arango::CONDITIONS ] ?? null ) ;
+    }
+
+    /**
+     * The scope is posed **once per init**, not accumulated: the probe and the write
+     * each carry a single copy of the consumer predicate. A hook appending to a
+     * shared array would have doubled it here.
+     */
+    public function testUpdateDoesNotAccumulateTheScopeAcrossTheTwoHookCalls() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeScopedDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $controller->update( $request , null , [ Arango::ID => 'k1' ] ) ;
+
+        $this->assertCount( 1 , $model->initOf( 'exist'  )[ Arango::CONDITIONS ] ?? [] ) ;
+        $this->assertCount( 1 , $model->initOf( 'update' )[ Arango::CONDITIONS ] ?? [] ) ;
+    }
+
+    /**
      * The probe is the gate, so it must see the scope. Ran before the hook, it
      * answered "it exists" for a document the scope hides; the scoped `REMOVE` then
      * matched nothing and the handler reported success with an empty result — a 200

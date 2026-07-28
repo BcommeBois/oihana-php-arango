@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`update()` gates its write behind a probe that now sees the scope too.** Its existence probe ran before `beforeModelCall()`, exactly like `delete()`'s did — but with a different outcome: the scoped write matched nothing, `RETURN NEW` yielded null, and the guard below translated that null into the very same 404 the probe would have produced. **No answer ever differed**, which is why this is a consistency fix and not an oracle: what actually happened was a write query running for a document the caller may not touch, and two adjacent verbs wired opposite ways — `PropertyController::patch()` hooks its probe, `DocumentsController::update()` did not.
+  - **The probe gets its own init**, hooked separately, rather than sharing the write's: the write init does not exist yet at that point (the payload is assembled afterwards) and a hook reading `Arango::DOC` must still find it. This is `PropertyController::patch()`'s shape, now on both surfaces.
+  - **Tests:** 3 `DocumentsControllerWriteTest` cases — the scope reaching the probe, the payload still visible to the write hook, and the predicate posed **once per init** rather than accumulated across the two hook calls. Verified red before green on the first and third. No live case: since no answer changes, one would pass identically before and after and prove nothing.
+
 - **A scoped `delete()` could be used as an existence oracle: a hidden document answered `200`, an unknown one `404`.** The probe that gates the deletion ran **before** `beforeModelCall()`, so it never saw the scope a consumer poses there. It reported "it exists", the scoped `REMOVE` then matched nothing, and the handler reported success with an empty result — while an identifier that truly does not exist was refused by the same probe with a 404. Measured, on a real server, before the fix:
   ```
   DELETE /documents/hidden   -> 200  {"status":"success","result":null}

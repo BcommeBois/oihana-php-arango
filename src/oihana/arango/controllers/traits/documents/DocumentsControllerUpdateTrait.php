@@ -83,7 +83,19 @@ trait DocumentsControllerUpdateTrait
             // The route args are posed once, up-front, so the existence probe sees them too - the same way delete() does.
             $init = [ ...$init , Arango::ARGS => $args ] ;
 
-            if( !$this->model->exist( [ ...$init , Arango::VALUE => $value ] ) )
+            // The probe gets its OWN hooked init, like PropertyController::patch() —
+            // not the write's, which does not exist yet: the payload is assembled
+            // below and a hook reading it must still see it. Ran unhooked, the probe
+            // let an out-of-scope document through and the scoped write then matched
+            // nothing, ending on the same 404 through the null guard further down —
+            // so the answer never differed, but a write query ran for a document the
+            // caller may not touch, and the two sibling verbs were wired opposite
+            // ways for no reason.
+            $existInit = [ ...$init , Arango::VALUE => $value ] ;
+
+            $this->beforeModelCall( $request , $existInit ) ;
+
+            if( !$this->model->exist( $existInit ) )
             {
                 return $this->fail
                 (
