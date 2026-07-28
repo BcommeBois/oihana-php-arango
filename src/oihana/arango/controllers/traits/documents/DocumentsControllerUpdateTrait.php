@@ -44,6 +44,7 @@ trait DocumentsControllerUpdateTrait
         PayloadsTrait ,
         PrepareLang ,
         PrepareSkin ,
+        ReloadWrittenDocumentTrait ,
         StatusTrait ,
         ValidatorTrait ;
 
@@ -116,7 +117,12 @@ trait DocumentsControllerUpdateTrait
                 return $failure ;
             }
 
-            $init =
+            // The write gets its own named init, like the probe above — `$init` stays
+            // the caller's, pristine. It used to be reassigned and then handed to the
+            // hook BY REFERENCE, so it came out carrying the consumer predicate; the
+            // reload below, seeded from it and hooked in turn, then posed that
+            // predicate twice.
+            $writeInit =
             [
                 ...$init ,
                 Arango::DOC       => $payload ,
@@ -124,13 +130,13 @@ trait DocumentsControllerUpdateTrait
                 Arango::VALUE     => $value ,
             ] ;
 
-            $this->beforeModelCall( $request , $init ) ;
+            $this->beforeModelCall( $request , $writeInit ) ;
 
             $document = $method == HttpMethod::PATCH
-                      ? $this->model->update  ( $init )   // PATCH -> update
-                      : $this->model->replace ( $init ) ; // PUT   -> replace
+                      ? $this->model->update  ( $writeInit )   // PATCH -> update
+                      : $this->model->replace ( $writeInit ) ; // PUT   -> replace
 
-            $this->afterModelCall( $request , $init , $document ) ;
+            $this->afterModelCall( $request , $writeInit , $document ) ;
 
             // `UPDATE`/`REPLACE … RETURN NEW` yields a row only when its FILTER
             // matched, so a null document means the target was gone by the time the
@@ -157,13 +163,7 @@ trait DocumentsControllerUpdateTrait
             (
                 $request ,
                 $response ,
-                $raw ? $document : $this->model->get
-                ([
-                    Arango::ARGS  => $args ,
-                    Arango::VALUE => $document->_key ,
-                    Arango::LANG  => $this->prepareLang( $request , $init )  ,
-                    Arango::SKIN  => $this->prepareSkin( $request , $init , method: strtolower( $method ) ) ,
-                ])
+                $raw ? $document : $this->reload( $request , $args , $init , $document , strtolower( $method ) )
             );
         }
         catch( Exception $e )

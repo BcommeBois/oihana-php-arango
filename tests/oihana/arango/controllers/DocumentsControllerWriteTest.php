@@ -2,6 +2,8 @@
 
 namespace tests\oihana\arango\controllers;
 
+use Closure;
+
 use oihana\arango\controllers\DocumentsController;
 use oihana\arango\controllers\enums\AQLType;
 use oihana\arango\enums\Arango;
@@ -11,6 +13,9 @@ use oihana\enums\http\HttpStatusCode;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
+use Psr\Http\Message\ServerRequestInterface as Request;
+
+use tests\oihana\arango\controllers\mocks\GatedDocumentsController;
 use tests\oihana\arango\controllers\mocks\RecordingDocuments;
 use tests\oihana\arango\controllers\mocks\ScopedDocumentsController;
 use tests\oihana\arango\controllers\mocks\ThrowingDocuments;
@@ -299,6 +304,110 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $this->assertSame( [ 'exist' , 'delete' ] , $model->methods() ) ;
         $this->assertSame( $args , $model->initOf( 'exist'  )[ Arango::ARGS ] ?? null ) ;
         $this->assertSame( $args , $model->initOf( 'delete' )[ Arango::ARGS ] ?? null ) ;
+    }
+
+    /**
+     * A write does not return what it wrote: it re-reads the document. That reload
+     * is a **read**, and it used to be built by hand outside the hooks — so the
+     * request authorizer never reached it, `isAuthorized()` fell open, and a field
+     * hidden by `Field::REQUIRES` came back in the write response. Measured live:
+     * `GET -> {"name":"public"}` but `PATCH -> {"name":"patched","secret":"CLASSIFIED"}`.
+     */
+    public function testTheReloadOfAPostIsGatedLikeARead() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeGatedDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'POST' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $controller->post( $request , null , [] ) ;
+
+        $this->assertInstanceOf( Closure::class , $model->initOf( 'get' )[ Arango::AUTHORIZER ] ?? null , 'the reload runs ungated' ) ;
+    }
+
+    public function testTheReloadOfAnUpdateIsGatedLikeARead() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeGatedDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $controller->update( $request , null , [ Arango::ID => 'k1' ] ) ;
+
+        $this->assertInstanceOf( Closure::class , $model->initOf( 'get' )[ Arango::AUTHORIZER ] ?? null , 'the reload runs ungated' ) ;
+    }
+
+    /**
+     * The reload also carries the caller conditions, so the two surfaces have the
+     * same shape — `PropertyController::reloadProperty()` already did.
+     */
+    public function testTheReloadCarriesTheCallerConditions() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeScopedDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $controller->update( $request , null , [ Arango::ID => 'k1' ] ) ;
+
+        $this->assertSame( [ ScopedDocumentsController::CONDITION ] , $model->initOf( 'get' )[ Arango::CONDITIONS ] ?? null ) ;
+    }
+
+    /**
+     * The reload runs `afterModelCall()` too, so a consumer gets the **last word**
+     * on the write response — masking, decorating, whatever a read hook does. It is
+     * the reason the reload goes through the hooks rather than merely receiving an
+     * authorizer.
+     *
+     * The double transforms the **reload only**: an init carrying `Arango::DOC` is
+     * the write, and replacing its result would leave the `_key` the reload needs
+     * unreachable — which is itself the shape a real consumer hook must respect.
+     */
+    public function testTheAfterHookCanTransformTheReloadedDocument() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' , 'name' => 'stored' ] ;
+
+        $controller = new class( ...$this->controllerArgsOf( $model ) ) extends DocumentsController
+        {
+            protected function afterModelCall( ?Request $request , array &$init , mixed &$result ) :void
+            {
+                if ( !array_key_exists( Arango::DOC , $init ) && is_object( $result ) )
+                {
+                    $result->name = 'decorated' ;
+                }
+            }
+        } ;
+
+        $request = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $this->assertSame( 'decorated' , $controller->update( $request , null , [ Arango::ID => 'k1' ] )?->name ) ;
+    }
+
+    /**
+     * `Arango::RAW` skips the reload entirely and hands back the write's own
+     * result — so **no projection applies to it**, and no `get()` runs at all. The
+     * boundary is pinned rather than discovered: raw mode is incompatible with a
+     * projection gate.
+     */
+    public function testTheRawModeSkipsTheReloadAltogether() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeGatedDocumentsController( $model ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'name' => 'X' ] ) ;
+
+        $controller->update( $request , null , [ Arango::ID => 'k1' ] , [ Arango::RAW => true ] ) ;
+
+        $this->assertNotContains( 'get' , $model->methods() ) ;
     }
 
     /**

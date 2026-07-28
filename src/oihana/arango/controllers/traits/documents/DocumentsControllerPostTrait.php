@@ -27,6 +27,7 @@ trait DocumentsControllerPostTrait
         ModelTrait ,
         PrepareLang ,
         PrepareSkin ,
+        ReloadWrittenDocumentTrait ,
         StatusTrait ,
         ValidatorTrait ;
 
@@ -86,18 +87,7 @@ trait DocumentsControllerPostTrait
                 ) ;
             }
 
-            return $this->success
-            (
-                $request ,
-                $response ,
-                $raw ? $document : $this->model->get
-                ([
-                    Arango::ARGS  => $args ,
-                    Arango::VALUE => $document->_key ,
-                    Arango::LANG  => $this->prepareLang( $request , $init )  ,
-                    Arango::SKIN  => $this->prepareSkin( $request , $init , method : HttpMethod::post ) ,
-                ])
-            );
+            return $this->success( $request , $response , $raw ? $document : $this->reload( $request , $args , $init , $document , HttpMethod::post ) );
         }
         catch( Exception $e )
         {

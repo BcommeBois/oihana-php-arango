@@ -25,6 +25,7 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 
 use PHPUnit\Framework\TestCase;
 
+use tests\oihana\arango\controllers\mocks\GatedDocumentsController;
 use tests\oihana\arango\controllers\mocks\ScopedDocumentsController;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
@@ -138,6 +139,40 @@ abstract class ControllerTestCase extends TestCase
     protected function makePropertyController( MockDocuments $model , array $init = [] ) :PropertyController
     {
         return new PropertyController( ...$this->controllerArgs( $model , $init ) ) ;
+    }
+
+    /**
+     * The `[ container , init ]` pair of a controller over the given model double —
+     * for a test that needs an anonymous subclass rather than one of the named
+     * doubles.
+     *
+     * @param object $model The model double.
+     * @param array  $init  Extra init overrides merged into the defaults.
+     *
+     * @return array{0:Container,1:array}
+     */
+    protected function controllerArgsOf( object $model , array $init = [] ) :array
+    {
+        return $this->controllerArgs( $model , $init ) ;
+    }
+
+    /**
+     * Builds a {@see GatedDocumentsController} — the consumer double whose
+     * authorizer refuses every permission — backed by the given model double.
+     *
+     * @param MockDocuments $model The model double.
+     * @param array $init Extra init overrides merged into the defaults.
+     *
+     * @return GatedDocumentsController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    protected function makeGatedDocumentsController( MockDocuments $model , array $init = [] ) :GatedDocumentsController
+    {
+        return new GatedDocumentsController( ...$this->controllerArgs( $model , $init ) ) ;
     }
 
     /**
