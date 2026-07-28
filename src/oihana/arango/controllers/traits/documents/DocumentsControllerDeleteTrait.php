@@ -121,6 +121,14 @@ trait DocumentsControllerDeleteTrait
 
             $init = [ ...$init , Arango::ARGS => $args , Arango::VALUE => $ids ] ;
 
+            // Posed BEFORE the probe, so the probe and the deletion read the same
+            // scope. Ran after it, the probe answered "it exists" for a document the
+            // scope hides, the scoped REMOVE then matched nothing, and the handler
+            // reported success with an empty result — a 200 where an unknown id
+            // answers 404, which tells a caller which of the two it hit. The probe is
+            // now the single gate: out of scope reads as absent, word for word.
+            $this->beforeModelCall( $request , $init ) ;
+
             $exist = $init[ Arango::EXIST ] ?? false ;
             if( !$exist && !$this->model->exist( $init ) )
             {
@@ -138,8 +146,8 @@ trait DocumentsControllerDeleteTrait
                 ) ;
             }
 
-            $this->beforeModelCall( $request , $init ) ;
             $result = $this->model->delete( $init ) ;
+
             $this->afterModelCall( $request , $init , $result ) ;
 
             return $this->success

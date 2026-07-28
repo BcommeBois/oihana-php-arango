@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A scoped `delete()` could be used as an existence oracle: a hidden document answered `200`, an unknown one `404`.** The probe that gates the deletion ran **before** `beforeModelCall()`, so it never saw the scope a consumer poses there. It reported "it exists", the scoped `REMOVE` then matched nothing, and the handler reported success with an empty result — while an identifier that truly does not exist was refused by the same probe with a 404. Measured, on a real server, before the fix:
+  ```
+  DELETE /documents/hidden   -> 200  {"status":"success","result":null}
+  DELETE /documents/unknown  -> 404  {"details":"No document found with the id: unknown"}
+  reste en base : hidden
+  ```
+  Looping over identifiers therefore sorted the world in two — what exists and is hidden, versus what does not exist — which is the inference a scope exists to prevent. The hook now runs **before** the probe, so the probe is the single gate and an out-of-scope document reads as absent, word for word.
+  - **No data was ever at risk**, and the last line above says so: `delete()` has honoured `Arango::CONDITIONS` since the beginning, so the hidden document survived. What leaked was its *existence*, not its content and not its integrity.
+  - **`patch()` never had the flaw**, but by accident rather than by design: its probe is just as blind, except the scoped write returns null and a guard translates that null into the same 404. `delete()` had no such guard — it read "nothing removed" as success.
+  - **A batch holding a hidden id is refused whole**, exactly like a batch holding an unknown one, so the two stay indistinguishable there too.
+  - **`Arango::EXIST` still skips the probe** — a server-side opt-out declared in the route, never a client parameter. The deletion stays scoped, so the document is still safe, but the refusal is gone and an out-of-scope id answers 200 with an empty result. Pinned by a test so the trade-off is visible rather than discovered.
+  - **Tests:** new `ScopedDeleteIntegrationTest` (5 live cases: the two refusals compared **byte for byte**, the hidden document surviving, a visible one still deleted, the batch, and a plain controller unchanged), plus 2 `DocumentsControllerWriteTest` cases pinning the scope on both calls and the `EXIST` opt-out. The live class re-seeds before **each** case — the shared per-class database had one test asserting on what its predecessor deleted, and said so.
+
 - **The edge existence probe ignored the caller's `AQL::FILTER`, so it could not be narrowed — and raised when someone tried.** `deleteEdge()` assembles its `FILTER` from `[ ...$init[ AQL::FILTER ] , <the vertex equalities> ]`; `countEdgesQuery()`, which backs `existEdge()` and `countEdges()`, kept only the equalities while still seeding its bind vars from the init. A caller narrowing both calls with one predicate therefore got a query that declared a bind it never used, which the server refuses:
   ```
   existEdge  : HttpException -> bind parameter '__scope' was not declared in the query

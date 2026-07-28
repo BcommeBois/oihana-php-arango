@@ -25,6 +25,7 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 
 use PHPUnit\Framework\TestCase;
 
+use tests\oihana\arango\controllers\mocks\ScopedDocumentsController;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
 
@@ -137,6 +138,25 @@ abstract class ControllerTestCase extends TestCase
     protected function makePropertyController( MockDocuments $model , array $init = [] ) :PropertyController
     {
         return new PropertyController( ...$this->controllerArgs( $model , $init ) ) ;
+    }
+
+    /**
+     * Builds a {@see ScopedDocumentsController} — the consumer double posing a
+     * request-scoped predicate — backed by the given model double.
+     *
+     * @param MockDocuments $model The model double.
+     * @param array $init Extra init overrides merged into the defaults.
+     *
+     * @return ScopedDocumentsController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    protected function makeScopedDocumentsController( MockDocuments $model , array $init = [] ) :ScopedDocumentsController
+    {
+        return new ScopedDocumentsController( ...$this->controllerArgs( $model , $init ) ) ;
     }
 
     /**

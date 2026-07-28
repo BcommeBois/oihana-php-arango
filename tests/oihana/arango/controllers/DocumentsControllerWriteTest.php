@@ -12,6 +12,7 @@ use oihana\enums\http\HttpStatusCode;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 use tests\oihana\arango\controllers\mocks\RecordingDocuments;
+use tests\oihana\arango\controllers\mocks\ScopedDocumentsController;
 use tests\oihana\arango\controllers\mocks\ThrowingDocuments;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 
@@ -298,6 +299,51 @@ class DocumentsControllerWriteTest extends ControllerTestCase
         $this->assertSame( [ 'exist' , 'delete' ] , $model->methods() ) ;
         $this->assertSame( $args , $model->initOf( 'exist'  )[ Arango::ARGS ] ?? null ) ;
         $this->assertSame( $args , $model->initOf( 'delete' )[ Arango::ARGS ] ?? null ) ;
+    }
+
+    /**
+     * The probe is the gate, so it must see the scope. Ran before the hook, it
+     * answered "it exists" for a document the scope hides; the scoped `REMOVE` then
+     * matched nothing and the handler reported success with an empty result — a 200
+     * where an unknown id answers 404, which tells a caller which of the two it hit.
+     */
+    public function testDeleteScopesTheExistenceProbeAndTheDeletionAlike() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->firstResult  = 1 ;
+        $model->objectResult = (object) [ '_key' => 'k1' ] ;
+
+        $controller = $this->makeScopedDocumentsController( $model ) ;
+
+        $controller->delete( $this->makeRequest( [] , 'DELETE' ) , null , [ Arango::ID => 'k1' ] ) ;
+
+        foreach ( [ 'exist' , 'delete' ] as $call )
+        {
+            $init = $model->initOf( $call ) ;
+
+            $this->assertSame( [ ScopedDocumentsController::CONDITION ] , $init[ Arango::CONDITIONS ] ?? null , $call . ' runs outside the scope' ) ;
+            $this->assertSame( ScopedDocumentsController::BINDS         , $init[ Arango::BINDS      ] ?? null ) ;
+        }
+    }
+
+    /**
+     * `Arango::EXIST` skips the probe entirely — a server-side opt-out declared in
+     * the route, never a client parameter. The deletion itself stays scoped, so the
+     * document is still safe; but the refusal it would have produced is gone, and
+     * an out-of-scope id then answers 200 with an empty result. Pinned so the
+     * trade-off is visible rather than discovered.
+     */
+    public function testTheExistOptOutSkipsTheProbeButNotTheScope() :void
+    {
+        $model = new RecordingDocuments( 'users' ) ;
+        $model->objectResult = null ; // the scoped REMOVE matches nothing
+
+        $controller = $this->makeScopedDocumentsController( $model ) ;
+
+        $controller->delete( $this->makeRequest( [] , 'DELETE' ) , null , [ Arango::ID => 'k1' ] , [ Arango::EXIST => true ] ) ;
+
+        $this->assertSame( [ 'delete' ] , $model->methods() , 'the probe ran despite the opt-out' ) ;
+        $this->assertSame( [ ScopedDocumentsController::CONDITION ] , $model->initOf( 'delete' )[ Arango::CONDITIONS ] ?? null ) ;
     }
 
     public function testDeleteByQueryParamAlsoPassesTheRouteArgs() :void
