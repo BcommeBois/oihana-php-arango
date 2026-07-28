@@ -363,6 +363,45 @@ return
 ] ;
 ```
 
+### Périmétrer les liens
+
+Ici un `POST` **crée** un lien et un `DELETE` en retire un : un contrôleur d'arêtes sans périmètre ne fait pas que fuir, il laisse un appelant rattacher un document que son périmètre masque. Ses trois refus répondaient aussi comme un oracle — `404` source, `404` cible, `409` l'arête existe disent à l'appelant ce qu'un `GET` périmétré lui refuse.
+
+Le contrôleur porte le même **siège d'autorisation** que les autres, avec une différence qui compte : il parle à **trois** modèles — les sommets source, les sommets cible et les arêtes — et un prédicat écrit pour l'un n'a aucun sens sur les autres. Chaque appel du hook porte donc `EdgesController::CALL`, valué `FROM`, `TO` ou `EDGES` :
+
+```php
+final class ScopedLinksController extends EdgesController
+{
+    protected function beforeModelCall( ?Request $request , array &$init ) : void
+    {
+        match ( $init[ self::CALL ] ?? null )
+        {
+            self::FROM , self::TO => $this->narrowVertex( $init ) ,  // Arango::CONDITIONS + Arango::BINDS
+            self::EDGES           => $this->narrowEdge  ( $init ) ,  // AQL::FILTER + AQL::BINDS
+            default               => null ,
+        } ;
+
+        parent::beforeModelCall( $request , $init ) ; // conserve l'autorisateur
+    }
+}
+```
+
+⚠ **Les deux moitiés ne lisent pas la même clé.** Une sonde de sommet est un `Documents::exist()` et lit `Arango::CONDITIONS` ; la sonde d'arête et la suppression sont des appels `Edges` et lisent `AQL::FILTER`. Se tromper de clé est silencieux — le périmètre ne s'applique simplement jamais.
+
+| Appel | Encadré | Ce que le périmètre y fait |
+|---|---|---|
+| la sonde source (`CALL = FROM`) | ✅ | une source masquée se lit comme absente : 404, et aucun lien n'est créé |
+| la sonde cible (`CALL = TO`) | ✅ | idem à l'autre bout |
+| `existEdge()` puis `deleteEdge()` (`CALL = EDGES`) | ✅ | **un seul init partagé**, donc la sonde et la suppression ne peuvent pas diverger |
+| la création elle-même | ❌ | voir ci-dessous |
+
+**Pourquoi la création n'est pas encadrée.** Un `INSERT` n'a ni `FOR` ni `FILTER`, il n'y a rien à restreindre — et `Edges::insertEdge()` repasse son init au contrôle d'unicité `existEdge()` : un périmètre posé là rendrait le `409` aveugle et laisserait passer un doublon. Une création se refuse en amont, par les deux sondes de sommet. L'autorisateur de requête y est tout de même posé, donc l'arête renvoyée est projetée sous les mêmes verrous `Field::REQUIRES` qu'une lecture.
+
+**Les conditions qui ne dépendent pas de la requête n'ont besoin d'aucune sous-classe** : déclarez-les une fois dans le `$init` du contrôleur, elles atteignent les deux sondes — `post()` et `delete()` ignoraient jusqu'ici totalement cet init.
+
+**Une arête masquée est signalée absente, jamais à moitié supprimée.** Comme la sonde et la suppression partagent un init, la réponse est un 404 et l'arête survit — le trou « 404 sur la sonde, 200 sur une suppression qui n'a rien touché » ne peut pas apparaître ici.
+
+
 ## `PropertyController`
 
 Expose **une propriété spécifique** d'un document comme une sous-ressource. Utile pour les propriétés qui ont leur propre logique (validation, calculs) sans justifier une collection séparée.

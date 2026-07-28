@@ -361,6 +361,45 @@ return
 ] ;
 ```
 
+### Scoping the links
+
+A `POST` here **creates** a link and a `DELETE` removes one, so an unscoped edge controller does more than leak: it lets a caller attach a document its scope hides. Its three refusals also answered as an oracle — `404` source, `404` target, `409` edge exists tell a caller what a scoped `GET` withholds.
+
+The controller carries the same **authorization seat** as the others, with one difference that matters: it talks to **three** models — the source vertices, the target vertices and the edges — and a predicate written for one is meaningless on the others. Each hook call therefore carries `EdgesController::CALL`, valued `FROM`, `TO` or `EDGES`:
+
+```php
+final class ScopedLinksController extends EdgesController
+{
+    protected function beforeModelCall( ?Request $request , array &$init ) : void
+    {
+        match ( $init[ self::CALL ] ?? null )
+        {
+            self::FROM , self::TO => $this->narrowVertex( $init ) ,  // Arango::CONDITIONS + Arango::BINDS
+            self::EDGES           => $this->narrowEdge  ( $init ) ,  // AQL::FILTER + AQL::BINDS
+            default               => null ,
+        } ;
+
+        parent::beforeModelCall( $request , $init ) ; // keeps the authorizer
+    }
+}
+```
+
+⚠ **The two halves read different keys.** A vertex probe is a `Documents::exist()` and reads `Arango::CONDITIONS`; the edge probe and the deletion are `Edges` calls and read `AQL::FILTER`. Posing the wrong one is silent — it simply never applies.
+
+| Call | Hooked | What the scope does there |
+|---|---|---|
+| the source probe (`CALL = FROM`) | ✅ | a hidden source reads as absent: 404, and no link is created |
+| the target probe (`CALL = TO`) | ✅ | same for the other end |
+| `existEdge()` then `deleteEdge()` (`CALL = EDGES`) | ✅ | **one shared init**, so the probe and the deletion cannot disagree |
+| the creation itself | ❌ | see below |
+
+**Why the creation is left unhooked.** An `INSERT` has no `FOR` and no `FILTER`, so there is nothing to narrow — and `Edges::insertEdge()` forwards its init to the `existEdge()` uniqueness check, so a scope posed there would blind the `409` and let a duplicate through. A creation is refused upstream, by the two vertex probes. The request-scoped authorizer is still posed on it, so the edge it returns is projected under the same `Field::REQUIRES` gates as a read.
+
+**Conditions that do not depend on the request need no subclass**: declare them once in the controller's `$init` and they reach both probes — `post()` and `delete()` used to drop that init entirely.
+
+**A hidden edge is reported missing, never half-deleted.** Because the probe and the deletion share one init, the answer is a 404 and the edge survives — the "404 on the probe, 200 on a deletion that touched nothing" gap cannot appear here.
+
+
 ## `PropertyController`
 
 Exposes **a specific property** of a document as a sub-resource. Useful for properties that have their own logic (validation, computation) without justifying a separate collection.
