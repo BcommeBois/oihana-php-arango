@@ -578,8 +578,13 @@ trait ArangoTrait
      * - passing `[]` disables the pruning explicitly.
      *
      * When `$optionalBinds` is `null` (the default), the list is **derived from the
-     * model's own field definitions** — every `AqlBindReference` declared anywhere
-     * in `$this->fields` / `$this->skinFields` (see {@see collectOptionalBindNames()}).
+     * model's own declarations** — every `AqlBindReference` found anywhere in
+     * `$this->fields` / `$this->skinFields` **and in the relation registries
+     * `$this->edges` / `$this->joins`** (see {@see collectOptionalBindNames()}).
+     * The registries matter as much as the projections: a relation definition is a
+     * declaration tree of its own, it can carry a conditional bind (in its own
+     * `AQL::FIELDS` sub-projection, or in a definition-level predicate), and a skin
+     * dropping the relation leaves that bind unreferenced exactly the same way.
      * The source of truth is the same `aqlBindRef()` that declared the conditional
      * bind, so no host wiring is required, and over-listing a bind that turns out to
      * be always present is inert (a referenced bind is always kept). Because this
@@ -591,7 +596,8 @@ trait ArangoTrait
      * @param array      $options       Optional execution options.
      * @param array|null $optionalBinds Names of binds allowed to be absent from the query.
      *                                  `null` derives the list from the model field
-     *                                  definitions ; `[]` disables the pruning.
+     *                                  definitions and relation registries ; `[]`
+     *                                  disables the pruning.
      *
      * @return static
      *
@@ -606,7 +612,13 @@ trait ArangoTrait
     )
     :static
     {
-        $optionalBinds ??= $this->collectOptionalBindNames( $this->fields ?? [] , $this->skinFields ?? [] ) ;
+        $optionalBinds ??= $this->collectOptionalBindNames
+        (
+            $this->fields     ?? [] ,
+            $this->skinFields ?? [] ,
+            $this->edges      ?? [] ,
+            $this->joins      ?? [] ,
+        ) ;
 
         if ( $optionalBinds !== [] )
         {
@@ -643,18 +655,21 @@ trait ArangoTrait
 
     /**
      * Collects every {@see AqlBindReference} name declared anywhere in one or more
-     * field-definition trees (typically inside a `Field::WHERE` / `Field::WHEN`
-     * condition). These are the *optional* binds : a skin (or an explicit `?fields`)
-     * can drop the carrying field from the projection, so the declared bind may not
-     * reach the final query text.
+     * declaration trees — the projections (`$fields` / `$skinFields`) **and** the
+     * relation registries (`$edges` / `$joins`), typically inside a `Field::WHERE` /
+     * `Field::WHEN` condition. These are the *optional* binds : a skin (or an
+     * explicit `?fields`) can drop the carrying field — or the whole relation — from
+     * the projection, so the declared bind may not reach the final query text.
      *
      * The walk is recursive and depth-agnostic : it descends into `Field::FIELDS`,
      * edges and joins sub-definitions, and picks up a bind reference wherever it
-     * sits. Collecting the *raw* (un-skinned) definitions is intentional — the
-     * superset of all possibly-optional binds is exactly what the execution layer
-     * must be allowed to prune.
+     * sits. Non-array leaves are visited but ignored, so a registry holding a
+     * resolved model instance or a callable is harmless. Collecting the *raw*
+     * (un-skinned) definitions is intentional — the superset of all
+     * possibly-optional binds is exactly what the execution layer must be allowed
+     * to prune.
      *
-     * @param array ...$trees One or more field-definition arrays to scan.
+     * @param array ...$trees One or more declaration arrays to scan.
      *
      * @return array<int,string> The de-duplicated list of bind names.
      */

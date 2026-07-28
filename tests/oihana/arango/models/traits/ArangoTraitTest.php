@@ -13,6 +13,7 @@ use PHPUnit\Framework\TestCase;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\binds\AqlBindReference;
+use oihana\arango\db\enums\AQL;
 use oihana\arango\db\options\indexes\IndexOptions;
 use oihana\arango\db\options\indexes\PersistentIndexOptions;
 use oihana\arango\enums\Arango;
@@ -36,6 +37,10 @@ class ArangoTraitHost
     /** Mirrors the FieldsTrait properties the optional-bind derivation reads. */
     public array $fields     = [] ;
     public array $skinFields = [] ;
+
+    /** Mirrors the EdgesTrait / JoinsTrait relation registries the derivation also reads. */
+    public ?array $edges = null ;
+    public ?array $joins = null ;
 
     public function __construct( ?ArangoDB $db = null , ?string $collection = null )
     {
@@ -403,6 +408,121 @@ class ArangoTraitTest extends TestCase
         ) ;
 
         $this->assertSame( [] , $captured ) ;
+    }
+
+    /**
+     * A relation registry is a definition tree of its own, NOT part of `$fields` :
+     * a bind declared inside an edge definition (here in the sub-projection of the
+     * traversed vertex) must be derived just the same. Missing it left the bind in
+     * `bindVars` while a skin dropped the whole relation from the query text, and
+     * ArangoDB rejected the query.
+     */
+    public function testOptionalBindsAreDerivedFromTheEdgesRegistry() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        $host->edges =
+        [
+            'roles' =>
+            [
+                AQL::MODEL  => 'RolesEdge' ,
+                AQL::FIELDS =>
+                [
+                    'tags' =>
+                    [
+                        Field::FILTER => Filter::MAP ,
+                        Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'edgeScope' ) ] ,
+                        Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+                    ],
+                ],
+            ],
+        ] ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN d' , // the skin dropped the relation → @edgeScope never referenced
+            [ 'edgeScope' => [ 'eu' ] ] ,
+        ) ;
+
+        $this->assertSame( [] , $captured ) ;
+    }
+
+    /** Same contract on the joins registry — the other relation tree living outside `$fields`. */
+    public function testOptionalBindsAreDerivedFromTheJoinsRegistry() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        $host->joins =
+        [
+            'owner' =>
+            [
+                AQL::MODEL  => 'Owners' ,
+                AQL::FIELDS =>
+                [
+                    'tags' =>
+                    [
+                        Field::FILTER => Filter::MAP ,
+                        Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'joinScope' ) ] ,
+                        Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+                    ],
+                ],
+            ],
+        ] ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c RETURN d' ,
+            [ 'joinScope' => [ 'eu' ] ] ,
+        ) ;
+
+        $this->assertSame( [] , $captured ) ;
+    }
+
+    /**
+     * A registry-derived bind is still kept when the relation IS projected : the
+     * derivation only makes the bind *prunable*, it never drops a referenced one.
+     */
+    public function testRegistryDerivedOptionalBindStillKeptWhenReferenced() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        $host->edges =
+        [
+            'roles' =>
+            [
+                AQL::MODEL  => 'RolesEdge' ,
+                AQL::FIELDS =>
+                [
+                    'tags' =>
+                    [
+                        Field::FILTER => Filter::MAP ,
+                        Field::WHERE  => [ 'region' , 'in' , aqlBindRef( 'edgeScope' ) ] ,
+                        Field::FIELDS => [ 'region' => Filter::DEFAULT ] ,
+                    ],
+                ],
+            ],
+        ] ;
+
+        $host->prepareAndExecute
+        (
+            'FOR d IN c LET roles = ( FOR v IN OUTBOUND d e RETURN { tags: ( FOR i IN v.tags FILTER i.region IN @edgeScope RETURN i ) } ) RETURN d' ,
+            [ 'edgeScope' => [ 'eu' ] ] ,
+        ) ;
+
+        $this->assertSame( [ 'edgeScope' => [ 'eu' ] ] , $captured ) ;
+    }
+
+    /** A null registry (the EdgesTrait / JoinsTrait default) must not break the derivation. */
+    public function testNullRelationRegistriesAreToleratedByTheDerivation() :void
+    {
+        $host = new ArangoTraitHost( $this->makeBindCapturingArango( $captured ) ) ;
+
+        $host->edges = null ;
+        $host->joins = null ;
+
+        $host->prepareAndExecute( 'FOR d IN c RETURN d' , [ 'kept' => 1 ] ) ;
+
+        $this->assertSame( [ 'kept' => 1 ] , $captured ) ;
     }
 
     public function testExplicitEmptyOptionalListDisablesPruning() :void

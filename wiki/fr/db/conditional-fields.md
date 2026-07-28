@@ -243,8 +243,9 @@ par le texte de la requête**. Le bind orphelin disparaît, la requête passe.
 Ce tri est **borné et sûr** :
 
 - il ne touche **que** les binds déclarés « optionnels » — c'est-à-dire les noms d'`aqlBindRef`
-  découverts dans les définitions de champs (`$fields` / `$skinFields`). Un bind qui n'est pas
-  un `aqlBindRef` de champ n'est **jamais** retiré ;
+  découverts dans les déclarations du modèle : les projections (`$fields` / `$skinFields`) **et
+  les registres de relations** (`$edges` / `$joins`). Un bind qui n'est pas un `aqlBindRef`
+  déclaré n'est **jamais** retiré ;
 - un bind optionnel n'est retiré **que** s'il est absent du texte ; s'il est référencé, il est
   gardé (le nom est comparé au **jeton complet**, donc `@offers` ne matche pas dans
   `@offersScope`) ;
@@ -255,6 +256,13 @@ Ce tri est **borné et sûr** :
 Rien à câbler côté hôte : la source de vérité est le `aqlBindRef` que tu as déjà écrit dans le
 champ. Le paramètre `prepareAndExecute( …, $optionalBinds )` (4ᵉ position) reste disponible
 pour **forcer** la liste, ou pour **désactiver** le tri en passant `[]`.
+
+Les **registres de relations** comptent autant que les projections. Une définition d'arête ou
+de jointure est un arbre de déclarations à part entière : elle peut porter un bind, soit dans
+sa propre sous-projection (`AQL::FIELDS`), soit dans un prédicat de définition. Et une relation
+est projetée conditionnellement elle aussi — un skin peut l'écarter en entier — donc son bind
+se retrouve orphelin exactement de la même façon. C'est pourquoi la découverte lit les quatre
+sources, et pas seulement les deux arbres de projection.
 
 ## Sécurité
 

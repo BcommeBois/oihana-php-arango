@@ -232,8 +232,9 @@ text does not actually reference**. The orphan bind disappears and the query run
 This pruning is **bounded and safe**:
 
 - it touches **only** the binds declared "optional" — that is, the `aqlBindRef` names
-  discovered in the field definitions (`$fields` / `$skinFields`). A bind that is not a field
-  `aqlBindRef` is **never** removed;
+  discovered in the model's declarations: the projections (`$fields` / `$skinFields`) **and the
+  relation registries** (`$edges` / `$joins`). A bind that is not a declared `aqlBindRef` is
+  **never** removed;
 - an optional bind is dropped **only** when it is absent from the text; if it is referenced it
   is kept (the name is matched against the **whole token**, so `@offers` does not match inside
   `@offersScope`);
@@ -244,6 +245,12 @@ This pruning is **bounded and safe**:
 Nothing to wire on the host side: the source of truth is the `aqlBindRef` you already wrote in
 the field. The `prepareAndExecute( …, $optionalBinds )` parameter (4th position) remains
 available to **force** the list, or to **disable** the pruning by passing `[]`.
+
+The **relation registries** matter as much as the projections. An edge or join definition is a
+declaration tree in its own right: it can carry a bind, either in its own sub-projection
+(`AQL::FIELDS`) or in a definition-level predicate. And a relation is projected conditionally
+too — a skin can drop it entirely — so its bind is left orphaned in exactly the same way. This
+is why the discovery reads all four sources, not just the two projection trees.
 
 ## Security
 
