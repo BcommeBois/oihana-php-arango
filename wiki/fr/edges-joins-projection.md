@@ -449,6 +449,64 @@ Options utiles sur la définition de join : `Arango::KEY` (attribut de jointure,
 
 > Combinaison naturelle avec les [champs-tableaux embarqués](db/arrays.md) : un champ `tracks` (tableau d'ids muté élément par élément via `ArrayPropertyController`) peut **en même temps** être projeté en documents joints triés dans le `GET` via `Filter::JOINS` — aucune duplication.
 
+### Restreindre les documents joints — `Arango::CONDITIONS`
+
+**Le problème, en clair.** Une jointure ramène des documents. Si ton application en masque une partie — désactivés, hors périmètre — la liste principale les cache, mais la **fiche du parent** continue de les nommer dans son champ joint. On ne peut pas les énumérer, mais on les lit par ricochet.
+
+C'est l'équivalent, pour les jointures, de ce que [`AQL::WHERE`](#restreindre-les-sommets-projetés--aqlwhere) fait pour les arêtes.
+
+**La déclaration.** `Arango::CONDITIONS` porte des prédicats supplémentaires, ajoutés à l'appariement de clé. Deux formes : un simple tableau de prédicats AQL, ou — celle qui sert — une **fonction** qui les rend.
+
+```php
+'hasPart' =>
+[
+    AQL::MODEL          => 'Products' ,
+    Arango::CONDITIONS  => fn( string $part ) :array => [ $part . '.active == true' ] ,
+] ,
+```
+
+```aql
+LET hasPart = (FOR doc_join_18 IN products
+                 FILTER doc_join_18._key IN doc.hasPart && doc_join_18.active == true
+                 RETURN doc_join_18)
+```
+
+> **Pourquoi une fonction et pas une chaîne ?** Le nom de la variable de boucle est **généré** (`doc_join_18…`), tu ne peux donc pas l'écrire en dur. La fonction le reçoit.
+
+**Les trois arguments.** Ils sont **toujours** passés :
+
+| # | Argument | À quoi il sert |
+|---|---|---|
+| 1 | `$join` | le nom de la boucle, pour préfixer tes attributs |
+| 2 | `$parent` | le document englobant, pour comparer avec le parent |
+| 3 | `$init` | le contexte de la requête |
+
+⚠️ **Tu ne déclares que ce dont tu as besoin.** PHP jette les arguments en trop passés à une fonction que tu as écrite, donc `fn( $join )` et `fn( $join , $parent )` marchent tels quels — rien à migrer. Ce qui plante, c'est l'inverse : déclarer un paramètre qu'on ne te passe pas.
+
+Du contexte, seules **trois clés sont contractuelles** : `Arango::AUTHORIZER`, `AQL::SKIN` et `Arango::BINDS`. Le reste est interne, ne t'appuie pas dessus.
+
+**Rendre `[]` n'émet aucun prédicat**, et c'est le point important : c'est ce qui permet à un périmètre de rester inerte hors requête HTTP.
+
+```php
+Arango::CONDITIONS => function( string $part , string $parent , array $init ) :array
+{
+    if ( !isset( $init[ Arango::AUTHORIZER ] ) ) { return [] ; }  // CLI, moissonnage, tests
+    return [ $part . '.productType NOT IN @inactiveTypes' ] ;
+} ,
+```
+
+Sans autorisateur, la requête est celle d'avant **au bit près**, et aucune valeur n'est à fournir. Tes commandes en ligne de commande ne bougent pas d'une ligne.
+
+**Une méthode d'objet ou un objet invocable** font aussi l'affaire, si le périmètre a besoin d'un service :
+
+```php
+Arango::CONDITIONS => [ $scopeProvider , 'productConditions' ] ,
+```
+
+> ⚠️ **Le piège de la valeur fournie à la requête.** Si ton prédicat référence `@maValeur` **en texte**, l'élagage automatique des valeurs inutilisées ne peut pas le voir — il cherche des objets `aqlBindRef()`, et un `@` dans une chaîne est indistinguable d'un `@` littéral. Donc si un skin peut écarter cette jointure, la requête entière sera refusée (*bind parameter … was not declared*). Deux réponses : préférer un prédicat **littéral** quand c'est possible, ou nommer la valeur explicitement en 4ᵉ argument de `prepareAndExecute( $query , $binds , $options , [ 'maValeur' ] )`.
+
+> Un retour qui n'est pas un tableau lève une exception — jamais un filtre silencieusement absent.
+
 ## Jointure polymorphe — collection cible selon un champ discriminant
 
 Un join ordinaire vise **une** collection figée (`AQL::MODEL`). Une **jointure polymorphe** choisit sa collection cible **à l'exécution**, d'après la valeur d'un champ du document parent lui-même. Le cas typique : un `PricingConditionSelector` qui porte un `areaScope` (le *type* de zone) et un `areaServed` (la *clé*), et doit résoudre la fiche dans `warehouses` si le scope est `#Warehouse`, dans `subsidiaries` si le scope est `#Company`.

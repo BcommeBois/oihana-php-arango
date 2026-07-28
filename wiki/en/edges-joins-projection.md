@@ -449,6 +449,64 @@ Useful options on the join definition: `Arango::KEY` (join attribute, default `_
 
 > Natural combination with [embedded array fields](db/arrays.md): a `tracks` field (an array of ids mutated element-by-element via `ArrayPropertyController`) can **at the same time** be projected as sorted joined documents in the `GET` via `Filter::JOINS` — no duplication.
 
+### Restricting the joined documents — `Arango::CONDITIONS`
+
+**The problem, plainly.** A join brings back documents. If your application masks some of them — disabled, out of scope — the main list hides them, but the **parent's record** keeps naming them in its joined field. You cannot enumerate them, yet you read them by ricochet.
+
+This is, for joins, the equivalent of what [`AQL::WHERE`](#restricting-the-projected-vertices--aqlwhere) does for edges.
+
+**The declaration.** `Arango::CONDITIONS` carries extra predicates, appended to the key match. Two shapes: a plain array of AQL predicates, or — the useful one — a **callable** returning them.
+
+```php
+'hasPart' =>
+[
+    AQL::MODEL          => 'Products' ,
+    Arango::CONDITIONS  => fn( string $part ) :array => [ $part . '.active == true' ] ,
+] ,
+```
+
+```aql
+LET hasPart = (FOR doc_join_18 IN products
+                 FILTER doc_join_18._key IN doc.hasPart && doc_join_18.active == true
+                 RETURN doc_join_18)
+```
+
+> **Why a callable rather than a string?** The loop variable name is **generated** (`doc_join_18…`), so you cannot hardcode it. The callable receives it.
+
+**The three arguments.** They are **always** passed:
+
+| # | Argument | What it is for |
+|---|---|---|
+| 1 | `$join` | the loop variable, to prefix your attributes |
+| 2 | `$parent` | the enclosing document, to compare against the parent |
+| 3 | `$init` | the request-level init |
+
+⚠️ **Declare only what you need.** PHP discards the surplus handed to a userland callable, so `fn( $join )` and `fn( $join , $parent )` keep working untouched — nothing to migrate. The opposite is what fails: declaring a parameter nobody passes you.
+
+Of the init, only **three keys are contractual**: `Arango::AUTHORIZER`, `AQL::SKIN` and `Arango::BINDS`. The rest is internal — do not rely on it.
+
+**Returning `[]` emits no predicate**, and that is the important part: it is how a scope stays inert outside an HTTP request.
+
+```php
+Arango::CONDITIONS => function( string $part , string $parent , array $init ) :array
+{
+    if ( !isset( $init[ Arango::AUTHORIZER ] ) ) { return [] ; }  // CLI, harvesting, tests
+    return [ $part . '.productType NOT IN @inactiveTypes' ] ;
+} ,
+```
+
+With no authorizer the query is byte-for-byte the previous one, and no bind has to be supplied. Your CLI commands do not move a line.
+
+**An object method or an invokable** works too, when the scope needs a service:
+
+```php
+Arango::CONDITIONS => [ $scopeProvider , 'productConditions' ] ,
+```
+
+> ⚠️ **The runtime-bind trap.** If your predicate references `@myValue` **as text**, the automatic pruning of unreferenced binds cannot see it — it looks for `aqlBindRef()` objects, and a `@` inside a string is indistinguishable from a literal `@`. So if a skin can drop this join, the whole query is rejected (*bind parameter … was not declared*). Two answers: prefer a **literal** predicate where possible, or name the bind explicitly in the 4th argument of `prepareAndExecute( $query , $binds , $options , [ 'myValue' ] )`.
+
+> A non-array return raises — never a silently absent filter.
+
 ## Polymorphic join — target collection from a discriminator field
 
 A regular join targets **one** fixed collection (`AQL::MODEL`). A **polymorphic join** picks its target collection **at query time**, from a value of the parent document itself. The typical case: a `PricingConditionSelector` carrying an `areaScope` (the zone *type*) and an `areaServed` (the *key*), which must resolve into `warehouses` when the scope is `#Warehouse`, into `subsidiaries` when it is `#Company`.

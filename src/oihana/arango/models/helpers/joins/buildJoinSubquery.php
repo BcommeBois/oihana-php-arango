@@ -4,7 +4,6 @@ namespace oihana\arango\models\helpers\joins;
 
 use Exception;
 use ReflectionException;
-use ReflectionFunction;
 use UnexpectedValueException;
 
 use Psr\Container\ContainerInterface;
@@ -54,6 +53,34 @@ use function oihana\core\strings\randomKey;
  * historical logic is `$extraConditions`, a list of ready-made AQL predicates
  * (typically the discriminator guard) prepended to the branch filter.
  *
+ * ### `Arango::CONDITIONS` — restricting which joined documents are kept
+ *
+ * The definition may carry extra predicates, appended to the key match. Two shapes:
+ * a plain **array** of AQL predicate strings, or — the useful one — a **callable**
+ * returning such an array. The callable receives three arguments, always:
+ *
+ * ```php
+ * Arango::CONDITIONS => fn( string $join , string $parent , array $init ) :array =>
+ *     [ $join . '.active == true' ] ,
+ * ```
+ * 1. `$join`   — the generated loop variable (a `randomKey`, so it cannot be hardcoded);
+ * 2. `$parent` — the enclosing document reference, to compare against the parent;
+ * 3. `$init`   — the request-level init. **Contractual keys only**:
+ *    `Arango::AUTHORIZER`, `AQL::SKIN` and `Arango::BINDS`; the rest is internal.
+ *
+ * **Declare only the parameters you need.** PHP discards the surplus handed to a
+ * userland callable, so a one- or two-parameter closure keeps working untouched. An
+ * object method or an invokable is accepted too.
+ *
+ * Returning `[]` emits **no** predicate, which is how a scope stays inert outside an
+ * HTTP request (a CLI run has no authorizer): the query is then byte-for-byte the
+ * unrestricted one, and no bind is required. A non-array return raises.
+ *
+ * ⚠️ A bind referenced **as text** inside a predicate (`… NOT IN @hidden`) cannot be
+ * discovered by the optional-bind pruning of `prepareAndExecute()`, which looks for
+ * `aqlBindRef()` objects. If a skin can drop this join, name that bind explicitly in
+ * the 4th argument of `prepareAndExecute()`, or ArangoDB rejects the whole query.
+ *
  * @param string|null            $name       The logical name of the join relation — used to skin the
  *                                            projection and to prefix the generated variable names of
  *                                            nested relations. Also the default parent key path when
@@ -81,7 +108,7 @@ use function oihana\core\strings\randomKey;
  * @throws Exception                   If a traversal or join cannot be built properly.
  * @throws ContainerExceptionInterface If the Documents model cannot be resolved from the container.
  * @throws NotFoundExceptionInterface  If the Documents model cannot be found in the container.
- * @throws ReflectionException         If a callable conditions closure fails reflection.
+ * @throws ReflectionException         If a nested projection or relation fails reflection.
  * @throws UnexpectedValueException    If $name is empty, the model is invalid, collection not set,
  *                                     or CONDITIONS does not return an array.
  */
@@ -115,11 +142,11 @@ function buildJoinSubquery
         throw new UnexpectedValueException( __FUNCTION__ . ' failed, the edge collection not must be null or empty.' ) ;
     }
 
-    $edges    = $definition[ AQL::EDGES      ] ?? [] ;
-    $joins    = $definition[ AQL::JOINS      ] ?? [] ;
-    $key      = $definition[ AQL::KEY        ] ?? Schema::_KEY ;
-    $property = $definition[ AQL::PROPERTY   ] ?? null ; // string or array
-    $skin     = $definition[ AQL::SKIN       ] ?? $init[ AQL::SKIN ] ?? null ; // Fall back on the request-level skin from $init so a join projection can vary with `?skin=...` (sub-fields opt in via Field::SKINS).
+    $edges    = $definition[ AQL::EDGES    ] ?? [] ;
+    $joins    = $definition[ AQL::JOINS    ] ?? [] ;
+    $key      = $definition[ AQL::KEY      ] ?? Schema::_KEY ;
+    $property = $definition[ AQL::PROPERTY ] ?? null ; // string or array
+    $skin     = $definition[ AQL::SKIN     ] ?? $init[ AQL::SKIN ] ?? null ; // Fall back on the request-level skin from $init so a join projection can vary with `?skin=...` (sub-fields opt in via Field::SKINS).
 
     // Same SKIN_FIELDS resolution as edges — see buildEdgeVariable.
     $fields = resolveSkinFields( $definition , $skin ) ;
@@ -144,14 +171,18 @@ function buildJoinSubquery
 
     $conditions = [] ;
 
-    if ( isset($definition[ AQL::CONDITIONS ] ) )
+    if ( isset( $definition[ AQL::CONDITIONS ] ) )
     {
         $cond = $definition[ AQL::CONDITIONS ] ;
         if ( is_callable( $cond ) )
         {
-            $reflection = new ReflectionFunction( $cond );
-            $args       = $reflection->getNumberOfParameters() === 2 ? [ $docJoin , $docRef ] : [ $docJoin ] ;
-            $conditions = $cond( ...$args ) ;
+            // The three arguments are ALWAYS passed, and a declaration takes only what it needs:
+            // PHP discards the surplus handed to a userland callable, so `fn( $join )`, `fn( $join , $parent )` and `fn( $join , $parent , $init )`
+            // all work unchanged. This used to be decided by counting the declared parameters — `=== 2 ? [ $docJoin , $docRef ] : [ $docJoin ]` —
+            // which meant any arity other than exactly two received a single argument, so a closure asking for the request context raised ArgumentCountError
+            // instead of getting it. Dropping the reflection also lets an object method or an invokable serve as the condition:
+            // ReflectionFunction accepted only a Closure or a function name.
+            $conditions = $cond( $docJoin , $docRef , $init ) ;
         }
         else
         {

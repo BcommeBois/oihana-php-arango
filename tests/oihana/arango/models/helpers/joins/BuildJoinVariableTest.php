@@ -135,6 +135,84 @@ final class BuildJoinVariableTest extends TestCase
         $this->assertStringContainsString( '&& doc_join.x == doc.y' , $two ) ;
     }
 
+    /**
+     * The request-level init reaches a three-parameter closure. This is what a scope
+     * needs to stay inert outside an HTTP request: no authorizer in `$init` → return
+     * `[]` → no predicate emitted at all.
+     *
+     * Before, the builder counted the declared parameters and passed a single argument
+     * to any arity other than exactly two, so this signature raised ArgumentCountError.
+     */
+    public function testCallableConditionsReceiveTheRequestInit() :void
+    {
+        $seen = null ;
+
+        $result = $this->normalize( buildJoinVariable
+        (
+            'role' ,
+            [
+                AQL::MODEL         => new MockDocuments( 'roles' ) ,
+                Arango::CONDITIONS => function ( string $join , string $parent , array $init ) use ( &$seen ) :array
+                {
+                    $seen = $init ;
+                    return isset( $init[ Arango::AUTHORIZER ] ) ? [ $join . '.active == true' ] : [] ;
+                } ,
+            ] ,
+            AQL::DOC ,
+            null ,
+            [ Arango::AUTHORIZER => fn() :bool => true ] // the init handed to the model
+        ) ) ;
+
+        $this->assertArrayHasKey( Arango::AUTHORIZER , $seen ) ;
+        $this->assertStringContainsString( '&& doc_join.active == true' , $result ) ;
+    }
+
+    /**
+     * The mirror case, and the reason the contract matters: with no authorizer the
+     * closure returns `[]`, so **no** predicate is emitted and the query is the
+     * unrestricted one — what a CLI run needs, with no bind to supply.
+     */
+    public function testAClosureReturningAnEmptyArrayEmitsNoPredicate() :void
+    {
+        $scoped = fn( string $join , string $parent , array $init ) :array
+            => isset( $init[ Arango::AUTHORIZER ] ) ? [ $join . '.active == true' ] : [] ;
+
+        $result = $this->normalize( buildJoinVariable
+        (
+            'role' ,
+            [ AQL::MODEL => new MockDocuments( 'roles' ) , Arango::CONDITIONS => $scoped ] ,
+            AQL::DOC ,
+            null ,
+            [] // no authorizer: CLI, harvesting, tests
+        ) ) ;
+
+        $this->assertSame( 'LET role = (FOR doc_join IN roles FILTER doc_join._key == doc.role RETURN doc_join)' , $result ) ;
+    }
+
+    /**
+     * An object method now serves as the condition. `ReflectionFunction` accepted only
+     * a Closure or a function name, so this used to raise before the predicate was
+     * ever compiled.
+     */
+    public function testAnObjectMethodIsAcceptedAsConditions() :void
+    {
+        $provider = new class
+        {
+            public function conditions( string $join , string $parent ) :array
+            {
+                return [ $join . '.tenant == ' . $parent . '.tenant' ] ;
+            }
+        } ;
+
+        $result = $this->normalize( buildJoinVariable( 'role' ,
+        [
+            AQL::MODEL         => new MockDocuments( 'roles' ) ,
+            Arango::CONDITIONS => [ $provider , 'conditions' ] ,
+        ] ) ) ;
+
+        $this->assertStringContainsString( '&& doc_join.tenant == doc.tenant' , $result ) ;
+    }
+
     public function testThrowsWhenConditionsIsNotAnArray() :void
     {
         $this->expectException( UnexpectedValueException::class ) ;

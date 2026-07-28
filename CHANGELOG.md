@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A join's `Arango::CONDITIONS` callable could not receive the request context — the arity switch refused the signature that needed it.** The builder counted the declared parameters and passed two arguments only on `=== 2`, so *any* other arity got a single one. A closure asking for the init — the shape a server-side scope needs, to stay inert when there is no authorizer — therefore raised `ArgumentCountError` before its predicate was ever compiled. The three arguments are now always passed:
+  ```php
+  Arango::CONDITIONS => function( string $part , string $parent , array $init ) :array
+  {
+      if ( !isset( $init[ Arango::AUTHORIZER ] ) ) { return [] ; }  // CLI, harvesting, tests
+      return [ $part . '.productType NOT IN @inactiveTypes' ] ;
+  } ,
+  ```
+  - **Nothing to migrate, because PHP discards the surplus handed to a userland callable** — measured, not assumed. A `fn( $join )` or `fn( $join , $parent )` declaration keeps working untouched; you declare only the parameters you need. The failing direction is the opposite one, declaring a parameter nobody passes, which is exactly what the arity switch caused.
+  - **Returning `[]` still emits no predicate at all**, so a scope costs the CLI callers nothing: no filter, no bind to supply, and the query stays byte-for-byte the unrestricted one. That contract is what makes the init argument useful rather than merely available.
+  - **Dropping the reflection widens what is accepted**: `ReflectionFunction` took only a `Closure` or a function name, so an object method or an invokable raised. `[ $scopeProvider , 'productConditions' ]` now works — useful when the scope needs a service.
+  - **Only three init keys are contractual** — `Arango::AUTHORIZER`, `AQL::SKIN`, `Arango::BINDS` — stated in the docblock and the wiki so a consumer does not start depending on the rest of an internal array.
+  - **Tests:** 3 `BuildJoinVariableTest` cases — the init reaching a three-parameter closure and gating the predicate, the mirror case where no authorizer yields an unrestricted query asserted in full, and an object method serving as the condition. The existing one- and two-argument cases are untouched and still pass, which is the non-regression. Coverage stays at 100 %. FR/EN wiki `edges-joins-projection.md` gains a « restricting the joined documents » section: the three arguments, the "declare only what you need" rule, the `[]` contract, and the runtime-bind trap with its two answers.
+
 - **`Filter::EDGES_COUNT` announced a number the rows contradicted — three times over, for three different reasons.** A count and a `Filter::EDGES` list normally read **one** definition (the registry's string shortcut, `'descendantsCount' => 'descendants'`, is the idiomatic way to say so), so everything that declaration says about *which* vertices are walked has to be read the same way on both sides. Three things were not, and none of them shows in the AQL text — they depend on how the server walks the graph. Measured live on a tree where `d` is reachable by two paths and the `a → c` link exists twice:
   | Declaration | The list returns | The count said | It says |
   |---|---|---|---|
