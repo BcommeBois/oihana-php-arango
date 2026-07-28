@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`exist()` dropped the bind variables its own conditions referenced, so a scoped existence probe raised instead of answering.** `buildExistQuery()` inlines `Arango::CONDITIONS` into the `FILTER` — that is how a controller gates a write behind a scoped probe — but `exist()` started its bind vars from an empty array where `list()`, `count()` and `delete()` all seed theirs from the init. The predicate reached the query, its value never did, and the server refused the whole thing:
+  ```
+  FILTER doc._key IN [@q_787547] && doc.__scope == @__scope     -- the condition arrives
+  binds : { "q_787547": "k1", "@collection": "documents" }       -- its bind does not
+  → 400 {"errorMessage":"no value specified for declared bind parameter '__scope'","errorNum":1551}
+  ```
+  One line, `$bindVars = $init[ Arango::BINDS ] ?? []`, aligning the fourth read with the other three.
+  - **This repaired an already-shipped seam.** The scoped probe of `PropertyController::patch()` and the one gating the six array operations both call `exist()`, so they answered a 500 rather than a 404 as soon as the consumer predicate carried a bind — which is the normal case. Nothing in the unit suite could see it: `RecordingDocuments` records the init and never assembles the AQL, so a bind lost between the init and the query is invisible to a double. 100 % line coverage on both paths, and the query was never built.
+  - **Measured, not deduced.** The error above is the server's own, captured by running the new integration test **before** the fix. The errorNum is 1551.
+  - **Tests:** new `ScopedProbeIntegrationTest` (3 live cases against a real arangod: a scoped probe answering for a document inside the scope, refusing one outside it — so the predicate is proved to bite rather than merely to compile — and an unscoped probe unchanged), plus 2 `DocumentsExistTraitTest` cases pinning the bind's arrival in the executed query without a server.
+
 - **A join's `Arango::CONDITIONS` callable could not receive the request context — the arity switch refused the signature that needed it.** The builder counted the declared parameters and passed two arguments only on `=== 2`, so *any* other arity got a single one. A closure asking for the init — the shape a server-side scope needs, to stay inert when there is no authorizer — therefore raised `ArgumentCountError` before its predicate was ever compiled. The three arguments are now always passed:
   ```php
   Arango::CONDITIONS => function( string $part , string $parent , array $init ) :array

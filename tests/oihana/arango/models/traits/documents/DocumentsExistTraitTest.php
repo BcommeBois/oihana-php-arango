@@ -61,6 +61,43 @@ final class DocumentsExistTraitTest extends TestCase
         $this->assertTrue( $this->model( 2 )->exist( [ Arango::VALUE => [ 'a' , 'a' , 'b' ] ] ) ) ;
     }
 
+    /**
+     * A scoped probe hands `conditions` **and** the `binds` those conditions
+     * reference. `buildExistQuery()` inlines the predicate into the `FILTER`, so a
+     * bind left behind makes the server refuse the whole query
+     * (`no value specified for declared bind parameter`, errorNum 1551) — the probe
+     * raises instead of answering. Measured live before the fix; pinned here so the
+     * regression falls without a server.
+     */
+    public function testAScopedConditionCarriesItsBindIntoTheQuery() :void
+    {
+        $model = $this->model( 1 ) ;
+
+        $model->exist
+        ([
+            Arango::VALUE      => 'a' ,
+            Arango::CONDITIONS => [ 'doc.__scope == @__scope' ] ,
+            Arango::BINDS      => [ '__scope' => 'visible' ] ,
+        ]) ;
+
+        $this->assertStringContainsString( 'doc.__scope == @__scope' , $model->lastQuery ) ;
+        $this->assertSame( 'visible' , $model->lastBinds[ '__scope' ] ?? null ) ;
+    }
+
+    /**
+     * The values keep binding on top of the seeded ones rather than replacing them.
+     */
+    public function testTheValueBindsSurviveTheSeededOnes() :void
+    {
+        $model = $this->model( 1 ) ;
+
+        $model->exist( [ Arango::VALUE => 'a' , Arango::BINDS => [ '__scope' => 'visible' ] ] ) ;
+
+        $this->assertArrayHasKey( '__scope'     , $model->lastBinds ) ;
+        $this->assertArrayHasKey( '@collection' , $model->lastBinds ) ;
+        $this->assertContains   ( 'a'           , $model->lastBinds ) ;
+    }
+
     public function testDebugWithoutMockStillQueriesAndReturnsResult() :void
     {
         // debug=true but mock=false: the debug branch runs (debugQuery) yet the

@@ -77,7 +77,11 @@ trait DocumentsExistTrait
             return false ;
         }
 
-        $bindVars = [];
+        // Seeded from the init, like list() / count() / delete() : `conditions` are
+        // inlined into the FILTER by buildExistQuery(), so a predicate referencing
+        // @bind needs its value declared here or the server refuses the whole query
+        // ("no value specified for declared bind parameter", errorNum 1551).
+        $bindVars = $init[ Arango::BINDS ] ?? [] ;
         $debug    = $init[ Arango::DEBUG ] ?? $this->debug ;
         $match    = match( $init[ Arango::MATCH ] ?? null )
         {
