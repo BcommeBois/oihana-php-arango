@@ -415,12 +415,26 @@ class FederatedSearch
                 $listBinds = [] ;
                 $keysVar   = aqlBind( $modelKeys , $listBinds ) ;
 
-                $documents = $model->list
-                ([
+                $listInit =
+                [
                     AQL::CONDITIONS => [ compile( [ key( Schema::_KEY , AQL::DOC ) , Comparator::IN , $keysVar ] ) ] ,
                     AQL::BINDS      => $listBinds ,
                     Arango::SKIN    => $skin ,
-                ]) ;
+                ] ;
+
+                // The hydration is a READ, so it is gated like one. The authorizer
+                // already decides which collections are searchable and how a
+                // polymorphic key is routed; without it here the projection fell open
+                // (isAuthorized() returns true with no authorizer, by design) and a
+                // Field::REQUIRES attribute came out through the search that a get()
+                // on the same document hides. Forwarded only when present, so a caller
+                // with no authorization stack keeps its previous behaviour.
+                if ( array_key_exists( Arango::AUTHORIZER , $init ) )
+                {
+                    $listInit[ Arango::AUTHORIZER ] = $init[ Arango::AUTHORIZER ] ;
+                }
+
+                $documents = $model->list( $listInit ) ;
 
                 foreach ( $documents as $document )
                 {

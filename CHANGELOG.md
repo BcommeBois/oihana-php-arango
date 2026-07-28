@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The federated search gated what it looked at, not what it handed back.** `FederatedSearch::rebuild()` re-reads every matched key through its owning model. It **receives** the request authorizer — it uses it to decide which collections are searchable and to route a polymorphic key by its discriminator — but did not forward it to the `list()` that rebuilds the documents. `isAuthorized()` returns true when no authorizer is given, by design, so the projection fell open and a `Field::REQUIRES` attribute came out through the search that a `get()` on the same document hides. The search stage was closed all along; the hydration was the door left open.
+  ```php
+  $listInit[ Arango::AUTHORIZER ] = $init[ Arango::AUTHORIZER ] ;   // forwarded only when present
+  ```
+  - **Forwarded only when the request carries one**, so a caller with no authorization stack keeps its previous behaviour — the same fail-open promise as everywhere else.
+  - **Tests:** new `FederatedRebuildGateIntegrationTest` (5 live cases: the gate holding on a direct read, then on the rebuild, an ungated field still returned, the projection falling open without an authorizer, and a **granting** authorizer still seeing the field — proving the forwarded closure is consulted rather than merely present), plus 2 `FederatedSearchTest` cases pinning the forwarding and its absence. ⚠ The live harness declares `_key` among the model fields on purpose: the rebuild indexes hydrated documents by it, and a projection that drops it yields rows the engine cannot place.
+
 - **A write response projected fields the matching read hides.** `post()` and `update()` do not return what they wrote: they **re-read** the document, so the response carries what the database holds (computed values, `modified`, i18n, defaults). That reload is a read — but it was built by hand, from four keys, outside the lifecycle hooks, so the request authorizer never reached it. `isAuthorized()` falls open without one, by design, and a field gated by `Field::REQUIRES` came straight back. Measured on a real server, same controller, same caller, before the fix:
   ```
   GET   -> {"name":"public"}

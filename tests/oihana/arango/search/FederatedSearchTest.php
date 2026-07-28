@@ -614,6 +614,47 @@ final class FederatedSearchTest extends TestCase
         $this->assertSame( [ 'p7' ] , $this->requestedKeys( $products ) ) ;
     }
 
+    /**
+     * The hydration is a read, so it carries the request authorizer like one.
+     * Without it the projection falls open — `isAuthorized()` returns true with no
+     * authorizer, by design — and a `Field::REQUIRES` attribute came out through
+     * the search that a `get()` on the same document hides. The search stage was
+     * gated all along; the rebuild was not.
+     */
+    public function testRebuildForwardsTheAuthorizerToTheHydration() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ,
+        ]) ;
+
+        $authorizer = static fn( string $subject ) :bool => false ;
+
+        $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' ] ] , [ Arango::AUTHORIZER => $authorizer ] ) ;
+
+        $this->assertSame( $authorizer , $customers->captured[ Arango::AUTHORIZER ] ?? null ) ;
+    }
+
+    /**
+     * Forwarded only when present: a caller with no authorization stack sends an
+     * init without the key, and the hydration must not invent one.
+     */
+    public function testRebuildPosesNoAuthorizerWhenTheRequestCarriesNone() :void
+    {
+        $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ) ;
+
+        $engine = new FederatedSearch( $this->containerWith( [ 'model.customers' => $customers ] ) ,
+        [
+            FederatedSearchParam::MODELS => [ 'customers' => 'model.customers' ] ,
+        ]) ;
+
+        $engine->rebuild( [ [ 'collection' => 'customers' , 'key' => 'c1' ] ] ) ;
+
+        $this->assertArrayNotHasKey( Arango::AUTHORIZER , $customers->captured ) ;
+    }
+
     public function testRebuildSkipsAnUnregisteredCollection() :void
     {
         $customers = $this->modelReturning( [ [ '_key' => 'c1' , 'name' => 'Dupont SARL' ] ] ) ;
