@@ -143,13 +143,23 @@ addresses: ( FOR item IN doc.addresses
 
 Don't confuse the two:
 
-| Marker | Decides | Placed on |
-|---|---|---|
-| `Field::WHEN` | a field's *value* (ternary) | the default scalar projection |
-| `Field::WHERE` | *which elements* of an array are projected (`FILTER`) | a `Filter::MAP` |
+| Marker | Decides | Placed on | Compiled against |
+|---|---|---|---|
+| `Field::WHEN` | a field's *value* (ternary) | the default scalar projection | `doc` |
+| `Field::WHERE` | *which elements* of an array are projected (`FILTER`) | a `Filter::MAP` | the element (`item`) |
+| `AQL::WHERE` | *which vertices* a relation projects (`FILTER`) | an edge **definition** | the traversed vertex (`vertex`) |
 
 `Field::WHERE` reuses the **exact** condition grammar of `Field::WHEN` (leaves, `AND` / `OR`
 / `NOT` groups, `alt`) — compiled against **the array element** (`item`), not against `doc`.
+
+> **The same question, one step further: `AQL::WHERE`.** What `Field::WHERE` does for an array
+> **embedded** in the document, `AQL::WHERE` does for a **relation** (`Filter::EDGE` / `EDGES` /
+> `EDGES_COUNT`): it restricts the traversed vertices, with that same grammar, that same
+> `aqlBindRef()` support and that same fail-closed contract. The difference is the seat —
+> `Field::WHERE` is declared on a **projection entry**, `AQL::WHERE` on a **relation definition**,
+> where it holds for every entry point at once. The pair mirrors `Field::REQUIRES` (entry) and
+> `AQL::REQUIRES` (definition). Details in
+> [Edge and join projection](../edges-joins-projection.md#restricting-the-projected-vertices--aqlwhere).
 
 ### Comparing against a value known only at query time — `aqlBindRef()`
 

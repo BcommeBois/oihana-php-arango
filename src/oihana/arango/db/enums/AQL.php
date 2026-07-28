@@ -122,6 +122,7 @@ class AQL
     public const string VERTEX_REF      = 'vertexRef' ;
     public const string VERTICES        = 'vertices' ;
     public const string VIEW            = 'view' ;
+    public const string WHERE           = 'where' ;
     public const string WITH            = 'with' ;
     public const string WITH_COUNT      = 'withCount' ;
     public const string WITH_PATH       = 'withPath' ;

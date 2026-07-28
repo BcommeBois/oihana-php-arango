@@ -6,6 +6,9 @@ use Exception;
 use ReflectionException;
 use UnexpectedValueException;
 
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
+
 use Psr\Container\ContainerInterface;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -21,6 +24,7 @@ use org\schema\constants\Schema;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\functions\documents\merge;
 use function oihana\arango\db\helpers\aqlFields;
+use function oihana\arango\db\helpers\fields\buildWhenCondition;
 use function oihana\arango\db\helpers\resolveSkinFields;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlReturn;
@@ -56,11 +60,26 @@ use function oihana\core\strings\randomKey;
  * `FILTER` right after the traversal. When empty, **no** `FILTER` is emitted, so
  * the output is byte-for-byte identical to the legacy edge sub-query.
  *
+ * A definition may also declare `AQL::WHERE` — a condition in the `Field::WHEN`
+ * grammar, compiled against the **traversed vertex** and appended to
+ * `$extraConditions`. It restricts WHICH vertices the relation projects, wherever
+ * the definition is used, so a consumer masking part of a collection is not
+ * contradicted by the relation of a served document:
+ * ```
+ * ( FOR vertex, edge IN OUTBOUND doc coll FILTER vertex.id NOT IN @hiddenTerms … )
+ * ```
+ * Its value may hold an `aqlBindRef()`, so the retained set is decided at query
+ * time; the contract is the one `Field::WHERE` already carries on a `Filter::MAP`
+ * (a bind bound to `[]` retains nothing, an absent bind fails the query — never
+ * "no filter"). It **composes** with the polymorphic guard rather than replacing
+ * it, and is orthogonal to `AQL::REQUIRES` / `Field::REQUIRES`, which decide
+ * whether the relation is projected at all.
+ *
  * @param string|null            $name            The logical name of the relation (used to skin the projection).
  * @param array                  $definition      Configuration array for the traversal — same keys as
  *                                                {@see buildEdgeVariable()} (`AQL::MODEL`, `AQL::DIRECTION`,
  *                                                `AQL::EDGES`, `AQL::JOINS`, `AQL::SKIN`, `AQL::MAX_DEPTH`,
- *                                                `AQL::WITH_PATH`, `Arango::PROPERTY`, …).
+ *                                                `AQL::WITH_PATH`, `AQL::WHERE`, `Arango::PROPERTY`, …).
  * @param string                 $startVertex     The AQL variable name of the starting vertex (default 'doc').
  * @param ContainerInterface|null $container      The DI container used to resolve models.
  * @param array                  $init            Optional associative array used for variable initialization.
@@ -70,11 +89,13 @@ use function oihana\core\strings\randomKey;
  *
  * @return string The parenthesized traversal sub-query (no leading `LET name =`).
  *
- * @throws Exception                   If the traversal direction is invalid.
- * @throws ContainerExceptionInterface If the Edges model cannot be resolved from the container.
- * @throws NotFoundExceptionInterface  If the Edges model cannot be resolved from the container.
+ * @throws Exception                     If the traversal direction is invalid.
+ * @throws ContainerExceptionInterface   If the Edges model cannot be resolved from the container.
+ * @throws NotFoundExceptionInterface    If the Edges model cannot be resolved from the container.
  * @throws ReflectionException
- * @throws UnexpectedValueException    If $name is empty, the model is invalid, or the collection is not set.
+ * @throws UnexpectedValueException      If $name is empty, the model is invalid, or the collection is not set.
+ * @throws UnsupportedOperationException If an `AQL::WHERE` condition descriptor is malformed.
+ * @throws ValidationException           If an `AQL::WHERE` condition attribute name is unsafe.
  */
 function buildEdgeSubquery
 (
@@ -171,9 +192,25 @@ function buildEdgeSubquery
         ]
     ]) ;
 
-    // The discriminator guard (and any other injected predicate) is emitted as a
-    // FILTER on the start vertex, right after the traversal. Empty → no FILTER, so
-    // the output stays byte-for-byte identical to the legacy edge sub-query.
+    // AQL::WHERE restricts WHICH traversed vertices are projected. It reuses the
+    // Field::WHEN condition grammar (buildWhenCondition), compiled against the
+    // traversed VERTEX — not the start vertex — and a condition value may be an
+    // AqlBindReference (aqlBindRef) so the retained set is decided by a bind
+    // supplied at query time: an absent bind fails the query (fail-closed), never
+    // silently widens it. The predicate is APPENDED to the injected ones, so a
+    // polymorphic branch guard keeps its head position and the two cumulate
+    // instead of replacing one another.
+    $where = $definition[ AQL::WHERE ] ?? null ;
+
+    if ( $where !== null )
+    {
+        $extraConditions = [ ...$extraConditions , buildWhenCondition( $where , $vertexRef ) ] ;
+    }
+
+    // The discriminator guard, the AQL::WHERE predicate (and any other injected
+    // condition) are emitted as a single FILTER right after the traversal. Empty →
+    // no FILTER, so the output stays byte-for-byte identical to the legacy edge
+    // sub-query.
     $filter = $extraConditions !== [] ? aqlFilter( $extraConditions ) : null ;
 
     $sort = sortEdgeVariable( $definition , $vertexRef , $edgeRef ) ;

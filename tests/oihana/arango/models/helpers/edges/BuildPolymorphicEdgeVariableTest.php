@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
 
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
 
+use function oihana\arango\db\binds\aqlBindRef;
 use function oihana\arango\models\helpers\edges\buildPolymorphicEdgeVariable;
 
 /**
@@ -254,6 +255,93 @@ final class BuildPolymorphicEdgeVariableTest extends TestCase
             Arango::MAP           => [ 'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ] ,
             Arango::FALLBACK      => 'not-a-branch' ,
         ]) ;
+    }
+
+    // ------------------------------------------------------------------ AQL::WHERE (per branch, on top of the guard)
+
+    /**
+     * `AQL::WHERE` is declared PER BRANCH — each branch traverses a different
+     * collection, so the masked set differs per branch — and lands in the same
+     * `FILTER` as the discriminator guard, **after** it. The guard must survive:
+     * lose it and every branch of the `APPEND` yields rows at once.
+     */
+    public function testWhereCumulatesWithTheBranchGuard() :void
+    {
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           =>
+            [
+                'warehouse' =>
+                [
+                    AQL::MODEL       => new MockEdges( 'warehouse_edges' ) ,
+                    Arango::PROPERTY => 'name' ,
+                    AQL::WHERE       => [ 'id' , 'nin' , aqlBindRef( 'hiddenWarehouses' ) ] ,
+                ] ,
+                'company' =>
+                [
+                    AQL::MODEL       => new MockEdges( 'company_edges' ) ,
+                    Arango::PROPERTY => 'name' ,
+                    AQL::WHERE       => [ 'status' , 'active' ] ,
+                ] ,
+            ] ,
+        ]) ) ;
+
+        $this->assertSame
+        (
+            'LET area = APPEND(' .
+            '(FOR vertex, edge IN OUTBOUND doc warehouse_edges ' . self::OPTIONS . ' ' .
+            'FILTER doc.kind == "warehouse" && vertex.id NOT IN @hiddenWarehouses ' .
+            'SORT edge.created DESC RETURN vertex.name),' .
+            '(FOR vertex, edge IN OUTBOUND doc company_edges ' . self::OPTIONS . ' ' .
+            'FILTER doc.kind == "company" && ' . "vertex.status == 'active' " .
+            'SORT edge.created DESC RETURN vertex.name))' ,
+            $result
+        ) ;
+    }
+
+    /** A branch without the key keeps its bare guard while its sibling is restricted. */
+    public function testWhereOnOneBranchLeavesTheOtherUntouched() :void
+    {
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           =>
+            [
+                'warehouse' =>
+                [
+                    AQL::MODEL       => new MockEdges( 'warehouse_edges' ) ,
+                    Arango::PROPERTY => 'name' ,
+                    AQL::WHERE       => [ 'status' , 'active' ] ,
+                ] ,
+                'company' => [ AQL::MODEL => new MockEdges( 'company_edges' ) , Arango::PROPERTY => 'name' ] ,
+            ] ,
+        ]) ) ;
+
+        $this->assertStringContainsString( 'FILTER doc.kind == "warehouse" && ' . "vertex.status == 'active' " , $result ) ;
+        $this->assertStringContainsString( 'FILTER doc.kind == "company" SORT' , $result ) ;
+    }
+
+    /** The `Arango::FALLBACK` branch is a definition too, so it can be restricted as well. */
+    public function testWhereAppliesToTheFallbackBranch() :void
+    {
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           => [ 'warehouse' => [ AQL::MODEL => new MockEdges( 'warehouse_edges' ) , Arango::PROPERTY => 'name' ] ] ,
+            Arango::FALLBACK      =>
+            [
+                AQL::MODEL       => new MockEdges( 'other_edges' ) ,
+                Arango::PROPERTY => 'name' ,
+                AQL::WHERE       => [ 'id' , 'nin' , aqlBindRef( 'hidden' ) ] ,
+            ] ,
+        ]) ) ;
+
+        $this->assertStringContainsString
+        (
+            'FILTER doc.kind NOT IN ["warehouse"] && vertex.id NOT IN @hidden ' ,
+            $result
+        ) ;
     }
 
     /**

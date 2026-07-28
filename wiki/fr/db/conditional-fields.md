@@ -151,14 +151,24 @@ addresses: ( FOR item IN doc.addresses
 
 Ne pas les confondre :
 
-| Marqueur | Décide | Posé sur |
-|---|---|---|
-| `Field::WHEN` | la *valeur* d'un champ (ternaire) | projection scalaire par défaut |
-| `Field::WHERE` | *quels éléments* d'un tableau sont projetés (`FILTER`) | un `Filter::MAP` |
+| Marqueur | Décide | Posé sur | Compilé contre |
+|---|---|---|---|
+| `Field::WHEN` | la *valeur* d'un champ (ternaire) | projection scalaire par défaut | `doc` |
+| `Field::WHERE` | *quels éléments* d'un tableau sont projetés (`FILTER`) | un `Filter::MAP` | l'élément (`item`) |
+| `AQL::WHERE` | *quels sommets* une relation projette (`FILTER`) | une **définition** d'edge | le sommet traversé (`vertex`) |
 
 `Field::WHERE` réutilise **exactement** la grammaire de condition de `Field::WHEN` (feuilles,
 groupes `AND` / `OR` / `NOT`, `alt`) — compilée contre **l'élément du tableau** (`item`), pas
 contre `doc`.
+
+> **La même question, un cran plus loin : `AQL::WHERE`.** Ce que `Field::WHERE` fait pour un
+> tableau **embarqué** dans le document, `AQL::WHERE` le fait pour une **relation** (`Filter::EDGE`
+> / `EDGES` / `EDGES_COUNT`) : il restreint les sommets traversés, avec cette même grammaire, ce
+> même support de `aqlBindRef()` et ce même contrat *fail-closed*. La différence est le siège —
+> `Field::WHERE` se déclare sur une **entrée de projection**, `AQL::WHERE` sur une **définition de
+> relation**, où il vaut pour tous les points d'entrée à la fois. Le couple reprend celui de
+> `Field::REQUIRES` (entrée) et `AQL::REQUIRES` (définition). Détail dans
+> [Projection des edges et joins](../edges-joins-projection.md#restreindre-les-sommets-projetés--aqlwhere).
 
 ### Comparer à une valeur connue seulement à l'exécution — `aqlBindRef()`
 

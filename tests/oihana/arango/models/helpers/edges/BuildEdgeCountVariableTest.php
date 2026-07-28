@@ -6,12 +6,14 @@ use UnexpectedValueException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
+use oihana\exceptions\UnsupportedOperationException;
 
 use PHPUnit\Framework\TestCase;
 
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
 
+use function oihana\arango\db\binds\aqlBindRef;
 use function oihana\arango\models\helpers\edges\buildEdgeCountVariable;
 
 /**
@@ -73,6 +75,67 @@ final class BuildEdgeCountVariableTest extends TestCase
 
         // Two distinct FOR loop variables, none reusing the shared `vertex` loop name.
         $this->assertStringNotContainsString( 'FOR vertex IN' , $aql ) ;
+    }
+
+    // ------------------------------------------------------------------ AQL::WHERE (the count must agree with the list)
+
+    /**
+     * The count honours the same predicate as the list, compiled against the inner
+     * loop variable. A count ignoring it would announce "5" beside a list showing
+     * 3 — the divergence is the bug, not the filtering.
+     */
+    public function testWhereFiltersTheCountedVertices() :void
+    {
+        $this->assertSame
+        (
+            'LET rolesCount = (LENGTH(FOR rolesCount_v IN OUTBOUND doc user_has_roles ' .
+            'FILTER rolesCount_v.id NOT IN @hiddenTerms RETURN rolesCount_v))' ,
+            buildEdgeCountVariable
+            (
+                'rolesCount' ,
+                [
+                    AQL::MODEL => new MockEdges( 'user_has_roles' ) ,
+                    AQL::WHERE => [ 'id' , 'nin' , aqlBindRef( 'hiddenTerms' ) ] ,
+                ]
+            )
+        ) ;
+    }
+
+    /** A literal predicate works the same — nothing about the count is bind-specific. */
+    public function testWhereAcceptsALiteralPredicateInTheCount() :void
+    {
+        $this->assertSame
+        (
+            'LET rolesCount = (LENGTH(FOR rolesCount_v IN OUTBOUND doc user_has_roles ' .
+            "FILTER rolesCount_v.status == 'active' RETURN rolesCount_v))" ,
+            buildEdgeCountVariable
+            (
+                'rolesCount' ,
+                [ AQL::MODEL => new MockEdges( 'user_has_roles' ) , AQL::WHERE => [ 'status' , 'active' ] ]
+            )
+        ) ;
+    }
+
+    /** Without the key, the counted loop is byte-for-byte the historical one. */
+    public function testWithoutWhereTheCountIsUnchanged() :void
+    {
+        $this->assertSame
+        (
+            'LET rolesCount = (LENGTH(FOR rolesCount_v IN OUTBOUND doc user_has_roles RETURN rolesCount_v))' ,
+            buildEdgeCountVariable
+            (
+                'rolesCount' ,
+                [ AQL::MODEL => new MockEdges( 'user_has_roles' ) , AQL::WHERE => null ]
+            )
+        ) ;
+    }
+
+    /** A malformed descriptor fails loud here too — never a silently unfiltered count. */
+    public function testMalformedWhereThrowsInTheCount() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+
+        buildEdgeCountVariable( 'x' , [ AQL::MODEL => new MockEdges( 'e' ) , AQL::WHERE => [] ] ) ;
     }
 
     public function testThrowsWhenModelIsNotEdges() :void

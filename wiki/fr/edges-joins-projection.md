@@ -13,8 +13,9 @@ Cette page décrit la projection des **relations** : suivre une arête (edge), r
 5. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
 6. [Jointure polymorphe — collection cible selon un champ discriminant](#jointure-polymorphe--collection-cible-selon-un-champ-discriminant)
 7. [Edge polymorphe — arête cible selon un champ discriminant](#edge-polymorphe--arête-cible-selon-un-champ-discriminant)
-8. [Ancrer une relation ailleurs — `Arango::SOURCE`](#ancrer-une-relation-ailleurs--arangosource)
-9. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
+8. [Restreindre les sommets projetés — `AQL::WHERE`](#restreindre-les-sommets-projetés--aqlwhere)
+9. [Ancrer une relation ailleurs — `Arango::SOURCE`](#ancrer-une-relation-ailleurs--arangosource)
+10. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
 
 ## Projection composée — `AQL::FIELDS` + `AQL::EDGES` sur la définition d'edge
 
@@ -576,6 +577,101 @@ LET area = APPEND(
 > **Sécurité — identique à la jointure polymorphe.** Une branche refusée par permission (`Field::REQUIRES` / `AQL::REQUIRES`) est **retirée de l'`APPEND`** (fail-closed : sa collection n'est jamais traversée). Le repli `Arango::FALLBACK` est gardé par `NOT IN [ …tous les types déclarés… ]`, y compris les types refusés — un document d'un type refusé route vers **rien**, jamais vers le repli (pas d'oracle). Toutes branches écartées ⇒ `LET` vaut `[]`. La logique anti-oracle est **partagée** avec la jointure (un seul assembleur `buildPolymorphicRelationVariable`).
 
 > ⚠️ **`Filter::EDGES_COUNT` polymorphe : non supporté (v1).** Le comptage passe par `LENGTH(traversal)`, incompatible avec le patron `APPEND` de branches. Une entrée de type count reste comptée sur la collection d'arête figée du modèle (comportement classique).
+
+## Restreindre les sommets projetés — `AQL::WHERE`
+
+**Le problème, en clair.** Un consommateur masque certains documents d'une collection — désactivés, hors périmètre, peu importe. La liste principale les cache correctement. Mais la fiche du parent, elle, continue de les nommer dans son tableau d'enfants : on ne peut pas les énumérer, mais on les lit **par ricochet**, à travers la relation d'un document servi.
+
+C'est un annuaire dont on aurait retiré des pages, mais dont l'index en fin de volume citerait toujours les noms retirés.
+
+**Ce que `AQL::WHERE` ajoute.** Un prédicat déclaré sur la **définition de la relation**, compilé contre le **sommet traversé**, et donc appliqué partout où cette définition est utilisée — la liste, la fiche, la sous-route, sans avoir à câbler chaque point d'entrée.
+
+**La situation.** Un thésaurus expose la descendance de chaque concept ; le consommateur cache certains termes et calcule cette liste par requête.
+
+```php
+AQL::FIELDS =>
+[
+    'narrower' => Filter::EDGES ,
+],
+AQL::EDGES =>
+[
+    'narrower' =>
+    [
+        AQL::MODEL     => TermNarrower::class ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::WHERE     => [ 'id' , 'nin' , aqlBindRef( 'hiddenTerms' ) ] ,
+    ] ,
+],
+```
+
+L'AQL émis :
+
+```aql
+LET narrower_e1 = ( FOR vertex_1, edge_1 IN OUTBOUND doc term_narrower
+                      OPTIONS { … }
+                      FILTER vertex_1.id NOT IN @hiddenTerms
+                      RETURN vertex_1 )
+```
+
+Le `FILTER` porte sur `vertex_1`, le sommet **d'arrivée** — pas sur `doc`. La valeur de `@hiddenTerms` est fournie à l'appel via `Arango::BINDS`.
+
+### La grammaire est celle que tu connais déjà
+
+`AQL::WHERE` compile avec **le même compilateur** que `Field::WHERE` et `Field::WHEN` (voir [Champs conditionnels](db/conditional-fields.md)). Tout ce que l'un accepte, l'autre l'accepte :
+
+```php
+AQL::WHERE => 'active' ,                                        // TO_BOOL(vertex.active)
+AQL::WHERE => [ 'status' , 'active' ] ,                         // vertex.status == 'active'
+AQL::WHERE => [ 'or' , [ 'status' , 'active' ] , [ 'not' , [ 'hidden' , true ] ] ] ,
+AQL::WHERE => [ 'id' , 'nin' , aqlBindRef( 'hidden' ) ] ,       // vertex.id NOT IN @hidden
+```
+
+> **Deux clés de même valeur, deux sièges.** `Field::WHERE` se déclare sur une **entrée de projection** et filtre les éléments d'un tableau embarqué (`Filter::MAP`) ; `AQL::WHERE` se déclare sur une **définition de relation** et filtre les sommets traversés. Le couple reprend exactement celui de `Field::REQUIRES` (entrée) et `AQL::REQUIRES` (définition) — une seule grammaire, deux endroits où la poser.
+
+### Ce que la clé garantit
+
+| Situation | Comportement |
+|---|---|
+| Clé absente | **Aucun `FILTER` émis** — AQL identique au bit près |
+| Bind lié à `[]` | `IN []` ⇒ aucun sommet retenu |
+| Bind non fourni à l'appel | La **requête échoue** — jamais « pas de filtre » |
+| Descripteur malformé | Exception à la construction — jamais un filtre silencieusement absent |
+| Nom d'attribut dangereux | `ValidationException` (`assertAttributeName`) |
+
+Le *fail-closed* est natif : un oubli de câblage se voit, il ne s'ouvre pas.
+
+### Portée
+
+| Forme | Pris en charge |
+|---|---|
+| `Filter::EDGES` (cardinalité N) | ✅ |
+| `Filter::EDGE` (cardinalité 1) | ✅ — même définition, même prédicat |
+| `Filter::EDGES_COUNT` | ✅ — **le compte filtre aussi** |
+| Relations imbriquées (`AQL::EDGES` dans une définition) | ✅ à toute profondeur, chaque niveau son prédicat |
+| Edge polymorphe | ✅ **par branche** (`Arango::MAP` et `Arango::FALLBACK`) |
+| Jointures (`Filter::JOIN` / `JOINS`) | ⛔ — voir `AQL::CONDITIONS` sur la définition de jointure |
+
+> **Le compte filtre, et ce n'est pas négociable.** Si le compte ignorait le prédicat, l'interface afficherait « 5 » à côté d'une liste de 3. La divergence *est* le bug, pas le filtrage : `Filter::EDGES_COUNT` lit la même déclaration et émet son `FILTER` dans la boucle comptée.
+
+> **Sur un edge polymorphe, la clé se déclare branche par branche** — et c'est le bon découpage : chaque branche traverse une **autre collection**, donc l'ensemble masqué n'est pas le même. Le prédicat **s'ajoute** au garde de discriminant, il ne le remplace pas : `FILTER doc.kind == "warehouse" && vertex_1.id NOT IN @hidden`. Perdre le garde ferait rendre des lignes à toutes les branches de l'`APPEND` à la fois.
+
+### `AQL::WHERE` et les permissions ne répondent pas à la même question
+
+C'est la distinction à garder en tête :
+
+- `AQL::REQUIRES` / `Field::REQUIRES` décident **SI** la relation est projetée. Refusé ⇒ la relation disparaît entièrement, clé absente du JSON et `LET` absent de l'AQL.
+- `AQL::WHERE` décide **QUELS** sommets elle rend. La relation est là, son contenu est restreint.
+
+Les deux se composent sans se marcher dessus : refusé, il n'y a plus de traversée à restreindre ; accordé, la traversée est là et elle est restreinte.
+
+### Câblage côté hôte
+
+Rien à câbler dans la lib. Deux choses à faire dans le projet consommateur :
+
+1. **Résoudre la liste** (souvent un résolveur mis en cache — voir `DocumentFieldSetResolver`).
+2. **Injecter le bind** dans `Arango::BINDS` à l'appel du modèle.
+
+> **Le bind orphelin est élagué tout seul.** Une relation est projetée conditionnellement : un skin peut l'écarter, et le bind déclaré ne serait alors référencé nulle part — ArangoDB rejetterait la requête entière. La couche d'exécution retire ce surplus automatiquement, en dérivant la liste des binds élaguables des déclarations du modèle, **registres de relations compris**. Détail dans [Champs conditionnels](db/conditional-fields.md#champ-skinné--le-bind-orphelin-est-élagué-automatiquement).
 
 ## Ancrer une relation ailleurs — `Arango::SOURCE`
 
