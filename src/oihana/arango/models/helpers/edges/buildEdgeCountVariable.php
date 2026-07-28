@@ -71,6 +71,12 @@ function buildEdgeCountVariable
     // "5" beside a list showing 3 — the divergence is the bug, not the filtering.
     // Same grammar as the list ({@see buildEdgeSubquery()}), compiled against the
     // inner vertex; absent → no FILTER, byte-identical output.
+    //
+    // AQL::PRUNE is deliberately NOT read here: this count is always a depth-1
+    // traversal (it emits no AQL::MIN_DEPTH / MAX_DEPTH), and pruning a depth-1
+    // walk does nothing. ⚠ Whoever makes the count honour the declared depth range
+    // must wire AQL::PRUNE at the same time, or the count will again disagree with
+    // the list — counting the descendants of a vertex the list stopped at.
     $where  = $definition[ AQL::WHERE ] ?? null ;
     $filter = $where !== null ? aqlFilter( buildWhenCondition( $where , $innerVertex ) ) : null ;
 

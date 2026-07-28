@@ -345,6 +345,39 @@ final class BuildPolymorphicEdgeVariableTest extends TestCase
     }
 
     /**
+     * A branch may be ranged and prune its masked descent, while the discriminator
+     * guard keeps its place in the `FILTER`. The two clauses sit in distinct slots —
+     * `PRUNE` before the `OPTIONS`, the guard after — so neither can shadow the other.
+     */
+    public function testPruneComposesWithTheBranchGuardOnARangedBranch() :void
+    {
+        $result = $this->normalize( buildPolymorphicEdgeVariable( 'area' ,
+        [
+            Arango::DISCRIMINATOR => 'kind' ,
+            Arango::MAP           =>
+            [
+                'warehouse' =>
+                [
+                    AQL::MODEL       => new MockEdges( 'warehouse_edges' ) ,
+                    Arango::PROPERTY => 'name' ,
+                    AQL::MAX_DEPTH   => 3 ,
+                    AQL::WHERE       => [ 'id' , 'nin' , aqlBindRef( 'hidden' ) ] ,
+                    AQL::PRUNE       => true ,
+                ] ,
+            ] ,
+        ]) ) ;
+
+        $this->assertSame
+        (
+            'LET area = (FOR vertex, edge IN 1..3 OUTBOUND doc warehouse_edges ' .
+            'PRUNE !(vertex.id NOT IN @hidden) ' . self::OPTIONS . ' ' .
+            'FILTER doc.kind == "warehouse" && vertex.id NOT IN @hidden ' .
+            'SORT edge.created DESC RETURN vertex.name)' ,
+            $result
+        ) ;
+    }
+
+    /**
      * Normalizes the random `vertex_<n>` / `edge_<n>` loop refs to stable tokens.
      *
      * @param string $aql

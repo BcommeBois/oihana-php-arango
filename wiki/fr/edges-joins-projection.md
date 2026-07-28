@@ -13,7 +13,7 @@ Cette page décrit la projection des **relations** : suivre une arête (edge), r
 5. [Projeter un *join* — `Filter::JOIN` / `Filter::JOINS`](#projeter-un-join--filterjoin--filterjoins)
 6. [Jointure polymorphe — collection cible selon un champ discriminant](#jointure-polymorphe--collection-cible-selon-un-champ-discriminant)
 7. [Edge polymorphe — arête cible selon un champ discriminant](#edge-polymorphe--arête-cible-selon-un-champ-discriminant)
-8. [Restreindre les sommets projetés — `AQL::WHERE`](#restreindre-les-sommets-projetés--aqlwhere)
+8. [Restreindre les sommets projetés — `AQL::WHERE` / `AQL::PRUNE`](#restreindre-les-sommets-projetés--aqlwhere)
 9. [Ancrer une relation ailleurs — `Arango::SOURCE`](#ancrer-une-relation-ailleurs--arangosource)
 10. [Couper un cycle INBOUND avec `AQL::SKIN`](#couper-un-cycle-inbound-avec-aqlskin)
 
@@ -145,6 +145,8 @@ La profondeur s'applique au sens déclaré dans `AQL::DIRECTION` :
 - **`AQL::MAX_DEPTH` seul** fixe la borne basse à `1` (`1..N`), la descente/remontée complète naturelle.
 - **`AQL::MIN_DEPTH` seul est refusé.** ArangoDB exige une plage bornée, et une traversée non bornée sur une arête auto-référente risquerait une boucle infinie : une projection bornée **doit** déclarer `AQL::MAX_DEPTH`, sinon `buildEdgeVariable` lève une `UnexpectedValueException`.
 - Le résultat est une **liste à plat** de tous les sommets rencontrés sur la plage de profondeur (pas un arbre imbriqué). Pour le retransformer en `children[]` imbriqué, on reconstruit l'arbre à partir de la liste à plat (cf. l'entrée de ROADMAP sur la reconstruction de hiérarchie).
+
+> ⚠️ **Restreindre une hiérarchie demande DEUX clés, pas une.** Sur une traversée à profondeur, un simple filtre cache le sommet visé mais **pas sa descendance** : la marche continue à travers lui. Il faut `AQL::WHERE` *et* `AQL::PRUNE` — voir [Restreindre les sommets projetés](#restreindre-les-sommets-projetés--aqlwhere).
 
 > **Homogène uniquement.** Une profondeur suppose le **même** type à chaque niveau (une arête auto-référente). Pour une chaîne hétérogène où chaque niveau est d'un type différent (`Type1 → Type2 → Type3`), n'utilisez **pas** de profondeur — déclarez plutôt un niveau d'edge imbriqué par type (chacun avec son `AQL::MODEL` / `AQL::FIELDS`), comme montré dans *Projection composée* ci-dessus.
 
@@ -654,6 +656,69 @@ Le *fail-closed* est natif : un oubli de câblage se voit, il ne s'ouvre pas.
 > **Le compte filtre, et ce n'est pas négociable.** Si le compte ignorait le prédicat, l'interface afficherait « 5 » à côté d'une liste de 3. La divergence *est* le bug, pas le filtrage : `Filter::EDGES_COUNT` lit la même déclaration et émet son `FILTER` dans la boucle comptée.
 
 > **Sur un edge polymorphe, la clé se déclare branche par branche** — et c'est le bon découpage : chaque branche traverse une **autre collection**, donc l'ensemble masqué n'est pas le même. Le prédicat **s'ajoute** au garde de discriminant, il ne le remplace pas : `FILTER doc.kind == "warehouse" && vertex_1.id NOT IN @hidden`. Perdre le garde ferait rendre des lignes à toutes les branches de l'`APPEND` à la fois.
+
+### Sur une hiérarchie, filtrer ne suffit pas — `AQL::PRUNE`
+
+**La situation.** Une relation peut remonter plusieurs niveaux d'un coup (`AQL::MAX_DEPTH`) : la descendance d'une catégorie, et pas seulement ses enfants directs. Prenons cet arbre, où `b` est masqué :
+
+```
+a ─┬─ b ── c
+   └─ e ── f
+```
+
+`AQL::WHERE` filtre la **sortie** de la traversée, il n'arrête pas la marche. Le serveur descend donc *à travers* `b` — qu'il jette ensuite — et ramène quand même `c`. **Mesuré sur une vraie base** :
+
+| Déclaration | Résultat |
+|---|---|
+| `AQL::WHERE` seul | `c`, `e`, `f` — **`c` fuit** |
+| `AQL::WHERE` + `AQL::PRUNE => true` | `e`, `f` — branche coupée, la sœur intacte |
+
+On avait retiré le panneau indicateur au bord de la route, mais la route restait ouverte.
+
+**La déclaration.** `AQL::PRUNE => true` reprend le prédicat de `AQL::WHERE` et le **nie** — « cache-le, *et* sa descendance » :
+
+```php
+'descendants' =>
+[
+    AQL::MODEL     => 'TermNarrowerEdge' ,
+    AQL::MAX_DEPTH => 5 ,
+    AQL::WHERE     => [ 'id' , 'nin' , aqlBindRef( 'hiddenTerms' ) ] ,
+    AQL::PRUNE     => true ,
+] ,
+```
+
+```aql
+(FOR vertex_1, edge_1 IN 1..5 OUTBOUND doc term_narrower
+   PRUNE !(vertex_1.id NOT IN @hiddenTerms)
+   OPTIONS { order: "bfs", uniqueVertices: "global" }
+   FILTER vertex_1.id NOT IN @hiddenTerms
+   SORT edge_1.created DESC RETURN vertex_1)
+```
+
+> **Les deux clauses vont ENSEMBLE, l'une ne remplace pas l'autre.** `PRUNE` arrête la marche *après* avoir visité le sommet : celui sur lequel on s'arrête est donc **toujours rendu**, c'est le `FILTER` qui l'enlève. Émettre `PRUNE` seul cacherait la descendance mais garderait le sommet masqué.
+
+**Une condition propre**, quand « arrêter de descendre » n'est pas « cacher » :
+
+```php
+AQL::WHERE => [ 'id' , 'nin' , aqlBindRef( 'hiddenTerms' ) ] ,   // ce qu'on cache
+AQL::PRUNE => [ 'archived' , true ] ,                            // où l'on s'arrête
+```
+
+`AQL::PRUNE` se déclare aussi **seul** : la marche s'arrête, rien n'est caché — le sommet d'arrêt reste dans le résultat, sa descendance non.
+
+**Les cas de bord :**
+
+| Cas | Comportement |
+|---|---|
+| Clé absente | Aucun `PRUNE` émis, requête identique au bit près |
+| `true` sans `AQL::WHERE` | **Exception** — il n'y a rien à nier, c'est une erreur de câblage. Rester silencieux laisserait la descendance masquée dans le résultat, exactement ce que la clé sert à éviter. |
+| Condition malformée | Exception à la construction, comme pour `AQL::WHERE` |
+| Relation à profondeur 1 | Accepté, sans effet — une définition peut gagner de la profondeur plus tard |
+| `Filter::EDGES_COUNT` | **Pas concerné** : le compte est toujours une traversée de profondeur 1 (il n'émet pas la plage déclarée), et élaguer une marche d'un seul niveau ne change rien. ⚠️ Si le compte honore un jour la profondeur, il devra honorer `AQL::PRUNE` en même temps. |
+
+> **Bénéfice en prime : l'arbre reconstruit redevient cohérent.** Avec `AQL::WITH_PATH`, `c` arrivait en annonçant « mon parent est `b` » — un parent absent du résultat, que `buildTree()` ne savait pas où accrocher. Si `c` ne vient plus, le problème disparaît.
+
+> Testé **sur vraie base** (`EdgePruneScopeIntegrationTest`), et pas seulement sur l'AQL rendu : la garantie dépend de la façon dont le serveur parcourt le graphe, notamment avec les options que la lib émet toujours (`order: bfs`, `uniqueVertices: global`).
 
 ### `AQL::WHERE` et les permissions ne répondent pas à la même question
 

@@ -2,6 +2,8 @@
 
 namespace tests\oihana\arango\models\helpers\edges;
 
+use UnexpectedValueException;
+
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\exceptions\UnsupportedOperationException;
@@ -175,6 +177,97 @@ final class BuildEdgeSubqueryTest extends TestCase
         $this->expectException( ValidationException::class ) ;
 
         buildEdgeSubquery( 'roles' , $this->definition( [ AQL::WHERE => [ 'a" || true || "' , 'x' ] ] ) ) ;
+    }
+
+    // ------------------------------------------------------------------ AQL::PRUNE (cut the branch, not just the leaf)
+
+    /**
+     * `true` reuses the `AQL::WHERE` predicate, negated, and emits it as a `PRUNE`
+     * BEFORE the `OPTIONS` — the AQL position ArangoDB requires. Both clauses are
+     * present: `PRUNE` stops the walk *after* visiting, so the vertex it stops on is
+     * still returned unless the `FILTER` removes it.
+     */
+    public function testPruneTrueNegatesTheWhereConditionAndStopsTheWalk() :void
+    {
+        $result = $this->normalize( buildEdgeSubquery( 'descendants' , $this->definition
+        ([
+            AQL::MAX_DEPTH => 5 ,
+            AQL::WHERE     => [ 'id' , 'nin' , aqlBindRef( 'hidden' ) ] ,
+            AQL::PRUNE     => true ,
+        ])) ) ;
+
+        $this->assertSame
+        (
+            '(FOR vertex, edge IN 1..5 OUTBOUND doc user_has_roles ' .
+            'PRUNE !(vertex.id NOT IN @hidden) ' .
+            'OPTIONS {"order":"bfs","uniqueVertices":"global"} ' .
+            'FILTER vertex.id NOT IN @hidden SORT edge.created DESC RETURN vertex.name)' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * A condition of its own, for when stopping the descent is not the same as
+     * hiding. It is compiled through the grammar rather than treated as truthy —
+     * which would have silently ignored what was written.
+     */
+    public function testPruneAcceptsItsOwnStopCondition() :void
+    {
+        $result = $this->normalize( buildEdgeSubquery( 'descendants' , $this->definition
+        ([
+            AQL::MAX_DEPTH => 5 ,
+            AQL::WHERE     => [ 'id' , 'nin' , aqlBindRef( 'hidden' ) ] ,
+            AQL::PRUNE     => [ 'archived' , true ] ,
+        ])) ) ;
+
+        $this->assertStringContainsString( 'PRUNE vertex.archived == true OPTIONS' , $result ) ;
+        $this->assertStringContainsString( 'FILTER vertex.id NOT IN @hidden '      , $result ) ;
+    }
+
+    /** `AQL::PRUNE` stands alone too — stop the walk without hiding anything. */
+    public function testPruneWorksWithoutAWhereCondition() :void
+    {
+        $result = $this->normalize( buildEdgeSubquery( 'descendants' , $this->definition
+        ([
+            AQL::MAX_DEPTH => 5 ,
+            AQL::PRUNE     => [ 'archived' , true ] ,
+        ])) ) ;
+
+        $this->assertStringContainsString( 'PRUNE vertex.archived == true OPTIONS' , $result ) ;
+        $this->assertStringNotContainsString( 'FILTER' , $result ) ;
+    }
+
+    /**
+     * `true` with nothing to negate is a wiring error, not "no pruning": staying
+     * silent would leave the masked descent projected, which is the bug the key
+     * exists to close.
+     */
+    public function testPruneTrueWithoutWhereThrows() :void
+    {
+        $this->expectException( UnexpectedValueException::class ) ;
+
+        buildEdgeSubquery( 'descendants' , $this->definition( [ AQL::MAX_DEPTH => 5 , AQL::PRUNE => true ] ) ) ;
+    }
+
+    /** A malformed stop condition fails loud, like a malformed `AQL::WHERE`. */
+    public function testMalformedPruneThrows() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+
+        buildEdgeSubquery( 'descendants' , $this->definition( [ AQL::MAX_DEPTH => 5 , AQL::PRUNE => [] ] ) ) ;
+    }
+
+    /** Without the key, no `PRUNE` is emitted and the traversal is the historical one. */
+    public function testWithoutPruneNoClauseIsEmitted() :void
+    {
+        $result = $this->normalize( buildEdgeSubquery( 'descendants' , $this->definition
+        ([
+            AQL::MAX_DEPTH => 5 ,
+            AQL::WHERE     => [ 'id' , 'nin' , aqlBindRef( 'hidden' ) ] ,
+        ])) ) ;
+
+        $this->assertStringNotContainsString( 'PRUNE' , $result ) ;
+        $this->assertStringContainsString( 'IN 1..5 OUTBOUND doc user_has_roles OPTIONS' , $result ) ;
     }
 
     /**

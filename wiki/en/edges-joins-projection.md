@@ -13,7 +13,7 @@ This page describes the projection of the **relations**: following an edge, reso
 5. [Projecting a *join* — `Filter::JOIN` / `Filter::JOINS`](#projecting-a-join--filterjoin--filterjoins)
 6. [Polymorphic join — target collection from a discriminator field](#polymorphic-join--target-collection-from-a-discriminator-field)
 7. [Polymorphic edge — target edge from a discriminator field](#polymorphic-edge--target-edge-from-a-discriminator-field)
-8. [Restricting the projected vertices — `AQL::WHERE`](#restricting-the-projected-vertices--aqlwhere)
+8. [Restricting the projected vertices — `AQL::WHERE` / `AQL::PRUNE`](#restricting-the-projected-vertices--aqlwhere)
 9. [Anchoring a relation elsewhere — `Arango::SOURCE`](#anchoring-a-relation-elsewhere--arangosource)
 10. [Breaking an INBOUND cycle with `AQL::SKIN`](#breaking-an-inbound-cycle-with-aqlskin)
 
@@ -145,6 +145,8 @@ The depth applies to whichever `AQL::DIRECTION` you declare:
 - **`AQL::MAX_DEPTH` alone** defaults the lower bound to `1` (`1..N`), the natural full descent/ascent.
 - **`AQL::MIN_DEPTH` alone is rejected.** ArangoDB requires a bounded range, and an unbounded traversal over a self-referential edge would risk a runaway cycle, so a ranged projection **must** declare `AQL::MAX_DEPTH` — otherwise `buildEdgeVariable` throws an `UnexpectedValueException`.
 - The result is a **flat list** of all matched vertices across the depth range (not a nested tree). To turn it back into a nested `children[]` structure, reconstruct it from the flat list (see the roadmap entry on hierarchy reconstruction).
+
+> ⚠️ **Restricting a hierarchy takes TWO keys, not one.** On a ranged traversal a plain filter hides the targeted vertex but **not its descent**: the walk keeps going through it. You need `AQL::WHERE` *and* `AQL::PRUNE` — see [Restricting the projected vertices](#restricting-the-projected-vertices--aqlwhere).
 
 > **Homogeneous only.** A depth range assumes the **same** type at every level (a self-referential edge). For a heterogeneous chain where each level is a different type (`Type1 → Type2 → Type3`), do **not** use a depth — declare one nested edge level per type instead (each with its own `AQL::MODEL` / `AQL::FIELDS`), as shown in *Composed projection* above.
 
@@ -654,6 +656,69 @@ Fail-closed is native: a wiring omission shows up, it does not open up.
 > **The count filters, and that is not negotiable.** A count ignoring the predicate would announce "5" beside a list of 3. The divergence *is* the bug, not the filtering: `Filter::EDGES_COUNT` reads the same declaration and emits its `FILTER` inside the counted loop.
 
 > **On a polymorphic edge the key is declared branch by branch** — and that is the right granularity: each branch traverses a **different collection**, so the masked set is not the same. The predicate is **appended** to the discriminator guard, never substituted for it: `FILTER doc.kind == "warehouse" && vertex_1.id NOT IN @hidden`. Losing the guard would make every branch of the `APPEND` yield rows at once.
+
+### On a hierarchy, filtering is not enough — `AQL::PRUNE`
+
+**The situation.** A relation can climb several levels at once (`AQL::MAX_DEPTH`): the whole descent of a category, not just its direct children. Take this tree, where `b` is masked:
+
+```
+a ─┬─ b ── c
+   └─ e ── f
+```
+
+`AQL::WHERE` filters the traversal's **output**; it does not stop the walk. The server therefore descends *through* `b` — which it then discards — and still brings back `c`. **Measured against a real server**:
+
+| Declaration | Result |
+|---|---|
+| `AQL::WHERE` alone | `c`, `e`, `f` — **`c` leaks** |
+| `AQL::WHERE` + `AQL::PRUNE => true` | `e`, `f` — branch cut, sibling intact |
+
+The signpost by the road was removed, but the road stayed open.
+
+**The declaration.** `AQL::PRUNE => true` reuses the `AQL::WHERE` predicate and **negates** it — "hide it, *and* its descent":
+
+```php
+'descendants' =>
+[
+    AQL::MODEL     => 'TermNarrowerEdge' ,
+    AQL::MAX_DEPTH => 5 ,
+    AQL::WHERE     => [ 'id' , 'nin' , aqlBindRef( 'hiddenTerms' ) ] ,
+    AQL::PRUNE     => true ,
+] ,
+```
+
+```aql
+(FOR vertex_1, edge_1 IN 1..5 OUTBOUND doc term_narrower
+   PRUNE !(vertex_1.id NOT IN @hiddenTerms)
+   OPTIONS { order: "bfs", uniqueVertices: "global" }
+   FILTER vertex_1.id NOT IN @hiddenTerms
+   SORT edge_1.created DESC RETURN vertex_1)
+```
+
+> **The two clauses go TOGETHER — neither replaces the other.** `PRUNE` stops the walk *after* visiting the vertex, so the one it stops on is **still returned**; it is the `FILTER` that removes it. Emitting `PRUNE` alone would hide the descent but keep the masked vertex.
+
+**A condition of its own**, for when "stop descending" is not "hide":
+
+```php
+AQL::WHERE => [ 'id' , 'nin' , aqlBindRef( 'hiddenTerms' ) ] ,   // what is hidden
+AQL::PRUNE => [ 'archived' , true ] ,                            // where we stop
+```
+
+`AQL::PRUNE` may also be declared **alone**: the walk stops, nothing is hidden — the vertex it stops on stays in the result, its descent does not.
+
+**Edge cases:**
+
+| Case | Behaviour |
+|---|---|
+| Key absent | No `PRUNE` emitted, query byte-for-byte unchanged |
+| `true` without `AQL::WHERE` | **Exception** — there is nothing to negate, so it is a wiring error. Staying silent would leave the masked descent in the result, which is exactly what the key exists to prevent. |
+| Malformed condition | Exception at build time, like `AQL::WHERE` |
+| Depth-1 relation | Accepted, no effect — a definition may gain depth later |
+| `Filter::EDGES_COUNT` | **Not concerned**: the count is always a depth-1 traversal (it does not emit the declared range), and pruning a single-level walk changes nothing. ⚠️ Should the count ever honour the depth range, it must honour `AQL::PRUNE` at the same time. |
+
+> **A bonus: the reconstructed tree becomes consistent again.** With `AQL::WITH_PATH`, `c` arrived announcing "my parent is `b`" — a parent absent from the result, which `buildTree()` had nowhere to attach. If `c` no longer comes, the problem disappears.
+
+> Tested **against a real server** (`EdgePruneScopeIntegrationTest`), not only on the rendered AQL: the guarantee depends on how the server walks the graph, notably with the options the library always emits (`order: bfs`, `uniqueVertices: global`).
 
 ### `AQL::WHERE` and the permission gates answer different questions
 

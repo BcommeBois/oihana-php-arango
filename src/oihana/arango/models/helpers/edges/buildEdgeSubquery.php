@@ -29,6 +29,7 @@ use function oihana\arango\db\helpers\resolveSkinFields;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlTraversal;
+use function oihana\arango\db\operators\logicalNot;
 use function oihana\arango\models\helpers\authorizeRelationFields;
 use function oihana\arango\models\helpers\authorizeTargetFields;
 use function oihana\arango\models\helpers\buildVariables;
@@ -75,11 +76,20 @@ use function oihana\core\strings\randomKey;
  * it, and is orthogonal to `AQL::REQUIRES` / `Field::REQUIRES`, which decide
  * whether the relation is projected at all.
  *
+ * `AQL::WHERE` filters the traversal's OUTPUT; on a ranged relation
+ * (`AQL::MAX_DEPTH`) the walk still descends through a masked vertex, so its
+ * descendants keep being projected. `AQL::PRUNE` stops the walk itself — `true`
+ * reuses the `AQL::WHERE` predicate negated ("hide it and its descent"), or a
+ * condition of its own when stopping is not hiding. The two are emitted together
+ * because `PRUNE` stops *after* visiting: the vertex it stops on is still returned
+ * unless the `FILTER` removes it.
+ *
  * @param string|null            $name            The logical name of the relation (used to skin the projection).
  * @param array                  $definition      Configuration array for the traversal — same keys as
  *                                                {@see buildEdgeVariable()} (`AQL::MODEL`, `AQL::DIRECTION`,
  *                                                `AQL::EDGES`, `AQL::JOINS`, `AQL::SKIN`, `AQL::MAX_DEPTH`,
- *                                                `AQL::WITH_PATH`, `AQL::WHERE`, `Arango::PROPERTY`, …).
+ *                                                `AQL::WITH_PATH`, `AQL::WHERE`, `AQL::PRUNE`,
+ *                                                `Arango::PROPERTY`, …).
  * @param string                 $startVertex     The AQL variable name of the starting vertex (default 'doc').
  * @param ContainerInterface|null $container      The DI container used to resolve models.
  * @param array                  $init            Optional associative array used for variable initialization.
@@ -93,9 +103,10 @@ use function oihana\core\strings\randomKey;
  * @throws ContainerExceptionInterface   If the Edges model cannot be resolved from the container.
  * @throws NotFoundExceptionInterface    If the Edges model cannot be resolved from the container.
  * @throws ReflectionException
- * @throws UnexpectedValueException      If $name is empty, the model is invalid, or the collection is not set.
- * @throws UnsupportedOperationException If an `AQL::WHERE` condition descriptor is malformed.
- * @throws ValidationException           If an `AQL::WHERE` condition attribute name is unsafe.
+ * @throws UnexpectedValueException      If $name is empty, the model is invalid, the collection is not set,
+ *                                       or `AQL::PRUNE => true` has no `AQL::WHERE` condition to negate.
+ * @throws UnsupportedOperationException If an `AQL::WHERE` / `AQL::PRUNE` condition descriptor is malformed.
+ * @throws ValidationException           If an `AQL::WHERE` / `AQL::PRUNE` condition attribute name is unsafe.
  */
 function buildEdgeSubquery
 (
@@ -126,12 +137,13 @@ function buildEdgeSubquery
     // otherwise we fall back on the request-level skin propagated through
     // $init so a sub-edge projection can vary with `?skin=...` (the
     // sub-fields opt in via Field::SKINS markers).
-    $skin            = $definition[ AQL::SKIN   ] ?? $init[ AQL::SKIN ] ?? null ;
+    $skin = $definition[ AQL::SKIN   ] ?? $init[ AQL::SKIN ] ?? null ;
+
     // AQL::SKIN_FIELDS lets a definition declare distinct projections per
     // skin in a single place, e.g. role() flat for Skin::DEFAULT and a rich
     // role([...]) for Skin::FULL. Falls back on the '*' bucket then on the
     // legacy AQL::FIELDS shape — fully retro-compatible.
-    $fields          = resolveSkinFields( $definition , $skin ) ;
+    $fields = resolveSkinFields( $definition , $skin ) ;
 
     // Depth range (hierarchies): a self-referential relation (e.g. a thesaurus)
     // can project descendants/ancestors up to AQL::MAX_DEPTH in a single traversal.
@@ -175,6 +187,51 @@ function buildEdgeSubquery
 
     $subVariables = [] ;
 
+    // AQL::WHERE restricts WHICH traversed vertices are projected. It reuses the
+    // Field::WHEN condition grammar (buildWhenCondition), compiled against the
+    // traversed VERTEX — not the start vertex — and a condition value may be an
+    // AqlBindReference (aqlBindRef) so the retained set is decided by a bind
+    // supplied at query time: an absent bind fails the query (fail-closed), never
+    // silently widens it.
+    $where          = $definition[ AQL::WHERE ] ?? null ;
+    $whereCondition = $where !== null ? buildWhenCondition( $where , $vertexRef ) : null ;
+
+    // AQL::PRUNE stops the WALK, where AQL::WHERE only filters its OUTPUT. The
+    // distinction only shows on a ranged traversal (AQL::MAX_DEPTH): a `FILTER`
+    // removes a masked vertex from the result, but the walk still descends THROUGH
+    // it, so its own descendants keep being projected. Measured live on
+    // `a → b(masked) → c` plus `a → e → f`: the FILTER alone yields `c, e, f` —
+    // `c` leaks — while PRUNE cuts that branch and yields `e, f`.
+    //
+    // The two work TOGETHER and neither replaces the other: PRUNE stops the walk
+    // *after* visiting the vertex, so the vertex it stops on is still returned
+    // unless the FILTER removes it.
+    //
+    // - `true`      → reuse the AQL::WHERE predicate, negated. The common intent
+    //                 ("hide it AND its descent"), and impossible to desynchronize
+    //                 from the filter since there is a single declaration.
+    // - a condition → its own stop condition, in the same grammar, for when
+    //                 "stop descending" is not "hide". Accepted rather than treated
+    //                 as truthy, which would silently ignore what was written.
+    $prune = $definition[ AQL::PRUNE ] ?? null ;
+
+    if ( $prune === true )
+    {
+        if ( $whereCondition === null )
+        {
+            throw new UnexpectedValueException
+            (
+                __FUNCTION__ . ' failed, AQL::PRUNE => true has no AQL::WHERE condition to negate.'
+            ) ;
+        }
+
+        $prune = logicalNot( $whereCondition , true ) ;
+    }
+    else if ( $prune !== null )
+    {
+        $prune = buildWhenCondition( $prune , $vertexRef ) ;
+    }
+
     $for = aqlTraversal
     ([
         AQL::VERTEX_REF      => $vertexRef   ,
@@ -185,6 +242,7 @@ function buildEdgeSubquery
         AQL::EDGE_COLLECTION => $edgeCollection  ,
         AQL::MIN_DEPTH       => $minDepth ,
         AQL::MAX_DEPTH       => $maxDepth ,
+        AQL::PRUNE           => $prune ,
         AQL::OPTIONS         =>
         [
             TraversalOption::ORDER           => TraversalOrder::BFS ,
@@ -192,19 +250,12 @@ function buildEdgeSubquery
         ]
     ]) ;
 
-    // AQL::WHERE restricts WHICH traversed vertices are projected. It reuses the
-    // Field::WHEN condition grammar (buildWhenCondition), compiled against the
-    // traversed VERTEX — not the start vertex — and a condition value may be an
-    // AqlBindReference (aqlBindRef) so the retained set is decided by a bind
-    // supplied at query time: an absent bind fails the query (fail-closed), never
-    // silently widens it. The predicate is APPENDED to the injected ones, so a
-    // polymorphic branch guard keeps its head position and the two cumulate
-    // instead of replacing one another.
-    $where = $definition[ AQL::WHERE ] ?? null ;
-
-    if ( $where !== null )
+    // The AQL::WHERE predicate is APPENDED to the injected ones, so a polymorphic
+    // branch guard keeps its head position and the two cumulate instead of
+    // replacing one another.
+    if ( $whereCondition !== null )
     {
-        $extraConditions = [ ...$extraConditions , buildWhenCondition( $where , $vertexRef ) ] ;
+        $extraConditions = [ ...$extraConditions , $whereCondition ] ;
     }
 
     // The discriminator guard, the AQL::WHERE predicate (and any other injected
