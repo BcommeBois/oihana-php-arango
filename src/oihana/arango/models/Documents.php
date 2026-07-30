@@ -145,6 +145,7 @@ class Documents implements ArangoDocumentsModel
              ->initializeFillable         ( $init )
              ->initializeFilters          ( $init )
              ->initializeGroupable        ( $init )
+             ->initializeHydration        ( $init )
              ->initializeJoins            ( $init )
              ->initializeFields           ( $init )
              ->initializeSkinFields       ( $init )

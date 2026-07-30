@@ -24,9 +24,12 @@ use oihana\arango\clients\options\ClientOptions ;
 
 use oihana\arango\db\enums\ArangoConfig ;
 use oihana\arango\db\enums\Extra ;
+use oihana\arango\db\enums\Hydration ;
+
 use oihana\arango\db\results\ExecutionStats ;
 use oihana\arango\db\results\ExplainResult ;
 use oihana\arango\db\results\ProfileResult ;
+
 use oihana\arango\db\traits\AnalyzerManagementTrait ;
 use oihana\arango\db\traits\CollectionManagementTrait ;
 use oihana\arango\db\traits\IndexManagementTrait ;
@@ -319,61 +322,65 @@ class ArangoDB
     /**
      * Returns the list of documents from the last executed cursor.
      *
-     * @param null|SchemaResolver|Closure|string $schema Optional class / resolver / closure to map the documents.
+     * @param null|SchemaResolver|Closure|string $schema     Optional class / resolver / closure to map the documents.
+     * @param string                             $hydration How a document is turned into its schema object, one of the {@see Hydration} modes.
      *
      * @return array<int, mixed>
      *
      * @throws ArangoException
      * @throws ReflectionException
      */
-    public function getDocuments( null|SchemaResolver|Closure|string $schema = null ) : array
+    public function getDocuments( null|SchemaResolver|Closure|string $schema = null , string $hydration = Hydration::CONSTRUCTOR ) : array
     {
-        return $this->getResult( $schema ) ?? [] ;
+        return $this->getResult( $schema , $hydration ) ?? [] ;
     }
 
     /**
      * Returns the first result from the last executed cursor.
      *
-     * @param null|SchemaResolver|Closure|string $schema Optional class / resolver / closure to map the documents.
+     * @param null|SchemaResolver|Closure|string $schema    Optional class / resolver / closure to map the documents.
+     * @param string                             $hydration How a document is turned into its schema object, one of the {@see Hydration} modes.
      *
      * @return mixed
      *
      * @throws ArangoException
      * @throws ReflectionException
      */
-    public function getFirstResult( null|SchemaResolver|Closure|string $schema = null ) : mixed
+    public function getFirstResult( null|SchemaResolver|Closure|string $schema = null , string $hydration = Hydration::CONSTRUCTOR ) : mixed
     {
-        $result = $this->getResult( $schema ) ;
+        $result = $this->getResult( $schema , $hydration ) ;
         return $result[ 0 ] ?? null ;
     }
 
     /**
      * Returns the first result as an object.
      *
-     * @param null|SchemaResolver|Closure|string $schema Optional class / resolver / closure to map the documents.
+     * @param null|SchemaResolver|Closure|string $schema    Optional class / resolver / closure to map the documents.
+     * @param string                             $hydration How a document is turned into its schema object, one of the {@see Hydration} modes.
      *
      * @return ?object
      *
      * @throws ArangoException
      * @throws ReflectionException
      */
-    public function getObject( null|SchemaResolver|Closure|string $schema = null ) : ?object
+    public function getObject( null|SchemaResolver|Closure|string $schema = null , string $hydration = Hydration::CONSTRUCTOR ) : ?object
     {
-        $first = $this->getFirstResult( $schema ) ;
+        $first = $this->getFirstResult( $schema , $hydration ) ;
         return is_object( $first ) ? $first : ( is_array( $first ) ? (object) $first : null ) ;
     }
 
     /**
      * Returns the query result as a list of hydrated documents.
      *
-     * @param null|SchemaResolver|Closure|string $schema Optional class / resolver / closure to map the documents.
+     * @param null|SchemaResolver|Closure|string $schema    Optional class / resolver / closure to map the documents.
+     * @param string                             $hydration How a document is turned into its schema object, one of the {@see Hydration} modes.
      *
      * @return ?array<int, mixed>
      *
      * @throws ArangoException
      * @throws ReflectionException
      */
-    public function getResult( null|SchemaResolver|Closure|string $schema = null ) : ?array
+    public function getResult( null|SchemaResolver|Closure|string $schema = null , string $hydration = Hydration::CONSTRUCTOR ) : ?array
     {
         if ( !isset( $this->cursor ) )
         {
@@ -387,7 +394,7 @@ class ArangoDB
             return null ;
         }
 
-        return array_map( fn( $document ) => $this->hydrateDocument( $document , $schema ) , $result ) ;
+        return array_map( fn( $document ) => $this->hydrateDocument( $document , $schema , $hydration ) , $result ) ;
     }
 
     /**
@@ -411,13 +418,14 @@ class ArangoDB
     /**
      * Returns a generator yielding documents one by one from the current cursor.
      *
-     * @param null|SchemaResolver|Closure|string $schema Optional class / resolver / closure to map the documents.
+     * @param null|SchemaResolver|Closure|string $schema    Optional class / resolver / closure to map the documents.
+     * @param string                             $hydration How a document is turned into its schema object, one of the {@see Hydration} modes.
      *
      * @return Generator<mixed>
      *
      * @throws ReflectionException
      */
-    public function streamDocuments( null|SchemaResolver|Closure|string $schema = null ) : Generator
+    public function streamDocuments( null|SchemaResolver|Closure|string $schema = null , string $hydration = Hydration::CONSTRUCTOR ) : Generator
     {
         if ( !isset( $this->cursor ) )
         {
@@ -428,7 +436,7 @@ class ArangoDB
         {
             foreach ( $this->cursor as $document )
             {
-                yield $this->hydrateDocument( $document , $schema ) ;
+                yield $this->hydrateDocument( $document , $schema , $hydration ) ;
             }
         }
         finally
@@ -443,8 +451,19 @@ class ArangoDB
     /**
      * Hydrates a document according to the given schema hint.
      *
-     * @param mixed                              $document The document to hydrate.
-     * @param Closure|SchemaResolver|string|null $schema   Optional class / resolver / closure.
+     * A {@see Thing} is built by its **constructor**, whose assignment is shallow :
+     * every nested structure stays a raw array, whatever the schema declares about
+     * it. {@see Hydration::REFLECTION} asks for {@see hydrate()} instead — the only
+     * path honouring the `#[HydrateAs]` / `#[HydrateWith]` attributes down the whole
+     * tree. Any class that is *not* a `Thing` has always gone through reflection.
+     *
+     * The mode is a plain argument, deliberately : it is decided per read by the
+     * calling model and never stored here, because a single façade is shared by
+     * every model of the application.
+     *
+     * @param mixed                              $document  The document to hydrate.
+     * @param Closure|SchemaResolver|string|null $schema    Optional class / resolver / closure.
+     * @param string                             $hydration How a document is turned into its schema object, one of the {@see Hydration} modes.
      *
      * @return mixed
      *
@@ -453,7 +472,8 @@ class ArangoDB
     protected function hydrateDocument
     (
         mixed                              $document ,
-        null|Closure|SchemaResolver|string $schema   = null ,
+        null|Closure|SchemaResolver|string $schema    = null ,
+        string                             $hydration = Hydration::CONSTRUCTOR ,
     )
     : mixed
     {
@@ -469,7 +489,9 @@ class ArangoDB
 
         if ( is_array( $document ) && is_string( $schema ) && class_exists( $schema ) )
         {
-            if ( is_a( $schema , Thing::class , true ) )
+            // Only the exact reflection mode opts in : an unknown value keeps the
+            // historical behaviour rather than reaching the stricter one by accident.
+            if ( is_a( $schema , Thing::class , true ) && $hydration !== Hydration::REFLECTION )
             {
                 return new $schema( $document ) ;
             }

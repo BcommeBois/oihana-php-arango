@@ -42,6 +42,7 @@ trait ArangoTrait
 {
     use AlterDocumentTrait ,
         DebugTrait         ,
+        HydrationTrait     ,
         LazyTrait          ,
         SchemaTrait        ;
 
@@ -340,7 +341,7 @@ trait ArangoTrait
     :array
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
-        $docs = $this->arangodb->getDocuments($raw ? null : ( $schema ?? $this->schema ) );
+        $docs = $this->arangodb->getDocuments($raw ? null : ( $schema ?? $this->schema ) , $this->hydration );
         return $raw ? $docs : $this->alter( $docs , context: $context ) ;
     }
 
@@ -375,7 +376,7 @@ trait ArangoTrait
     :mixed
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
-        $result = $this->arangodb->getFirstResult($raw ? null : ( $schema ?? $this->schema ) ) ;
+        $result = $this->arangodb->getFirstResult($raw ? null : ( $schema ?? $this->schema ) , $this->hydration ) ;
         return $raw ? $result : $this->alter( $result , context: $context ) ;
     }
 
@@ -410,7 +411,7 @@ trait ArangoTrait
     :?object
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
-        $obj = $this->arangodb->getObject($raw ? null : ( $schema ?? $this->schema ) ) ;
+        $obj = $this->arangodb->getObject($raw ? null : ( $schema ?? $this->schema ) , $this->hydration ) ;
         return $raw ? $obj : $this->alter( $obj , context: $context );
     }
 
@@ -445,7 +446,7 @@ trait ArangoTrait
     :?array
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
-        $res = $this->arangodb->getResult($raw ? null : ( $schema ?? $this->schema ) ) ;
+        $res = $this->arangodb->getResult($raw ? null : ( $schema ?? $this->schema ) , $this->hydration ) ;
         return $raw ? $res : $this->alter( $res , context: $context ) ;
     }
 
@@ -740,7 +741,7 @@ trait ArangoTrait
     {
         $this->prepareAndExecute( $query , $bindVars , $options ) ;
 
-        $generator = $this->arangodb->streamDocuments( $raw ? null : ( $schema ?? $this->schema ) ) ;
+        $generator = $this->arangodb->streamDocuments( $raw ? null : ( $schema ?? $this->schema ) , $this->hydration ) ;
 
         if ( !$raw )
         {

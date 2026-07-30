@@ -55,6 +55,7 @@ class AQL
     public const string FROM            = 'from' ;
     public const string GRAPH           = 'graph' ;
     public const string GRAPH_DEFAULT   = 'vertex, edge, path' ;
+    public const string HYDRATION       = 'hydration' ;
     public const string ID              = 'id' ;
     public const string INDEXES         = 'indexes' ;
     public const string IN              = 'in' ;
