@@ -17,10 +17,15 @@ use oihana\exceptions\ValidationException;
 
 use org\schema\constants\Schema;
 
+use oihana\arango\db\enums\AQL;
+
 use function oihana\arango\db\functions\documents\translate;
+use function oihana\arango\db\functions\toBool;
 use function oihana\arango\db\helpers\aqlValue;
 use function oihana\arango\db\helpers\fields\aqlFieldUrl;
 use function oihana\arango\db\functions\strings\concat;
+use function oihana\arango\db\operators\ternary;
+use function oihana\core\strings\betweenQuotes;
 use function oihana\core\strings\keyValue;
 use function oihana\core\strings\key;
 
@@ -280,5 +285,170 @@ final class AqlFieldUrlTest extends TestCase
             Field::PATHS    => [ 'Place' => '/places' ] ,
             Field::PROPERTY => 'foo; REMOVE doc IN col' ,
         ]);
+    }
+
+    // ---------------------------------------------------------------- Field::WHEN (conditional guard)
+
+    /**
+     * AQL drops null arguments from a CONCAT(), so a document with no key comes back with a
+     * truncated link instead of no link at all. The guard lets the field abstain — and a
+     * one-element leaf is a truthiness test, so an empty key abstains too.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testWhenGuardsTheSimpleForm()
+    {
+        $result = aqlFieldUrl('url', 'doc', [ Field::PATH => '/things' , Field::WHEN => [ '_key' ] ]);
+
+        $expected = keyValue('url', ternary
+        (
+            toBool(key('_key', 'doc')),
+            concat(['/things', Char::SLASH, key('_key', 'doc')]),
+            AQL::NULL
+        ));
+
+        $this->assertSame($expected, $result);
+        $this->assertSame("url:TO_BOOL(doc._key) ? CONCAT('/things','/',doc._key) : null", $result);
+    }
+
+    /**
+     * The guard carries the whole CONCAT(), discriminant routing included.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testWhenGuardsTheDiscriminantForm()
+    {
+        $result = aqlFieldUrl('url', 'doc',
+        [
+            Field::PATH  => '/thing' ,
+            Field::PATHS => [ 'Place' => '/places' ] ,
+            Field::WHEN  => [ '_key' ] ,
+        ]);
+
+        $expected = "url:TO_BOOL(doc._key) ? CONCAT(TRANSLATE(doc.additionalType,{Place:'/places'},'/thing'),'/',doc._key) : null";
+        $this->assertSame($expected, $result);
+    }
+
+    /**
+     * The two shapes of a fallback branch: an inlined literal and a sibling attribute.
+     *
+     * ⚠ A literal holding a slash looks like an AQL expression to aqlValue(), which leaves it
+     * raw — `Field::ELSE => 'N/A'` would break the query. It is declared with betweenQuotes().
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testWhenComposesWithElse()
+    {
+        $literal = aqlFieldUrl('url', 'doc',
+        [
+            Field::PATH => '/things' ,
+            Field::WHEN => [ '_key' ] ,
+            Field::ELSE => betweenQuotes('N/A') ,
+        ]);
+
+        $this->assertSame("url:TO_BOOL(doc._key) ? CONCAT('/things','/',doc._key) : 'N/A'", $literal);
+
+        $property = aqlFieldUrl('url', 'doc',
+        [
+            Field::PATH => '/things' ,
+            Field::WHEN => [ '_key' ] ,
+            Field::ELSE => [ Field::PROPERTY => 'fallbackUrl' ] ,
+        ]);
+
+        $this->assertSame("url:TO_BOOL(doc._key) ? CONCAT('/things','/',doc._key) : doc.fallbackUrl", $property);
+    }
+
+    /**
+     * On this filter Field::NAME renames the appended *key*, not the source attribute — the
+     * condition must be able to name that same attribute.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testWhenReadsTheCustomKeyName()
+    {
+        $result = aqlFieldUrl('url', 'doc',
+        [
+            Field::PATH => '/things' ,
+            Field::NAME => 'customKey' ,
+            Field::WHEN => [ 'customKey' ] ,
+        ]);
+
+        $this->assertSame("url:TO_BOOL(doc.customKey) ? CONCAT('/things','/',doc.customKey) : null", $result);
+    }
+
+    /**
+     * The condition is compiled against the reference the projection itself reads from. Inside
+     * a sub-document projection that reference is the sub-document, so a discriminant carried
+     * by the embedded copy — the case this guard exists for — is read from it, not from the
+     * parent.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testWhenIsCompiledAgainstTheProjectionReference()
+    {
+        $result = aqlFieldUrl('url', 'doc.thing', [ Field::PATH => '/things' , Field::WHEN => [ 'additionalType' , 'Place' ] ]);
+
+        $this->assertSame("url:doc.thing.additionalType == 'Place' ? CONCAT('/things','/',doc.thing._key) : null", $result);
+    }
+
+    /**
+     * Backward compatibility: without the marker the emitted AQL is the one from before, byte
+     * for byte — no ternary, no test, not one extra space. Both branches are pinned.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testWithoutMarkerTheEmittedAqlIsUnchanged()
+    {
+        $simple = aqlFieldUrl('url', 'doc', [ Field::PATH => '/things' ]);
+        $this->assertSame("url:CONCAT('/things','/',doc._key)", $simple);
+
+        $routed = aqlFieldUrl('url', 'doc', [ Field::PATH => '/thing' , Field::PATHS => [ 'Place' => '/places' ] ]);
+        $this->assertSame("url:CONCAT(TRANSLATE(doc.additionalType,{Place:'/places'},'/thing'),'/',doc._key)", $routed);
+    }
+
+    /**
+     * A malformed condition fails loudly rather than emitting a guard that lets everything through.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testMalformedWhenThrows()
+    {
+        $this->expectException(UnsupportedOperationException::class);
+        aqlFieldUrl('url', 'doc', [ Field::PATH => '/things' , Field::WHEN => [] ]);
+    }
+
+    /**
+     * The condition attribute flows into `doc.<attr>` and is validated against AQL injection.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ValidationException
+     */
+    public function testWhenThrowsOnUnsafeAttribute()
+    {
+        $this->expectException(ValidationException::class);
+        aqlFieldUrl('url', 'doc', [ Field::PATH => '/things' , Field::WHEN => [ 'foo; REMOVE doc IN col' ] ]);
     }
 }

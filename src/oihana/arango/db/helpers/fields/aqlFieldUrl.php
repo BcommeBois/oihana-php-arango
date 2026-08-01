@@ -77,13 +77,39 @@ use function oihana\files\path\joinPaths;
  * // url:CONCAT(TRANSLATE(doc.additionalType,{Place:'https://base.url/places',Person:'https://base.url/people'},'https://base.url/thing'),'/',doc._key)
  * ```
  *
+ * Abstaining (`Field::WHEN`):
+ *
+ * AQL drops null arguments from a `CONCAT()`, so a document with no key does not yield a
+ * `null` url — it yields a truncated link leading nowhere (`https://base/places/`). An
+ * opt-in `Field::WHEN` guards the whole expression, so the field can abstain instead:
+ *
+ * ```php
+ * echo aqlFieldUrl(
+ *     key     : 'url',
+ *     options : [ Field::PATH => '/things' , Field::WHEN => [ '_key' ] ]
+ * );
+ * // Returns:
+ * // url:TO_BOOL(doc._key) ? CONCAT('/things','/',doc._key) : null
+ * ```
+ *
+ * The condition uses the {@see buildWhenCondition()} grammar and is compiled against `$doc`
+ * — the reference the projection itself reads from, which inside a sub-document projection
+ * is the sub-document. A one-element leaf (`[ '_key' ]`) is a truthiness test, so an absent
+ * **and** an empty key both abstain. `Field::ELSE` sets the fallback branch (default `null`).
+ * Without the marker the emitted AQL is unchanged, byte for byte.
+ *
+ * `Field::NULLABLE` is **not** the marker to reach for here: it tests that the source is an
+ * object, which a document key never is. {@see aqlFields()} rejects it on every filter but
+ * `Filter::DOCUMENT`, and that refusal is the single seat of the rule.
+ *
  * @param string                  $key       The field key in the parent document (e.g., 'url').
  * @param string                  $doc       The document reference for AQL (default: `AQL::DOC`).
  * @param array                   $options   The field definition. Recognised keys: `Field::PATH` (URL path
  *                                           pattern / fallback route), `Field::PATHS` (discriminant → route map),
  *                                           `Field::PROPERTY` (discriminant attribute, default
- *                                           `Schema::ADDITIONAL_TYPE`) and `Field::NAME` (document key name to
- *                                           append, default `_key`).
+ *                                           `Schema::ADDITIONAL_TYPE`), `Field::NAME` (document key name to
+ *                                           append, default `_key`) and `Field::WHEN` / `Field::ELSE` (the
+ *                                           conditional guard, see above).
  * @param ContainerInterface|null $container Optional DI container to fetch the base URL.
  * @param array                   $init      Optional initialization array. Use `Arango::ARGS` to provide
  *                                           an associative array of placeholder values.
@@ -131,6 +157,10 @@ function aqlFieldUrl
 
     $args = $init[ Arango::ARGS ] ?? null ;
 
+    // The document key the url is built from (e.g. `doc._key`). It is also the source
+    // handed to the guard below, hence the single computation.
+    $source = key( $keyName , $doc ) ;
+
     // Resolve a single path pattern: replace `{param}` placeholders from the request
     // args, then prefix the base URL with slash normalization.
     $resolve = static function ( ?string $value ) use ( $baseUrl , $args ) : string
@@ -164,19 +194,19 @@ function aqlFieldUrl
         // key : CONCAT( TRANSLATE( doc.<attr> , { map } , 'default' ) , '/' , doc._key )
         // The lookup map and the fallback are pre-rendered (object literal / quoted string)
         // because translate() joins its arguments verbatim — it does not format them.
-        return keyValue( $key , concat
+        return keyValue( $key , guardProjection( concat
         ([
             translate( key( $attribute , $doc ) , aqlValue( $lookup ) , aqlValue( $resolve( $path ) ) ) ,
             Char::SLASH ,
-            key( $keyName , $doc ) ,
-        ])) ;
+            $source ,
+        ]) , $options , $doc , $source ) ) ;
     }
 
     // key : CONCAT( 'fullPath' , '/' , doc._key )
-    return keyValue( $key , concat
+    return keyValue( $key , guardProjection( concat
     ([
         $resolve( $path ) ,
         Char::SLASH ,
-        key( $keyName , $doc ) ,
-    ])) ;
+        $source ,
+    ]) , $options , $doc , $source ) ) ;
 }
