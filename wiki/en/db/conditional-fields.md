@@ -17,8 +17,11 @@ price: doc.visibility == 'public' ? doc.price : null
 - Condition values are **inlined** (not bound): a `WHEN` is developer-declared static
   configuration, never user input — see [Security](#security).
 
-> Applies to the **default scalar projection only**. `Field::WHEN` on a typed/structural
-> filter (`EDGES`, `JOINS`, `DOCUMENT`, `MAP`, `URL`, …) throws an `UnsupportedOperationException`.
+> Applies to the **default scalar projection** and to a rebuilt sub-document
+> (`Filter::DOCUMENT`, see [Guarding a sub-document](#guarding-a-sub-document--fieldnullable)).
+> `Field::WHEN` on any other typed/structural filter (`EDGES`, `JOINS`, `MAP`, `URL`, …)
+> throws an `UnsupportedOperationException`: those filters carry their own shape, there is
+> nothing to guard.
 
 ## Quick start
 
@@ -129,6 +132,140 @@ Absent `Field::ELSE`, the fallback is `null`. Two forms otherwise:
 - `Field::REQUIRES` (permission gating) and `Field::SKINS` (named variants) still apply —
   they decide whether the field is present at all, before the condition is evaluated.
 
+## Guarding a sub-document — `Field::NULLABLE`
+
+**The situation.** A `Filter::DOCUMENT` does not read a sub-document, it **rebuilds** it
+attribute by attribute. That is what lets a `url`, for instance, be recomputed on read
+instead of stored:
+
+```php
+'thing' =>
+[
+    Field::FILTER => Filter::DOCUMENT ,
+    Field::FIELDS =>
+    [
+        '_key' => [] ,
+        'name' => [] ,
+        'url'  => [ Field::FILTER => Filter::URL , Field::PATH => '/things' ] ,
+    ] ,
+]
+```
+
+That rebuild was **never guarded**. When the source attribute is missing, every line reads
+an attribute of an object that does not exist — which AQL resolves to `null` without
+error — and the object is emitted all the same. An empty slot came back **dressed**:
+
+| The stored document | What came out |
+|---|---|
+| `{ "_key": "u1", "name": "Alice", "thing": { "_key": "t9" } }` | `{ "thing": { "_key": "t9", "name": null, "url": "https://base/things/t9" } }` |
+| `{ "_key": "u2", "name": "Bob" }` — no `thing` | `{ "thing": { "_key": null, "name": null, "url": "https://base/things/" } }` |
+
+The second row is the problem: `url` is `"https://base/things/"`, an address that leads
+nowhere, and on the consumer side `if (x.thing)` is **true** while there is nothing there.
+You had to know to write `x.thing?._key`, which nothing announced.
+
+**The remedy.** One line, stating the intent « no source, no object »:
+
+```php
+'thing' =>
+[
+    Field::FILTER   => Filter::DOCUMENT ,
+    Field::NULLABLE => true ,            // ← the only added line
+    Field::FIELDS   => [ … same … ] ,
+]
+```
+
+```aql
+thing:IS_OBJECT(doc.thing) ? {_key:doc.thing._key, name:doc.thing.name, url:CONCAT('https://base/things','/',doc.thing._key)} : null
+```
+
+| The stored document | What comes out |
+|---|---|
+| `{ …, "thing": { "_key": "t9" } }` | `{ "thing": { "_key": "t9", "name": null, "url": "https://base/things/t9" } }` — unchanged |
+| `{ … }` — no `thing` | `{ "thing": null }` |
+
+The object inside the braces has not moved by a single character: it was merely put behind
+a guard.
+
+> **Why `IS_OBJECT()` and not `!= null`.** An attribute that *exists* but is not an
+> object — a string, a number — rebuilds the very same object of nulls. The test is
+> therefore a **type** test, as everywhere else in the library (`Filter::ARRAY` tests
+> `IS_ARRAY`, `Filter::EDGE` tests `IS_OBJECT`).
+
+### The free condition — `Field::WHEN` on a `Filter::DOCUMENT`
+
+`Field::NULLABLE` is nothing but a condition written in advance. When the guard has to be
+something other than « the source exists », it is written with the condition grammar
+described above:
+
+```php
+'contact' =>
+[
+    Field::FILTER => Filter::DOCUMENT ,
+    Field::WHEN   => [ 'visibility' , 'public' ] ,
+    Field::FIELDS => [ 'email' => [] , 'telephone' => [] ] ,
+]
+// contact: doc.visibility == 'public' ? {email:doc.contact.email, telephone:doc.contact.telephone} : null
+```
+
+The false branch is chosen as on a scalar (`Field::ELSE`, default `null`), and the two
+guards compose with `&&` — no need to restate existence by hand:
+
+```php
+    Field::NULLABLE => true ,
+    Field::WHEN     => [ 'visibility' , 'public' ] ,
+// contact: (IS_OBJECT(doc.contact) && doc.visibility == 'public') ? { … } : null
+```
+
+**The condition reads on the parent document**, never on the rebuilt sub-document:
+`doc.visibility`, not `doc.contact.visibility`. This is not an implementation detail — it
+is what makes the authorization gate described in [Security](#security) apply verbatim: it
+guards the attributes read by a condition against the projection of the **current** level.
+If `visibility` carries a denied `Field::REQUIRES`, the whole `contact` field disappears
+instead of becoming an oracle on `visibility`.
+
+### Nesting
+
+Each level carries its own guard; they do not interfere, the outer ternary never evaluating
+the inner object when it is false:
+
+```php
+'thing' =>
+[
+    Field::FILTER   => Filter::DOCUMENT ,
+    Field::NULLABLE => true ,
+    Field::FIELDS   =>
+    [
+        'name'  => [] ,
+        'owner' => [ Field::FILTER => Filter::DOCUMENT , Field::NULLABLE => true , Field::FIELDS => [ 'name' => [] ] ] ,
+    ] ,
+]
+// thing: IS_OBJECT(doc.thing) ? {name:doc.thing.name, owner:IS_OBJECT(doc.thing.owner) ? {name:doc.thing.owner.name} : null} : null
+```
+
+### Where the marker applies — and where it throws
+
+`Filter::DOCUMENT` is the **only** filter that rebuilds an object with no guard of its own.
+The others already guard themselves, each with the test that suits its shape — placing
+`Field::NULLABLE` on one of them would be a silent no-op, so it is a definition error and
+throws an `UnsupportedOperationException`:
+
+| Filter | Rebuilds | Missing source | `Field::NULLABLE` |
+|---|---|---|---|
+| `Filter::DOCUMENT` | an object | an object of `null`s | ✅ **this is the one** |
+| `Filter::MAP` | an array | `[]` — `IS_ARRAY()` already placed | ⛔ throws |
+| `Filter::WRAP` | an object | moot: it projects the current reference, which exists by construction | ⛔ throws |
+| `Filter::EDGE` / `Filter::JOIN` | an object | `null` — `IS_OBJECT()` already placed | ⛔ throws |
+
+> **One caveat, worth knowing.** The `Field::EDGES` / `Field::JOINS` declared **under** a
+> guarded sub-document still emit their `LET` upstream, even when the guard yields `null`.
+> The query stays correct; it is not made faster. This is structural: a `LET` cannot be
+> conditioned in AQL.
+
+**Backward compatibility.** Without the marker the emitted AQL is **byte for byte** the one
+from before: no `IS_OBJECT`, no ternary, not one extra space. Every existing projection is
+unchanged, and a test pins it.
+
 ## Filtering the elements of a projected array — `Field::WHERE`
 
 `Field::WHEN` decides **the value** of a scalar field. `Field::WHERE` decides **which
@@ -145,7 +282,8 @@ Don't confuse the two:
 
 | Marker | Decides | Placed on | Compiled against |
 |---|---|---|---|
-| `Field::WHEN` | a field's *value* (ternary) | the default scalar projection | `doc` |
+| `Field::WHEN` | a field's *value* (ternary) | the default scalar projection, or a `Filter::DOCUMENT` | `doc` (the **parent**) |
+| `Field::NULLABLE` | whether the rebuilt object is emitted (`IS_OBJECT` of the source) | a `Filter::DOCUMENT` | `doc` (the **parent**) |
 | `Field::WHERE` | *which elements* of an array are projected (`FILTER`) | a `Filter::MAP` | the element (`item`) |
 | `AQL::WHERE` | *which vertices* a relation projects (`FILTER`) | an edge **definition** | the traversed vertex (`vertex`) |
 

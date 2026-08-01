@@ -96,6 +96,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Field::NULLABLE` — a projected sub-document can now come back as `null` instead of an object rebuilt out of nothing.** A `Filter::DOCUMENT` does not read a sub-document, it **rebuilds** it attribute by attribute — which is what lets a `url` be recomputed on read rather than stored. That rebuild was never guarded: when the source attribute is missing, every line reads an attribute of an object that does not exist, which AQL resolves to `null` without error, and the object is emitted all the same. An empty slot came back dressed:
+  ```
+  stored: { "_key": "u2" , "name": "Bob" }          // no `thing`
+  before: { "thing": { "_key": null , "name": null , "url": "https://base/things/" } }
+  after : { "thing": null }
+  ```
+  The `url` is the visible one — `https://base/things/` leads nowhere — but the real cost was on the consumer: `if (x.thing)` was **true** while nothing was there, and only `x.thing?._key` worked, which nothing announced.
+  ```php
+  'thing' => [ Field::FILTER => Filter::DOCUMENT , Field::NULLABLE => true , Field::FIELDS => [ … ] ] ,
+  // thing:IS_OBJECT(doc.thing) ? {_key:doc.thing._key, name:doc.thing.name, …} : null
+  ```
+  - **A type test, not a null comparison.** An attribute that exists but is not an object (a string, a number) rebuilds the very same object of nulls, so the guard is `IS_OBJECT()` — the house form, already used by `Filter::ARRAY` (`IS_ARRAY`) and `Filter::EDGE` (`IS_OBJECT`).
+  - **`Field::WHEN` is now honoured on `Filter::DOCUMENT`**, the general mechanism the option is built on: the condition guards the rebuilt object as a whole, `Field::ELSE` picks the false branch, and both guards compose with `&&`. It is compiled against the **parent** reference (`doc.visibility`, never `doc.contact.visibility`) — which is precisely what makes the existing T5 read gate (`conditionReadsDeniedField()`) cover it **without a line of its own**, since that gate already runs for every field whatever its filter and gates a `WHEN` against the current level's projection. Every other structural filter keeps its `throw`.
+  - **`Filter::DOCUMENT` is the only filter that needed this.** `Filter::MAP` already guards with `IS_ARRAY()` (an absent source yields `[]`), `Filter::WRAP` projects the current reference — which exists by construction — and `Filter::EDGE` / `Filter::JOIN` already test their backing `LET`. Declaring `Field::NULLABLE` on any of them would be a silent no-op, so it is a definition error and throws.
+  - **Known caveat, documented rather than fixed:** the `Field::EDGES` / `Field::JOINS` declared under a guarded sub-document still emit their `LET` upstream, even when the guard yields `null`. The query stays correct, it is not made faster — a `LET` cannot be conditioned in AQL.
+  - **Backward compatible by construction:** with neither marker the emitted AQL is unchanged byte for byte, pinned by a dedicated assertion. New `guardProjection()` helper (the shared wrapper), `Field::NULLABLE` registered in `FieldsTrait::NORMALIZED_MARKERS` so it survives the model → query normalization.
+  - **Tests:** new `GuardProjectionTest` (9 cases: the untouched value, the opt-in on strict `true`, each guard alone, a non-default reference, the `&&` composition, both `Field::ELSE` forms, a malformed condition and an unsafe attribute name), 8 new `AqlFieldDocumentTest` cases (the byte-for-byte non-regression, the aliased source, the parent-scoped `WHEN`, two-level nesting, a relation marker kept inside the guard, the no-fields fallback) and 6 new `AqlFieldsTest` cases including the read gate dropping a `DOCUMENT` whose guard reads a masked attribute. Coverage stays at 100 %. FR/EN wiki `db/conditional-fields.md` gains a « Guarding a sub-document » section with the measured before/after tables.
+
 - **`AQL::HYDRATION` — a model can now ask for its documents to be hydrated in depth, and nested structures stop coming back as raw arrays.** A schema declares how its sub-objects are built (`#[HydrateAs]`, `#[HydrateWith]`), yet a `Thing` read from the database was built by its **constructor**, whose assignment is shallow: it filters the top-level keys and assigns each value **as it stands**. So a document's own class was honoured and everything below it was not — a list of lines stayed a list of arrays, a price stayed an array, whatever the attributes said. The declarations were there; nothing consulted them. Only `Reflection::hydrate()` does, and it was reached for the classes *outside* the `Thing` lineage exclusively.
   ```php
   new Documents( $container ,

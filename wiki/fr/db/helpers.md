@@ -227,6 +227,7 @@ En plus de `Field::FILTER`, chaque définition de champ accepte des options :
 | `Field::REQUIRES` | Sujet(s) de permission : le champ est retiré si l'autorisation est refusée | — |
 | `Field::SCOPE` | Source de projection dans une sous-requête d'edge : `Scope::VERTEX` (défaut) ou `Scope::EDGE` (la métadonnée de la relation) | `since:DATE_ISO8601(e.created)` |
 | `Field::WHEN` / `Field::ELSE` | Valeur conditionnelle : ne projeter le champ que si une condition tient, sinon repli. Voir [Champs conditionnels](conditional-fields.md). | `price:doc.visibility == 'public' ? doc.price : null` |
+| `Field::NULLABLE` | Sur un `Filter::DOCUMENT` : rendre `null` quand la source est absente, au lieu d'un objet reconstruit à partir de rien. Voir [Garder un sous-document](conditional-fields.md#garder-un-sous-document--fieldnullable). | `thing:IS_OBJECT(doc.thing) ? { … } : null` |
 
 > `Field::QUOTED` met des guillemets **uniquement sur l'étiquette** de sortie et accède à l'attribut en **backticks** (`` doc.`my-key` ``) — la forme AQL valide pour un attribut à caractères spéciaux (`doc."my-key"` est invalide et rejeté par ArangoDB). Un `Field::NAME` fournit alors la source : seule l'étiquette est quotée (`"slug":doc.title`).
 
