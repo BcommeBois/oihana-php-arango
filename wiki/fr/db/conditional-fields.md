@@ -19,11 +19,14 @@ price: doc.visibility == 'public' ? doc.price : null
   configuration déclarée par le développeur, jamais une entrée utilisateur — voir
   [Sécurité](#sécurité).
 
-> S'applique à la **projection scalaire par défaut** et à la reconstruction d'un
-> sous-document (`Filter::DOCUMENT`, voir [Garder un sous-document](#garder-un-sous-document--fieldnullable)).
-> Un `Field::WHEN` sur un autre filtre typé/structurel (`EDGES`, `JOINS`, `MAP`, `URL`, …)
-> lève une `UnsupportedOperationException` : ces filtres ont leur propre forme, il n'y a
-> rien à garder.
+> S'applique à la **projection scalaire par défaut** et aux deux projections qui fabriquent
+> une valeur sans garde propre : la reconstruction d'un sous-document
+> (`Filter::DOCUMENT`, voir [Garder un sous-document](#garder-un-sous-document--fieldnullable))
+> et celle d'un lien
+> (`Filter::URL`, voir [Le lien, seulement s'il y a une clé](#le-lien-seulement-sil-y-a-une-clé--fieldwhen-sur-un-filterurl)).
+> Un `Field::WHEN` sur un autre filtre typé/structurel (`EDGES`, `JOINS`, `MAP`, …) lève une
+> `UnsupportedOperationException` : ces filtres ont leur propre forme et leur propre garde,
+> il n'y a rien à ajouter.
 
 ## Démarrage rapide
 
@@ -282,8 +285,8 @@ n'évaluant jamais l'objet interne quand il est faux :
 
 ### Où le marqueur s'applique — et où il lève
 
-`Filter::DOCUMENT` est le **seul** filtre qui reconstruit un objet sans garde propre. Les
-autres se gardent déjà eux-mêmes, chacun avec le test qui convient à sa forme — poser
+`Filter::DOCUMENT` est le **seul** filtre qui reconstruit un **objet** sans garde propre.
+Les autres se gardent déjà eux-mêmes, chacun avec le test qui convient à sa forme — poser
 `Field::NULLABLE` sur l'un d'eux serait un no-op silencieux, c'est donc une erreur de
 définition qui lève une `UnsupportedOperationException` :
 
@@ -293,6 +296,12 @@ définition qui lève une `UnsupportedOperationException` :
 | `Filter::MAP` | un tableau | `[]` — `IS_ARRAY()` déjà posé | ⛔ lève |
 | `Filter::WRAP` | un objet | sans objet : projette la référence courante, qui existe par construction | ⛔ lève |
 | `Filter::EDGE` / `Filter::JOIN` | un objet | `null` — `IS_OBJECT()` déjà posé | ⛔ lève |
+| `Filter::URL` | un lien | une adresse tronquée | ⛔ lève — sa garde est `Field::WHEN`, [section suivante](#le-lien-seulement-sil-y-a-une-clé--fieldwhen-sur-un-filterurl) |
+
+La dernière ligne mérite une seconde lecture. Un `Filter::URL` fabrique lui aussi sans
+garde, exactement comme un `Filter::DOCUMENT` — mais à partir d'une **clé scalaire**, pas
+d'un objet : `IS_OBJECT()` n'y serait jamais vrai et le champ ne sortirait tout simplement
+jamais. `Field::NULLABLE` garde son sens unique ; l'URL se garde avec une condition.
 
 > **Une réserve, à connaître.** Les `Field::EDGES` / `Field::JOINS` déclarés **sous** un
 > sous-document gardé continuent d'émettre leur `LET` en amont, même quand la garde rend
@@ -302,6 +311,93 @@ définition qui lève une `UnsupportedOperationException` :
 **Rétrocompatibilité.** Sans le marqueur, l'AQL émis est **identique au caractère près** à
 celui d'avant : pas de `IS_OBJECT`, pas de ternaire, pas un espace de plus. Toutes les
 projections existantes sont inchangées, et un test le fige.
+
+## Le lien, seulement s'il y a une clé — `Field::WHEN` sur un `Filter::URL`
+
+**La situation.** Un `Filter::URL` ne lit pas davantage une adresse stockée : il en
+**reconstruit** une, en concaténant une route et la clé du document.
+
+```php
+'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/things' ] ,
+// url:CONCAT('https://base/things','/',doc._key)
+```
+
+Or AQL **ignore** les arguments nuls d'un `CONCAT()`. Un document sans clé ne revient donc
+pas sans URL : il revient avec une adresse qui ne mène nulle part, et rien dans la réponse
+ne le dit.
+
+Ce n'est pas un cas d'école. Une projection en sous-document reconstruit des **copies
+figées** : certaines proviennent d'un enregistrement et en portent la clé, leur lien est
+donc légitimement refabriqué à la lecture ; d'autres sont des valeurs saisies à la main,
+sans aucun enregistrement derrière elles, donc **sans la moindre clé**. Les deux cohabitent
+dans le même champ, distinguées par un discriminant qu'elles portent. Mesuré sur un vrai
+serveur, côte à côte :
+
+| La copie stockée | Ce qui sortait |
+|---|---|
+| `{ "_key": "t9", "additionalType": "Place", "name": "Widget" }` | `{ "name": "Widget", "url": "/things/t9" }` |
+| `{ "additionalType": "Text", "name": "Saisi à la main" }` — pas de clé | `{ "name": "Saisi à la main", "url": "/things/" }` |
+| `{ "_key": "", "additionalType": "Place", … }` — une clé vide | `{ "name": "Clé vide", "url": "/things/" }` |
+
+**Le remède.** La même grammaire de condition, posée sur l'URL elle-même — l'objet autour
+n'est pas gardé, seul le lien s'abstient :
+
+```php
+'url' =>
+[
+    Field::FILTER => Filter::URL ,
+    Field::PATH   => '/things' ,
+    Field::WHEN   => [ '_key' ] ,        // ← la seule ligne ajoutée
+]
+```
+
+```aql
+url:TO_BOOL(doc._key) ? CONCAT('https://base/things','/',doc._key) : null
+```
+
+| La copie stockée | Ce qui sort |
+|---|---|
+| `{ "_key": "t9", … }` | `{ "name": "Widget", "url": "/things/t9" }` — inchangé |
+| pas de clé | `{ "name": "Saisi à la main", "url": null }` |
+| une clé vide | `{ "name": "Clé vide", "url": null }` |
+
+> **Pourquoi une condition à un seul élément.** `[ '_key' ]` est une feuille de **véracité**
+> (`TO_BOOL()`), pas une égalité. C'est ce qui couvre la clé vide autant que la clé absente
+> — les deux produisent exactement le même lien tronqué, et un test `!= null` n'aurait
+> attrapé que la seconde.
+
+### Lire le discriminant de la copie
+
+La condition est compilée contre **la référence que la projection lit elle-même**. Pour une
+URL projetée dans un sous-document, cette référence *est* le sous-document — un discriminant
+porté par la copie décide donc, sans un mot sur le parent :
+
+```php
+'thing' =>
+[
+    Field::FILTER => Filter::DOCUMENT ,
+    Field::FIELDS =>
+    [
+        'name' => [] ,
+        'url'  => [ Field::FILTER => Filter::URL , Field::PATH => '/things' , Field::WHEN => [ 'additionalType' , 'Place' ] ] ,
+    ] ,
+]
+// thing:{name:doc.thing.name, url:doc.thing.additionalType == 'Place' ? CONCAT('/things','/',doc.thing._key) : null}
+```
+
+C'est aussi ce qui fait que le verrou d'autorisation s'applique mot pour mot, comme sur un
+`Filter::DOCUMENT` : les attributs lus par une condition sont vérifiés contre la projection
+du niveau **courant**, si bien qu'une URL dont la condition lit un champ refusé disparaît
+entièrement au lieu de devenir un oracle sur lui.
+
+> **Une limite, mesurée plutôt que supposée.** Un discriminant dit ce qu'une copie *est*,
+> pas si elle est adressable. Une copie qui se déclare `Place` et qui n'a pourtant aucune
+> clé utilisable revient avec le lien tronqué — garder sur le type est une autre question
+> que garder sur la clé. Quand les deux comptent, `Field::WHEN` accepte un groupe `and`.
+
+**Rétrocompatibilité.** Sans le marqueur, l'AQL émis est inchangé **au caractère près**, sur
+la route simple comme sur la route à discriminant (`Field::PATHS`) — pas de ternaire, pas de
+test. Deux tests le figent.
 
 ## Filtrer les éléments d'un tableau projeté — `Field::WHERE`
 
@@ -319,7 +415,7 @@ Ne pas les confondre :
 
 | Marqueur | Décide | Posé sur | Compilé contre |
 |---|---|---|---|
-| `Field::WHEN` | la *valeur* d'un champ (ternaire) | projection scalaire par défaut, ou `Filter::DOCUMENT` | `doc` (le **parent**) |
+| `Field::WHEN` | la *valeur* d'un champ (ternaire) | projection scalaire par défaut, `Filter::DOCUMENT` ou `Filter::URL` | la référence du niveau projeté — `doc` pour un sous-document, le sous-document lui-même pour une URL imbriquée dedans |
 | `Field::NULLABLE` | si l'objet reconstruit est émis (`IS_OBJECT` de la source) | un `Filter::DOCUMENT` | `doc` (le **parent**) |
 | `Field::WHERE` | *quels éléments* d'un tableau sont projetés (`FILTER`) | un `Filter::MAP` | l'élément (`item`) |
 | `AQL::WHERE` | *quels sommets* une relation projette (`FILTER`) | une **définition** d'edge | le sommet traversé (`vertex`) |

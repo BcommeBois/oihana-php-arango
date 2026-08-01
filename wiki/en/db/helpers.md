@@ -303,6 +303,18 @@ aqlFields([ 'url' =>
 > map) throws an `UnsupportedOperationException` at build time; the discriminant attribute is
 > validated by `assertAttributeName` (injection guard).
 
+**Abstaining — `Field::WHEN`.** AQL drops the null arguments of a `CONCAT()`, so a document
+with no key does not yield a `null` url — it yields a truncated address
+(`https://base.url/places/`). An opt-in condition guards the whole expression, on the plain
+route as on the routed one:
+
+```php
+aqlFields([ 'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/places' , Field::WHEN => [ '_key' ] ] ], 'doc');
+// url:TO_BOOL(doc._key) ? CONCAT('/places','/',doc._key) : null
+```
+
+See [The link, only when there is a key](conditional-fields.md#the-link-only-when-there-is-a-key--fieldwhen-on-a-filterurl).
+
 ## AQL introspection
 
 Four predicates classify a string:

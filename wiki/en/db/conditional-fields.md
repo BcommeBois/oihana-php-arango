@@ -17,11 +17,14 @@ price: doc.visibility == 'public' ? doc.price : null
 - Condition values are **inlined** (not bound): a `WHEN` is developer-declared static
   configuration, never user input — see [Security](#security).
 
-> Applies to the **default scalar projection** and to a rebuilt sub-document
-> (`Filter::DOCUMENT`, see [Guarding a sub-document](#guarding-a-sub-document--fieldnullable)).
-> `Field::WHEN` on any other typed/structural filter (`EDGES`, `JOINS`, `MAP`, `URL`, …)
-> throws an `UnsupportedOperationException`: those filters carry their own shape, there is
-> nothing to guard.
+> Applies to the **default scalar projection** and to the two projections that fabricate a
+> value with no guard of their own: a rebuilt sub-document
+> (`Filter::DOCUMENT`, see [Guarding a sub-document](#guarding-a-sub-document--fieldnullable))
+> and a rebuilt link
+> (`Filter::URL`, see [The link, only when there is a key](#the-link-only-when-there-is-a-key--fieldwhen-on-a-filterurl)).
+> `Field::WHEN` on any other typed/structural filter (`EDGES`, `JOINS`, `MAP`, …) throws an
+> `UnsupportedOperationException`: those filters carry their own shape and their own guard,
+> there is nothing to add.
 
 ## Quick start
 
@@ -275,8 +278,8 @@ the inner object when it is false:
 
 ### Where the marker applies — and where it throws
 
-`Filter::DOCUMENT` is the **only** filter that rebuilds an object with no guard of its own.
-The others already guard themselves, each with the test that suits its shape — placing
+`Filter::DOCUMENT` is the **only** filter that rebuilds an **object** with no guard of its
+own. The others already guard themselves, each with the test that suits its shape — placing
 `Field::NULLABLE` on one of them would be a silent no-op, so it is a definition error and
 throws an `UnsupportedOperationException`:
 
@@ -286,6 +289,12 @@ throws an `UnsupportedOperationException`:
 | `Filter::MAP` | an array | `[]` — `IS_ARRAY()` already placed | ⛔ throws |
 | `Filter::WRAP` | an object | moot: it projects the current reference, which exists by construction | ⛔ throws |
 | `Filter::EDGE` / `Filter::JOIN` | an object | `null` — `IS_OBJECT()` already placed | ⛔ throws |
+| `Filter::URL` | a link | a truncated address | ⛔ throws — its guard is `Field::WHEN`, [next section](#the-link-only-when-there-is-a-key--fieldwhen-on-a-filterurl) |
+
+The last row is the one to read twice. A `Filter::URL` fabricates without a guard just like
+a `Filter::DOCUMENT` does — but from a **scalar key**, not from an object, so `IS_OBJECT()`
+would never hold there and the field would simply never be emitted. `Field::NULLABLE` keeps
+its single meaning; the url is guarded with a condition instead.
 
 > **One caveat, worth knowing.** The `Field::EDGES` / `Field::JOINS` declared **under** a
 > guarded sub-document still emit their `LET` upstream, even when the guard yields `null`.
@@ -295,6 +304,91 @@ throws an `UnsupportedOperationException`:
 **Backward compatibility.** Without the marker the emitted AQL is **byte for byte** the one
 from before: no `IS_OBJECT`, no ternary, not one extra space. Every existing projection is
 unchanged, and a test pins it.
+
+## The link, only when there is a key — `Field::WHEN` on a `Filter::URL`
+
+**The situation.** A `Filter::URL` does not read a stored address either — it **rebuilds**
+one, by concatenating a route and the document key:
+
+```php
+'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/things' ] ,
+// url:CONCAT('https://base/things','/',doc._key)
+```
+
+Now, AQL **drops** the null arguments of a `CONCAT()`. So a document with no key does not
+come back without a url: it comes back with an address that leads nowhere, and nothing in
+the response says so.
+
+This is not a theoretical corner. A sub-document projection rebuilds **frozen copies**:
+some of them come from a record and carry its key, so their link is legitimately recomputed
+on read; others are values typed by hand, which have no record behind them and therefore
+**no key at all**. Both live in the same field, told apart by a discriminant they carry.
+Measured on a real server, side by side:
+
+| The stored copy | What came out |
+|---|---|
+| `{ "_key": "t9", "additionalType": "Place", "name": "Widget" }` | `{ "name": "Widget", "url": "/things/t9" }` |
+| `{ "additionalType": "Text", "name": "Hand-typed" }` — no key | `{ "name": "Hand-typed", "url": "/things/" }` |
+| `{ "_key": "", "additionalType": "Place", … }` — an empty key | `{ "name": "Empty key", "url": "/things/" }` |
+
+**The remedy.** The same condition grammar, on the url itself — the object around it is not
+guarded, only the link gives up:
+
+```php
+'url' =>
+[
+    Field::FILTER => Filter::URL ,
+    Field::PATH   => '/things' ,
+    Field::WHEN   => [ '_key' ] ,        // ← the only added line
+]
+```
+
+```aql
+url:TO_BOOL(doc._key) ? CONCAT('https://base/things','/',doc._key) : null
+```
+
+| The stored copy | What comes out |
+|---|---|
+| `{ "_key": "t9", … }` | `{ "name": "Widget", "url": "/things/t9" }` — unchanged |
+| no key | `{ "name": "Hand-typed", "url": null }` |
+| an empty key | `{ "name": "Empty key", "url": null }` |
+
+> **Why a one-element condition.** `[ '_key' ]` is a **truthiness** leaf (`TO_BOOL()`), not
+> an equality. It is what covers the empty key as well as the absent one — both produce the
+> very same truncated link, and a `!= null` test would only have caught the second.
+
+### Reading the discriminant of the copy
+
+The condition is compiled against **the reference the projection itself reads from**. For a
+url projected inside a sub-document, that reference *is* the sub-document — so a
+discriminant carried by the copy decides, without a word about the parent:
+
+```php
+'thing' =>
+[
+    Field::FILTER => Filter::DOCUMENT ,
+    Field::FIELDS =>
+    [
+        'name' => [] ,
+        'url'  => [ Field::FILTER => Filter::URL , Field::PATH => '/things' , Field::WHEN => [ 'additionalType' , 'Place' ] ] ,
+    ] ,
+]
+// thing:{name:doc.thing.name, url:doc.thing.additionalType == 'Place' ? CONCAT('/things','/',doc.thing._key) : null}
+```
+
+This is also what makes the authorization gate apply verbatim, as on a `Filter::DOCUMENT`:
+the attributes a condition reads are checked against the projection of the **current**
+level, so a url whose condition reads a denied field disappears whole rather than becoming
+an oracle on it.
+
+> **A limit, measured rather than assumed.** A discriminant says what a copy *is*, not
+> whether it can be addressed. A copy that declares itself a `Place` and still carries no
+> usable key comes back with the truncated link — guarding on the type is a different
+> question from guarding on the key. When both matter, `Field::WHEN` takes an `and` group.
+
+**Backward compatibility.** Without the marker the emitted AQL is unchanged **byte for
+byte**, on the plain route as on the discriminant-routed one (`Field::PATHS`) — no ternary,
+no test. Two tests pin it.
 
 ## Filtering the elements of a projected array — `Field::WHERE`
 
@@ -312,7 +406,7 @@ Don't confuse the two:
 
 | Marker | Decides | Placed on | Compiled against |
 |---|---|---|---|
-| `Field::WHEN` | a field's *value* (ternary) | the default scalar projection, or a `Filter::DOCUMENT` | `doc` (the **parent**) |
+| `Field::WHEN` | a field's *value* (ternary) | the default scalar projection, a `Filter::DOCUMENT` or a `Filter::URL` | the reference of the level being projected — `doc` for a sub-document, the sub-document itself for a url nested in one |
 | `Field::NULLABLE` | whether the rebuilt object is emitted (`IS_OBJECT` of the source) | a `Filter::DOCUMENT` | `doc` (the **parent**) |
 | `Field::WHERE` | *which elements* of an array are projected (`FILTER`) | a `Filter::MAP` | the element (`item`) |
 | `AQL::WHERE` | *which vertices* a relation projects (`FILTER`) | an edge **definition** | the traversed vertex (`vertex`) |

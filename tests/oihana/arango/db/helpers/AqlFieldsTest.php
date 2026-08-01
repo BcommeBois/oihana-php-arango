@@ -691,6 +691,119 @@ final class AqlFieldsTest extends TestCase
     }
 
     /**
+     * Filter::URL is the second exception, and for the same reason : it fabricates a link
+     * with CONCAT(), which drops a missing key and yields a truncated address rather than
+     * nothing. The WHEN falls through to aqlFieldUrl().
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenOnUrlFilterIsHonoured(): void
+    {
+        $result = aqlFields
+        ([
+            'url' =>
+            [
+                Field::FILTER => Filter::URL ,
+                Field::PATH   => '/things' ,
+                Field::WHEN   => [ '_key' ] ,
+            ]
+        ]) ;
+
+        $this->assertSame( "url:TO_BOOL(doc._key) ? CONCAT('/things','/',doc._key) : null" , $result ) ;
+    }
+
+    /**
+     * The case the guard exists for : a sub-document rebuilds frozen copies, some coming
+     * from a record and carrying a key, others hand-typed and legitimately without one.
+     * The url condition reads the discriminant of the COPY — the reference that level
+     * projects from — and not the parent's.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenOnUrlInsideASubDocumentReadsThatSubDocument(): void
+    {
+        $result = aqlFields
+        ([
+            'thing' =>
+            [
+                Field::FILTER => Filter::DOCUMENT ,
+                Field::FIELDS =>
+                [
+                    'name' => [] ,
+                    'url'  =>
+                    [
+                        Field::FILTER => Filter::URL ,
+                        Field::PATH   => '/things' ,
+                        Field::WHEN   => [ 'additionalType' , 'Place' ] ,
+                    ] ,
+                ] ,
+            ]
+        ]) ;
+
+        $this->assertSame
+        (
+            "thing:{name:doc.thing.name, url:doc.thing.additionalType == 'Place' ? CONCAT('/things','/',doc.thing._key) : null}" ,
+            $result
+        ) ;
+    }
+
+    /**
+     * Field::WHEN is opened on Filter::URL, Field::NULLABLE is not — and for a stronger
+     * reason than a silent no-op : a url is rebuilt from a scalar KEY, so the IS_OBJECT()
+     * that marker emits would never hold and the field would never be emitted.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableOnUrlFilterThrows(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( 'Field::NULLABLE' ) ;
+        aqlFields( [ 'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/things' , Field::NULLABLE => true ] ] ) ;
+    }
+
+    /**
+     * ⭐ The T5 read gate covers the url guard too, without a line of its own : it runs for
+     * every field whatever its filter, and before this filter's own doors.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testGuardReadingADeniedFieldDropsTheUrl(): void
+    {
+        $fields =
+        [
+            'visibility' => [ Field::REQUIRES => 'things:admin' ] ,
+            'url'        =>
+            [
+                Field::FILTER => Filter::URL ,
+                Field::PATH   => '/things' ,
+                Field::WHEN   => [ 'visibility' , 'public' ] ,
+            ] ,
+        ] ;
+
+        $denied = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+        $this->assertSame( '' , $denied ) ;
+
+        $granted = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => true ] ) ;
+        $this->assertSame
+        (
+            "visibility:doc.visibility, url:doc.visibility == 'public' ? CONCAT('/things','/',doc._key) : null" ,
+            $granted
+        ) ;
+    }
+
+    /**
      * Field::NULLABLE guards the only projection that rebuilds an object without a
      * guard of its own.
      *

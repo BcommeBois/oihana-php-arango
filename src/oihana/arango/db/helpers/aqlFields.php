@@ -71,8 +71,16 @@ use function oihana\core\strings\keyValue;
  *                      object is emitted only when its source attribute really is an
  *                      object, otherwise the field yields `null` (or `Field::ELSE`).
  *                      Without it, a missing source rebuilds an object of nulls. Only
- *                      valid on that filter (it throws elsewhere); composes with
- *                      `Field::WHEN`, which is honoured on that filter too.
+ *                      valid on that filter (it throws elsewhere) — on a `Filter::URL`
+ *                      the source is a scalar key, which `IS_OBJECT()` never accepts;
+ *                      composes with `Field::WHEN`.
+ * - `Field::WHEN`     : Optional condition guarding the projected value, compiled to a
+ *                      ternary against the current reference and paired with
+ *                      `Field::ELSE`. Valid on the default scalar projection and on the
+ *                      two filters that fabricate a value with no guard of their own —
+ *                      `Filter::DOCUMENT` (an object rebuilt attribute by attribute) and
+ *                      `Filter::URL` (a link rebuilt with `CONCAT()`, which drops a
+ *                      missing key and yields a truncated address). It throws elsewhere.
  * - `Field::SCOPE`    : Optional projection source — `Scope::VERTEX` (default) reads the
  *                      field from `$docRef`, `Scope::EDGE` reads it from `$edgeRef` (the
  *                      traversal edge). The edge scope is only valid inside an edge
@@ -293,6 +301,9 @@ function aqlFields
             // Filter::WRAP projects the current reference — which exists by construction —
             // and Filter::EDGE / Filter::JOIN already test their backing `LET` variable.
             // Elsewhere the marker would be a silent no-op, so it is a definition error.
+            // Filter::URL is refused here too, and for a stronger reason than a no-op : it
+            // rebuilds from a scalar KEY, so `IS_OBJECT()` would never hold and the field
+            // would never be emitted. What it takes is Field::WHEN, accepted below.
             if( ( $options[ Field::NULLABLE ] ?? false ) === true && $filter !== Filter::DOCUMENT )
             {
                 throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::NULLABLE on the field '" . $key . "' is only valid on the '" . Filter::DOCUMENT . "' filter, which is the only projection rebuilding an object without a guard of its own." ) ;
@@ -307,16 +318,20 @@ function aqlFields
             // its own shape, so WHEN on it is a definition error (throws) while a stray
             // ALTERS is silently ignored (legacy behaviour, falls through to the match).
             //
-            // Filter::DOCUMENT is the exception: it rebuilds an object, which a condition
-            // CAN guard as a whole. Its WHEN falls through to the match below, where
-            // aqlFieldDocument() wraps the rebuilt object in the ternary — the condition
-            // being compiled against THIS level's reference, so the read gate applied
-            // above (conditionReadsDeniedField) covers it unchanged.
+            // Two filters are the exception, because both FABRICATE a value that a condition
+            // can guard as a whole, and neither carries a guard of its own :
+            //   - Filter::DOCUMENT rebuilds an object attribute by attribute ;
+            //   - Filter::URL rebuilds a link with CONCAT(), which silently drops a missing
+            //     key and yields a truncated address rather than nothing.
+            // Their WHEN falls through to the match below, where aqlFieldDocument() and
+            // aqlFieldUrl() wrap their value in the ternary through guardProjection() — the
+            // condition being compiled against THIS level's reference, so the read gate
+            // applied above (conditionReadsDeniedField) covers them unchanged.
             if( $when !== null || $alters !== null )
             {
                 if( $filter !== Field::DEFAULT )
                 {
-                    if( $when !== null && $filter !== Filter::DOCUMENT )
+                    if( $when !== null && $filter !== Filter::DOCUMENT && $filter !== Filter::URL )
                     {
                         throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::WHEN on the field '" . $key . "' is only valid on the default scalar projection, not the '" . $filter . "' filter." ) ;
                     }

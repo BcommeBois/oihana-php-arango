@@ -303,6 +303,18 @@ aqlFields([ 'url' =>
 > lève une `UnsupportedOperationException` au build ; l'attribut discriminant est validé par
 > `assertAttributeName` (garde anti-injection).
 
+**S'abstenir — `Field::WHEN`.** AQL ignore les arguments nuls d'un `CONCAT()` : un document
+sans clé ne rend donc pas une URL `null`, il rend une adresse tronquée
+(`https://base.url/places/`). Une condition optionnelle garde l'expression entière, sur la
+route simple comme sur la route à discriminant :
+
+```php
+aqlFields([ 'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/places' , Field::WHEN => [ '_key' ] ] ], 'doc');
+// url:TO_BOOL(doc._key) ? CONCAT('/places','/',doc._key) : null
+```
+
+Voir [Le lien, seulement s'il y a une clé](conditional-fields.md#le-lien-seulement-sil-y-a-une-clé--fieldwhen-sur-un-filterurl).
+
 ## Introspection AQL
 
 Quatre prédicats permettent de classifier une chaîne :

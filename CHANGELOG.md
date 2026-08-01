@@ -96,6 +96,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Field::WHEN` on `Filter::URL` — a recomputed link can now abstain instead of pointing nowhere.** A `Filter::URL` does not read a stored address, it **rebuilds** one: `CONCAT(<route>,'/',doc._key)`. AQL drops the null arguments of a `CONCAT()`, so a document with no key never yielded a `null` url — it yielded a truncated link, indistinguishable from a real one at a glance:
+  ```
+  stored: { "name": "Hand-typed" }                  // no `_key`
+  before: { "url": "https://base/things/" }         // an address leading nowhere
+  after : { "url": null }
+  ```
+  This is the defect `Field::NULLABLE` closed on `Filter::DOCUMENT`, one notch lower: there the *object* was rebuilt out of nothing, here the object exists and it is its **key** that is missing.
+  ```php
+  'url' => [ Field::FILTER => Filter::URL , Field::PATH => '/things' , Field::WHEN => [ '_key' ] ] ,
+  // url:TO_BOOL(doc._key) ? CONCAT('https://base/things','/',doc._key) : null
+  ```
+  - **`Field::WHEN`, not `Field::NULLABLE`.** That marker tests that the source is an **object** (`IS_OBJECT`) — a document key never is one, so it would guard the field behind a condition that never holds. It keeps its single meaning and its single seat of refusal, in `aqlFields()`, which still rejects it on every filter but `Filter::DOCUMENT`.
+  - **A one-element leaf (`[ '_key' ]`) is a truthiness test**, so an absent key **and** an empty one both abstain — the second producing the very same truncated link as the first.
+  - **The condition is compiled against the reference the projection itself reads from**, which inside a sub-document projection is the sub-document. That is the case this guard exists for: a `Filter::DOCUMENT` rebuilding frozen copies, some coming from a record and carrying a key, others hand-typed and legitimately without one, told apart by a discriminant the copy carries — `Field::WHEN => [ 'additionalType' , 'Place' ]` reads it from the copy, never from the parent. As on `Filter::DOCUMENT`, that is also what makes the existing T5 read gate (`conditionReadsDeniedField()`) cover it **without a line of its own**.
+  - **Both branches are guarded**, discriminant routing (`Field::PATHS`) included, and `Field::ELSE` picks the false branch as everywhere else.
+  - **`Filter::URL` was the last projection fabricating a value with no guard of its own** — and the only one where the absence is *invisible* in the output. `Filter::DATETIME` already abstains (`IS_DATESTRING(x) ? … : null`), `Filter::ARRAY` / `Filter::MAP` yield `[]`, the counts yield `0`. The remaining casts (`Filter::BOOL` → `false`, `Filter::NUMBER` → `0`, `Filter::TRANSLATE` → `""`) fabricate a value too, but a **visible** one: they are a separate question, deliberately left out.
+  - **Backward compatible by construction:** with no marker, `guardProjection()` returns the value untouched — the emitted AQL is unchanged byte for byte on both branches, pinned by a dedicated test. ⚠ One honest exception: a consumer calling the public `aqlFieldUrl()` helper **directly** with a `Field::WHEN` in its options saw it ignored before, and now gets the ternary. Through a model definition the case could not exist — it threw.
+  - **Tests:** 8 new `AqlFieldUrlTest` cases (each branch guarded, both `Field::ELSE` forms, the custom key name, the sub-document reference, the unchanged AQL without marker, a malformed condition and an unsafe attribute both throwing) and 4 new `AqlFieldsTest` cases (the marker accepted on this filter, still refused on the others, `Field::NULLABLE` still refused here, and the read gate dropping a url whose condition reads a masked attribute), plus 3 **live** cases in `GuardedDocumentIntegrationTest`, measuring the two forms cohabiting in one field: the truncated link before, the abstention after, and — deliberately — the limit of a discriminant guard, a copy declaring itself a `Place` with no usable key still coming back with the truncated link. Coverage stays at 100 %. FR/EN wiki `db/conditional-fields.md` gains a « the link, only when there is a key » section — and its « where the marker applies » table, which claimed `Filter::DOCUMENT` was the only unguarded rebuild, is corrected.
+
 - **`Field::NULLABLE` — a projected sub-document can now come back as `null` instead of an object rebuilt out of nothing.** A `Filter::DOCUMENT` does not read a sub-document, it **rebuilds** it attribute by attribute — which is what lets a `url` be recomputed on read rather than stored. That rebuild was never guarded: when the source attribute is missing, every line reads an attribute of an object that does not exist, which AQL resolves to `null` without error, and the object is emitted all the same. An empty slot came back dressed:
   ```
   stored: { "_key": "u2" , "name": "Bob" }          // no `thing`

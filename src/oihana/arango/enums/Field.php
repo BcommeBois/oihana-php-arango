@@ -137,6 +137,7 @@ class Field
 
     /**
      * Condition guarding the field's projection (compiled to a ternary); pairs with `Field::ELSE`.
+     * Valid on the default scalar projection, on `Filter::DOCUMENT` and on `Filter::URL`.
      */
     public const string WHEN = 'when' ;
 
