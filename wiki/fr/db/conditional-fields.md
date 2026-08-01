@@ -116,8 +116,38 @@ Sans `Field::ELSE`, le repli est `null`. Deux formes sinon :
 
 | Déclaré | else AQL | Sens |
 |---|---|---|
-| `Field::ELSE => 0` | `0` | littéral (inliné ; `null` / `0` / `'N/A'` …) |
+| `Field::ELSE => 0` | `0` | littéral (inliné ; `null` / `0` / `'inconnu'` …) |
 | `Field::ELSE => [ Field::PROPERTY => 'basePrice' ]` | `doc.basePrice` | un autre attribut du document |
+
+### Un littéral ambigu — `betweenQuotes()`
+
+Un littéral chaîne est quoté automatiquement… **sauf s'il ressemble déjà à de l'AQL**. C'est
+volontaire : c'est ce qui permet d'écrire `[ 'price' , 'gt' , 'doc.minPrice' ]` et de comparer
+deux attributs plutôt qu'un attribut à du texte. Mais quelques littéraux métier tombent dans
+le même filet — `N/A` a la forme d'un *document handle* (`collection/clé`), `en/US` aussi.
+
+Pour lever l'ambiguïté, dis-le explicitement avec `betweenQuotes()` :
+
+```php
+use function oihana\core\strings\betweenQuotes ;
+
+Field::ELSE => betweenQuotes( 'N/A' ) ,   // →  : 'N/A'
+Field::ELSE => 'N/A' ,                    // →  : N/A   ⛔
+```
+
+Sans elle, ArangoDB lit `N/A` comme du code et **refuse la requête entière** — y compris pour
+les lignes qui ne prennent pas la branche `else`, la résolution des noms se faisant au plan et
+non à l'exécution :
+
+```
+RETURN { p: true  ? 1 : N/A }    → ERREUR 1203 : collection or view not found: A
+RETURN { p: false ? 1 : N/A }    → ERREUR 1203 : collection or view not found: A
+RETURN { p: false ? 1 : 'N/A' }  → OK  [ { "p": "N/A" } ]
+```
+
+L'échec est donc franc et immédiat, jamais une valeur fausse qui passerait inaperçue. La règle
+tient en une phrase : **un littéral qui contient un `/` ou un `.` se déclare avec
+`betweenQuotes()`**. Les autres (`'inconnu'`, `'Non renseigné'`, `0`, `null`) n'en ont pas besoin.
 
 ## Combinaison avec les autres options
 

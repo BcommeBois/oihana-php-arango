@@ -110,8 +110,38 @@ Absent `Field::ELSE`, the fallback is `null`. Two forms otherwise:
 
 | Declared | AQL else | Meaning |
 |---|---|---|
-| `Field::ELSE => 0` | `0` | literal (inlined; `null` / `0` / `'N/A'` …) |
+| `Field::ELSE => 0` | `0` | literal (inlined; `null` / `0` / `'unknown'` …) |
 | `Field::ELSE => [ Field::PROPERTY => 'basePrice' ]` | `doc.basePrice` | another document attribute |
+
+### An ambiguous literal — `betweenQuotes()`
+
+A string literal is quoted automatically… **unless it already looks like AQL**. That is
+deliberate: it is what lets you write `[ 'price' , 'gt' , 'doc.minPrice' ]` and compare two
+attributes rather than an attribute to some text. But a few real-world literals fall into the
+same net — `N/A` has the shape of a *document handle* (`collection/key`), and so does `en/US`.
+
+To lift the ambiguity, say so explicitly with `betweenQuotes()`:
+
+```php
+use function oihana\core\strings\betweenQuotes ;
+
+Field::ELSE => betweenQuotes( 'N/A' ) ,   // →  : 'N/A'
+Field::ELSE => 'N/A' ,                    // →  : N/A   ⛔
+```
+
+Without it, ArangoDB reads `N/A` as code and **rejects the whole query** — including for the
+rows that never take the `else` branch, since name resolution happens at plan time, not at
+execution time:
+
+```
+RETURN { p: true  ? 1 : N/A }    → ERROR 1203: collection or view not found: A
+RETURN { p: false ? 1 : N/A }    → ERROR 1203: collection or view not found: A
+RETURN { p: false ? 1 : 'N/A' }  → OK  [ { "p": "N/A" } ]
+```
+
+The failure is therefore loud and immediate, never a wrong value slipping through unnoticed.
+The rule fits in one sentence: **a literal containing a `/` or a `.` is declared with
+`betweenQuotes()`**. The others (`'unknown'`, `'not set'`, `0`, `null`) need nothing.
 
 ## Combining with other options
 

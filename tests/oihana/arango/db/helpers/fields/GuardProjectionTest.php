@@ -8,6 +8,7 @@ use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 use function oihana\arango\db\helpers\fields\guardProjection;
+use function oihana\core\strings\betweenQuotes;
 
 final class GuardProjectionTest extends TestCase
 {
@@ -136,6 +137,30 @@ final class GuardProjectionTest extends TestCase
                 'doc' ,
                 'doc.thing'
             )
+        ) ;
+    }
+
+    /**
+     * An ambiguous string literal — one shaped like AQL — is emitted raw, which is what
+     * lets a condition compare two attributes. `betweenQuotes()` is the explicit « this
+     * really is a string » form and passes through untouched. Pinned here because the
+     * rule is easy to meet by accident: `'N/A'` has the shape of a document handle.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAnAmbiguousElseLiteralIsDeclaredWithBetweenQuotes(): void
+    {
+        $this->assertSame
+        (
+            'IS_OBJECT(doc.thing) ? ' . self::VALUE . ' : N/A' ,
+            guardProjection( self::VALUE , [ Field::NULLABLE => true , Field::ELSE => 'N/A' ] , 'doc' , 'doc.thing' )
+        ) ;
+
+        $this->assertSame
+        (
+            "IS_OBJECT(doc.thing) ? " . self::VALUE . " : 'N/A'" ,
+            guardProjection( self::VALUE , [ Field::NULLABLE => true , Field::ELSE => betweenQuotes( 'N/A' ) ] , 'doc' , 'doc.thing' )
         ) ;
     }
 
