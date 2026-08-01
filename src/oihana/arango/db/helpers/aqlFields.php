@@ -67,6 +67,12 @@ use function oihana\core\strings\keyValue;
  *                      value (e.g. `["trim","lower"]` => `name: LOWER(TRIM(doc.name))`).
  *                      Applied only to the default scalar projection (`key: doc.key`);
  *                      ignored on typed/structural filters (BOOL, DATETIME, EDGE, JOIN, …).
+ * - `Field::NULLABLE` : Optional guard on a `Filter::DOCUMENT` projection — the rebuilt
+ *                      object is emitted only when its source attribute really is an
+ *                      object, otherwise the field yields `null` (or `Field::ELSE`).
+ *                      Without it, a missing source rebuilds an object of nulls. Only
+ *                      valid on that filter (it throws elsewhere); composes with
+ *                      `Field::WHEN`, which is honoured on that filter too.
  * - `Field::SCOPE`    : Optional projection source — `Scope::VERTEX` (default) reads the
  *                      field from `$docRef`, `Scope::EDGE` reads it from `$edgeRef` (the
  *                      traversal edge). The edge scope is only valid inside an edge
@@ -281,6 +287,17 @@ function aqlFields
                 $key     = betweenDoubleQuotes( $key , trim: false ) ;
             }
 
+            // Field::NULLABLE guards a rebuilt object behind the existence of its source.
+            // Only Filter::DOCUMENT rebuilds one attribute by attribute with no guard of
+            // its own : Filter::MAP already goes through aqlSafeArray() (`IS_ARRAY`),
+            // Filter::WRAP projects the current reference — which exists by construction —
+            // and Filter::EDGE / Filter::JOIN already test their backing `LET` variable.
+            // Elsewhere the marker would be a silent no-op, so it is a definition error.
+            if( ( $options[ Field::NULLABLE ] ?? false ) === true && $filter !== Filter::DOCUMENT )
+            {
+                throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::NULLABLE on the field '" . $key . "' is only valid on the '" . Filter::DOCUMENT . "' filter, which is the only projection rebuilding an object without a guard of its own." ) ;
+            }
+
             // Output-side `when`/`alters`: both decorate the default scalar projection only.
             //   - Field::ALTERS wraps the projected value with the alt chain
             //     (`name: LOWER(TRIM(doc.name))`).
@@ -289,11 +306,17 @@ function aqlFields
             // They compose: `cond ? ALTERS(value) : else`. A typed/structural filter keeps
             // its own shape, so WHEN on it is a definition error (throws) while a stray
             // ALTERS is silently ignored (legacy behaviour, falls through to the match).
+            //
+            // Filter::DOCUMENT is the exception: it rebuilds an object, which a condition
+            // CAN guard as a whole. Its WHEN falls through to the match below, where
+            // aqlFieldDocument() wraps the rebuilt object in the ternary — the condition
+            // being compiled against THIS level's reference, so the read gate applied
+            // above (conditionReadsDeniedField) covers it unchanged.
             if( $when !== null || $alters !== null )
             {
                 if( $filter !== Field::DEFAULT )
                 {
-                    if( $when !== null )
+                    if( $when !== null && $filter !== Filter::DOCUMENT )
                     {
                         throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::WHEN on the field '" . $key . "' is only valid on the default scalar projection, not the '" . $filter . "' filter." ) ;
                     }

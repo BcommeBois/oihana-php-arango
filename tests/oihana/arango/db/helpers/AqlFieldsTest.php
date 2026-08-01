@@ -665,4 +665,131 @@ final class AqlFieldsTest extends TestCase
         $this->expectExceptionMessageIsOrContains( 'only valid on the default scalar projection' ) ;
         aqlFields( [ 'tags' => [ Field::FILTER => Filter::EDGES , Field::WHEN => [ 'a' , 'b' ] ] ] , 'doc' ) ;
     }
+
+    /**
+     * Filter::DOCUMENT is the exception to the rule above : it rebuilds an object, which
+     * a condition can guard as a whole. The WHEN falls through to aqlFieldDocument().
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenOnDocumentFilterIsHonoured(): void
+    {
+        $result = aqlFields
+        ([
+            'contact' =>
+            [
+                Field::FILTER => Filter::DOCUMENT ,
+                Field::WHEN   => [ 'visibility' , 'public' ] ,
+                Field::FIELDS => [ 'email' => [] ] ,
+            ]
+        ]) ;
+
+        $this->assertSame( "contact:doc.visibility == 'public' ? {email:doc.contact.email} : null" , $result ) ;
+    }
+
+    /**
+     * Field::NULLABLE guards the only projection that rebuilds an object without a
+     * guard of its own.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableOnDocumentFilter(): void
+    {
+        $result = aqlFields
+        ([
+            'thing' =>
+            [
+                Field::FILTER   => Filter::DOCUMENT ,
+                Field::NULLABLE => true ,
+                Field::FIELDS   => [ 'name' => [] ] ,
+            ]
+        ]) ;
+
+        $this->assertSame( 'thing:IS_OBJECT(doc.thing) ? {name:doc.thing.name} : null' , $result ) ;
+    }
+
+    /**
+     * Everywhere else the marker would be a silent no-op — Filter::MAP already guards
+     * with IS_ARRAY, a scalar has no object to rebuild — so it is a definition error.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableOutsideDocumentFilterThrows(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( 'Field::NULLABLE' ) ;
+        aqlFields( [ 'tags' => [ Field::FILTER => Filter::MAP , Field::NULLABLE => true , Field::FIELDS => [ 'a' => [] ] ] ] ) ;
+    }
+
+    /**
+     * Same on the default scalar projection.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableOnScalarProjectionThrows(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        aqlFields( [ 'name' => [ Field::NULLABLE => true ] ] ) ;
+    }
+
+    /**
+     * The marker is opt-in on the strict `true`, so a definition carrying `false`
+     * outside a DOCUMENT is not a mistake worth failing on.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testFalseNullableIsNotADefinitionError(): void
+    {
+        $this->assertSame( 'name:doc.name' , aqlFields( [ 'name' => [ Field::NULLABLE => false ] ] ) ) ;
+    }
+
+    /**
+     * ⭐ The T5 read gate covers the new guard without a line of its own : the WHEN of a
+     * DOCUMENT is compiled at THIS level, and conditionReadsDeniedField() already runs
+     * for every field whatever its filter. A guard reading a masked attribute drops the
+     * whole field (fail-closed) instead of becoming an existence oracle on it.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testGuardReadingADeniedFieldDropsTheDocument(): void
+    {
+        $fields =
+        [
+            'visibility' => [ Field::REQUIRES => 'things:admin' ] ,
+            'contact'    =>
+            [
+                Field::FILTER => Filter::DOCUMENT ,
+                Field::WHEN   => [ 'visibility' , 'public' ] ,
+                Field::FIELDS => [ 'email' => [] ] ,
+            ] ,
+        ] ;
+
+        $denied = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => false ] ) ;
+        $this->assertSame( '' , $denied ) ;
+
+        $granted = aqlFields( $fields , 'doc' , null , [ Arango::AUTHORIZER => fn() => true ] ) ;
+        $this->assertSame
+        (
+            "visibility:doc.visibility, contact:doc.visibility == 'public' ? {email:doc.contact.email} : null" ,
+            $granted
+        ) ;
+    }
 }

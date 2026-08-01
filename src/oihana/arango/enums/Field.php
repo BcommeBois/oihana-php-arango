@@ -61,6 +61,13 @@ class Field
     public const string NAME = 'name' ;
 
     /**
+     * Guards a structural projection (`Filter::DOCUMENT`) behind the existence of its source:
+     * an absent — or non-object — attribute yields `null` (or `Field::ELSE`) instead of an
+     * object rebuilt out of nulls. Opt-in; composes with `Field::WHEN`.
+     */
+    public const string NULLABLE = 'nullable' ;
+
+    /**
      * Source path the field reads from — a URL route template for `Filter::URL`, and the mandatory fallback route when `Field::PATHS` is set.
      */
     public const string PATH = 'path' ;

@@ -135,6 +135,24 @@ class FieldsTraitTest extends TestCase
         $this->assertSame( 'x'          , $x[ Field::UNIQUE        ] ) ;
     }
 
+    public function testNullableOptionIsPreserved() :void
+    {
+        // Field::NULLABLE must survive the model → query normalization, otherwise the
+        // guard never reaches aqlFieldDocument() and the sub-document silently keeps
+        // returning an object of nulls when its source is missing.
+        $out = $this->stub()->prepareQueryFields
+        ([
+            'thing' =>
+            [
+                Field::FILTER   => Filter::DOCUMENT ,
+                Field::NULLABLE => true ,
+                Field::FIELDS   => [ 'name' => [] ] ,
+            ],
+        ]) ;
+
+        $this->assertTrue( $out[ 'thing' ][ Field::NULLABLE ] ) ;
+    }
+
     public function testWhenAndElseOptionsArePreserved() :void
     {
         // Field::WHEN / Field::ELSE must survive the model → query normalization,

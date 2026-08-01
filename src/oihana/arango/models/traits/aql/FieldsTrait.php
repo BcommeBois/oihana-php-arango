@@ -228,6 +228,7 @@ trait FieldsTrait
         Field::ELSE          ,
         Field::FORMAT        ,
         Field::NAME          ,
+        Field::NULLABLE      ,
         Field::PATH          ,
         Field::PATHS         ,
         Field::PROPERTY      ,

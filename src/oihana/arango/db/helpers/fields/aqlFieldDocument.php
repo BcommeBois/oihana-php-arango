@@ -8,6 +8,7 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\enums\Field;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\helpers\aqlFields;
@@ -42,11 +43,42 @@ use function oihana\core\strings\keyValue;
  * // Produces: "author: { firstName: doc.author.firstName, lastName: doc.author.lastName }"
  * ```
  *
+ * Guarded projection (`Field::NULLABLE` / `Field::WHEN`):
+ *
+ * The rebuilt object is emitted unconditionally by default — when the source attribute
+ * is missing, every line of the projection reads an attribute of a nothing, which AQL
+ * resolves to `null` without error, and the key comes back dressed as an object of
+ * nulls (`{ _key: null, url: 'https://base/things/' }`) instead of `null`. Two opt-in
+ * markers guard it:
+ *
+ * - `Field::NULLABLE => true` — the intent « no source, no object », compiled to an
+ *   `IS_OBJECT()` test on the source attribute;
+ * - `Field::WHEN` — the general mechanism, the same condition grammar as a scalar
+ *   conditional projection ({@see aqlFieldConditional()}), compiled against the
+ *   **parent** reference (`$doc`, not the sub-document), so the permission gate of
+ *   {@see conditionReadsDeniedField()} applies to it verbatim.
+ *
+ * Both compose with `&&`, and the false branch is `Field::ELSE` (default `null`):
+ *
+ * ```php
+ * aqlFieldDocument( 'thing' , 'doc' ,
+ * [
+ *     Field::NULLABLE => true ,
+ *     Field::FIELDS   => [ 'name' => [] ] ,
+ * ]);
+ * // Produces: "thing:IS_OBJECT(doc.thing) ? {name:doc.thing.name} : null"
+ * ```
+ *
+ * Without either marker the emitted AQL is unchanged, byte for byte.
+ *
  * @param string $key The key of the field in the parent document.
  * @param string $doc The document variable or reference for the field.
  * @param array $options Field options, typically including:
- * - Field::NAME  => actual key name in the document
- * - Field::FIELDS => array of nested subfields
+ * - Field::NAME     => actual key name in the document
+ * - Field::FIELDS   => array of nested subfields
+ * - Field::NULLABLE => bool, guard the rebuilt object behind `IS_OBJECT(<source>)`
+ * - Field::WHEN     => optional condition guarding the projection (parent-scoped)
+ * - Field::ELSE     => the guarded projection's false branch (default `null`)
  * @param ContainerInterface|null $container The optional DI Container reference.
  * @param array $init Optional associative array definition.
  *
@@ -54,7 +86,8 @@ use function oihana\core\strings\keyValue;
  *
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
- * @throws UnsupportedOperationException
+ * @throws UnsupportedOperationException If a `Field::WHEN` descriptor is malformed.
+ * @throws ValidationException           If a condition or else attribute name is unsafe.
  * @package oihana\arango\db\helpers
  * @since 1.0.0
  * @author Marc Alcaraz
@@ -72,6 +105,10 @@ function aqlFieldDocument
     $name   = $options[ Field::NAME   ] ?? null;
     $fields = $options[ Field::FIELDS ] ?? null;
 
+    // The source attribute the projection is rebuilt from (e.g. `doc.thing`). It also
+    // drives the Field::NULLABLE guard below, hence the single computation.
+    $source = key( $name ?? $key , $doc ) ;
+
     if ( is_array( $fields ) && count( $fields ) > 0 )
     {
         // Definition-level gating: the `LET` walk (the DOCUMENT branch of buildVariables)
@@ -85,12 +122,16 @@ function aqlFieldDocument
             $init
         ) ;
 
-        return keyValue
-        (
-            $key ,
-            aqlDocument( aqlFields( $fields , key( $name ?? $key , $doc ) , $container , $init ) )
-        ) ;
+        $value = aqlDocument( aqlFields( $fields , $source , $container , $init ) ) ;
+    }
+    else
+    {
+        // No sub-field whitelist: the sub-document is embedded as-is (`key: doc.key`).
+        // A guard still applies — an opt-in Field::NULLABLE then means « only when the
+        // source really is an object », and a Field::WHEN is honoured rather than
+        // silently dropped.
+        $value = $source ;
     }
 
-    return aqlFieldDefault( $key , $doc , $name ) ;
+    return keyValue( $key , guardProjection( $value , $options , $doc , $source ) ) ;
 }
