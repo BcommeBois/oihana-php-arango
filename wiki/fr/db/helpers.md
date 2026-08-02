@@ -190,7 +190,7 @@ Compose une expression `RETURN { ... }` complète à partir d'un tableau de déf
 
 | *Builder* | Filter associé | Rôle |
 |---|---|---|
-| `aqlFieldDefault` | `Filter::DEFAULT` | Référence simple `key: doc.keyName`. |
+| `aqlFieldDefault` | `Filter::DEFAULT` | Référence simple `key: doc.keyName`. Porte aussi `Filter::ID`, dont la source par défaut est `_key` — la clé du document projetée sous un nom public, **telle quelle** : c'est une chaîne, jamais convertie. |
 | `aqlFieldBool` | `Filter::BOOL` | Cast booléen `key: TO_BOOL(doc.x)`, avec une garde optionnelle `Field::NULLABLE` pour qu'un attribut absent rende `null` plutôt que `false`. |
 | `aqlFieldNumber` | `Filter::NUMBER` | Cast numérique `key: TO_NUMBER(doc.x)`, avec une garde optionnelle `Field::NULLABLE` pour qu'un attribut absent rende `null` plutôt que `0`. |
 | `aqlFieldDateTime` | `Filter::DATETIME` | Cast date ISO 8601. |

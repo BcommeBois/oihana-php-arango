@@ -288,7 +288,7 @@ throws an `UnsupportedOperationException`:
 | `Filter::DOCUMENT` | an object | an object of `null`s | ✅ `IS_OBJECT()` |
 | `Filter::BOOL` | a boolean | `false` — an answer to a question never asked | ✅ `!= null`, [below](#guarding-a-cast--fieldnullable-on-a-filterbool-or-a-filternumber) |
 | `Filter::NUMBER` | a number | `0` — « free » and « no price » collapsed | ✅ `!= null`, [below](#guarding-a-cast--fieldnullable-on-a-filterbool-or-a-filternumber) |
-| `Filter::ID` | a number from the key | `0` on any alphanumeric key | ⛔ throws — a conversion, not an absence; still open |
+| `Filter::ID` | nothing — it projects the key as stored (`id: doc._key`) | `null` | ⛔ throws — nothing is fabricated |
 | `Filter::MAP` | an array | `[]` — `IS_ARRAY()` already placed | ⛔ throws |
 | `Filter::WRAP` | an object | moot: it projects the current reference, which exists by construction | ⛔ throws |
 | `Filter::EDGE` / `Filter::JOIN` | an object | `null` — `IS_OBJECT()` already placed | ⛔ throws |
@@ -369,10 +369,12 @@ back as `0`.
 The same reasoning holds for the test: `IS_NUMBER()` would have dropped the last row, which
 `TO_NUMBER()` exists to accept. A live case pins it.
 
-> **`Filter::ID` shares the same builder but not this door.** It emits
-> `TO_NUMBER(doc._key)` — a conversion of a key that is **present**, which yields `0` on any
-> alphanumeric key. That is a different question, and it is still open: a test pins its
-> refusal meanwhile.
+> **`Filter::ID` no longer converts at all.** It used to emit `TO_NUMBER(doc._key)`, which
+> is a different problem — the key is **present**, it is the conversion that harms: every
+> non-numeric key became `0`, so all those documents shared one identifier, leading zeros
+> were dropped (`"007"` → `7`) and precision was lost past 2^53. It now emits `id: doc._key`
+> and returns the key as stored. Nothing is fabricated any more, so `Field::NULLABLE` stays
+> refused there — an absent source already yields `null` on its own.
 
 **Backward compatibility.** Without the marker the emitted AQL is unchanged **byte for
 byte** — no test, no ternary. Every existing projection keeps answering `false` and `0`.

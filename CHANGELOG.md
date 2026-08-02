@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **⚠ `Filter::ID` stops converting the key to a number — a projected `id` is now a string.** The filter projects the document key under a public name (`id`), and it did so through `TO_NUMBER(doc._key)`. But an ArangoDB key **is a string**, and that conversion never fails: it returns `0`. Measured on a real server, on four documents:
+  ```
+  _key: "007"      →  before: 7                 after: "007"
+  _key: "1234"     →  before: 1234              after: "1234"
+  _key: "abc-42"   →  before: 0                 after: "abc-42"
+  _key: "t9"       →  before: 0                 after: "t9"
+  ```
+  - **The harm was identity, not accuracy.** Two distinct documents came back carrying the same `id` — four documents, three identifiers — and nothing in the response said so. A client indexing or de-duplicating on `id` silently lost rows.
+  - **It also bit purely numeric keys**: a zero-padded `"007"` came back as `7`, which no longer addresses anything, and a key above 2^53 lost precision.
+  - **The origin is a port, not a decision.** The line arrived with the very first commit of the repository (`initial code base extracted from oihana-odbc-php`), from a SQL world where `id` really was an auto-incremented integer. On ArangoDB it stopped being true and nothing replayed it; no docblock ever justified it.
+  - **What it takes to adapt:** a consumer comparing `id` to a number (`id === 1234`) or doing arithmetic on it. The library itself has no internal consumer of this filter. Fixing it now costs a line; once an API is settled on a numeric `id` it becomes a negotiation.
+  - **Everything else is unchanged**: the output label is still free (`ref => Filter::ID` projects `ref: doc._key`), `Field::NAME` still overrides the source, and `Field::NULLABLE` stays refused there — now for a plain reason, since nothing is fabricated any more.
+  - **Tests:** 2 new `AqlFieldsTest` cases (the key projected as stored, `TO_NUMBER` gone, the free label, the aliased source; plus the marker still refused, with its rationale rewritten) and a new **live** `ProjectedIdIntegrationTest` running the old conversion explicitly so the collapse is *measured* — four keys, three identifiers — next to the new projection returning all four untouched. FR/EN wiki updated in `db/conditional-fields.md` and `db/helpers.md`.
+
 ### Fixed
 
 - **The federated search gated what it looked at, not what it handed back.** `FederatedSearch::rebuild()` re-reads every matched key through its owning model. It **receives** the request authorizer — it uses it to decide which collections are searchable and to route a polymorphic key by its discriminator — but did not forward it to the `list()` that rebuilds the documents. `isAuthorized()` returns true when no authorizer is given, by design, so the projection fell open and a `Field::REQUIRES` attribute came out through the search that a `get()` on the same document hides. The search stage was closed all along; the hydration was the door left open.

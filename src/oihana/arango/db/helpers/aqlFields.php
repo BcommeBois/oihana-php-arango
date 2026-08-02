@@ -303,8 +303,9 @@ function aqlFields
             //     with `!= null` — `IS_BOOL` would make every document storing `1` or
             //     `"yes"` abstain, when TO_BOOL() exists to accept them ;
             //   - Filter::NUMBER answers `0` the same way, and is tested the same way.
-            //     Filter::ID shares its builder but NOT this door : it converts a key that
-            //     is present, which is a separate question, still open.
+            //     Filter::ID is NOT in that list : it fabricates nothing since it stopped
+            //     converting — it projects the key as it is stored, so an absent source
+            //     already yields null on its own.
             // The others already guard themselves : Filter::MAP goes through aqlSafeArray()
             // (`IS_ARRAY`), Filter::WRAP projects the current reference — which exists by
             // construction — and Filter::EDGE / Filter::JOIN test their backing `LET`
@@ -368,7 +369,12 @@ function aqlFields
                 Filter::WRAP       => aqlFieldWrap      ( $key , $ref , $options , $container , $init ) ,
 
                 Filter::DISTANCE => keyValue        ( $key , Prop::DISTANCE ) ,
-                Filter::ID       => aqlFieldNumber  ( $key , $ref , $keyName ?? Prop::_KEY ) ,
+                // Filter::ID projects the document key under a public name (`id: doc._key`),
+                // Field::NAME overriding the source. It does NOT convert : an ArangoDB key is
+                // a string, and TO_NUMBER() turned every non-numeric one into `0` — so every
+                // such document shared one identifier — while silently dropping leading zeros
+                // and losing precision past 2^53 on long numeric keys.
+                Filter::ID       => aqlFieldDefault ( $key , $ref , $keyName ?? Prop::_KEY ) ,
                 Filter::REVISION => aqlFieldDefault ( $key , $ref , $keyName ?? Prop::_REV ) ,
 
                 Filter::ARRAY_COUNT , Filter::JOINS_COUNT => aqlFieldArrayCount ( $key , $ref , $keyName ) ,

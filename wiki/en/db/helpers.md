@@ -190,7 +190,7 @@ Composes a complete `RETURN { ... }` expression from an array of field definitio
 
 | *Builder* | Associated filter | Role |
 |---|---|---|
-| `aqlFieldDefault` | `Filter::DEFAULT` | Simple reference `key: doc.keyName`. |
+| `aqlFieldDefault` | `Filter::DEFAULT` | Simple reference `key: doc.keyName`. Also backs `Filter::ID`, whose default source is `_key` — the document key projected under a public name, **as stored**: it is a string, never converted. |
 | `aqlFieldBool` | `Filter::BOOL` | Boolean cast `key: TO_BOOL(doc.x)`, with an optional `Field::NULLABLE` guard so a missing attribute yields `null` instead of `false`. |
 | `aqlFieldNumber` | `Filter::NUMBER` | Numeric cast `key: TO_NUMBER(doc.x)`, with an optional `Field::NULLABLE` guard so a missing attribute yields `null` instead of `0`. |
 | `aqlFieldDateTime` | `Filter::DATETIME` | ISO 8601 date cast. |

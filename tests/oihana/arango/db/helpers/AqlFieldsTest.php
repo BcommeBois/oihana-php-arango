@@ -904,9 +904,33 @@ final class AqlFieldsTest extends TestCase
     }
 
     /**
-     * ⚠ Filter::ID shares the same builder but NOT the same door : it converts a key that is
-     * PRESENT (`TO_NUMBER(doc._key)` yields `0` on an alphanumeric key), which is a separate
-     * question — still open. The refusal is pinned so answering it stays a decision.
+     * Filter::ID projects the document key under a public name, `_key` being its default
+     * source — the one filter whose default source is not the field name.
+     *
+     * ⭐ It does NOT convert. An ArangoDB key is a string : TO_NUMBER() turned every
+     * non-numeric key into `0`, so all those documents shared one identifier, and it also
+     * dropped leading zeros (`"007"` → `7`) and lost precision past 2^53.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testIdFilterProjectsTheKeyAsStored(): void
+    {
+        $this->assertSame( 'id:doc._key' , aqlFields( [ 'id' => [ Field::FILTER => Filter::ID ] ] ) ) ;
+        $this->assertStringNotContainsString( 'TO_NUMBER' , aqlFields( [ 'id' => [ Field::FILTER => Filter::ID ] ] ) ) ;
+
+        // The output label is free, the source stays `_key`.
+        $this->assertSame( 'ref:doc._key' , aqlFields( [ 'ref' => [ Field::FILTER => Filter::ID ] ] ) ) ;
+
+        // Field::NAME overrides the source, as on every other filter.
+        $this->assertSame( 'id:doc.legacyId' , aqlFields( [ 'id' => [ Field::FILTER => Filter::ID , Field::NAME => 'legacyId' ] ] ) ) ;
+    }
+
+    /**
+     * Field::NULLABLE stays refused there, and now for a plain reason : since it stopped
+     * converting, Filter::ID fabricates nothing — an absent source already yields null.
      *
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface

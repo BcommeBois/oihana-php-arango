@@ -295,7 +295,7 @@ définition qui lève une `UnsupportedOperationException` :
 | `Filter::DOCUMENT` | un objet | un objet de `null` | ✅ `IS_OBJECT()` |
 | `Filter::BOOL` | un booléen | `false` — une réponse à une question jamais posée | ✅ `!= null`, [plus bas](#garder-un-cast--fieldnullable-sur-un-filterbool-ou-un-filternumber) |
 | `Filter::NUMBER` | un nombre | `0` — « gratuit » et « pas de prix » confondus | ✅ `!= null`, [plus bas](#garder-un-cast--fieldnullable-sur-un-filterbool-ou-un-filternumber) |
-| `Filter::ID` | un nombre tiré de la clé | `0` dès que la clé a une lettre | ⛔ lève — une conversion, pas une absence ; encore ouvert |
+| `Filter::ID` | rien — il projette la clé telle quelle (`id: doc._key`) | `null` | ⛔ lève — rien n'est fabriqué |
 | `Filter::MAP` | un tableau | `[]` — `IS_ARRAY()` déjà posé | ⛔ lève |
 | `Filter::WRAP` | un objet | sans objet : projette la référence courante, qui existe par construction | ⛔ lève |
 | `Filter::EDGE` / `Filter::JOIN` | un objet | `null` — `IS_OBJECT()` déjà posé | ⛔ lève |
@@ -376,10 +376,12 @@ reviennent toutes les deux à `0`.
 Le raisonnement sur le test est identique : `IS_NUMBER()` aurait fait tomber la dernière
 ligne, celle que `TO_NUMBER()` existe justement pour accepter. Un cas live le fige.
 
-> **`Filter::ID` partage le même constructeur mais pas cette porte.** Il émet
-> `TO_NUMBER(doc._key)` — la conversion d'une clé qui est **présente**, et qui vaut `0` dès
-> que la clé contient une lettre. C'est une autre question, encore ouverte : un test fige son
-> refus en attendant.
+> **`Filter::ID` ne convertit plus du tout.** Il émettait `TO_NUMBER(doc._key)`, ce qui est
+> un autre problème — la clé est **présente**, c'est la conversion qui nuit : toute clé non
+> numérique devenait `0`, si bien que tous ces documents partageaient un seul identifiant,
+> les zéros de tête sautaient (`"007"` → `7`) et la précision se perdait au-delà de 2^53. Il
+> émet désormais `id: doc._key` et rend la clé telle qu'elle est stockée. Plus rien n'est
+> fabriqué, donc `Field::NULLABLE` y reste refusé — une source absente rend déjà `null`.
 
 **Rétrocompatibilité.** Sans le marqueur, l'AQL émis est inchangé **au caractère près** — pas
 de test, pas de ternaire. Toutes les projections existantes continuent de répondre `false`
