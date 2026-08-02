@@ -886,19 +886,53 @@ final class AqlFieldsTest extends TestCase
     }
 
     /**
-     * The neighbouring cast fabricates the same way (`TO_NUMBER(null)` is `0`) but is not
-     * part of this lot : its refusal is pinned so opening it later is a deliberate change.
+     * The neighbouring cast fabricates the same way — `TO_NUMBER()` of a missing attribute
+     * is `0`, so « it is free » and « we have no price » become one value — and takes the
+     * same marker, with the same presence test.
      *
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testNullableStillThrowsOnNumberFilter(): void
+    public function testNullableOnNumberFilter(): void
+    {
+        $result = aqlFields( [ 'price' => [ Field::FILTER => Filter::NUMBER , Field::NULLABLE => true ] ] ) ;
+
+        $this->assertSame( 'price:doc.price != null ? TO_NUMBER(doc.price) : null' , $result ) ;
+        $this->assertStringNotContainsString( 'IS_NUMBER' , $result ) ;
+    }
+
+    /**
+     * ⚠ Filter::ID shares the same builder but NOT the same door : it converts a key that is
+     * PRESENT (`TO_NUMBER(doc._key)` yields `0` on an alphanumeric key), which is a separate
+     * question — still open. The refusal is pinned so answering it stays a decision.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableStillThrowsOnIdFilter(): void
     {
         $this->expectException( UnsupportedOperationException::class ) ;
         $this->expectExceptionMessageIsOrContains( 'Field::NULLABLE' ) ;
-        aqlFields( [ 'price' => [ Field::FILTER => Filter::NUMBER , Field::NULLABLE => true ] ] ) ;
+        aqlFields( [ 'id' => [ Field::FILTER => Filter::ID , Field::NULLABLE => true ] ] ) ;
+    }
+
+    /**
+     * The door opened on Filter::NUMBER is Field::NULLABLE alone, as on Filter::BOOL.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenStillThrowsOnNumberFilter(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( 'only valid on the default scalar projection' ) ;
+        aqlFields( [ 'price' => [ Field::FILTER => Filter::NUMBER , Field::WHEN => [ 'visibility' , 'public' ] ] ] ) ;
     }
 
     /**

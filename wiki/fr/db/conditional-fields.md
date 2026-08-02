@@ -293,7 +293,9 @@ définition qui lève une `UnsupportedOperationException` :
 | Filtre | Reconstruit | Source absente | `Field::NULLABLE` |
 |---|---|---|---|
 | `Filter::DOCUMENT` | un objet | un objet de `null` | ✅ `IS_OBJECT()` |
-| `Filter::BOOL` | un booléen | `false` — une réponse à une question jamais posée | ✅ `!= null`, [plus bas](#garder-un-cast--fieldnullable-sur-un-filterbool) |
+| `Filter::BOOL` | un booléen | `false` — une réponse à une question jamais posée | ✅ `!= null`, [plus bas](#garder-un-cast--fieldnullable-sur-un-filterbool-ou-un-filternumber) |
+| `Filter::NUMBER` | un nombre | `0` — « gratuit » et « pas de prix » confondus | ✅ `!= null`, [plus bas](#garder-un-cast--fieldnullable-sur-un-filterbool-ou-un-filternumber) |
+| `Filter::ID` | un nombre tiré de la clé | `0` dès que la clé a une lettre | ⛔ lève — une conversion, pas une absence ; encore ouvert |
 | `Filter::MAP` | un tableau | `[]` — `IS_ARRAY()` déjà posé | ⛔ lève |
 | `Filter::WRAP` | un objet | sans objet : projette la référence courante, qui existe par construction | ⛔ lève |
 | `Filter::EDGE` / `Filter::JOIN` | un objet | `null` — `IS_OBJECT()` déjà posé | ⛔ lève |
@@ -313,7 +315,7 @@ jamais. `Field::NULLABLE` garde son sens unique ; l'URL se garde avec une condit
 celui d'avant : pas de `IS_OBJECT`, pas de ternaire, pas un espace de plus. Toutes les
 projections existantes sont inchangées, et un test le fige.
 
-## Garder un cast — `Field::NULLABLE` sur un `Filter::BOOL`
+## Garder un cast — `Field::NULLABLE` sur un `Filter::BOOL` ou un `Filter::NUMBER`
 
 **La situation.** `TO_BOOL()` répond même quand on ne lui a rien demandé. Un document qui ne
 dit rien de l'attribut revient en disant « non », exactement comme celui qui stocke vraiment
@@ -353,13 +355,35 @@ mais déclaré au lieu d'être inventé :
 > « l'attribut est-il là ? », c'est donc la seule question émise. Un test live fige ces
 > documents-là comme toujours `true`.
 
-**Rétrocompatibilité.** Sans le marqueur, l'AQL émis est inchangé **au caractère près** — pas
-de test, pas de ternaire. Toutes les projections existantes continuent de répondre `false`.
+### La même chose sur un nombre
 
-> `Filter::NUMBER` fabrique de la même façon (`TO_NUMBER()` d'un attribut absent vaut `0`,
-> si bien que « c'est gratuit » et « on n'a pas de prix » deviennent la même valeur). Il
-> n'est **pas** ouvert pour l'instant : un test fige son refus, pour que l'ouvrir plus tard
-> soit une décision et non une dérive.
+`Filter::NUMBER` fabrique exactement de la même façon — et l'ambiguïté qu'il crée se sent
+mieux encore : l'offre qui est vraiment **gratuite** et celle dont on n'a **pas le prix**
+reviennent toutes les deux à `0`.
+
+```php
+'price' => [ Field::FILTER => Filter::NUMBER , Field::NULLABLE => true ] ,
+// price:doc.price != null ? TO_NUMBER(doc.price) : null
+```
+
+| Le document stocké | Sans le marqueur | Avec |
+|---|---|---|
+| `{ "price": 19.9 }` | `19.9` | `19.9` |
+| `{ "price": 0 }` — vraiment gratuit | `0` | `0` — un `0` stocké reste un `0` |
+| `{ }` — pas de prix | `0` ← **la même réponse** | `null` |
+| `{ "price": "42" }` — une chaîne | `42` | `42` — toujours converti |
+
+Le raisonnement sur le test est identique : `IS_NUMBER()` aurait fait tomber la dernière
+ligne, celle que `TO_NUMBER()` existe justement pour accepter. Un cas live le fige.
+
+> **`Filter::ID` partage le même constructeur mais pas cette porte.** Il émet
+> `TO_NUMBER(doc._key)` — la conversion d'une clé qui est **présente**, et qui vaut `0` dès
+> que la clé contient une lettre. C'est une autre question, encore ouverte : un test fige son
+> refus en attendant.
+
+**Rétrocompatibilité.** Sans le marqueur, l'AQL émis est inchangé **au caractère près** — pas
+de test, pas de ternaire. Toutes les projections existantes continuent de répondre `false`
+et `0`.
 
 ## Le lien, seulement s'il y a une clé — `Field::WHEN` sur un `Filter::URL`
 
@@ -465,7 +489,7 @@ Ne pas les confondre :
 | Marqueur | Décide | Posé sur | Compilé contre |
 |---|---|---|---|
 | `Field::WHEN` | la *valeur* d'un champ (ternaire) | projection scalaire par défaut, `Filter::DOCUMENT` ou `Filter::URL` | la référence du niveau projeté — `doc` pour un sous-document, le sous-document lui-même pour une URL imbriquée dedans |
-| `Field::NULLABLE` | si la valeur fabriquée est émise (`IS_OBJECT` de la source sur un `Filter::DOCUMENT`, `!= null` sur un `Filter::BOOL`) | un `Filter::DOCUMENT`, un `Filter::BOOL` | `doc` (le **parent**) |
+| `Field::NULLABLE` | si la valeur fabriquée est émise (`IS_OBJECT` de la source sur un `Filter::DOCUMENT`, `!= null` sur un `Filter::BOOL` / `Filter::NUMBER`) | un `Filter::DOCUMENT`, un `Filter::BOOL`, un `Filter::NUMBER` | `doc` (le **parent**) |
 | `Field::WHERE` | *quels éléments* d'un tableau sont projetés (`FILTER`) | un `Filter::MAP` | l'élément (`item`) |
 | `AQL::WHERE` | *quels sommets* une relation projette (`FILTER`) | une **définition** d'edge | le sommet traversé (`vertex`) |
 

@@ -192,7 +192,7 @@ Compose une expression `RETURN { ... }` complète à partir d'un tableau de déf
 |---|---|---|
 | `aqlFieldDefault` | `Filter::DEFAULT` | Référence simple `key: doc.keyName`. |
 | `aqlFieldBool` | `Filter::BOOL` | Cast booléen `key: TO_BOOL(doc.x)`, avec une garde optionnelle `Field::NULLABLE` pour qu'un attribut absent rende `null` plutôt que `false`. |
-| `aqlFieldNumber` | `Filter::NUMBER` | Cast numérique `key: TO_NUMBER(doc.x)`. |
+| `aqlFieldNumber` | `Filter::NUMBER` | Cast numérique `key: TO_NUMBER(doc.x)`, avec une garde optionnelle `Field::NULLABLE` pour qu'un attribut absent rende `null` plutôt que `0`. |
 | `aqlFieldDateTime` | `Filter::DATETIME` | Cast date ISO 8601. |
 | `aqlFieldArray` | `Filter::ARRAY` | Champ tableau défensif. |
 | `aqlFieldArrayCount` | `Filter::ARRAY_COUNT` | Nombre d'éléments du tableau. |

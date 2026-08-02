@@ -96,6 +96,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Field::NULLABLE` on `Filter::NUMBER` — a number can now abstain instead of inventing a `0`.** The same defect as on `Filter::BOOL`, with an ambiguity that is easier to feel: the offer that really **is free** and the one we simply **have no price for** both came back as `0`. Measured on a real server:
+  ```
+  stored: { "price": 0 }   →   { "price": 0 }   ← really free
+  stored: { }              →   { "price": 0 }   ← the same answer
+  ```
+  ```php
+  'price' => [ Field::FILTER => Filter::NUMBER , Field::NULLABLE => true ] ,
+  // price:doc.price != null ? TO_NUMBER(doc.price) : null
+  ```
+  - **The same presence test**, for the same reason: a price stored as the string `"42"` counts as `42` today, and an `IS_NUMBER()` guard would have made it abstain. A live case pins those rows as still converted, and a stored `0` as still a `0`.
+  - **`Filter::ID` shares the builder but not the door.** It emits `TO_NUMBER(doc._key)` — the conversion of a key that is **present**, yielding `0` on any alphanumeric key. That is a conversion question, not an absence one; it stays open and its refusal is pinned by a test.
+  - **Backward compatible by construction:** with no marker the emitted AQL is unchanged byte for byte, `Filter::ID` included.
+  - **Tests:** 6 new `AqlFieldNumberTest` cases, 3 new `AqlFieldsTest` cases (honoured on the filter, `Field::WHEN` still refused there, `Field::NULLABLE` still refused on `Filter::ID`) and a new **live** `GuardedNumberIntegrationTest` (3 cases: the free offer indistinguishable from the unpriced one, the abstention keeping `0` and the string prices, and the declared fallback). FR/EN wiki `db/conditional-fields.md` gains the measured table, and the « guarding a cast » section now covers both casts.
+
 - **`Field::NULLABLE` on `Filter::BOOL` — a boolean can now abstain instead of answering a question nobody asked.** `TO_BOOL()` answers even when there is nothing to convert: a document that says nothing about the attribute comes back saying « no », exactly like the one that really stores `false`. From the response the two are indistinguishable — « disabled » and « never filled in » become the same value. Measured on a real server:
   ```
   stored: { "active": false }   →   { "active": false }

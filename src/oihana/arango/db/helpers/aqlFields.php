@@ -301,16 +301,19 @@ function aqlFields
             //     of its own, and is tested with `IS_OBJECT` ;
             //   - Filter::BOOL answers `false` to a question never asked, and is tested
             //     with `!= null` — `IS_BOOL` would make every document storing `1` or
-            //     `"yes"` abstain, when TO_BOOL() exists to accept them.
+            //     `"yes"` abstain, when TO_BOOL() exists to accept them ;
+            //   - Filter::NUMBER answers `0` the same way, and is tested the same way.
+            //     Filter::ID shares its builder but NOT this door : it converts a key that
+            //     is present, which is a separate question, still open.
             // The others already guard themselves : Filter::MAP goes through aqlSafeArray()
             // (`IS_ARRAY`), Filter::WRAP projects the current reference — which exists by
             // construction — and Filter::EDGE / Filter::JOIN test their backing `LET`
             // variable. There the marker would be a silent no-op, so it is a definition
             // error. Filter::URL is refused too, though it does fabricate : it takes
             // Field::WHEN, accepted below, and the asymmetry is a deliberate call.
-            if( ( $options[ Field::NULLABLE ] ?? false ) === true && $filter !== Filter::DOCUMENT && $filter !== Filter::BOOL )
+            if( ( $options[ Field::NULLABLE ] ?? false ) === true && $filter !== Filter::DOCUMENT && $filter !== Filter::BOOL && $filter !== Filter::NUMBER )
             {
-                throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::NULLABLE on the field '" . $key . "' is only valid on the '" . Filter::DOCUMENT . "' and '" . Filter::BOOL . "' filters, the projections that fabricate a value without a guard of their own." ) ;
+                throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::NULLABLE on the field '" . $key . "' is only valid on the '" . Filter::DOCUMENT . "', '" . Filter::BOOL . "' and '" . Filter::NUMBER . "' filters, the projections that fabricate a value without a guard of their own." ) ;
             }
 
             // Output-side `when`/`alters`: both decorate the default scalar projection only.
@@ -359,7 +362,7 @@ function aqlFields
                 Filter::DATETIME   => aqlFieldDateTime  ( $key , $ref , $keyName , $format ) ,
                 Filter::DOCUMENT   => aqlFieldDocument  ( $key , $ref , $options , $container , $init ) ,
                 Filter::MAP        => aqlFieldMap       ( $key , $ref , $options , $container , $init ) ,
-                Filter::NUMBER     => aqlFieldNumber    ( $key , $ref , $keyName),
+                Filter::NUMBER     => aqlFieldNumber    ( $key , $ref , $keyName , $options ) ,
                 Filter::TRANSLATE  => aqlFieldTranslate ( $key , $ref , $keyName , $init ) ,
                 Filter::URL        => aqlFieldUrl       ( $key , $ref , $options , $container , $init ) ,
                 Filter::WRAP       => aqlFieldWrap      ( $key , $ref , $options , $container , $init ) ,

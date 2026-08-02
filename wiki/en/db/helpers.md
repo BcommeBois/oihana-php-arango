@@ -192,7 +192,7 @@ Composes a complete `RETURN { ... }` expression from an array of field definitio
 |---|---|---|
 | `aqlFieldDefault` | `Filter::DEFAULT` | Simple reference `key: doc.keyName`. |
 | `aqlFieldBool` | `Filter::BOOL` | Boolean cast `key: TO_BOOL(doc.x)`, with an optional `Field::NULLABLE` guard so a missing attribute yields `null` instead of `false`. |
-| `aqlFieldNumber` | `Filter::NUMBER` | Numeric cast `key: TO_NUMBER(doc.x)`. |
+| `aqlFieldNumber` | `Filter::NUMBER` | Numeric cast `key: TO_NUMBER(doc.x)`, with an optional `Field::NULLABLE` guard so a missing attribute yields `null` instead of `0`. |
 | `aqlFieldDateTime` | `Filter::DATETIME` | ISO 8601 date cast. |
 | `aqlFieldArray` | `Filter::ARRAY` | Defensive array field. |
 | `aqlFieldArrayCount` | `Filter::ARRAY_COUNT` | Number of elements in the array. |

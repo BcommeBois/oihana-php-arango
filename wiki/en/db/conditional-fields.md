@@ -286,7 +286,9 @@ throws an `UnsupportedOperationException`:
 | Filter | Rebuilds | Missing source | `Field::NULLABLE` |
 |---|---|---|---|
 | `Filter::DOCUMENT` | an object | an object of `null`s | ✅ `IS_OBJECT()` |
-| `Filter::BOOL` | a boolean | `false` — an answer to a question never asked | ✅ `!= null`, [below](#guarding-a-cast--fieldnullable-on-a-filterbool) |
+| `Filter::BOOL` | a boolean | `false` — an answer to a question never asked | ✅ `!= null`, [below](#guarding-a-cast--fieldnullable-on-a-filterbool-or-a-filternumber) |
+| `Filter::NUMBER` | a number | `0` — « free » and « no price » collapsed | ✅ `!= null`, [below](#guarding-a-cast--fieldnullable-on-a-filterbool-or-a-filternumber) |
+| `Filter::ID` | a number from the key | `0` on any alphanumeric key | ⛔ throws — a conversion, not an absence; still open |
 | `Filter::MAP` | an array | `[]` — `IS_ARRAY()` already placed | ⛔ throws |
 | `Filter::WRAP` | an object | moot: it projects the current reference, which exists by construction | ⛔ throws |
 | `Filter::EDGE` / `Filter::JOIN` | an object | `null` — `IS_OBJECT()` already placed | ⛔ throws |
@@ -306,7 +308,7 @@ its single meaning; the url is guarded with a condition instead.
 from before: no `IS_OBJECT`, no ternary, not one extra space. Every existing projection is
 unchanged, and a test pins it.
 
-## Guarding a cast — `Field::NULLABLE` on a `Filter::BOOL`
+## Guarding a cast — `Field::NULLABLE` on a `Filter::BOOL` or a `Filter::NUMBER`
 
 **The situation.** `TO_BOOL()` answers even when nothing was asked. A document that says
 nothing about the attribute comes back saying « no », exactly like the one that really
@@ -346,12 +348,34 @@ but declared rather than invented:
 > three. The question asked is only « is the attribute there? », so that is the only
 > question emitted. A live test pins those documents as still `true`.
 
-**Backward compatibility.** Without the marker the emitted AQL is unchanged **byte for
-byte** — no test, no ternary. Every existing projection keeps answering `false`.
+### The same on a number
 
-> `Filter::NUMBER` fabricates the same way (`TO_NUMBER()` of a missing attribute is `0`, so
-> « it is free » and « we have no price » become the same value). It is **not** opened yet:
-> a test pins its refusal, so opening it later is a deliberate change and not a drift.
+`Filter::NUMBER` fabricates exactly the same way — and the ambiguity it creates is easier to
+feel: the offer that really is **free** and the one we simply **have no price for** both come
+back as `0`.
+
+```php
+'price' => [ Field::FILTER => Filter::NUMBER , Field::NULLABLE => true ] ,
+// price:doc.price != null ? TO_NUMBER(doc.price) : null
+```
+
+| The stored document | Without the marker | With it |
+|---|---|---|
+| `{ "price": 19.9 }` | `19.9` | `19.9` |
+| `{ "price": 0 }` — really free | `0` | `0` — a stored `0` stays a `0` |
+| `{ }` — no price | `0` ← **the same answer** | `null` |
+| `{ "price": "42" }` — a string | `42` | `42` — still converted |
+
+The same reasoning holds for the test: `IS_NUMBER()` would have dropped the last row, which
+`TO_NUMBER()` exists to accept. A live case pins it.
+
+> **`Filter::ID` shares the same builder but not this door.** It emits
+> `TO_NUMBER(doc._key)` — a conversion of a key that is **present**, which yields `0` on any
+> alphanumeric key. That is a different question, and it is still open: a test pins its
+> refusal meanwhile.
+
+**Backward compatibility.** Without the marker the emitted AQL is unchanged **byte for
+byte** — no test, no ternary. Every existing projection keeps answering `false` and `0`.
 
 ## The link, only when there is a key — `Field::WHEN` on a `Filter::URL`
 
@@ -455,7 +479,7 @@ Don't confuse the two:
 | Marker | Decides | Placed on | Compiled against |
 |---|---|---|---|
 | `Field::WHEN` | a field's *value* (ternary) | the default scalar projection, a `Filter::DOCUMENT` or a `Filter::URL` | the reference of the level being projected — `doc` for a sub-document, the sub-document itself for a url nested in one |
-| `Field::NULLABLE` | whether the fabricated value is emitted (`IS_OBJECT` of the source on a `Filter::DOCUMENT`, `!= null` on a `Filter::BOOL`) | a `Filter::DOCUMENT`, a `Filter::BOOL` | `doc` (the **parent**) |
+| `Field::NULLABLE` | whether the fabricated value is emitted (`IS_OBJECT` of the source on a `Filter::DOCUMENT`, `!= null` on a `Filter::BOOL` / `Filter::NUMBER`) | a `Filter::DOCUMENT`, a `Filter::BOOL`, a `Filter::NUMBER` | `doc` (the **parent**) |
 | `Field::WHERE` | *which elements* of an array are projected (`FILTER`) | a `Filter::MAP` | the element (`item`) |
 | `AQL::WHERE` | *which vertices* a relation projects (`FILTER`) | an edge **definition** | the traversed vertex (`vertex`) |
 
