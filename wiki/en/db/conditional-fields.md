@@ -290,6 +290,7 @@ throws an `UnsupportedOperationException`:
 | `Filter::NUMBER` | a number | `0` — « free » and « no price » collapsed | ✅ `!= null`, [below](#guarding-a-cast--fieldnullable-on-a-filterbool-or-a-filternumber) |
 | `Filter::ID` | nothing — it projects the key as stored (`id: doc._key`) | `null` | ⛔ throws — nothing is fabricated |
 | `Filter::MAP` | an array | `[]` — `IS_ARRAY()` already placed | ⛔ throws |
+| `Filter::TRANSLATE` | a translated text | `null` — `IS_OBJECT()` already placed | ⛔ throws |
 | `Filter::WRAP` | an object | moot: it projects the current reference, which exists by construction | ⛔ throws |
 | `Filter::EDGE` / `Filter::JOIN` | an object | `null` — `IS_OBJECT()` already placed | ⛔ throws |
 | `Filter::URL` | a link | a truncated address | ⛔ throws — its guard is `Field::WHEN`, [next section](#the-link-only-when-there-is-a-key--fieldwhen-on-a-filterurl) |

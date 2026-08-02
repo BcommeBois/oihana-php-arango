@@ -200,7 +200,7 @@ Composes a complete `RETURN { ... }` expression from an array of field definitio
 | `aqlFieldDocument` | `Filter::DOCUMENT` | Nested document (with sub-projection). |
 | `aqlFieldObject` | `Filter::OBJECT` | Object or first element of an array. |
 | `aqlFieldMap` | `Filter::MAP` | Mapping of an array to structured documents. |
-| `aqlFieldTranslate` | `Filter::TRANSLATE` | Translated field (current *locale* selection). |
+| `aqlFieldTranslate` | `Filter::TRANSLATE` | Translated field (current *locale* selection), guarded by `IS_OBJECT()` — see below. |
 | `aqlFieldUrl` | `Filter::URL` | Document URL with dynamic *placeholders* (and optional per-type routing). |
 
 Minimal example of the simplest *builder*:
@@ -266,6 +266,41 @@ aqlFields([ 'name' => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ]);
 aqlFields([ 'my-key' => [ Field::QUOTED => true ] ]);
 // "my-key":doc.`my-key`
 ```
+
+### Translated fields — `Filter::TRANSLATE`
+
+A `Filter::TRANSLATE` field reads a **document of translations** (`{ fr: …, en: … }`) and
+returns the one matching the request language, taken from `Arango::LANG`. With no language
+declared it falls back to the plain field.
+
+```php
+aqlFields([ 'title' => [ Field::FILTER => Filter::TRANSLATE ] ], 'doc', null, [ Arango::LANG => 'fr' ]);
+// title:IS_OBJECT(doc.title) ? TRANSLATE("fr",doc.title,"") : null
+
+aqlFields([ 'title' => [ Field::FILTER => Filter::TRANSLATE ] ], 'doc');   // no language
+// title:doc.title
+```
+
+**Why the `IS_OBJECT()` guard.** `TRANSLATE()` looks the language up *in a document*, so it
+needs its second argument to be one. Handed anything else — an absent attribute, or a plain
+string left over from a record written before i18n — it returns `null` **and raises an AQL
+warning** (`1542`), once per row concerned. That warning is not cosmetic: a query run with
+the `failOnWarning` cursor option **fails outright**, so a single un-translated document
+could break a whole listing. The guard asks the question first and yields the very same
+`null`, so **no projected value changes** — measured against a real server:
+
+| Stored | Projected | Warning (before the guard) |
+|---|---|---|
+| `{ "fr": "Bonjour", "en": "Hello" }` | `"Bonjour"` | — |
+| `{ "en": "Hi" }` — no French | `""` | — |
+| no attribute at all | `null` | ⚠ raised |
+| `"plain"` — not a document | `null` | ⚠ raised |
+
+> ⚠ **Two shapes of « no text », two values.** Read the second row again: a document that
+> *has* the attribute but not the requested language yields the **empty string**, not `null`
+> — that is the `""` third argument of `TRANSLATE()`. The guard does not change it. A
+> consumer testing for emptiness must accept both (`!value` covers them; `value === null`
+> does not).
 
 ### URL fields — `Filter::URL`
 

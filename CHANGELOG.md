@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A translated field raised an AQL warning on every un-translated document — and killed the query under `failOnWarning`.** `Filter::TRANSLATE` emitted `TRANSLATE("fr",doc.title,"")`, and `TRANSLATE()` looks the language up **in a document**: handed anything else — an absent attribute, or a plain string left over from a record written before i18n — it returns `null` *and* raises warning `1542`, once per row concerned. Measured on a real server, four documents, two warnings. The projection now asks first:
+  ```aql
+  title:IS_OBJECT(doc.title) ? TRANSLATE("fr",doc.title,"") : null
+  ```
+  - **No projected value changes.** The unguarded form already returned `null` in exactly those cases; what disappears is the warning. Pinned by a live case running both forms on the same documents.
+  - **The warning was not cosmetic.** With the `failOnWarning` cursor option — which this library exposes — the query **fails outright** (HTTP 400, `errorNum 1542`), taking down the rows that were perfectly fine. A single un-translated document could break a whole listing. The live suite measures both halves: the unguarded form raising, the guarded one returning its four values under that same option.
+  - **The guard is automatic, not opt-in.** Unlike `Field::NULLABLE` on the casts, there is nothing to arbitrate here — no value moves, so nobody would knowingly opt into « stays fragile under `failOnWarning` ».
+  - **⚠ One thing it deliberately does not change:** a document that *has* the attribute but not the requested language still yields the **empty string**, not `null` — that is the `""` third argument of `TRANSLATE()`. Two shapes of « no text », two values; unifying them would move a value, so it stays a separate decision. Documented in FR/EN with the measured table.
+  - **Tests:** 3 new `AqlFieldTranslateTest` cases (the guard on the source, following the aliased source and reference, the language-less fallback left unguarded), 2 updated expectations, and a new **live** `TranslatedFieldIntegrationTest` (3 cases: the values unchanged, the unguarded form dying under `failOnWarning`, the guarded one surviving). A stale note in the test class — claiming the function's docblock examples passed the language in the wrong slot — is removed: they no longer do. FR/EN wiki `db/helpers.md` gains a « translated fields » section.
+
 ### Changed
 
 - **⚠ `Filter::ID` stops converting the key to a number — a projected `id` is now a string.** The filter projects the document key under a public name (`id`), and it did so through `TO_NUMBER(doc._key)`. But an ArangoDB key **is a string**, and that conversion never fails: it returns `0`. Measured on a real server, on four documents:

@@ -200,7 +200,7 @@ Compose une expression `RETURN { ... }` complète à partir d'un tableau de déf
 | `aqlFieldDocument` | `Filter::DOCUMENT` | Document imbriqué (avec sous-projection). |
 | `aqlFieldObject` | `Filter::OBJECT` | Objet ou premier élément d'un tableau. |
 | `aqlFieldMap` | `Filter::MAP` | Mapping d'un tableau vers des documents structurés. |
-| `aqlFieldTranslate` | `Filter::TRANSLATE` | Champ traduit (sélection de la *locale* courante). |
+| `aqlFieldTranslate` | `Filter::TRANSLATE` | Champ traduit (sélection de la *locale* courante), gardé par `IS_OBJECT()` — voir plus bas. |
 | `aqlFieldUrl` | `Filter::URL` | URL d'un document avec *placeholders* dynamiques (et routage par type optionnel). |
 
 Exemple minimal du *builder* le plus simple :
@@ -266,6 +266,42 @@ aqlFields([ 'name' => [ Field::ALTERS => [ 'trim' , 'lower' ] ] ]);
 aqlFields([ 'my-key' => [ Field::QUOTED => true ] ]);
 // "my-key":doc.`my-key`
 ```
+
+### Champs traduits — `Filter::TRANSLATE`
+
+Un champ `Filter::TRANSLATE` lit un **document de traductions** (`{ fr: …, en: … }`) et rend
+celle qui correspond à la langue de la requête, prise dans `Arango::LANG`. Sans langue
+déclarée, il retombe sur le champ brut.
+
+```php
+aqlFields([ 'title' => [ Field::FILTER => Filter::TRANSLATE ] ], 'doc', null, [ Arango::LANG => 'fr' ]);
+// title:IS_OBJECT(doc.title) ? TRANSLATE("fr",doc.title,"") : null
+
+aqlFields([ 'title' => [ Field::FILTER => Filter::TRANSLATE ] ], 'doc');   // sans langue
+// title:doc.title
+```
+
+**Pourquoi la garde `IS_OBJECT()`.** `TRANSLATE()` cherche la langue *dans un document* : son
+deuxième argument doit donc en être un. Passez-lui autre chose — un attribut absent, ou une
+chaîne héritée d'un enregistrement écrit avant l'i18n — il rend `null` **et lève un
+avertissement AQL** (`1542`), une fois par ligne concernée. Cet avertissement n'est pas
+cosmétique : une requête lancée avec l'option de curseur `failOnWarning` **échoue purement et
+simplement**, si bien qu'un seul document non traduit pouvait casser une liste entière. La
+garde pose la question d'abord et rend exactement le même `null`, donc **aucune valeur
+projetée ne change** — mesuré sur un vrai serveur :
+
+| Stocké | Projeté | Avertissement (avant la garde) |
+|---|---|---|
+| `{ "fr": "Bonjour", "en": "Hello" }` | `"Bonjour"` | — |
+| `{ "en": "Hi" }` — pas de français | `""` | — |
+| aucun attribut | `null` | ⚠ levé |
+| `"plain"` — pas un document | `null` | ⚠ levé |
+
+> ⚠ **Deux façons de dire « pas de texte », deux valeurs.** Relisez la deuxième ligne : un
+> document qui *a* l'attribut mais pas la langue demandée rend la **chaîne vide**, pas `null`
+> — c'est le troisième argument `""` de `TRANSLATE()`. La garde n'y touche pas. Un
+> consommateur qui teste la vacuité doit accepter les deux (`!valeur` les couvre,
+> `valeur === null` non).
 
 ### Champs URL — `Filter::URL`
 

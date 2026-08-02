@@ -307,7 +307,8 @@ function aqlFields
             //     converting — it projects the key as it is stored, so an absent source
             //     already yields null on its own.
             // The others already guard themselves : Filter::MAP goes through aqlSafeArray()
-            // (`IS_ARRAY`), Filter::WRAP projects the current reference — which exists by
+            // (`IS_ARRAY`), Filter::TRANSLATE tests `IS_OBJECT` before handing the attribute
+            // to TRANSLATE(), Filter::WRAP projects the current reference — which exists by
             // construction — and Filter::EDGE / Filter::JOIN test their backing `LET`
             // variable. There the marker would be a silent no-op, so it is a definition
             // error. Filter::URL is refused too, though it does fabricate : it takes

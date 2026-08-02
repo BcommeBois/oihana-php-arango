@@ -297,6 +297,7 @@ définition qui lève une `UnsupportedOperationException` :
 | `Filter::NUMBER` | un nombre | `0` — « gratuit » et « pas de prix » confondus | ✅ `!= null`, [plus bas](#garder-un-cast--fieldnullable-sur-un-filterbool-ou-un-filternumber) |
 | `Filter::ID` | rien — il projette la clé telle quelle (`id: doc._key`) | `null` | ⛔ lève — rien n'est fabriqué |
 | `Filter::MAP` | un tableau | `[]` — `IS_ARRAY()` déjà posé | ⛔ lève |
+| `Filter::TRANSLATE` | un texte traduit | `null` — `IS_OBJECT()` déjà posé | ⛔ lève |
 | `Filter::WRAP` | un objet | sans objet : projette la référence courante, qui existe par construction | ⛔ lève |
 | `Filter::EDGE` / `Filter::JOIN` | un objet | `null` — `IS_OBJECT()` déjà posé | ⛔ lève |
 | `Filter::URL` | un lien | une adresse tronquée | ⛔ lève — sa garde est `Field::WHEN`, [section suivante](#le-lien-seulement-sil-y-a-une-clé--fieldwhen-sur-un-filterurl) |
