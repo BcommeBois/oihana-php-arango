@@ -285,7 +285,8 @@ throws an `UnsupportedOperationException`:
 
 | Filter | Rebuilds | Missing source | `Field::NULLABLE` |
 |---|---|---|---|
-| `Filter::DOCUMENT` | an object | an object of `null`s | ✅ **this is the one** |
+| `Filter::DOCUMENT` | an object | an object of `null`s | ✅ `IS_OBJECT()` |
+| `Filter::BOOL` | a boolean | `false` — an answer to a question never asked | ✅ `!= null`, [below](#guarding-a-cast--fieldnullable-on-a-filterbool) |
 | `Filter::MAP` | an array | `[]` — `IS_ARRAY()` already placed | ⛔ throws |
 | `Filter::WRAP` | an object | moot: it projects the current reference, which exists by construction | ⛔ throws |
 | `Filter::EDGE` / `Filter::JOIN` | an object | `null` — `IS_OBJECT()` already placed | ⛔ throws |
@@ -304,6 +305,53 @@ its single meaning; the url is guarded with a condition instead.
 **Backward compatibility.** Without the marker the emitted AQL is **byte for byte** the one
 from before: no `IS_OBJECT`, no ternary, not one extra space. Every existing projection is
 unchanged, and a test pins it.
+
+## Guarding a cast — `Field::NULLABLE` on a `Filter::BOOL`
+
+**The situation.** `TO_BOOL()` answers even when nothing was asked. A document that says
+nothing about the attribute comes back saying « no », exactly like the one that really
+stores `false` — and from the response, the two are indistinguishable. Measured on a real
+server:
+
+| The stored document | What came out |
+|---|---|
+| `{ "active": true }` | `{ "active": true }` |
+| `{ "active": false }` | `{ "active": false }` |
+| `{ }` — nothing about `active` | `{ "active": false }` ← **the same answer** |
+
+**The remedy.** The same marker as on a sub-document, with the test the shape calls for:
+
+```php
+'active' =>
+[
+    Field::FILTER   => Filter::BOOL ,
+    Field::NULLABLE => true ,        // ← the only added line
+]
+// active:doc.active != null ? TO_BOOL(doc.active) : null
+```
+
+`Field::ELSE` says what to answer instead of `null` — the historical `false`, for instance,
+but declared rather than invented:
+
+```php
+    Field::NULLABLE => true ,
+    Field::ELSE     => false ,
+// active:doc.active != null ? TO_BOOL(doc.active) : false
+```
+
+> **Why `!= null` and not `IS_BOOL()`.** On a rebuilt object the guard is a **type** test —
+> here it must not be. `TO_BOOL()` exists precisely to accept what is *not* a boolean: a
+> document storing `1`, `"yes"` or `"on"` counts as `true` today, and must keep counting.
+> `IS_BOOL()` would have made all of them abstain at once — repairing one case and breaking
+> three. The question asked is only « is the attribute there? », so that is the only
+> question emitted. A live test pins those documents as still `true`.
+
+**Backward compatibility.** Without the marker the emitted AQL is unchanged **byte for
+byte** — no test, no ternary. Every existing projection keeps answering `false`.
+
+> `Filter::NUMBER` fabricates the same way (`TO_NUMBER()` of a missing attribute is `0`, so
+> « it is free » and « we have no price » become the same value). It is **not** opened yet:
+> a test pins its refusal, so opening it later is a deliberate change and not a drift.
 
 ## The link, only when there is a key — `Field::WHEN` on a `Filter::URL`
 
@@ -407,7 +455,7 @@ Don't confuse the two:
 | Marker | Decides | Placed on | Compiled against |
 |---|---|---|---|
 | `Field::WHEN` | a field's *value* (ternary) | the default scalar projection, a `Filter::DOCUMENT` or a `Filter::URL` | the reference of the level being projected — `doc` for a sub-document, the sub-document itself for a url nested in one |
-| `Field::NULLABLE` | whether the rebuilt object is emitted (`IS_OBJECT` of the source) | a `Filter::DOCUMENT` | `doc` (the **parent**) |
+| `Field::NULLABLE` | whether the fabricated value is emitted (`IS_OBJECT` of the source on a `Filter::DOCUMENT`, `!= null` on a `Filter::BOOL`) | a `Filter::DOCUMENT`, a `Filter::BOOL` | `doc` (the **parent**) |
 | `Field::WHERE` | *which elements* of an array are projected (`FILTER`) | a `Filter::MAP` | the element (`item`) |
 | `AQL::WHERE` | *which vertices* a relation projects (`FILTER`) | an edge **definition** | the traversed vertex (`vertex`) |
 

@@ -295,18 +295,22 @@ function aqlFields
                 $key     = betweenDoubleQuotes( $key , trim: false ) ;
             }
 
-            // Field::NULLABLE guards a rebuilt object behind the existence of its source.
-            // Only Filter::DOCUMENT rebuilds one attribute by attribute with no guard of
-            // its own : Filter::MAP already goes through aqlSafeArray() (`IS_ARRAY`),
-            // Filter::WRAP projects the current reference — which exists by construction —
-            // and Filter::EDGE / Filter::JOIN already test their backing `LET` variable.
-            // Elsewhere the marker would be a silent no-op, so it is a definition error.
-            // Filter::URL is refused here too, and for a stronger reason than a no-op : it
-            // rebuilds from a scalar KEY, so `IS_OBJECT()` would never hold and the field
-            // would never be emitted. What it takes is Field::WHEN, accepted below.
-            if( ( $options[ Field::NULLABLE ] ?? false ) === true && $filter !== Filter::DOCUMENT )
+            // Field::NULLABLE guards a fabricated value behind the presence of its source,
+            // each filter with the test its shape calls for :
+            //   - Filter::DOCUMENT rebuilds an object attribute by attribute with no guard
+            //     of its own, and is tested with `IS_OBJECT` ;
+            //   - Filter::BOOL answers `false` to a question never asked, and is tested
+            //     with `!= null` — `IS_BOOL` would make every document storing `1` or
+            //     `"yes"` abstain, when TO_BOOL() exists to accept them.
+            // The others already guard themselves : Filter::MAP goes through aqlSafeArray()
+            // (`IS_ARRAY`), Filter::WRAP projects the current reference — which exists by
+            // construction — and Filter::EDGE / Filter::JOIN test their backing `LET`
+            // variable. There the marker would be a silent no-op, so it is a definition
+            // error. Filter::URL is refused too, though it does fabricate : it takes
+            // Field::WHEN, accepted below, and the asymmetry is a deliberate call.
+            if( ( $options[ Field::NULLABLE ] ?? false ) === true && $filter !== Filter::DOCUMENT && $filter !== Filter::BOOL )
             {
-                throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::NULLABLE on the field '" . $key . "' is only valid on the '" . Filter::DOCUMENT . "' filter, which is the only projection rebuilding an object without a guard of its own." ) ;
+                throw new UnsupportedOperationException( __FUNCTION__ . " failed, Field::NULLABLE on the field '" . $key . "' is only valid on the '" . Filter::DOCUMENT . "' and '" . Filter::BOOL . "' filters, the projections that fabricate a value without a guard of their own." ) ;
             }
 
             // Output-side `when`/`alters`: both decorate the default scalar projection only.
@@ -351,7 +355,7 @@ function aqlFields
             $filters[] = match ( $filter )
             {
                 Filter::ARRAY      => aqlFieldArray     ( $key , $ref , $default ) ,
-                Filter::BOOL       => aqlFieldBool      ( $key , $ref , $keyName ) ,
+                Filter::BOOL       => aqlFieldBool      ( $key , $ref , $keyName , $options ) ,
                 Filter::DATETIME   => aqlFieldDateTime  ( $key , $ref , $keyName , $format ) ,
                 Filter::DOCUMENT   => aqlFieldDocument  ( $key , $ref , $options , $container , $init ) ,
                 Filter::MAP        => aqlFieldMap       ( $key , $ref , $options , $container , $init ) ,

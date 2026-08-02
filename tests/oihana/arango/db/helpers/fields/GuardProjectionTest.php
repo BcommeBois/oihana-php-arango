@@ -58,6 +58,61 @@ final class GuardProjectionTest extends TestCase
     }
 
     /**
+     * A caller whose shape calls for another test supplies it — the default `IS_OBJECT()`
+     * only suits a rebuilt object. A cast reads a scalar : `aqlFieldBool()` asks for a
+     * presence test, because a type test would make every document storing `1` abstain.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAGivenTestReplacesTheDefaultOne(): void
+    {
+        $this->assertSame
+        (
+            'doc.active != null ? TO_BOOL(doc.active) : null' ,
+            guardProjection( 'TO_BOOL(doc.active)' , [ Field::NULLABLE => true ] , 'doc' , 'doc.active' , 'doc.active != null' )
+        ) ;
+    }
+
+    /**
+     * The supplied test composes with a condition exactly as the default one does.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAGivenTestComposesWithWhen(): void
+    {
+        $this->assertSame
+        (
+            "(doc.active != null && doc.visibility == 'public') ? TO_BOOL(doc.active) : null" ,
+            guardProjection
+            (
+                'TO_BOOL(doc.active)' ,
+                [ Field::NULLABLE => true , Field::WHEN => [ 'visibility' , 'public' ] ] ,
+                'doc' ,
+                'doc.active' ,
+                'doc.active != null'
+            )
+        ) ;
+    }
+
+    /**
+     * A supplied test is only consulted by `Field::NULLABLE` : without the marker it is
+     * ignored, and the value comes back untouched.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAGivenTestIsIgnoredWithoutTheMarker(): void
+    {
+        $this->assertSame
+        (
+            'TO_BOOL(doc.active)' ,
+            guardProjection( 'TO_BOOL(doc.active)' , [] , 'doc' , 'doc.active' , 'doc.active != null' )
+        ) ;
+    }
+
+    /**
      * The general mechanism : a free condition, compiled against the PARENT reference
      * (`doc`), never against the rebuilt sub-document.
      *

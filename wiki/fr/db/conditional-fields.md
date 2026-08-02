@@ -292,7 +292,8 @@ définition qui lève une `UnsupportedOperationException` :
 
 | Filtre | Reconstruit | Source absente | `Field::NULLABLE` |
 |---|---|---|---|
-| `Filter::DOCUMENT` | un objet | un objet de `null` | ✅ **c'est ici** |
+| `Filter::DOCUMENT` | un objet | un objet de `null` | ✅ `IS_OBJECT()` |
+| `Filter::BOOL` | un booléen | `false` — une réponse à une question jamais posée | ✅ `!= null`, [plus bas](#garder-un-cast--fieldnullable-sur-un-filterbool) |
 | `Filter::MAP` | un tableau | `[]` — `IS_ARRAY()` déjà posé | ⛔ lève |
 | `Filter::WRAP` | un objet | sans objet : projette la référence courante, qui existe par construction | ⛔ lève |
 | `Filter::EDGE` / `Filter::JOIN` | un objet | `null` — `IS_OBJECT()` déjà posé | ⛔ lève |
@@ -311,6 +312,54 @@ jamais. `Field::NULLABLE` garde son sens unique ; l'URL se garde avec une condit
 **Rétrocompatibilité.** Sans le marqueur, l'AQL émis est **identique au caractère près** à
 celui d'avant : pas de `IS_OBJECT`, pas de ternaire, pas un espace de plus. Toutes les
 projections existantes sont inchangées, et un test le fige.
+
+## Garder un cast — `Field::NULLABLE` sur un `Filter::BOOL`
+
+**La situation.** `TO_BOOL()` répond même quand on ne lui a rien demandé. Un document qui ne
+dit rien de l'attribut revient en disant « non », exactement comme celui qui stocke vraiment
+`false` — et depuis la réponse, les deux sont indiscernables. Mesuré sur un vrai serveur :
+
+| Le document stocké | Ce qui sortait |
+|---|---|
+| `{ "active": true }` | `{ "active": true }` |
+| `{ "active": false }` | `{ "active": false }` |
+| `{ }` — rien sur `active` | `{ "active": false }` ← **la même réponse** |
+
+**Le remède.** Le même marqueur que sur un sous-document, avec le test que sa forme appelle :
+
+```php
+'active' =>
+[
+    Field::FILTER   => Filter::BOOL ,
+    Field::NULLABLE => true ,        // ← la seule ligne ajoutée
+]
+// active:doc.active != null ? TO_BOOL(doc.active) : null
+```
+
+`Field::ELSE` dit quoi répondre à la place de `null` — le `false` historique, par exemple,
+mais déclaré au lieu d'être inventé :
+
+```php
+    Field::NULLABLE => true ,
+    Field::ELSE     => false ,
+// active:doc.active != null ? TO_BOOL(doc.active) : false
+```
+
+> **Pourquoi `!= null` et pas `IS_BOOL()`.** Sur un objet reconstruit, la garde est un test
+> de **type** — ici elle ne doit surtout pas l'être. `TO_BOOL()` existe justement pour
+> accepter ce qui n'est *pas* un booléen : un document qui stocke `1`, `"yes"` ou `"on"`
+> compte aujourd'hui pour `true`, et doit continuer. `IS_BOOL()` les aurait fait s'abstenir
+> tous d'un coup — réparer un cas en en cassant trois. La question posée est seulement
+> « l'attribut est-il là ? », c'est donc la seule question émise. Un test live fige ces
+> documents-là comme toujours `true`.
+
+**Rétrocompatibilité.** Sans le marqueur, l'AQL émis est inchangé **au caractère près** — pas
+de test, pas de ternaire. Toutes les projections existantes continuent de répondre `false`.
+
+> `Filter::NUMBER` fabrique de la même façon (`TO_NUMBER()` d'un attribut absent vaut `0`,
+> si bien que « c'est gratuit » et « on n'a pas de prix » deviennent la même valeur). Il
+> n'est **pas** ouvert pour l'instant : un test fige son refus, pour que l'ouvrir plus tard
+> soit une décision et non une dérive.
 
 ## Le lien, seulement s'il y a une clé — `Field::WHEN` sur un `Filter::URL`
 
@@ -416,7 +465,7 @@ Ne pas les confondre :
 | Marqueur | Décide | Posé sur | Compilé contre |
 |---|---|---|---|
 | `Field::WHEN` | la *valeur* d'un champ (ternaire) | projection scalaire par défaut, `Filter::DOCUMENT` ou `Filter::URL` | la référence du niveau projeté — `doc` pour un sous-document, le sous-document lui-même pour une URL imbriquée dedans |
-| `Field::NULLABLE` | si l'objet reconstruit est émis (`IS_OBJECT` de la source) | un `Filter::DOCUMENT` | `doc` (le **parent**) |
+| `Field::NULLABLE` | si la valeur fabriquée est émise (`IS_OBJECT` de la source sur un `Filter::DOCUMENT`, `!= null` sur un `Filter::BOOL`) | un `Filter::DOCUMENT`, un `Filter::BOOL` | `doc` (le **parent**) |
 | `Field::WHERE` | *quels éléments* d'un tableau sont projetés (`FILTER`) | un `Filter::MAP` | l'élément (`item`) |
 | `AQL::WHERE` | *quels sommets* une relation projette (`FILTER`) | une **définition** d'edge | le sommet traversé (`vertex`) |
 

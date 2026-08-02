@@ -96,6 +96,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Field::NULLABLE` on `Filter::BOOL` — a boolean can now abstain instead of answering a question nobody asked.** `TO_BOOL()` answers even when there is nothing to convert: a document that says nothing about the attribute comes back saying « no », exactly like the one that really stores `false`. From the response the two are indistinguishable — « disabled » and « never filled in » become the same value. Measured on a real server:
+  ```
+  stored: { "active": false }   →   { "active": false }
+  stored: { }                   →   { "active": false }   ← the same answer
+  ```
+  ```php
+  'active' => [ Field::FILTER => Filter::BOOL , Field::NULLABLE => true ] ,
+  // active:doc.active != null ? TO_BOOL(doc.active) : null
+  ```
+  - **A presence test, not a type test** — and this is the opposite of the choice made on `Filter::DOCUMENT`, on purpose. `TO_BOOL()` exists precisely to accept what is *not* a boolean: a document storing `1`, `"yes"` or `"on"` counts as `true` today and must keep counting. `IS_BOOL()` would have made all of them abstain at once — repairing one case while breaking three. The question asked is only « is the attribute there? », so that is the only question emitted, and a live case pins those documents as still `true`.
+  - **`Field::ELSE` says what is answered instead** of `null` — the historical `false`, for instance, but declared rather than invented.
+  - **`guardProjection()` now takes the test to emit**, `IS_OBJECT()` remaining the default a rebuilt object calls for. That is the single line that lets one marker serve two shapes without meaning two things.
+  - **`Filter::URL` keeps `Field::WHEN` and stays closed to this marker.** The asymmetry is a deliberate call, not an oversight: the url guard landed with a condition and there is no reason to give it a second spelling.
+  - **`Filter::NUMBER` is not opened yet.** It fabricates the same way (`TO_NUMBER()` of a missing attribute is `0`, so « it is free » and « we have no price » collapse into one value) and will get the same treatment in its own change; a test pins its refusal meanwhile, so opening it later is a decision and not a drift.
+  - **Backward compatible by construction:** with no marker the emitted AQL is unchanged byte for byte — no test, no ternary — and every existing projection keeps answering `false`.
+  - **Tests:** 6 new `AqlFieldBoolTest` cases (the guard, the aliased source, the three `Field::ELSE` forms, the opt-in on strict `true`, the unchanged AQL without marker, and the absence of `IS_BOOL`), 3 new `GuardProjectionTest` cases (a supplied test replacing the default, composing with `Field::WHEN`, and ignored without the marker), 4 new `AqlFieldsTest` cases (honoured on the filter, the presence test with `Field::ELSE`, `Field::WHEN` still refused there, `Filter::NUMBER` still refused) and a new **live** `GuardedBooleanIntegrationTest` (3 cases against a real arangod: the defect, the abstention that keeps `1` and `"yes"` true, and the declared fallback). FR/EN wiki `db/conditional-fields.md` gains a « guarding a cast » section with the measured table.
+
 - **`Field::WHEN` on `Filter::URL` — a recomputed link can now abstain instead of pointing nowhere.** A `Filter::URL` does not read a stored address, it **rebuilds** one: `CONCAT(<route>,'/',doc._key)`. AQL drops the null arguments of a `CONCAT()`, so a document with no key never yielded a `null` url — it yielded a truncated link, indistinguishable from a real one at a glance:
   ```
   stored: { "name": "Hand-typed" }                  // no `_key`

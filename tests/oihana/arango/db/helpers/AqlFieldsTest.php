@@ -828,6 +828,80 @@ final class AqlFieldsTest extends TestCase
     }
 
     /**
+     * Filter::BOOL fabricates too : TO_BOOL() answers `false` to a question never asked,
+     * and nothing tells that apart from a stored `false`. The marker guards the cast.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableOnBoolFilter(): void
+    {
+        $result = aqlFields( [ 'active' => [ Field::FILTER => Filter::BOOL , Field::NULLABLE => true ] ] ) ;
+
+        $this->assertSame( 'active:doc.active != null ? TO_BOOL(doc.active) : null' , $result ) ;
+    }
+
+    /**
+     * ⭐ The guard is a presence test, never `IS_BOOL()` : TO_BOOL() exists to accept what is
+     * not a boolean, so a type test would make every document storing `1` or `"yes"` — all
+     * counted `true` today — abstain at once. Field::ELSE picks what is said instead.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableOnBoolIsAPresenceTestAndHonoursElse(): void
+    {
+        $result = aqlFields
+        ([
+            'active' =>
+            [
+                Field::FILTER   => Filter::BOOL ,
+                Field::NULLABLE => true ,
+                Field::ELSE     => false ,
+            ]
+        ]) ;
+
+        $this->assertSame( 'active:doc.active != null ? TO_BOOL(doc.active) : false' , $result ) ;
+        $this->assertStringNotContainsString( 'IS_BOOL' , $result ) ;
+    }
+
+    /**
+     * The door opened on Filter::BOOL is Field::NULLABLE alone : a free condition on a cast
+     * is not part of the deal, and keeps raising.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testWhenStillThrowsOnBoolFilter(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( 'only valid on the default scalar projection' ) ;
+        aqlFields( [ 'active' => [ Field::FILTER => Filter::BOOL , Field::WHEN => [ 'visibility' , 'public' ] ] ] ) ;
+    }
+
+    /**
+     * The neighbouring cast fabricates the same way (`TO_NUMBER(null)` is `0`) but is not
+     * part of this lot : its refusal is pinned so opening it later is a deliberate change.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNullableStillThrowsOnNumberFilter(): void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessageIsOrContains( 'Field::NULLABLE' ) ;
+        aqlFields( [ 'price' => [ Field::FILTER => Filter::NUMBER , Field::NULLABLE => true ] ] ) ;
+    }
+
+    /**
      * Everywhere else the marker would be a silent no-op — Filter::MAP already guards
      * with IS_ARRAY, a scalar has no object to rebuild — so it is a definition error.
      *

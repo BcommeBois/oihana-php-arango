@@ -61,9 +61,11 @@ class Field
     public const string NAME = 'name' ;
 
     /**
-     * Guards a structural projection (`Filter::DOCUMENT`) behind the existence of its source:
-     * an absent — or non-object — attribute yields `null` (or `Field::ELSE`) instead of an
-     * object rebuilt out of nulls. Opt-in; composes with `Field::WHEN`.
+     * Guards a fabricated projection behind the presence of its source, so an absent
+     * attribute yields `null` (or `Field::ELSE`) instead of a value built out of nothing:
+     * on a `Filter::DOCUMENT` an object of nulls (tested with `IS_OBJECT`), on a
+     * `Filter::BOOL` a `false` nobody stored (tested with `!= null`). Opt-in; composes
+     * with `Field::WHEN`.
      */
     public const string NULLABLE = 'nullable' ;
 
