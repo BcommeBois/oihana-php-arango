@@ -63,6 +63,10 @@ class DocumentsArrayTraitStub
 
     /**
      * Exposes the protected item-key resolver, which nothing else calls yet.
+     * @param string|null $field
+     * @param array $init
+     * @return string|null
+     * @throws ValidationException
      */
     public function itemKey( ?string $field , array $init = [] ) : ?string
     {
@@ -71,6 +75,10 @@ class DocumentsArrayTraitStub
 
     /**
      * Exposes the protected position-key resolver, which no operation honours yet.
+     * @param string|null $field
+     * @param array $init
+     * @return string|null
+     * @throws ValidationException
      */
     public function positionKey( ?string $field , array $init = [] ) : ?string
     {
@@ -871,6 +879,163 @@ final class DocumentsArrayTraitTest extends TestCase
     }
 
     /**
+     * The historical behaviour, and the reason the erasure had to be asked for :
+     * `MERGE()` keeps a null instead of reading it as « take this away ».
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateKeepsTheNullsOfAPatchByDefault() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER => 'p42' ,
+            Arango::FIELD => 'chapters' ,
+            Arango::VALUE => 'c1' ,
+            Arango::PATCH => [ 'rating' => 5 , 'reason' => null ] ,
+        ]) ;
+        [ $query , $binds ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringContainsString( 'MERGE(CURRENT,@q_2)' , $query ) ;
+        $this->assertStringNotContainsString( 'UNSET(' , $query ) ;
+        $this->assertEquals( (object) [ 'rating' => 5 , 'reason' => null ] , $binds[ 'q_2' ] ) ;
+    }
+
+    /**
+     * Asked to, the nulls become an `UNSET()` around the merged element — the only
+     * way an element rebuilt in place can lose an attribute it once carried.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateErasesTheNullsOfAPatchOnDemand() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER      => 'p42' ,
+            Arango::FIELD      => 'chapters' ,
+            Arango::VALUE      => 'c1' ,
+            Arango::PATCH      => [ 'rating' => 5 , 'reason' => null , 'unit' => null ] ,
+            Arango::ERASE_NULL => true ,
+        ]) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringContainsString
+        (
+            'LET __arr = doc.chapters[* RETURN CURRENT.id == @q_1 ? UNSET(MERGE(CURRENT,@q_2),"reason","unit") : CURRENT]' ,
+            $query ,
+        ) ;
+    }
+
+    /**
+     * 🔑 Only the **top level** is read, like `UNSET()` itself : a null nested inside
+     * a sub-object of the patch is a value the merge writes, not an erasure.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateLeavesANestedNullAlone() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER      => 'p42' ,
+            Arango::FIELD      => 'chapters' ,
+            Arango::VALUE      => 'c1' ,
+            Arango::PATCH      => [ 'price' => [ 'value' => null ] ] ,
+            Arango::ERASE_NULL => true ,
+        ]) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringNotContainsString( 'UNSET(' , $query ) ;
+    }
+
+    /**
+     * A patch without a single null is not wrapped for nothing.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateDoesNotWrapAPatchCarryingNoNull() :void
+    {
+        $stub = $this->stub() ;
+        $stub->arrayUpdate
+        ([
+            Arango::OWNER      => 'p42' ,
+            Arango::FIELD      => 'chapters' ,
+            Arango::VALUE      => 'c1' ,
+            Arango::PATCH      => [ 'rating' => 5 ] ,
+            Arango::ERASE_NULL => true ,
+        ]) ;
+        [ $query , ] = $this->normalize( $stub->lastQuery , $stub->lastBinds ) ;
+
+        $this->assertStringContainsString( 'MERGE(CURRENT,@q_2)' , $query ) ;
+        $this->assertStringNotContainsString( 'UNSET(' , $query ) ;
+    }
+
+    /**
+     * 🚨 An erased name lands in the AQL as a literal, not as a bind — so it is
+     * guarded like every other attribute name this trait emits.
+     *
+     * @return void
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
+    public function testUpdateRejectsAnUnsafeErasedAttributeName() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->stub()->arrayUpdate
+        ([
+            Arango::OWNER      => 'p42' ,
+            Arango::FIELD      => 'chapters' ,
+            Arango::VALUE      => 'c1' ,
+            Arango::PATCH      => [ 'id" REMOVE doc IN Playlist //' => null ] ,
+            Arango::ERASE_NULL => true ,
+        ]) ;
+    }
+
+    /**
      * A field targeted by value cannot be edited in place — designating its element
      * would need a byte-for-byte copy that the patch itself invalidates.
      *
@@ -1229,6 +1394,10 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- arrayItemKey
 
+    /**
+     * @return void
+     * @throws ValidationException
+     */
     public function testItemKeyIsNullWhenTheFieldDeclaresNone() :void
     {
         $stub = $this->stub() ;
@@ -1238,11 +1407,19 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertNull( $stub->itemKey( null        ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws ValidationException
+     */
     public function testItemKeyIsResolvedFromTheFieldConfiguration() :void
     {
         $this->assertSame( 'id' , $this->stub()->itemKey( 'chapters' ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws ValidationException
+     */
     public function testItemKeyHonoursThePerCallOverride() :void
     {
         $stub = $this->stub() ;
@@ -1251,6 +1428,10 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertSame( 'uid' , $stub->itemKey( 'tracks'   , [ Arango::ITEM_KEY => 'uid' ] ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws ValidationException
+     */
     public function testItemKeyAcceptsADottedAttributeName() :void
     {
         $this->assertSame( 'meta.id' , $this->stub()->itemKey( 'chapters' , [ Arango::ITEM_KEY => 'meta.id' ] ) ) ;
@@ -1287,6 +1468,10 @@ final class DocumentsArrayTraitTest extends TestCase
 
     // ---------------------------------------------------------------- arrayPositionKey
 
+    /**
+     * @return void
+     * @throws ValidationException
+     */
     public function testPositionKeyIsNullWhenTheFieldDeclaresNone() :void
     {
         $stub = $this->stub() ;
@@ -1297,11 +1482,19 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertNull( $stub->positionKey( null        ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws ValidationException
+     */
     public function testPositionKeyIsResolvedFromTheFieldConfiguration() :void
     {
         $this->assertSame( 'position' , $this->stub()->positionKey( 'lines' ) ) ;
     }
 
+    /**
+     * @return void
+     * @throws ValidationException
+     */
     public function testPositionKeyHonoursThePerCallOverride() :void
     {
         $stub = $this->stub() ;
@@ -1668,7 +1861,6 @@ final class DocumentsArrayTraitTest extends TestCase
 
     /**
      * @return void
-     *
      * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
@@ -1677,6 +1869,7 @@ final class DocumentsArrayTraitTest extends TestCase
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws Throwable
+     * @throws ValidationException
      */
     public function testDebugFlagIsHonouredOnEachExecutionPath() :void
     {
@@ -1720,6 +1913,17 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'OPTIONS {"keepNull":false}' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testPurgeRefForwardsUpdateOptions() :void
     {
         $stub = $this->stub() ;
@@ -1733,6 +1937,17 @@ final class DocumentsArrayTraitTest extends TestCase
         $this->assertStringContainsString( 'OPTIONS {"keepNull":false}' , $stub->lastQuery ) ;
     }
 
+    /**
+     * @return void
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     */
     public function testWriteEmitsUpdateSignals() :void
     {
         $stub = $this->stub() ;

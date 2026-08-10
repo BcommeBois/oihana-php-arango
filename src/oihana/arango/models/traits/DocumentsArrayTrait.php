@@ -49,6 +49,7 @@ use function oihana\arango\db\functions\arrays\unique;
 use function oihana\arango\db\functions\dates\dateISO8601;
 use function oihana\arango\db\functions\dates\dateNow;
 use function oihana\arango\db\functions\documents\merge;
+use function oihana\arango\db\functions\documents\unsetAttributes;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
@@ -678,6 +679,18 @@ trait DocumentsArrayTrait
      * array unchanged. The merge is **partial**: the patch attributes overwrite theirs,
      * the others are kept.
      *
+     * 🔑 **A null does not erase, unless asked to.** `MERGE()` keeps it: a patch saying
+     * `{ "reason": null }` writes the attribute back *as null* rather than taking it
+     * away, so an element rebuilt in place can never lose an attribute it once carried.
+     * Pass {@see Arango::ERASE_NULL} to read those nulls as erasures instead — the
+     * merged element is then wrapped in an `UNSET()` of their keys:
+     * ```
+     * LET __arr = doc.field[* RETURN CURRENT.<itemKey> == @value ? UNSET(MERGE(CURRENT, @patch), "reason") : CURRENT]
+     * ```
+     * Top-level attributes only, like `UNSET()` itself: a null sitting inside a
+     * sub-object of the patch stays a value. The flag is opt-in, so an existing caller
+     * keeps its nulls.
+     *
      * Requires an item key — declared on the field or passed per call. A field targeted
      * **by value** cannot be edited in place: designating its element would mean holding
      * a byte-for-byte copy of it, which the very patch being applied invalidates, so an
@@ -689,16 +702,17 @@ trait DocumentsArrayTrait
      * in `SORTED_UNIQUE()`.
      *
      * @param array{
-     *     owner?   : mixed,           // The value identifying the document.
-     *     field?   : string,          // The embedded array attribute.
-     *     value?   : mixed,           // The item key of the element to edit.
-     *     patch?   : array|object,    // The partial object merged into that element.
-     *     key?     : string,          // The attribute used to locate the document (default '_key').
-     *     itemKey? : string,          // Optional per-call item-key override.
-     *     prefix?  : string,          // The AQL document alias (default 'doc').
-     *     touch?   : bool,            // Update the `modified` timestamp (default true).
-     *     options? : array|object|string|null,
-     *     debug?   : bool
+     *     owner?   : mixed,                      // The value identifying the document.
+     *     field?   : string,                     // The embedded array attribute.
+     *     value?     : mixed,                    // The item key of the element to edit.
+     *     patch?     : array|object,             // The partial object merged into that element.
+     *     eraseNull? : bool,                     // Read the nulls of the patch as erasures (default false).
+     *     key?       : string,                   // The attribute used to locate the document (default '_key').
+     *     itemKey?   : string,                   // Optional per-call item-key override.
+     *     prefix?    : string,                   // The AQL document alias (default 'doc').
+     *     touch?     : bool,                     // Update the `modified` timestamp (default true).
+     *     options?   : array|object|string|null,
+     *     debug?     : bool
      * } $init
      *
      * @return object|null The updated document, or null if no document matched.
@@ -739,6 +753,18 @@ trait DocumentsArrayTrait
 
         $fieldExpr = key( $field , $prefix ) ;
 
+        // 🔑 MERGE() KEEPS a null, it does not read it as an erasure — so an element
+        // rebuilt in place could never lose an attribute it once carried. The opt-in
+        // flag turns those nulls into an UNSET() of their keys, which is what lets a
+        // caller recomputing a whole element say « this one is gone ».
+        $merged = merge( [ Clause::CURRENT , $patch ] ) ;
+        $erased = ( $init[ Arango::ERASE_NULL ] ?? false ) ? $this->arrayErasedKeys( $init[ Arango::PATCH ] ?? [] ) : [] ;
+
+        if ( $erased !== [] )
+        {
+            $merged = unsetAttributes( $merged , ...$erased ) ;
+        }
+
         // Every element is projected back; only the one carrying the key is merged.
         $arrExpr = arrayMap
         (
@@ -746,7 +772,7 @@ trait DocumentsArrayTrait
             ternary
             (
                 equal( key( $itemKey , Clause::CURRENT ) , $value ) ,
-                merge( [ Clause::CURRENT , $patch ] ) ,
+                $merged ,
                 Clause::CURRENT ,
             )
         ) ;
@@ -956,6 +982,41 @@ trait DocumentsArrayTrait
     }
 
     /**
+     * The attributes a patch asks to be taken away — the keys it carries at null.
+     *
+     * Only the **top level** is read, like AQL `UNSET()` itself: a null sitting inside
+     * a sub-object of the patch is a value, not an erasure. An element loses one whole
+     * attribute at a time, never half of one.
+     *
+     * 🚨 The names are interpolated verbatim into the generated AQL — `UNSET()` takes
+     * string literals, not binds — so each one goes through the same guard as every
+     * other attribute name this trait emits. A patch carrying an integer key (a list
+     * cast to an object) names no attribute and is skipped.
+     *
+     * @param mixed $patch The patch handed to {@see self::arrayUpdate()}.
+     *
+     * @return array<int,string> The attribute names to remove, possibly empty.
+     *
+     * @throws ValidationException When a key is not a safe flat attribute name.
+     */
+    private function arrayErasedKeys( mixed $patch ) : array
+    {
+        $keys = [] ;
+
+        foreach ( (array) $patch as $name => $value )
+        {
+            if ( $value === null && is_string( $name ) )
+            {
+                assertAttributeName( $name ) ;
+
+                $keys[] = $name ;
+            }
+        }
+
+        return $keys ;
+    }
+
+    /**
      * Appends the renumbering `LET` to the given clauses when the field declares an
      * {@see Arango::POSITION_KEY}, and returns them along with the AQL variable holding
      * the array to write back.
@@ -983,8 +1044,9 @@ trait DocumentsArrayTrait
      *
      * @return array{0:array,1:string} The clauses, and the variable holding the array to write.
      *
+     * @throws ReflectionException
      * @throws UnsupportedOperationException On a sortedSet field (the ranks would feed the sort back).
-     * @throws ValidationException When the configured position key is not a safe flat attribute name.
+     * @throws ValidationException           When the configured position key is not a safe flat attribute name.
      */
     private function arrayRank( ?string $field , array $lets , array $init ) : array
     {

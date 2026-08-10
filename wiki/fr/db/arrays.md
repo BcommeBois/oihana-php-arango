@@ -429,6 +429,42 @@ Tous les éléments sont reprojetés, seul celui qui porte la clé est fusionné
 
 Enfin, une clé inconnue réécrit le tableau inchangé (rien n'est fusionné), ce qui laisse au [contrôleur HTTP](../controllers/README.md#arraypropertycontroller) de quoi répondre `404`.
 
+#### Effacer un attribut — `Arango::ERASE_NULL`
+
+🔑 **Un `null` ne vide rien, sauf si on le demande.** `MERGE()` le conserve : un patch qui dit `{ "note": null }` réécrit l'attribut **à `null`** au lieu de l'ôter. Un élément reconstruit sur place ne peut donc jamais perdre un attribut qu'il portait — ce qui devient un piège dès qu'on recalcule un élément entier plutôt que d'en retoucher un bout.
+
+**La métaphore.** `MERGE()` sait écrire au tableau, il ne sait pas effacer. `Arango::ERASE_NULL` est le chiffon qu'on lui tend.
+
+**La situation.** Le chapitre `c1` perd son annotation : on ne veut pas `"note": null` dans le document, on veut que la clé disparaisse.
+
+```php
+$playlists->arrayUpdate([
+    Arango::OWNER      => 'playlist-42',
+    Arango::FIELD      => 'chapters',
+    Arango::VALUE      => 'c1',
+    Arango::PATCH      => [ 'rating' => 5 , 'note' => null ], // 5 est écrit, note est ôtée
+    Arango::ERASE_NULL => true,
+]);
+```
+```aql
+LET __arr = doc.chapters[* RETURN CURRENT.id == @value ? UNSET(MERGE(CURRENT, @patch), "note") : CURRENT]
+```
+
+Deux limites, dites d'avance :
+
+- **Le premier niveau seulement**, comme `UNSET()` lui-même : un `null` niché dans un sous-objet du patch (`{ "price": { "value": null } }`) reste une valeur que la fusion écrit. Un élément perd un attribut entier à la fois, jamais la moitié d'un.
+- **Les noms partent en littéraux** dans l'AQL — `UNSET()` prend des chaînes, pas des liaisons — donc chacun passe par la même garde que tout autre nom d'attribut émis ici. Un nom douteux lève une `ValidationException` plutôt que d'atteindre le serveur.
+
+Le drapeau est **explicite** : sans lui, un élément conserve tous ses attributs, exactement comme avant.
+
+⚠️ **Trois `null` cohabitent dans cette bibliothèque, et ils ne parlent pas du même endroit.** À ne pas confondre :
+
+| | Où | Ce qu'il décide |
+| :-- | :-- | :-- |
+| `Arango::ERASE_NULL` | l'appel à `arrayUpdate` | si un `null` du patch **ôte** l'attribut d'un **élément** |
+| `Arango::KEEP_NULL` | une définition de champ de payload | si un `null` envoyé par le client **survit** à la passe de compression |
+| `Arango::OPTIONS` → `keepNull` | l'`UPDATE` d'ArangoDB | ce que le serveur fait d'un attribut nul **au niveau du document** |
+
 ### `arrayPurgeRef`
 
 Retire une valeur dans **tous** les documents de la collection qui la contiennent — typiquement pour purger une référence devenue obsolète (un élément supprimé du catalogue).

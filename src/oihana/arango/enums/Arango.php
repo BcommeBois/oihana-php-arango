@@ -82,6 +82,27 @@ class Arango extends AQL
     public const string DOCUMENTS = 'documents' ;
 
     /**
+     * The 'eraseNull' flag of an in-place element edit — when truthy, the nulls a patch carries
+     * are read as **erasures** instead of values.
+     *
+     * AQL `MERGE()` keeps a null: `{ "reason": null }` writes the attribute back as
+     * null rather than taking it away, so an element rebuilt in place could never
+     * lose an attribute it once carried. Set on {@see DocumentsArrayTrait::arrayUpdate()},
+     * this flag wraps the merged element in an `UNSET()` of those keys — top-level
+     * attributes only, like `UNSET()` itself.
+     *
+     * ⚠️ Not to be confused with {@see Arango::KEEP_NULL}, nor with the `keepNull`
+     * of {@see Arango::OPTIONS}. The first is a *payload* marker, saying whether a
+     * null a client sent survives the compress pass; the second is an ArangoDB
+     * *server* option, deciding what the document-level `UPDATE` does with a null
+     * attribute. This one operates in between the two, on the elements of an
+     * embedded array — a place neither of them reaches.
+     *
+     * Opt-in: absent, an element keeps every attribute it carries.
+     */
+    public const string ERASE_NULL = 'eraseNull' ;
+
+    /**
      * The 'exist' parameter.
      */
     public const string EXIST = 'exist' ;

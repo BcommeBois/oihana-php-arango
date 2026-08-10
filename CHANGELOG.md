@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **An element rebuilt in place could never lose an attribute — `Arango::ERASE_NULL` lets it.** `arrayUpdate()` merges its patch into the targeted element, and AQL `MERGE()` **keeps** a null instead of reading it as an erasure: a patch saying `{ "reason": null }` wrote the attribute back *as null* rather than taking it away. Whoever recomputes a whole element — a re-priced line, a re-rendered block — therefore had no way to say « this one is gone », and the stale value survived every write. The new flag turns the nulls of a patch into an `UNSET()` around the merged element:
+  ```aql
+  LET __arr = doc.chapters[* RETURN CURRENT.id == @value ? UNSET(MERGE(CURRENT, @patch), "reason") : CURRENT]
+  ```
+  - **Opt-in, so nothing existing moves.** Absent, the generated AQL is identical to before, character for character. Pinned by a test asserting that a patch carrying a null still produces a bare `MERGE(...)` with no `UNSET(`.
+  - **Top level only**, like `UNSET()` itself: a null nested inside a sub-object of the patch (`{ "price": { "value": null } }`) stays a value the merge writes. An element loses one whole attribute at a time, never half of one.
+  - **The erased names are guarded.** `UNSET()` takes string literals, not binds, so each name goes through the same `assertAttributeName()` as every other attribute this trait emits — a doubtful key raises a `ValidationException` instead of reaching the server. An integer key (a list cast to an object) names no attribute and is skipped.
+  - **⚠ Three nulls now live side by side, and they speak about three different places.** `Arango::ERASE_NULL` decides whether a null in a patch takes an attribute away from an **element**; `Arango::KEEP_NULL` is a *payload* marker, deciding whether a null the client sent survives the compress pass; the `keepNull` of `Arango::OPTIONS` is ArangoDB's own *server* option, deciding what the document-level `UPDATE` does with a null attribute. Neither of the last two reaches inside an array element — which is why a third name was introduced rather than one of them overloaded. The distinction is spelled out on the constant and in both wikis.
+  - **Tests:** 5 new `DocumentsArrayTraitTest` cases — the nulls kept by default, erased on demand, a nested null left alone, a patch carrying no null not wrapped for nothing, and an unsafe erased name refused. FR/EN wiki `db/arrays.md` gains an « erasing an attribute » section under `arrayUpdate`.
+
 ### Fixed
 
 - **`composer test` ended on `OK, but there were issues!` and exit code `1`, with nothing wrong in the tests.** Two signals, one cause: the configuration asked for an ordering it forbade in the next breath. `executionOrder="depends,defects"` replays last run's failures first; `cacheResult="false"` disabled the very history that ordering reads. PHPUnit therefore warned it could not order by defects — and, since `cacheResult` was renamed `recordTestRunHistory` in PHPUnit 12 (removed in 14), deprecated the attribute on top. Under `failOnWarning="true"`, both added up to a red run over 4757 green tests.
