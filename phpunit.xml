@@ -8,7 +8,6 @@
     beStrictAboutOutputDuringTests="true"
     bootstrap="vendor/autoload.php"
     cacheDirectory=".phpunit.cache"
-    cacheResult="false"
     colors="true"
     columns="max"
     displayDetailsOnIncompleteTests="true"
@@ -22,6 +21,7 @@
     failOnSkipped="true"
     failOnWarning="true"
     processIsolation="false"
+    recordTestRunHistory="true"
     testdox="true"
 >
     <testsuites>

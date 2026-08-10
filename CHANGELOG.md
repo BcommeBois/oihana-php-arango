@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`composer test` ended on `OK, but there were issues!` and exit code `1`, with nothing wrong in the tests.** Two signals, one cause: the configuration asked for an ordering it forbade in the next breath. `executionOrder="depends,defects"` replays last run's failures first; `cacheResult="false"` disabled the very history that ordering reads. PHPUnit therefore warned it could not order by defects — and, since `cacheResult` was renamed `recordTestRunHistory` in PHPUnit 12 (removed in 14), deprecated the attribute on top. Under `failOnWarning="true"`, both added up to a red run over 4757 green tests.
+  - **The fix keeps the stated intent** — `recordTestRunHistory="true"` alongside the existing `executionOrder="depends,defects"`, so defect-first ordering finally does something on a suite this size. The history lands in `.phpunit.cache`, already git-ignored.
+  - **🚨 Deleting the deprecated attribute would NOT have been neutral.** When neither `cacheResult` nor `recordTestRunHistory` is present, PHPUnit defaults to **`true`** (`TextUI/Configuration/Xml/Loader.php`, `parseRecordTestRunHistoryAttribute()`) — dropping the line would have silently enabled the history rather than preserving the behaviour. The opposite choice, had it been wanted, is `recordTestRunHistory="false"` **plus** `executionOrder="depends"`; leaving `defects` in place would just bring the warning back.
+  - **No test, source file or generated AQL is touched.** The run now ends on `OK (4757 tests, 8795 assertions)` with exit code `0`.
+
+### Fixed
+
 - **A translated field raised an AQL warning on every un-translated document — and killed the query under `failOnWarning`.** `Filter::TRANSLATE` emitted `TRANSLATE("fr",doc.title,"")`, and `TRANSLATE()` looks the language up **in a document**: handed anything else — an absent attribute, or a plain string left over from a record written before i18n — it returns `null` *and* raises warning `1542`, once per row concerned. Measured on a real server, four documents, two warnings. The projection now asks first:
   ```aql
   title:IS_OBJECT(doc.title) ? TRANSLATE("fr",doc.title,"") : null
