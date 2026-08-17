@@ -426,21 +426,12 @@ trait ArrayPropertyControllerTrait
      */
     private function containsItemKey( mixed $items , string $itemKey , mixed $value ) : bool
     {
-        if ( !is_array( $items ) )
-        {
-            return false ;
-        }
-
-        foreach ( $items as $item )
-        {
+        return is_array( $items ) && array_any
+        (
+            $items ,
             // A scalar element carries no attribute at all: it can never match a key.
-            if ( ( is_array( $item ) || is_object( $item ) ) && getKeyValue( $item , $itemKey ) === $value )
-            {
-                return true ;
-            }
-        }
-
-        return false ;
+            static fn( mixed $item ) :bool => ( is_array( $item ) || is_object( $item ) ) && getKeyValue( $item , $itemKey ) === $value
+        ) ;
     }
 
     /**
