@@ -525,6 +525,45 @@ Content-Type: application/json
 
 Une liste **partielle** réordonne ce qu'elle nomme et **conserve le reste**, rappendu derrière : un bug d'interface qui n'enverrait qu'un sous-ensemble ne peut pas effacer des lignes. Une clé inconnue est ignorée, une liste vide ne change rien. Voir [`arrayReorder`](../db/arrays.md#arrayreorder) pour le détail.
 
+### Ce que répond une écriture
+
+Par défaut : **tout le tableau de la propriété**, jamais l'élément seul. Éditer un élément renumérote ses voisins, donc le tableau est la seule réponse fidèle.
+
+Ça ne suffit plus dès que le document propriétaire porte des valeurs **dérivées** du tableau — un total, un compte, un poids. Elles bougent à chaque écriture d'élément, aucune ne se recalcule depuis le tableau seul, et un client qui en a besoin n'a d'autre choix que de relire le document par un `GET` après chaque geste. Deux allers-retours par frappe.
+
+Deux pièces y répondent, et elles vont ensemble :
+
+| | Ce que ça fait |
+|---|---|
+| `afterArrayWrite()` | un crochet qui tourne **après** l'écriture et **avant** la réponse — là où les valeurs dérivées du propriétaire sont remises à jour |
+| `RESPOND_WITH_OWNER` | fait répondre aux cinq écritures le **document propriétaire** au lieu du tableau |
+
+```php
+Controllers::INVOICE_LINES => fn( Container $c ) => new InvoiceLinesController( $c ,
+[
+    ArrayPropertyController::PROPERTY           => 'lines' ,
+    ArrayPropertyController::RESPOND_WITH_OWNER => true ,
+]) ;
+```
+
+```php
+class InvoiceLinesController extends ArrayPropertyController
+{
+    protected function afterArrayWrite( ?Request $request , array $args , array $init , ?object $document ) : void
+    {
+        $this->refreshTotals( $args[ Arango::ID ] ?? null ) ;
+    }
+}
+```
+
+**L'ordre est tout le sujet.** Le crochet écrit, puis la réponse est construite — de sorte que le document répondu énonce ce que l'écriture a réellement produit, et non ce qui tenait une écriture plus tôt. Une réponse assemblée avant le crochet porterait des totaux périmés, silencieusement, et précisément sur les écritures qui les ont déplacés.
+
+🚨 **Le propriétaire est relu, jamais rendu depuis l'écriture.** Une écriture de tableau se termine par `RETURN NEW` : le document stocké, hydraté par les *alters* du modèle, mais **jamais passé par `AQL::FIELDS`**. Il ne porte aucune `url` reconstruite, ignore `Filter::TRANSLATE`, expose les attributs stockés que la projection filtre, et passe à côté des gardes `Field::REQUIRES`. L'option relit donc le propriétaire exactement comme le ferait le `get()` de ce contrôleur — même appel, même projection, même portée, mêmes gardes.
+
+⚠️ **La peau est celle qu'emploierait `get()`**, pas une peau figée. Une surface qui ne sert son tableau que dans une peau plus large doit déclarer cette peau (`Arango::SKINS` / `Arango::SKIN_METHODS`), sinon la réponse revient sans la propriété qu'on vient justement d'écrire.
+
+Deux choses que l'option laisse tranquilles : `hasItem()` — une lecture, qui ne touche à rien et n'atteint ni le crochet ni la relecture — et tous les échecs. Un `404` sur une clé d'élément qui ne correspond à rien répond son statut ; l'écriture a été neutralisée, il n'y a donc rien à recalculer ni à relire.
+
 ### Codes d'erreur
 
 | Code | Quand |

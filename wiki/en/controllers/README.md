@@ -523,6 +523,45 @@ Content-Type: application/json
 
 A **partial** list reorders what it names and **keeps the rest**, appended behind it: an interface bug sending only a subset cannot wipe lines out. An unknown key is skipped, an empty list changes nothing. See [`arrayReorder`](../db/arrays.md#arrayreorder) for the details.
 
+### What a write answers
+
+By default: **the whole array property**, never the single element. An element edit renumbers its neighbours, so the array is the only truthful answer.
+
+That stops being enough as soon as the owner document carries values **derived from** the array — a total, a count, a weight. They move on every element write, none of them can be recomputed from the array alone, and a client that needs them has no choice but to re-`GET` the document after each gesture. Two round trips per keystroke.
+
+Two pieces answer that, and they go together:
+
+| | What it does |
+|---|---|
+| `afterArrayWrite()` | a hook running **after** the write and **before** the response — where the owner's derived values are brought up to date |
+| `RESPOND_WITH_OWNER` | makes the five writes answer the **owner document** instead of the array property |
+
+```php
+Controllers::INVOICE_LINES => fn( Container $c ) => new InvoiceLinesController( $c ,
+[
+    ArrayPropertyController::PROPERTY           => 'lines' ,
+    ArrayPropertyController::RESPOND_WITH_OWNER => true ,
+]) ;
+```
+
+```php
+class InvoiceLinesController extends ArrayPropertyController
+{
+    protected function afterArrayWrite( ?Request $request , array $args , array $init , ?object $document ) : void
+    {
+        $this->refreshTotals( $args[ Arango::ID ] ?? null ) ;
+    }
+}
+```
+
+**The order is the point.** The hook writes, then the response is built — so the document answered states what the write really produced, rather than what stood one write ago. A response assembled before the hook would carry stale totals, silently, on exactly the writes that moved them.
+
+🚨 **The owner is re-read, never handed back from the write.** An array write ends on `RETURN NEW`: the stored document, hydrated by the model's alters, but **never passed through `AQL::FIELDS`**. It carries no rebuilt `url`, ignores `Filter::TRANSLATE`, exposes stored attributes the projection filters out, and walks past the `Field::REQUIRES` gates. So the option re-reads the owner exactly as this controller's own `get()` would — same call, same projection, same scope, same gates.
+
+⚠️ **The skin is the one `get()` would use**, not a fixed one. A surface serving its array only under a wider skin must declare that skin (`Arango::SKINS` / `Arango::SKIN_METHODS`), or the response comes back without the very property that was just written.
+
+Two things the option leaves alone: `hasItem()` — a read, which touches nothing and reaches neither the hook nor the reload — and every failure. A `404` on an item key matching no element answers its status; the write was guarded into a no-op, so there is nothing to recompute and nothing to read back.
+
 ### Error codes
 
 | Code | When |

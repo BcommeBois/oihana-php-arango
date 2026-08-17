@@ -26,6 +26,7 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 use PHPUnit\Framework\TestCase;
 
 use tests\oihana\arango\controllers\mocks\GatedDocumentsController;
+use tests\oihana\arango\controllers\mocks\RecordingArrayPropertyController;
 use tests\oihana\arango\controllers\mocks\ScopedDocumentsController;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
@@ -210,6 +211,25 @@ abstract class ControllerTestCase extends TestCase
     protected function makeArrayPropertyController( MockDocuments $model , array $init = [] ) :ArrayPropertyController
     {
         return new ArrayPropertyController( ...$this->controllerArgs( $model , $init ) ) ;
+    }
+
+    /**
+     * Builds a {@see RecordingArrayPropertyController} — the double that records every
+     * call to the post-write hook — backed by the given model double.
+     *
+     * @param MockDocuments $model The model double.
+     * @param array $init Extra init overrides (e.g. the `property` key).
+     *
+     * @return RecordingArrayPropertyController
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    protected function makeRecordingArrayPropertyController( MockDocuments $model , array $init = [] ) :RecordingArrayPropertyController
+    {
+        return new RecordingArrayPropertyController( ...$this->controllerArgs( $model , $init ) ) ;
     }
 
     /**

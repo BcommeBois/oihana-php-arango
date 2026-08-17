@@ -12,6 +12,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 
+use oihana\enums\http\HttpMethod;
 use oihana\enums\http\HttpStatusCode;
 use oihana\exceptions\UnsupportedOperationException;
 
@@ -25,8 +26,9 @@ use function oihana\core\accessors\getKeyValue;
  *
  * The host controller must be a {@see PropertyController}
  * subclass (it relies on its wiring: `$model`, `$property`, `$owner`, `assertProperty()`,
- * `checkOwnerArguments()`, `success()`, `fail()`). The targeted `$property` must be a
- * field declared in the model's `AQL::ARRAYS` option.
+ * `checkOwnerArguments()`, `success()`, `fail()`, and — for {@see self::RESPOND_WITH_OWNER} —
+ * `beforeModelCall()`, `afterModelCall()`, `prepareLang()`, `prepareSkin()`). The targeted
+ * `$property` must be a field declared in the model's `AQL::ARRAYS` option.
  *
  * Each method maps an HTTP verb to a model array operation and returns a standardized
  * response. Common error responses (built by every method through {@see runArrayOp()}):
@@ -51,6 +53,15 @@ use function oihana\core\accessors\getKeyValue;
  * (nothing merged, nothing reordered), so the document they return is enough to tell,
  * without a second query.
  *
+ * **What a write answers** is the whole array property, never the single element —
+ * an element edit renumbers its neighbours, so the array is the only truthful answer.
+ * A controller whose owner document carries values **derived from** the array —
+ * totals, a count, a weight — may switch that answer to the owner document itself
+ * with {@see self::RESPOND_WITH_OWNER}, and recompute those values from
+ * {@see self::afterArrayWrite()}. The two go together : the hook exists so the
+ * recomputation lands **before** the response is built, and the option exists so the
+ * response can carry what the recomputation produced.
+ *
  * @see ArrayPropertyController
  * @see DocumentsArrayTrait
  *
@@ -58,6 +69,24 @@ use function oihana\core\accessors\getKeyValue;
  */
 trait ArrayPropertyControllerTrait
 {
+    /**
+     * The init key deciding what a write answers : the array property (default), or
+     * the **owner document** it belongs to.
+     *
+     * 🔑 **Reach for it through the consuming class**, never through this trait —
+     * `ArrayPropertyController::RESPOND_WITH_OWNER`. PHP 8.2+ refuses a trait
+     * constant accessed directly.
+     */
+    public const string RESPOND_WITH_OWNER = 'respondWithOwner' ;
+
+    /**
+     * Whether a write answers the owner document rather than the array property.
+     *
+     * Declared by the route that mounts the controller, never by a client : it is the
+     * shape of a contract, not a per-request preference.
+     */
+    public bool $respondWithOwner = false ;
+
     /**
      * Adds one or several values to the array property of a document.
      *
@@ -87,7 +116,7 @@ trait ArrayPropertyControllerTrait
                 Arango::SIDE  => $init[ Arango::SIDE ] ?? $this->bodyParam( $request , Arango::SIDE ) ,
             ]) ;
 
-            return $this->success( $request , $response , $document?->{ $this->property } ?? null ) ;
+            return $this->respondAfterWrite( $request , $response , $args , $init , $document ) ;
         }) ;
     }
 
@@ -132,6 +161,19 @@ trait ArrayPropertyControllerTrait
     }
 
     /**
+     * Reads {@see self::RESPOND_WITH_OWNER} off the init, deciding what a write answers.
+     *
+     * @param array $init The controller init.
+     *
+     * @return static
+     */
+    public function initializeRespondWithOwner( array $init = [] ) :static
+    {
+        $this->respondWithOwner = (bool) ( $init[ self::RESPOND_WITH_OWNER ] ?? $this->respondWithOwner ) ;
+        return $this ;
+    }
+
+    /**
      * Moves an existing value to a given position in the array property.
      *
      * `PATCH /{collection}/{id}/{property}/{value}` — the value comes from the `{value}`
@@ -167,7 +209,7 @@ trait ArrayPropertyControllerTrait
                 Arango::POSITION => (int) ( $init[ Arango::POSITION ] ?? $this->bodyParam( $request , Arango::POSITION ) ?? 0 ) ,
             ]) ;
 
-            return $this->respondWithItem( $request , $response , $document , $this->resolveItemKey( $model , $init ) , $value ) ;
+            return $this->respondWithItem( $request , $response , $args , $init , $document , $this->resolveItemKey( $model , $init ) , $value ) ;
         }) ;
     }
 
@@ -199,7 +241,7 @@ trait ArrayPropertyControllerTrait
                 Arango::VALUE => $this->resolveItemValue( $request , $args ) ,
             ]) ;
 
-            return $this->success( $request , $response , $document?->{ $this->property } ?? null ) ;
+            return $this->respondAfterWrite( $request , $response , $args , $init , $document ) ;
         }) ;
     }
 
@@ -238,7 +280,7 @@ trait ArrayPropertyControllerTrait
                 Arango::VALUE => $this->resolveItemValue( $request , $args ) ,
             ]) ;
 
-            return $this->success( $request , $response , $document?->{ $this->property } ?? null ) ;
+            return $this->respondAfterWrite( $request , $response , $args , $init , $document ) ;
         }) ;
     }
 
@@ -283,8 +325,44 @@ trait ArrayPropertyControllerTrait
                 Arango::PATCH => $init[ Arango::PATCH ] ?? $request?->getParsedBody() ?? [] ,
             ]) ;
 
-            return $this->respondWithItem( $request , $response , $document , $itemKey , $value ) ;
+            return $this->respondWithItem( $request , $response , $args , $init , $document , $itemKey , $value ) ;
         }) ;
+    }
+
+    /**
+     * Runs after an array write has touched the document, and **before** the response
+     * is built. A no-op here, for a subclass to override.
+     *
+     * 🔑 **This is the seam the six operations lacked.** {@see ModelCallTrait::afterModelCall()}
+     * is deliberately not invoked by {@see self::runArrayOp()} — the operations answer a
+     * response rather than a document, so it would have no consistent result to receive.
+     * This hook has one : the document the write returned.
+     *
+     * ⚠️ **It runs before the response, which is the whole point.** A controller whose
+     * owner document carries values derived from the array — totals, a count, a weight —
+     * recomputes them here, so that a response carrying the owner
+     * ({@see self::RESPOND_WITH_OWNER}) states what the write really produced rather than
+     * what stood one write ago.
+     *
+     * It does **not** run when the operation answered a failure : an item key matching no
+     * element ({@see self::respondWithItem()}) touched nothing, so there is nothing to
+     * recompute.
+     *
+     * 🚨 **The document it receives is the raw `RETURN NEW`** — hydrated by the model's
+     * alters, but never passed through `AQL::FIELDS`. Read it for what the write changed ;
+     * never hand it back as a response. That is what the reload behind
+     * {@see self::RESPOND_WITH_OWNER} exists for.
+     *
+     * @param ?Request $request The current PSR-7 request (null in CLI / test contexts).
+     * @param array $args Route placeholders (`id`).
+     * @param array $init The enriched init of the operation.
+     * @param ?object $document The document the write returned, or null when it matched nothing.
+     *
+     * @return void
+     */
+    protected function afterArrayWrite( ?Request $request , array $args , array $init , ?object $document ) : void
+    {
+        // no-op
     }
 
     /**
@@ -366,6 +444,89 @@ trait ArrayPropertyControllerTrait
     }
 
     /**
+     * Re-reads the owner document a write has just changed, **through the projection**.
+     *
+     * 🚨 **The document a write returns is not the one a `GET` serves**, and handing it
+     * back would be a quiet lie. An array write ends on `RETURN NEW` : the stored
+     * document, hydrated by the model's alters, but never passed through `AQL::FIELDS`.
+     * It therefore carries no rebuilt `url`, ignores `Filter::TRANSLATE`, exposes stored
+     * attributes the projection filters out, and — the one that bites — **walks past the
+     * `Field::REQUIRES` gates**. That last failure is not hypothetical : it is the very
+     * incident {@see ReloadWrittenDocumentTrait} was written for, on the document writes.
+     *
+     * So the owner is read again, the way {@see PropertyControllerGetTrait::get()} reads
+     * it : `beforeModelCall()` poses the request-scoped authorizer and whatever scope a
+     * subclass adds, the model projects, `afterModelCall()` post-processes. **The answer
+     * is identical to a `GET` by construction, because it is the same call.**
+     *
+     * ⚠️ **The skin is the one this controller's own `get()` would use** — not a fixed
+     * one. A surface serving its array only in a wider skin must declare that skin, or
+     * the response will come back without the very property that was just written.
+     *
+     * @param ?Request $request
+     * @param array $args Route placeholders (`id`).
+     * @param array $init The enriched init of the operation.
+     *
+     * @return object|null The projected owner document, or null when it reads back as nothing.
+     */
+    private function reloadOwner( ?Request $request , array $args , array $init ) : ?object
+    {
+        $modelInit =
+        [
+            Arango::ARGS       => $args ,
+            Arango::VALUE      => $args[ Arango::ID ] ?? null ,
+            Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? [] ,
+            Arango::KEY        => $init[ Arango::KEY ] ?? Schema::_KEY ,
+            Arango::LANG       => $this->prepareLang( $request , $init ) ,
+            Arango::SKIN       => $this->prepareSkin( $request , $init , method: HttpMethod::get ) ,
+        ] ;
+
+        $this->beforeModelCall( $request , $modelInit ) ;
+        $document = $this->model->get( $modelInit ) ;
+        $this->afterModelCall( $request , $modelInit , $document ) ;
+
+        return is_object( $document ) ? $document : null ;
+    }
+
+    /**
+     * Builds the response of every array write : the hook first, the body second.
+     *
+     * The order is the reason this method exists. {@see self::afterArrayWrite()} may
+     * write to the owner document — recomputed totals, a refreshed count — and a
+     * response built before it would state the values of one write ago. Every write of
+     * this trait therefore ends here, and nowhere else.
+     *
+     * Two shapes, decided once by the route rather than per request :
+     *
+     * - by default, **the array property** — what an element write has always answered ;
+     * - under {@see self::RESPOND_WITH_OWNER}, **the owner document**, re-read through
+     *   the projection ({@see self::reloadOwner()}). One rule then holds across the
+     *   surface : a write answers the new truth of the whole document, exactly as the
+     *   document `PATCH` already does.
+     *
+     * @param ?Request $request
+     * @param ?Response $response
+     * @param array $args Route placeholders (`id`).
+     * @param array $init The enriched init of the operation.
+     * @param ?object $document The document the write returned (`RETURN NEW`).
+     *
+     * @return mixed
+     */
+    private function respondAfterWrite( ?Request $request , ?Response $response , array $args , array $init , ?object $document ) : mixed
+    {
+        $this->afterArrayWrite( $request , $args , $init , $document ) ;
+
+        return $this->success
+        (
+            $request ,
+            $response ,
+            $this->respondWithOwner
+                ? $this->reloadOwner( $request , $args , $init )
+                : $document?->{ $this->property } ?? null
+        ) ;
+    }
+
+    /**
      * Builds the response of an operation targeting an **existing** element: the updated
      * array property, or a 404 when no element carries the requested item key.
      *
@@ -374,19 +535,24 @@ trait ArrayPropertyControllerTrait
      * returned is enough to tell, at no extra query cost. A property targeted **by value**
      * passes a null `itemKey` and skips the check entirely.
      *
+     * 🔑 **The 404 is decided before {@see self::respondAfterWrite()} is reached**, so a
+     * key matching nothing neither fires {@see self::afterArrayWrite()} nor reloads the
+     * owner. The write touched no element : there is nothing to recompute, and nothing
+     * to read back.
+     *
      * @param ?Request $request
      * @param ?Response $response
+     * @param array $args Route placeholders (`id`).
+     * @param array $init The enriched init of the operation.
      * @param ?object $document The document returned by the write (`RETURN NEW`).
      * @param ?string $itemKey The resolved item key, or null when the property is targeted by value.
      * @param mixed $value The requested item key.
      *
      * @return mixed
      */
-    private function respondWithItem( ?Request $request , ?Response $response , ?object $document , ?string $itemKey , mixed $value ) : mixed
+    private function respondWithItem( ?Request $request , ?Response $response , array $args , array $init , ?object $document , ?string $itemKey , mixed $value ) : mixed
     {
-        $items = $document?->{ $this->property } ?? null ;
-
-        if ( $itemKey !== null && !$this->containsItemKey( $items , $itemKey , $value ) )
+        if ( $itemKey !== null && !$this->containsItemKey( $document?->{ $this->property } ?? null , $itemKey , $value ) )
         {
             return $this->fail
             (
@@ -397,7 +563,7 @@ trait ArrayPropertyControllerTrait
             ) ;
         }
 
-        return $this->success( $request , $response , $items ) ;
+        return $this->respondAfterWrite( $request , $response , $args , $init , $document ) ;
     }
 
     /**

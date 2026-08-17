@@ -617,4 +617,266 @@ class ArrayPropertyControllerTest extends ControllerTestCase
             )
         ) ;
     }
+
+    // ---- the post-write hook --------------------------------------------
+
+    /**
+     * The five writes reach the hook, and the read does not.
+     *
+     * `hasItem()` is the control: it walks the same skeleton, touches nothing, and
+     * must therefore leave the hook alone.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEveryWriteReachesThePostWriteHookAndTheReadDoesNot() :void
+    {
+        $controller = $this->makeRecordingArrayPropertyController( $this->keyedModel() , [ self::PROPERTY => 'chapters' ] ) ;
+        $args       = [ Arango::ID => 'p42' , Arango::VALUE => 'c1' ] ;
+
+        $controller->addItem     ( $this->makeRequest( [] , 'POST' )->withParsedBody( [ Arango::VALUE => [ 'id' => 'c3' ] ] ) , null , [ Arango::ID => 'p42' ] ) ;
+        $controller->updateItem  ( $this->makeRequest( [] , 'PUT'  )->withParsedBody( [ 'rating' => 4 ] ) , null , $args ) ;
+        $controller->moveItem    ( $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ Arango::POSITION => 1 ] ) , null , $args ) ;
+        $controller->removeItem  ( null , null , $args ) ;
+        $controller->reorderItems( $this->makeRequest( [] , 'PUT' )->withParsedBody( [ Arango::VALUE => [ 'c2' , 'c1' ] ] ) , null , [ Arango::ID => 'p42' ] ) ;
+
+        $this->assertCount( 5 , $controller->written ) ;
+
+        $controller->hasItem( null , null , $args ) ;
+
+        $this->assertCount( 5 , $controller->written ) ;
+    }
+
+    /**
+     * The hook receives the document the write returned, not a null.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testThePostWriteHookReceivesTheWrittenDocument() :void
+    {
+        $controller = $this->makeRecordingArrayPropertyController( $this->model() , [ self::PROPERTY => 'tracks' ] ) ;
+
+        $controller->addItem( $this->makeRequest( [] , 'POST' )->withParsedBody( [ Arango::VALUE => 'C' ] ) , null , [ Arango::ID => 'p42' ] ) ;
+
+        $this->assertSame( 'p42' , $controller->written[ 0 ]?->_key ) ;
+    }
+
+    /**
+     * 🔑 An item key matching nothing answers 404 **and leaves the hook alone**: the
+     * write was guarded into a no-op, so there is nothing to bring up to date.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testAnUnknownItemKeyAnswers404WithoutReachingTheHook() :void
+    {
+        $controller = $this->makeRecordingArrayPropertyController( $this->keyedModel() , [ self::PROPERTY => 'chapters' ] ) ;
+
+        $response = $controller->updateItem
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 4 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => 'nope' ]
+        ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
+        $this->assertSame( [] , $controller->written ) ;
+    }
+
+    // ---- responding with the owner document ------------------------------
+
+    /**
+     * The default is unchanged, and that is the point: nothing existing moves.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testAWriteStillAnswersTheArrayPropertyByDefault() :void
+    {
+        $controller = $this->controller( $this->model() ) ;
+
+        $this->assertSame
+        (
+            [ 'A' , 'B' ] ,
+            $controller->removeItem( null , null , [ Arango::ID => 'p42' , Arango::VALUE => 'A' ] )
+        ) ;
+    }
+
+    /**
+     * Under the option, the very same write answers the owner document instead.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testAWriteAnswersTheOwnerDocumentUnderTheOption() :void
+    {
+        $controller = $this->makeArrayPropertyController
+        (
+            $this->model() ,
+            [ self::PROPERTY => 'tracks' , ArrayPropertyController::RESPOND_WITH_OWNER => true ]
+        ) ;
+
+        $owner = $controller->removeItem( null , null , [ Arango::ID => 'p42' , Arango::VALUE => 'A' ] ) ;
+
+        $this->assertIsObject( $owner ) ;
+        $this->assertSame( 'p42'          , $owner->_key ) ;
+        $this->assertSame( [ 'A' , 'B' ]  , $owner->tracks ) ;
+    }
+
+    /**
+     * The five writes answer the owner alike — a caller must not have to remember
+     * which verb answers what.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testEveryWriteAnswersTheOwnerUnderTheOption() :void
+    {
+        $controller = $this->makeArrayPropertyController
+        (
+            $this->keyedModel() ,
+            [ self::PROPERTY => 'chapters' , ArrayPropertyController::RESPOND_WITH_OWNER => true ]
+        ) ;
+
+        $args = [ Arango::ID => 'p42' , Arango::VALUE => 'c1' ] ;
+
+        $answers =
+        [
+            $controller->addItem     ( $this->makeRequest( [] , 'POST' )->withParsedBody( [ Arango::VALUE => [ 'id' => 'c3' ] ] ) , null , [ Arango::ID => 'p42' ] ) ,
+            $controller->updateItem  ( $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 4 ] ) , null , $args ) ,
+            $controller->moveItem    ( $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ Arango::POSITION => 1 ] ) , null , $args ) ,
+            $controller->removeItem  ( null , null , $args ) ,
+            $controller->reorderItems( $this->makeRequest( [] , 'PUT' )->withParsedBody( [ Arango::VALUE => [ 'c2' , 'c1' ] ] ) , null , [ Arango::ID => 'p42' ] ) ,
+        ] ;
+
+        foreach ( $answers as $answer )
+        {
+            $this->assertIsObject( $answer ) ;
+            $this->assertSame( 'p42' , $answer->_key ) ;
+        }
+    }
+
+    /**
+     * 🚨 **The ordering, which is the whole reason the hook exists.** The hook writes
+     * to the owner — here by moving the model's canned document — and the response has
+     * to carry what it produced, not what stood one write earlier.
+     *
+     * A response built before the hook would answer `[ 'A' , 'B' ]`.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testTheOwnerIsReadBackAfterTheHookHasRunNotBefore() :void
+    {
+        $model      = $this->model() ;
+        $controller = $this->makeRecordingArrayPropertyController
+        (
+            $model ,
+            [ self::PROPERTY => 'tracks' , ArrayPropertyController::RESPOND_WITH_OWNER => true ]
+        ) ;
+
+        // What a real hook does : recompute something on the owner, and store it.
+        $controller->onWrite = static function() use ( $model ) :void
+        {
+            $model->objectResult = (object) [ '_key' => 'p42' , 'tracks' => [ 'A' , 'B' ] , 'count' => 2 ] ;
+        } ;
+
+        $owner = $controller->removeItem( null , null , [ Arango::ID => 'p42' , Arango::VALUE => 'A' ] ) ;
+
+        $this->assertSame( 2 , $owner->count ?? null ) ;
+    }
+
+    /**
+     * The owner is re-read **through the model**, never handed back from the write —
+     * so the projection, the scope and the gates all apply to it.
+     *
+     * The canned document is swapped between the write and the read: what comes back
+     * is the read's, which is only possible if a second call really happened.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testTheOwnerComesFromASecondReadNotFromTheWrite() :void
+    {
+        $model      = $this->model() ;
+        $controller = $this->makeRecordingArrayPropertyController
+        (
+            $model ,
+            [ self::PROPERTY => 'tracks' , ArrayPropertyController::RESPOND_WITH_OWNER => true ]
+        ) ;
+
+        $controller->onWrite = static function() use ( $model ) :void
+        {
+            $model->objectResult = (object) [ '_key' => 'p42' , 'tracks' => [ 'A' ] , 'projected' => true ] ;
+        } ;
+
+        $owner = $controller->removeItem( null , null , [ Arango::ID => 'p42' , Arango::VALUE => 'B' ] ) ;
+
+        $this->assertTrue( $owner->projected ?? false ) ;
+        $this->assertSame( [ 'A' ] , $owner->tracks ) ;
+
+        // …and what the hook was handed is the write's own document, the one before.
+        $this->assertSame( [ 'A' , 'B' ] , $controller->written[ 0 ]->tracks ) ;
+    }
+
+    /**
+     * A failure answers its status and never reloads: a 404 carries no owner.
+     *
+     * @return void
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function testAFailedWriteAnswersItsStatusRatherThanTheOwner() :void
+    {
+        $controller = $this->makeArrayPropertyController
+        (
+            $this->keyedModel() ,
+            [ self::PROPERTY => 'chapters' , ArrayPropertyController::RESPOND_WITH_OWNER => true ]
+        ) ;
+
+        $response = $controller->updateItem
+        (
+            $this->makeRequest( [] , 'PUT' )->withParsedBody( [ 'rating' => 4 ] ) ,
+            $this->makeResponse() ,
+            [ Arango::ID => 'p42' , Arango::VALUE => 'nope' ]
+        ) ;
+
+        $this->assertSame( 404 , $response->getStatusCode() ) ;
+    }
 }

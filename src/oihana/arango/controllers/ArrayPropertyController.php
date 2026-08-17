@@ -2,6 +2,15 @@
 
 namespace oihana\arango\controllers;
 
+use ReflectionException;
+
+use DI\Container;
+use DI\DependencyException;
+use DI\NotFoundException;
+
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+
 use oihana\arango\controllers\traits\properties\ArrayPropertyControllerTrait;
 
 /**
@@ -25,10 +34,34 @@ use oihana\arango\controllers\traits\properties\ArrayPropertyControllerTrait;
  *
  * The six routes can be declared at once with {@see ArrayPropertyRoute}.
  *
+ * A write answers the array property. Declare {@see self::RESPOND_WITH_OWNER} to make
+ * it answer the **owner document** instead, and override
+ * {@see ArrayPropertyControllerTrait::afterArrayWrite()} to bring whatever the owner
+ * derives from that array up to date before the response is built.
+ *
  * @package oihana\arango\controllers
  */
 class ArrayPropertyController extends PropertyController
 {
+    /**
+     * Creates a new ArrayPropertyController instance.
+     *
+     * @param Container $container The DI Container reference.
+     * @param array $init The optional properties to passed-in to initialize the object.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    public function __construct( Container $container , array $init = [] )
+    {
+        parent::__construct( $container , $init ) ;
+
+        $this->initializeRespondWithOwner( $init ) ;
+    }
+
     use ArrayPropertyControllerTrait ;
 
     /**
