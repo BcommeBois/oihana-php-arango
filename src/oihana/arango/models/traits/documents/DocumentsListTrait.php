@@ -83,7 +83,9 @@ trait DocumentsListTrait
      * This is the main entry point for fetching multiple documents from an ArangoDB collection.
      * It constructs an AQL query using `buildListQuery()`, executes it, and returns all
      * matching documents loaded into memory. Each document is processed through schema mapping
-     * (if configured) and transformation via the `alter()` method.
+     * (if configured) and transformation via the `alter()` method — **unless the query groups**,
+     * in which case its rows are read raw: a `COLLECT` row is not a document, and neither the
+     * schema nor the alters apply to it. See {@see isGroupedQuery()}.
      *
      * **When to Use:**
      * - When you need all results in memory for further processing
@@ -234,6 +236,9 @@ trait DocumentsListTrait
      * - Mapped to the configured schema class (if set via `$this->schema`)
      * - Transformed via the `alter()` method (applies skins, conversions, etc.)
      *
+     * A **grouped** query (`Arango::GROUP`, or a raw `Arango::COLLECT` spec) skips both steps
+     * and yields plain objects carrying exactly the variables the `COLLECT` emitted.
+     *
      * Returns an empty array if:
      * - No documents match the query criteria
      * - The collection is empty
@@ -292,7 +297,14 @@ trait DocumentsListTrait
         $limit    = $init[ Arango::LIMIT ] ?? 0 ;
         $query    = $this->buildListQuery( $init , $bindVars ) ;
 
-        return $this->getDocuments( $query , $bindVars , $this->profileOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) , context: $init ) ;
+        // A COLLECT replaces the documents by computed rows: a grouped line is not a
+        // document, so neither the schema nor the alters apply to it. Hydrating one
+        // keeps only the names the schema class happens to declare — every other
+        // variable the query invented is dropped, and a name that does collide is
+        // coerced into that property's type rather than kept as computed.
+        $raw = $this->isGroupedQuery( $init ) ;
+
+        return $this->getDocuments( $query , $bindVars , $this->profileOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) , raw: $raw , context: $init ) ;
     }
 
 }

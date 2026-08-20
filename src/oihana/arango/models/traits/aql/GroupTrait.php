@@ -134,6 +134,45 @@ trait GroupTrait
     }
 
     /**
+     * Tells whether a list query built from `$init` carries a `COLLECT`.
+     *
+     * 🔑 **A grouped row is not a document.** After a `COLLECT` the projection is
+     * made of the declared variables — the dimensions, the aggregates, the count —
+     * and nothing of the collection's own shape survives. Hydrating such a row in
+     * the model's schema keeps only the names that class happens to declare, so the
+     * list and stream entry points read this to decide whether their result is taken
+     * raw.
+     *
+     * 🚨 **The test is the emitted `COLLECT`, not the requested one.** A group spec
+     * whose every dimension is dropped — undeclared, or closed by the permission
+     * gate — and which carries no aggregate emits no `COLLECT` at all: the query
+     * still returns documents, and they must still be hydrated. The emptiness test
+     * below mirrors, key for key, the one of {@see \oihana\arango\db\operations\aqlCollect()}.
+     *
+     * The spec is resolved a second time rather than carried over from
+     * {@see \oihana\arango\models\traits\queries\ListQueryTrait::buildListQuery()},
+     * which already knows the answer: the reading stays self-contained, and no
+     * shared signature has to grow a return channel for it. Nothing is bound along
+     * the way — {@see \oihana\arango\models\traits\aql\BindTrait::binder()} builds a
+     * throwaway map when it is handed none.
+     *
+     * @param array $init The list query options.
+     *
+     * @return bool True when the built query groups its rows.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function isGroupedQuery( array $init = [] ) :bool
+    {
+        $spec = $this->prepareCollect( $init ) ;
+
+        return !empty( $spec[ AQL::ASSIGN     ] )
+            || !empty( $spec[ AQL::AGGREGATE  ] )
+            || !empty( $spec[ AQL::WITH_COUNT ] ) ;
+    }
+
+    /**
      * Resolves the `COLLECT` spec for a list query.
      *
      * Translates a friendly {@see Arango::GROUP} spec ({@see Group::BY},

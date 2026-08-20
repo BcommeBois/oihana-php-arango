@@ -6,6 +6,7 @@ use DI\DependencyException;
 use DI\NotFoundException;
 use Generator;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 use ReflectionException;
 
@@ -39,7 +40,9 @@ trait DocumentsStreamTrait
      *
      * This method provides memory-efficient iteration over large result sets by yielding
      * documents one at a time instead of loading them all into memory. Each document is
-     * fully processed (schema mapping and alter() transformation) before being yielded.
+     * fully processed (schema mapping and alter() transformation) before being yielded —
+     * **unless the query groups**, in which case its rows are yielded raw. See
+     * {@see \oihana\arango\models\traits\aql\GroupTrait::isGroupedQuery()}.
      *
      * **Key Benefits:**
      * - **Memory Efficient**: Only one document in memory at a time
@@ -175,6 +178,9 @@ trait DocumentsStreamTrait
      *                            - Schema class not found
      *                            - Invalid schema structure
      *                            - Property access errors during hydration
+     * @throws ValidationException If the group spec is malformed — `buildListQuery()` has been able
+     *                             to raise it since grouping was introduced, and the contract had
+     *                             never said so.
      *
      * @see list() For loading all documents into memory at once
      * @see buildListQuery() For the query construction logic
@@ -190,6 +196,8 @@ trait DocumentsStreamTrait
             $query ,
             $bindVars ,
             [ CursorField::FULL_COUNT => (bool) $limit ] ,
+            // Same query, same reason as list(): a grouped row is not a document.
+            raw: $this->isGroupedQuery( $init ) ,
             context: $init
         ) ;
     }
