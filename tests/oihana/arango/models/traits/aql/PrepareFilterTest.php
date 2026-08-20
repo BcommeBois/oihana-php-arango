@@ -132,7 +132,7 @@ class PrepareFilterTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/SPLIT\(@[A-Za-z0-9_]+,@[A-Za-z0-9_]+,0\)/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/SPLIT\(@[A-Za-z0-9_]+,@[A-Za-z0-9_]+\)/' , $result ) ;
         $this->assertContains( ',' , $this->binds ) ;
     }
 

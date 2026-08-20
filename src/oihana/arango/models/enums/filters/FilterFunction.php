@@ -482,7 +482,7 @@ class FilterFunction
             self::SHA256           => sha256            ( $key ) ,
             self::SHA512           => sha512            ( $key ) ,
             self::SOUNDEX          => soundex           ( $key ) ,
-            self::SPLIT            => split             ( $key , (string) ( $params[0] ?? '' ) , (int) ( $params[1] ?? 0 ) ) ,
+            self::SPLIT            => split             ( $key , (string) ( $params[0] ?? '' ) , isset( $params[1] ) ? (int) $params[1] : null ) ,
             self::STARTS_WITH      => startsWith        ( $key , (string) ( $params[0] ?? '' ) ) ,
             self::TOKENS           => tokens            ( $key , (string) ( $params[0] ?? '' ) ) ,
             self::TO_BASE64        => toBase64          ( $key ) ,
@@ -517,11 +517,20 @@ class FilterFunction
             self::DATE_SUBTRACT      => dateSubtract   ( $key , $params[0] ?? 0 , $params[1] ?? 'day' ) ,
             self::DATE_TRUNC         => dateTrunc      ( $key , $params[0] ?? 'day' ) ,
             self::DATE_DIFF          => dateDiff       ( $key , $params[0] ?? null , $params[1] ?? 'day' , $params[2] ?? null , $params[3] ?? null , $params[4] ?? null ) ,
-            // A bound format is already a `@name` token: quoting it would emit the
-            // literal string "@q_123456" instead of reading the bind.
-            self::DATE_FORMAT        => dateFormat     ( $key , $params[0] ?? null , !$bound && ( $params[1] ?? true )) ,
-            self::DATE_LOCAL_TO_UTC  => dateLocalToUTC ( $key , $params[0] ?? "UTC" ) ,
-            self::DATE_UTC_TO_LOCAL  => dateUTCToLocal ( $key , $params[0] ?? null ) ,
+            // A bound format is already a `@name` token: quoting it would emit the literal string "@q_123456" instead of reading the bind.
+            //
+            // Passing `null` explicitly would *destroy* the helper's own default instead
+            // of falling back to it: `$format` is a non-nullable `string`. The argument
+            // is therefore omitted so `dateFormat()` applies `DateFormat::ISO8601` itself.
+            self::DATE_FORMAT        => isset( $params[0] )
+                                      ? dateFormat( $key , $params[0] , !$bound && ( $params[1] ?? true ) )
+                                      : dateFormat( $key , useQuotes : !$bound && ( $params[1] ?? true ) ) ,
+
+            // Timezones reach this catalogue already wrapped in AQL double quotes, so the
+            // fallbacks are quoted too: a bare `UTC` is parsed as a collection name and the
+            // server answers 404, and the helpers' own unquoted defaults share that flaw.
+            self::DATE_LOCAL_TO_UTC  => dateLocalToUTC ( $key , $params[0] ?? '"UTC"'          ) ,
+            self::DATE_UTC_TO_LOCAL  => dateUTCToLocal ( $key , $params[0] ?? '"Europe/Paris"' ) ,
 
             // Relative date helpers: if a base date is provided in params[0], use it, otherwise use the current key
 

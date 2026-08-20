@@ -10,6 +10,7 @@ use oihana\arango\clients\Database ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Filter ;
 use oihana\arango\models\Documents ;
+use oihana\arango\models\enums\filters\FilterFunction ;
 use oihana\arango\models\enums\filters\FilterType ;
 
 use PHPUnit\Framework\Attributes\Group ;
@@ -41,6 +42,18 @@ class FilterAltIntegrationTest extends IntegrationTestCase
         $people->insert( [ '_key' => 'p1' , 'email' => 'Jean@X.COM' , 'category' => 'Tech'  , 'price' => -10 , 'discount' => 5 , 'created' => '2024-01-15' , 'scores' => [ 90 , 85 ] , 'contactPoint' => [ [ 'email' => 'Admin@ACME.com' ] ] , 'items' => [ [ 'price' => 50 ] , [ 'price' => 150 ] ] ] ) ; // avg 100
         $people->insert( [ '_key' => 'p2' , 'email' => 'jean@x.com' , 'category' => 'NEWS'  , 'price' =>  10 ,                   'created' => '2024-06-15' , 'scores' => [ 90 , 40 ] , 'contactPoint' => [ [ 'email' => 'admin@acme.com' ] ] , 'items' => [ [ 'price' => 10 ] ] ] ) ; // avg 10
         $people->insert( [ '_key' => 'p3' , 'email' => 'bob@x.com'  , 'category' => 'sport' , 'price' =>  -5 , 'discount' => 0 , 'created' => '2024-12-15' , 'scores' => [ 30 , 20 ] , 'contactPoint' => [ [ 'email' => 'other@x.com' ] ] , 'items' => [ [ 'price' => 300 ] ] ] ) ; // avg 300
+    }
+
+    /**
+     * Evaluates a bare AQL expression against the seeded `p1` document and returns
+     * the value the server computed. Used to prove an `alt` arm emits AQL the
+     * server actually accepts, which an assertion on the emitted string cannot.
+     */
+    private function evaluate( string $expression ) :mixed
+    {
+        $aql    = 'FOR doc IN ' . self::COLLECTION . ' FILTER doc._key == "p1" RETURN ' . $expression ;
+        $cursor = self::$db->query( $aql ) ;
+        return iterator_to_array( $cursor , false )[ 0 ] ?? null ;
     }
 
     private function keys( string $filter , array $binds ) :array
@@ -221,6 +234,36 @@ class FilterAltIntegrationTest extends IntegrationTestCase
             $binds
         ) ;
         $this->assertSame( [ 'p1' , 'p2' ] , $this->keys( $filter , $binds ) ) ;
+    }
+
+    /**
+     * ⚠ The arms below are the ones a bare `alt:"dateLocalToUTC"` reaches, and the
+     * measurement has to happen here rather than on the emitted string. Before this
+     * was fixed the arm produced `DATE_LOCALTOUTC(doc.created,UTC)`: valid-looking
+     * text, no PHP error — but ArangoDB reads an unquoted `UTC` as a collection name
+     * and answers 404. The query only fails when it is actually run.
+     */
+    public function testParameterlessDateAltArmsProduceExecutableAQL() :void
+    {
+        // p1.created is '2024-01-15'.
+        $this->assertSame( '2024-01-15T00:00:00.000Z' , $this->evaluate( FilterFunction::apply( FilterFunction::DATE_FORMAT       , 'doc.created' ) ) ) ;
+        $this->assertSame( '2024-01-15T00:00:00.000Z' , $this->evaluate( FilterFunction::apply( FilterFunction::DATE_LOCAL_TO_UTC , 'doc.created' ) ) ) ;
+
+        // Europe/Paris is UTC+1 in January, so the local reading is one hour ahead.
+        $this->assertSame( '2024-01-15T01:00:00.000'  , $this->evaluate( FilterFunction::apply( FilterFunction::DATE_UTC_TO_LOCAL , 'doc.created' ) ) ) ;
+    }
+
+    /**
+     * A `split` with no limit must split the whole value. Defaulting the limit to `0`
+     * made the server return an empty array — a well-formed, silent, wrong answer.
+     */
+    public function testSplitWithoutLimitSplitsTheWholeValue() :void
+    {
+        // p1.email is 'Jean@X.COM'.
+        $this->assertSame( [ 'Jean' , 'X.COM' ] , $this->evaluate( FilterFunction::apply( FilterFunction::SPLIT , 'doc.email' , [ '"@"' ] ) ) ) ;
+
+        // An explicit zero keeps its AQL meaning: keep nothing.
+        $this->assertSame( [] , $this->evaluate( FilterFunction::apply( FilterFunction::SPLIT , 'doc.email' , [ '"@"' , 0 ] ) ) ) ;
     }
 
     private function modelHier() :Documents

@@ -348,6 +348,10 @@ The leaves of **edge / join / document** traversals (`seller.name`, …) already
 | `soundex` | English phonetic fingerprint | — |
 | `levenshtein` | Levenshtein distance | `compare` |
 
+The `limit` of `split` is optional, and omitting it splits the whole value:
+`["split", ","]` over `"a,b,c"` returns `["a","b","c"]`. An explicit limit is passed through as
+written — `0` included, which AQL reads as "keep nothing": `["split", ",", 0]` returns `[]`.
+
 #### Numeric
 
 | `alt` | Effect | Parameters |
@@ -442,6 +446,12 @@ The sub-field may be a **nested object path** (dotted notation), e.g. when each 
 | `yesterday` / `tomorrow` | Relative date | — |
 
 Units accepted by `dateAdd`, `dateSubtract`, `dateDiff`, `dateTrunc`: `year`, `month`, `week`, `day`, `hour`, `minute`, `second`, `millisecond` (match the `DateUnit` enum).
+
+Called without a parameter, these three fall back to a default: `dateFormat` to ISO 8601 (`%z`),
+`dateLocalToUTC` to `UTC`, `dateUTCToLocal` to `Europe/Paris`. A timezone **declared on the
+model** is written between AQL double quotes (`'"Europe/Berlin"'`): without them ArangoDB reads a
+collection name and rejects the query. A timezone **coming from a request** is bound, so there is
+nothing to quote.
 
 #### Conditional
 

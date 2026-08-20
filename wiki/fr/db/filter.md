@@ -348,6 +348,10 @@ Les feuilles des traversées **edge / join / document** (`vendeur.nom`, etc.) h�
 | `soundex` | Empreinte phonétique anglais | — |
 | `levenshtein` | Distance de Levenshtein | `compare` |
 
+Le `limit` de `split` est optionnel, et l'omettre découpe la valeur entière :
+`["split", ","]` sur `"a,b,c"` rend `["a","b","c"]`. Une limite explicite est transmise telle
+quelle — y compris `0`, qu'AQL lit comme « ne garde rien » : `["split", ",", 0]` rend `[]`.
+
 #### Numériques
 
 | `alt` | Effet | Paramètres |
@@ -442,6 +446,11 @@ Le sous-champ peut être un **chemin d'objets imbriqués** (notation pointée), 
 | `yesterday` / `tomorrow` | Date relative | — |
 
 Unités acceptées par `dateAdd`, `dateSubtract`, `dateDiff`, `dateTrunc` : `year`, `month`, `week`, `day`, `hour`, `minute`, `second`, `millisecond` (correspondent à l'enum `DateUnit`).
+
+Appelées sans paramètre, ces trois-là retombent sur un défaut : `dateFormat` sur l'ISO 8601
+(`%z`), `dateLocalToUTC` sur `UTC`, `dateUTCToLocal` sur `Europe/Paris`. Un fuseau **déclaré dans
+le modèle** s'écrit entre guillemets AQL (`'"Europe/Berlin"'`) : sans eux, ArangoDB y lit un nom
+de collection et refuse la requête. Un fuseau **venu d'une requête** est lié, donc rien à quoter.
 
 #### Conditionnelles
 

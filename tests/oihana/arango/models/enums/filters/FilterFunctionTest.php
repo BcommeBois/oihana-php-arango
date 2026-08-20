@@ -685,6 +685,20 @@ class FilterFunctionTest extends TestCase
     }
 
     /**
+     * AQL reads a limit of `0` as "keep nothing": `SPLIT("a,b,c", ",", 0)` returns an
+     * empty array. A `split` without a limit must therefore omit the argument rather
+     * than default it to zero, or the most natural call of the arm silently returns
+     * nothing at all.
+     */
+    public function testApplySplitWithoutLimitOmitsTheArgument(): void
+    {
+        $this->assertSame( 'SPLIT(doc.name,",")'   , FilterFunction::apply( FilterFunction::SPLIT , 'doc.name' , [ '","' ] ) ) ;
+
+        // An explicit limit is still emitted, zero included.
+        $this->assertSame( 'SPLIT(doc.name,",",0)' , FilterFunction::apply( FilterFunction::SPLIT , 'doc.name' , [ '","' , 0 ] ) ) ;
+    }
+
+    /**
      * `levenshtein` is the one arm that needs a second operand to mean anything:
      * without it the key is returned untouched rather than wrapped.
      */
@@ -742,13 +756,36 @@ class FilterFunctionTest extends TestCase
         $this->assertSame( 'DATE_FORMAT(doc.created,doc.fmt)'     , FilterFunction::apply( FilterFunction::DATE_FORMAT , 'doc.created' , [ 'doc.fmt' , false ] ) ) ;
     }
 
+    /**
+     * A bare `alt:"dateFormat"` used to hand an explicit `null` to a non-nullable
+     * `string` parameter, which killed the call before it could reach the helper's
+     * own ISO 8601 default. The expected pattern is written out in full here: reading
+     * it from `DateFormat` would compare the arm to itself.
+     */
+    public function testApplyDateFormatWithoutParameterUsesTheHelperDefault(): void
+    {
+        $this->assertSame( 'DATE_FORMAT(doc.created,"%z")' , FilterFunction::apply( FilterFunction::DATE_FORMAT , 'doc.created' ) ) ;
+
+        // The `useQuotes` switch still reaches the helper when the format is omitted.
+        $this->assertSame( 'DATE_FORMAT(doc.created,%z)'   , FilterFunction::apply( FilterFunction::DATE_FORMAT , 'doc.created' , [ null , false ] ) ) ;
+    }
+
     public function testApplyTimezoneConversions(): void
     {
         $this->assertSame( 'DATE_LOCALTOUTC(doc.created,"Europe/Paris")' , FilterFunction::apply( FilterFunction::DATE_LOCAL_TO_UTC , 'doc.created' , [ '"Europe/Paris"' ] ) ) ;
         $this->assertSame( 'DATE_UTCTOLOCAL(doc.created,"Europe/Paris")' , FilterFunction::apply( FilterFunction::DATE_UTC_TO_LOCAL , 'doc.created' , [ '"Europe/Paris"' ] ) ) ;
+    }
 
-        // Its own default is emitted unquoted — frozen as it stands today.
-        $this->assertSame( 'DATE_LOCALTOUTC(doc.created,UTC)' , FilterFunction::apply( FilterFunction::DATE_LOCAL_TO_UTC , 'doc.created' ) ) ;
+    /**
+     * Timezones travel through this catalogue already wrapped in AQL double quotes,
+     * so the fallbacks must be quoted too. An unquoted `UTC` is not a string to
+     * ArangoDB, it is a collection name — the query is rejected with a 404 at
+     * execution time, which no assertion on the emitted AQL alone would reveal.
+     */
+    public function testApplyTimezoneConversionsWithoutParameterQuoteTheirDefault(): void
+    {
+        $this->assertSame( 'DATE_LOCALTOUTC(doc.created,"UTC")'          , FilterFunction::apply( FilterFunction::DATE_LOCAL_TO_UTC , 'doc.created' ) ) ;
+        $this->assertSame( 'DATE_UTCTOLOCAL(doc.created,"Europe/Paris")' , FilterFunction::apply( FilterFunction::DATE_UTC_TO_LOCAL , 'doc.created' ) ) ;
     }
 
     // ========================================

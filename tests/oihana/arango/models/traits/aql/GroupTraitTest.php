@@ -298,7 +298,7 @@ class GroupTraitTest extends TestCase
         $aql = aqlCollect( $spec ) ;
 
         $this->assertStringNotContainsString( '||' , $aql ) ;                          // nothing of it reached the AQL
-        $this->assertMatchesRegularExpression( '/SPLIT\(doc\.category,@[A-Za-z0-9_]+,0\)/' , $aql ) ;
+        $this->assertMatchesRegularExpression( '/SPLIT\(doc\.category,@[A-Za-z0-9_]+\)/' , $aql ) ;
         $this->assertContains( '"zzz") || true || SPLIT(doc.x,"y"' , $binds ) ;        // it is a value, and only a value
     }
 

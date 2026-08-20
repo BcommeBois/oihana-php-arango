@@ -175,7 +175,7 @@ class FacetAltTest extends TestCase
         $result = $this->stub->callField( 'category' , $value , $this->binds , [] , AQL::DOC ) ;
 
         $this->assertStringNotContainsString( '||' , $result ) ;
-        $this->assertMatchesRegularExpression( '/SPLIT\(doc\.category,@\S+,0\)/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/SPLIT\(doc\.category,@\S+\)/' , $result ) ;
         $this->assertContains( $payload , $this->binds ) ;
     }
 
@@ -188,7 +188,7 @@ class FacetAltTest extends TestCase
         $facet  = [ Facet::ALT => [ 'key' => [ 'split' , 'doc.separator' ] ] ] ;
         $result = $this->stub->callField( 'category' , 'TECH' , $this->binds , $facet , AQL::DOC ) ;
 
-        $this->assertStringContainsString( 'SPLIT(doc.category,doc.separator,0)' , $result ) ;
+        $this->assertStringContainsString( 'SPLIT(doc.category,doc.separator)' , $result ) ;
     }
 
     public function testInAltKeyOnlyLeavesValuesRaw(): void

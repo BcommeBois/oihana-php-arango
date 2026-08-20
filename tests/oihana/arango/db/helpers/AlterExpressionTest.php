@@ -198,7 +198,7 @@ final class AlterExpressionTest extends TestCase
             [ Arango::BINDER => $this->binder( $binds ) ]
         ) ;
 
-        $this->assertSame( 'SPLIT(doc.name,,,0)' , $result ) ; // the separator inlined as written, default limit appended
+        $this->assertSame( 'SPLIT(doc.name,,)' , $result ) ; // the separator inlined as written, no limit appended
         $this->assertSame( [] , $binds ) ;
     }
 
