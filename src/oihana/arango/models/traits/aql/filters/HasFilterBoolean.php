@@ -49,7 +49,7 @@ trait HasFilterBoolean
     {
         return predicate
         (
-            $this->prepareFilterKey( $init , $doc ) ,
+            $this->prepareFilterKey( $init , $doc , $binds ) ,
             $this->prepareFilterComparator( $init ) ,
             $this->prepareFilterBooleanValue( $init , $binds ) ,
         ) ;

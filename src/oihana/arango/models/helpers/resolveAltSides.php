@@ -33,6 +33,17 @@ function resolveAltSides( mixed $alt ): array
         return [ null , null ] ;
     }
 
+    // A marked chain keeps its mark on both sides: the origin must survive the split,
+    // or the value side would silently lose the protection the key side keeps.
+    if ( $alt instanceof AltChain )
+    {
+        [ $keySide , $valSide ] = resolveAltSides( $alt->chain ) ;
+        $rewrap = fn( mixed $side ) => $side === null
+            ? null
+            : ( $alt->trusted ? AltChain::trusted( $side ) : AltChain::request( $side ) ) ;
+        return [ $rewrap( $keySide ) , $rewrap( $valSide ) ] ;
+    }
+
     // Object form { key:<chain>, val:<chain|true> } — an associative array, as
     // opposed to a plain function chain (a list).
     if ( is_array( $alt ) && !array_is_list( $alt ) )

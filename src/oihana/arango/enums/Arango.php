@@ -76,6 +76,18 @@ class Arango extends AQL
     public const string AUTHORIZER = 'authorizer' ;
 
     /**
+     * The 'binder' parameter — a `callable(mixed $value): string` that registers a
+     * value in the query's bind map and returns its `@name` token.
+     *
+     * Carried through `$init` down to {@see \oihana\arango\models\enums\filters\FilterFunction::apply()},
+     * where it turns the parameters of a **request-supplied** `alt` chain into bound
+     * values instead of text pasted into the query. {@see \oihana\arango\db\helpers\alterExpression()}
+     * only lets it through for a chain marked as request-supplied
+     * ({@see \oihana\arango\db\helpers\AltChain}); a model declaration never sees it.
+     */
+    public const string BINDER = 'binder' ;
+
+    /**
      * The 'cacheable' parameter.
      */
     public const string CACHEABLE = 'cacheable' ;

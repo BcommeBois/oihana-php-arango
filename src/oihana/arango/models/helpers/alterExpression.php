@@ -2,6 +2,7 @@
 
 namespace oihana\arango\db\helpers;
 
+use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\filters\FilterFunction;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
@@ -39,7 +40,8 @@ use function oihana\core\arrays\isCallableWithParams;
  * @return string The transformed expression.
  *
  * @throws UnsupportedOperationException
- * @throws ValidationException When a `pluck` sub-field name is unsafe.
+ * @throws ValidationException When a `pluck` sub-field name is unsafe, or when a
+ *                              request-supplied chain reaches the engine with no binder.
  *
  * @example
  * ```php
@@ -54,6 +56,31 @@ use function oihana\core\arrays\isCallableWithParams;
  */
 function alterExpression( string $expr , mixed $chain , array $init = [] ): string
 {
+    // Who wrote this chain decides how its parameters reach the query. A chain marked
+    // as request-supplied gets the binder handed down, so `apply()` binds its values
+    // instead of pasting them into the AQL; anything else is a declaration from the
+    // consumer's own code and keeps the historical passthrough.
+    if ( $chain instanceof AltChain )
+    {
+        if ( !$chain->trusted && !is_callable( $init[ Arango::BINDER ] ?? null ) )
+        {
+            // Fail loud rather than fall back to interpolation: a reading point that
+            // forgot to supply the binder would otherwise reopen the hole in silence.
+            throw new ValidationException( 'A request-supplied alt chain reached the engine with no binder: its parameters cannot be bound.' ) ;
+        }
+
+        if ( $chain->trusted )
+        {
+            unset( $init[ Arango::BINDER ] ) ;
+        }
+
+        $chain = $chain->chain ;
+    }
+    else
+    {
+        unset( $init[ Arango::BINDER ] ) ; // a bare chain is a declaration — never bound
+    }
+
     if ( $chain === null )
     {
         return $expr ;

@@ -277,7 +277,7 @@ trait HasFilterArray
             $keyStr .= betweenBrackets( (string) $at ) ;
         }
 
-        return $this->alterFilterKey( $keyStr , $init ) ;
+        return $this->alterFilterKey( $keyStr , $init , $binds ) ;
     }
 
     /**

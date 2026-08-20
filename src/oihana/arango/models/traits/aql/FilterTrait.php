@@ -36,6 +36,7 @@ use oihana\reflect\exceptions\ConstantException;
 
 use function oihana\arango\db\functions\arrays\arrayMap;
 use function oihana\arango\db\helpers\alterExpression;
+use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\models\helpers\isAttributeAuthorized;
@@ -628,9 +629,18 @@ trait FilterTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    protected function alterFilterKey( string $key , array $init = [] ): string
+    protected function alterFilterKey( string $key , array $init = [] , ?array &$binds = null ): string
     {
-        [ $keyChain ] = resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+        // `$init[FilterParam::ALT]` is a request slot: presume the chain came from the
+        // wire unless the caller signed it with trustedAlt(). The binder travels with
+        // it so its parameters are bound rather than pasted into the query.
+        [ $keyChain ] = resolveAltSides( requestAlt( $init[ FilterParam::ALT ] ?? null ) ) ;
+        // NOT an arrow function: fn() captures by value, so the bind would land in a
+        // copy and the query would declare a parameter nothing ever fills.
+        $init[ Arango::BINDER ] = function( mixed $value ) use ( &$binds ) :string
+        {
+            return $this->bind( $value , $binds ) ;
+        } ;
         return alterExpression( $key , $keyChain , $init ) ;
     }
 
@@ -660,7 +670,7 @@ trait FilterTrait
      */
     protected function prepareFilterBetween( array $init , ?array &$binds , string $docRef , callable $resolve , bool $defaultBounds ) :string
     {
-        $left = $this->prepareFilterKey( $init , $docRef ) ;
+        $left = $this->prepareFilterKey( $init , $docRef , $binds ) ;
 
         $min = ( array_key_exists( FilterParam::MIN , $init ) || $defaultBounds ) ? $resolve( $init[ FilterParam::MIN ] ?? null , $binds ) : null ;
         $max = ( array_key_exists( FilterParam::MAX , $init ) || $defaultBounds ) ? $resolve( $init[ FilterParam::MAX ] ?? null , $binds ) : null ;
@@ -717,12 +727,13 @@ trait FilterTrait
     protected function prepareFilterKey
     (
         string|array|null $init   = [] ,
-        string            $docRef = AQL::DOC
+        string            $docRef = AQL::DOC ,
+        ?array            &$binds = null
     )
     :string
     {
         $key = key( $init[ FilterParam::KEY ] ?? null , $docRef ) ;
-        return $this->alterFilterKey( $key , $init ) ;
+        return $this->alterFilterKey( $key , $init , $binds ) ;
     }
 
     /**
@@ -749,12 +760,17 @@ trait FilterTrait
         $value = $init[ FilterParam::VAL ] ?? null ;
         $bound = $this->bind( $value , $binds ) ;
 
-        [ , $valChain ] = resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+        [ , $valChain ] = resolveAltSides( requestAlt( $init[ FilterParam::ALT ] ?? null ) ) ;
 
         if ( $valChain === null )
         {
             return $bound ;
         }
+
+        $init[ Arango::BINDER ] = function( mixed $v ) use ( &$binds ) :string
+        {
+            return $this->bind( $v , $binds ) ;
+        } ;
 
         if ( is_array( $value ) )
         {

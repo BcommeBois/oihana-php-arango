@@ -102,7 +102,7 @@ trait HasFilterString
      */
     protected function prepareFilterEndsWith( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
     {
-        $key   = $this->prepareFilterKey( $init , $doc ) ;
+        $key   = $this->prepareFilterKey( $init , $doc , $binds ) ;
         $value = $this->prepareFilterValue( $init , $binds ) ;
 
         return predicate
@@ -129,17 +129,17 @@ trait HasFilterString
         return match ( $init[ FilterParam::OP ] ?? null )
         {
             FilterComparator::BETWEEN   => $this->prepareFilterBetween( $init , $binds , $doc , fn( $value , &$binds ) => $this->bind( $value , $binds ) , false ) ,
-            FilterComparator::SW        => startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) ,
-            FilterComparator::NSW       => logicalNot( startsWith( $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ) , true ) ,
+            FilterComparator::SW        => startsWith( $this->prepareFilterKey( $init , $doc , $binds ) , $this->prepareFilterValue( $init , $binds ) ) ,
+            FilterComparator::NSW       => logicalNot( startsWith( $this->prepareFilterKey( $init , $doc , $binds ) , $this->prepareFilterValue( $init , $binds ) ) , true ) ,
             FilterComparator::EW        => $this->prepareFilterEndsWith( $init , $binds , $doc ) ,
             FilterComparator::NEW       => logicalNot( $this->prepareFilterEndsWith( $init , $binds , $doc ) , true ) ,
-            FilterComparator::CONTAINS  => func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
-            FilterComparator::NCONTAINS => logicalNot( func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) , true ) ,
-            FilterComparator::REGEX     => func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
-            FilterComparator::NREGEX    => logicalNot( func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc ) , $this->prepareFilterValue( $init , $binds ) ] ) , true ) ,
+            FilterComparator::CONTAINS  => func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc , $binds ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
+            FilterComparator::NCONTAINS => logicalNot( func( StringFunction::CONTAINS  , [ $this->prepareFilterKey( $init , $doc , $binds ) , $this->prepareFilterValue( $init , $binds ) ] ) , true ) ,
+            FilterComparator::REGEX     => func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc , $binds ) , $this->prepareFilterValue( $init , $binds ) ] ) ,
+            FilterComparator::NREGEX    => logicalNot( func( StringFunction::REGEX_TEST , [ $this->prepareFilterKey( $init , $doc , $binds ) , $this->prepareFilterValue( $init , $binds ) ] ) , true ) ,
             default                     => predicate
             (
-                $this->prepareFilterKey( $init , $doc ) ,
+                $this->prepareFilterKey( $init , $doc , $binds ) ,
                 $this->prepareFilterComparator( $init ) ,
                 $this->prepareFilterValue( $init , $binds )
             ) ,

@@ -92,6 +92,50 @@ class PrepareFilterTest extends TestCase
      * @throws ReflectionException
      * @throws BindException
      */
+    /**
+     * The key-side `alt` of a request binds its parameter instead of pasting it into
+     * the query: the payload below would otherwise close the `LIKE(` call.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     */
+    public function testKeySideAltParameterIsBound(): void
+    {
+        $payload = '"zzz") || true || LIKE(doc.name,"x"' ;
+        $init    = [ 'key' => 'name' , 'val' => true , 'alt' => [ 'like' , $payload ] ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/LIKE\(doc\.name,@[A-Za-z0-9_]+\)/' , $result ) ;
+        $this->assertStringNotContainsString( '||' , $result ) ;
+        $this->assertContains( $payload , $this->binds ) ; // it lives in the bind map, not in the AQL
+    }
+
+    /**
+     * And the value side too — it wraps the bind placeholder, so its own chain
+     * parameters must be bound just the same.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     */
+    public function testValueSideAltParameterIsBound(): void
+    {
+        $init = [ 'key' => 'name' , 'val' => 'a,b' , 'alt' => [ 'val' => [ 'split' , ',' ] ] ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/SPLIT\(@[A-Za-z0-9_]+,@[A-Za-z0-9_]+,0\)/' , $result ) ;
+        $this->assertContains( ',' , $this->binds ) ;
+    }
+
     public function testStringFilterWithLower(): void
     {
         $init = ['key' => 'name', 'val' => 'john', 'alt' => 'lower'];

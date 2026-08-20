@@ -2,6 +2,7 @@
 
 namespace oihana\arango\models\enums\filters;
 
+use oihana\arango\enums\Arango;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 use oihana\reflect\traits\ConstantsTrait;
@@ -290,6 +291,28 @@ class FilterFunction
     ];
 
     /**
+     * The codes whose string parameters are **not** bound, even when a binder is
+     * supplied — each because it already renders its parameter safely, and would
+     * quote or re-read a `@name` token into something meaningless:
+     *
+     * - `contains` / `concatSeparator` — routed through {@see aqlValue()}, which
+     *   quotes **and escapes** (`'mo\') || true || (\'nth'`). A bound token would
+     *   come back out as the literal string `'@q_123456'`.
+     * - `coalesce` / `notNull` — already inlined as strict AQL literals via
+     *   `json_encode`, the one arm hardened when the option was introduced.
+     * - `pluck` — its parameter is an **attribute name**, not a value: AQL has no
+     *   bind parameter for that position, and {@see assertAttributeName()} guards it.
+     */
+    private const array UNBOUND_FUNCTIONS =
+    [
+        self::COALESCE         ,
+        self::CONCAT_SEPARATOR ,
+        self::CONTAINS         ,
+        self::NOT_NULL         ,
+        self::PLUCK            ,
+    ];
+
+    /**
      * Apply a function to a key with optional parameters.
      *
      * This method acts as a dispatcher that calls the appropriate AQL function
@@ -336,6 +359,25 @@ class FilterFunction
                     json_encode( $expectedValue ) ,
                     E_USER_WARNING
                 );
+            }
+        }
+
+        // A request-supplied chain hands down a binder ({@see Arango::BINDER}); a model
+        // declaration never does. Only **string** parameters are bound: an int or a bool
+        // cannot carry AQL, and the arms cast them ((int), (bool)) — a bound token would
+        // break the cast instead of protecting anything.
+        $binder = $init[ Arango::BINDER ] ?? null ;
+        $bound  = false ;
+
+        if ( is_callable( $binder ) && !in_array( $funcName , self::UNBOUND_FUNCTIONS , true ) )
+        {
+            foreach ( $params as $index => $param )
+            {
+                if ( is_string( $param ) )
+                {
+                    $params[ $index ] = $binder( $param ) ;
+                    $bound            = true ;
+                }
             }
         }
 
@@ -475,7 +517,9 @@ class FilterFunction
             self::DATE_SUBTRACT      => dateSubtract   ( $key , $params[0] ?? 0 , $params[1] ?? 'day' ) ,
             self::DATE_TRUNC         => dateTrunc      ( $key , $params[0] ?? 'day' ) ,
             self::DATE_DIFF          => dateDiff       ( $key , $params[0] ?? null , $params[1] ?? 'day' , $params[2] ?? null , $params[3] ?? null , $params[4] ?? null ) ,
-            self::DATE_FORMAT        => dateFormat     ( $key , $params[0] ?? null , (bool) ( $params[1] ?? true ) ) ,
+            // A bound format is already a `@name` token: quoting it would emit the
+            // literal string "@q_123456" instead of reading the bind.
+            self::DATE_FORMAT        => dateFormat     ( $key , $params[0] ?? null , !$bound && ( $params[1] ?? true )) ,
             self::DATE_LOCAL_TO_UTC  => dateLocalToUTC ( $key , $params[0] ?? "UTC" ) ,
             self::DATE_UTC_TO_LOCAL  => dateUTCToLocal ( $key , $params[0] ?? null ) ,
 

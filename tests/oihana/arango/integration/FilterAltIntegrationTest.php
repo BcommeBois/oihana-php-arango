@@ -105,6 +105,42 @@ class FilterAltIntegrationTest extends IntegrationTestCase
         $this->assertSame( [ 'p1' , 'p2' , 'p3' ] , $this->keys( $filter , $binds ) ) ;
     }
 
+    /**
+     * ⚠ The measurement that matters. A parameter arriving with the request is a
+     * **value**, so it cannot become grammar. The payload below closes the `LIKE(`
+     * call and appends `|| true`; pasted into the query text it made the filter
+     * match every row. Bound, the server looks for a name literally equal to that
+     * string — and finds none.
+     */
+    public function testAHostileAltParameterMatchesNothingInsteadOfEverything() :void
+    {
+        $binds  = [] ;
+        $filter = $this->model()->prepareFilter
+        (
+            [ 'key' => 'email' , 'val' => true , 'alt' => [ 'like' , '"zzz") || true || LIKE(doc.email,"x"' ] ] ,
+            $binds
+        ) ;
+
+        $this->assertStringNotContainsString( '||' , $filter ) ; // nothing of it reached the AQL
+        $this->assertSame( [] , $this->keys( $filter , $binds ) ) ;
+    }
+
+    /**
+     * And the legitimate use keeps working — better, in fact: the client no longer
+     * has to quote its own parameter, since a bound value carries its own type.
+     */
+    public function testALegitimateAltParameterStillFilters() :void
+    {
+        $binds  = [] ;
+        $filter = $this->model()->prepareFilter
+        (
+            [ 'key' => 'email' , 'val' => true , 'alt' => [ 'like' , 'jean%' ] ] ,
+            $binds
+        ) ;
+
+        $this->assertSame( [ 'p2' ] , $this->keys( $filter , $binds ) ) ;
+    }
+
     public function testMirrorLowerMatchesCaseInsensitively() :void
     {
         $binds  = [] ;

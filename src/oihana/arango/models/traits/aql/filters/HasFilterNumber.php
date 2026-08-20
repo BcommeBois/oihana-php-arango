@@ -56,7 +56,7 @@ trait HasFilterNumber
 
         return predicate
         (
-            $this->prepareFilterKey( $init , $doc ) ,
+            $this->prepareFilterKey( $init , $doc , $binds ) ,
             $this->prepareFilterComparator( $init ) ,
             $this->prepareFilterValue( $init , $binds )
         ) ;
