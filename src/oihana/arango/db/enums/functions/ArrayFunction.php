@@ -13,7 +13,7 @@ class ArrayFunction
     use FunctionCallTrait ;
     
     public const string APPEND         = 'APPEND' ;
-    public const string CONTAINS_ARRAY = 'COUNT' ;
+    public const string CONTAINS_ARRAY = 'CONTAINS_ARRAY' ;
     public const string COUNT          = 'COUNT' ;
     public const string COUNT_DISTINCT = 'COUNT_DISTINCT' ;
     public const string COUNT_UNIQUE   = 'COUNT_UNIQUE' ;
