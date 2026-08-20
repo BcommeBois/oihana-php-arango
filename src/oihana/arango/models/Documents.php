@@ -92,6 +92,8 @@ class Documents implements ArangoDocumentsModel
      * @param Container $container The DI Container reference.
      * @param array $init The options of the Documents model :
      * <ul>
+     *   <li>'aggregatable'       - The optional whitelist/mapping (`fieldToken => fieldPath`) of aggregatable fields for the `agg` half of `?group=`.</li>
+     *   <li>'aggregatablePolicy' - What happens to an aggregate absent from 'aggregatable' ({@see \oihana\arango\models\enums\AggregatablePolicy}): `open`, `drop` (default when declared) or `strict`.</li>
      *   <li>'alters'     - An associative array of transformation rules used to alter or enrich the document properties returned by the model.</li>
      *   <li>'collection' - The name of the ArangoDB Document collection to manage</li>
      *   <li>'database'   - The ArangoDB database reference or its definition in the DI Container.</li>
@@ -133,6 +135,7 @@ class Documents implements ArangoDocumentsModel
              ->initializeDatabase         ( $init , $container ) # First of all
              ->initializeCollection       ( $init , $type      ) # After the database
              ->initializeActivable        ( $init )
+             ->initializeAggregatable     ( $init )
              ->initializeAlters           ( $init )
              ->initializeArrays           ( $init )
              ->initializeBinds            ( $init )

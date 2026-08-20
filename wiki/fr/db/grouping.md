@@ -47,6 +47,8 @@ GET /sales?group={"by":{"year":"created"},"alt":{"year":"dateYear"},"agg":{"tota
 
 Les fonctions d'agrégat disponibles (`agg`) sont `sum`, `avg`, `min`, `max` (catalogue `FacetAggregator`, partagé avec les facettes). La forme `"func:field"` est équivalente à `["func","field"]`.
 
+Les **champs** qu'un client peut agréger se restreignent, eux, via [`Arango::AGGREGATABLE`](#restreindre-les-champs-agrégeables).
+
 ## Côté modèle
 
 Sans HTTP, on passe la même spec via la clé `Arango::GROUP`, en utilisant le vocabulaire [`Group`](../../../src/oihana/arango/models/enums/Group.php) :
@@ -169,6 +171,48 @@ $articles = new Documents( $container ,
 ```
 
 Quand `groupable` est `null` (défaut), le regroupement est **fail-closed** : rien n'est groupable (voir *Permission* ci-dessous).
+
+### Restreindre les champs agrégeables
+
+**La situation.** Les deux moitiés de `?group=` n'obéissaient pas à la même loi : `by` est **fermé** (rien n'est groupable sans whitelist), `agg` était **ouvert** — tout chemin projeté pouvait être agrégé. Or un agrégat sur un sous-champ qu'aucun document ne porte ne lève **ni erreur ni avertissement** : en AQL, `SUM` sur des `null` vaut `0`.
+
+```
+?group={"by":"sensor","agg":{"total":"sum:pressure.value"}}
+→ [ {"sensor":"A","total":0}, {"sensor":"B","total":0} ]
+```
+
+La réponse est bien formée, en `200`, et **fausse** : rien ne distingue « la somme vaut zéro » de « ce champ n'a pas de total ». `Arango::AGGREGATABLE` ferme cette porte.
+
+⚠ Elle s'indexe sur le **jeton de champ**, pas sur le nom de sortie — celui-ci (`total`) est choisi librement par le client, le whitelister n'aurait aucun sens :
+
+```php
+use oihana\arango\models\enums\AggregatablePolicy;
+
+$measures = new Documents( $container ,
+[
+    Arango::COLLECTION          => 'measures' ,
+    Arango::AGGREGATABLE        => [ [ 'speed' => 'speed.value' ] , 'weight' ] ,
+    Arango::AGGREGATABLE_POLICY => AggregatablePolicy::STRICT ,
+]) ;
+// ?group={"agg":{"t":"sum:speed"}}           → AGGREGATE t = SUM(doc.speed.value)
+// ?group={"agg":{"t":"sum:pressure.value"}}  → selon la politique (ci-dessous)
+```
+
+Les trois notations de [`AQL::SORTABLE`](sort.md) sont acceptées et mélangeables : le raccourci indexé (`'weight'`, jeton = champ), l'alias indexé (`[ 'speed' => 'speed.value' ]`) et l'associatif historique.
+
+#### La politique
+
+| `Arango::AGGREGATABLE_POLICY` | Un agrégat non déclaré | Pour qui |
+|---|---|---|
+| `AggregatablePolicy::OPEN` | **passe** sur son chemin brut (un alias déclaré résout quand même) | une rampe de migration : les alias d'abord, la fermeture ensuite |
+| `AggregatablePolicy::DROP` *(défaut à la déclaration)* | **écarté**, comme une dimension non déclarée | une API publique, où une colonne absente se voit tout de suite |
+| `AggregatablePolicy::STRICT` | `ValidationException` **nommant le jeton refusé** | une API interne, où l'on préfère un refus franc |
+
+Un agrégat écarté n'emporte rien avec lui : la dimension, le compteur et le tri des groupes restent intacts (le tri ne nomme jamais une variable que le `COLLECT` n'a pas émise).
+
+> **Rétrocompatibilité.** Sans `AGGREGATABLE` déclaré, tout chemin projeté reste agrégeable et la requête AQL émise est identique **au caractère près**. **Déclarer la whitelist est ce qui ferme la porte** ; sans politique nommée, elle ferme en `DROP`. Un code de politique inconnu ferme aussi, pour qu'une faute de frappe ne rouvre rien.
+
+> 🚨 **`STRICT` s'arrête à la whitelist, jamais à la permission.** Un champ déclaré mais refusé par `Field::REQUIRES` reste écarté **en silence**, même sous `STRICT` : une erreur nommant un champ protégé dirait au client que ce champ existe — l'oracle même que le portail de permission est là pour fermer.
 
 ## Permission (`REQUIRES`)
 

@@ -47,6 +47,8 @@ GET /sales?group={"by":{"year":"created"},"alt":{"year":"dateYear"},"agg":{"tota
 
 The available aggregate functions (`agg`) are `sum`, `avg`, `min`, `max` (the `FacetAggregator` catalogue, shared with facets). The `"func:field"` form is equivalent to `["func","field"]`.
 
+The **fields** a client may aggregate are restricted separately, through [`Arango::AGGREGATABLE`](#restricting-aggregatable-fields).
+
 ## Model side
 
 Without HTTP, pass the same spec via the `Arango::GROUP` key, using the [`Group`](../../../src/oihana/arango/models/enums/Group.php) vocabulary:
@@ -169,6 +171,48 @@ $articles = new Documents( $container ,
 ```
 
 When `groupable` is `null` (default), grouping is **fail-closed**: nothing is groupable (see *Permission* below).
+
+### Restricting aggregatable fields
+
+**The situation.** The two halves of `?group=` did not answer to the same law: `by` is **closed** (nothing is groupable without a whitelist), `agg` was **open** — every projected path could be aggregated. But an aggregate over a sub-field no document carries raises **neither an error nor a warning**: in AQL, `SUM` over `null`s is `0`.
+
+```
+?group={"by":"sensor","agg":{"total":"sum:pressure.value"}}
+→ [ {"sensor":"A","total":0}, {"sensor":"B","total":0} ]
+```
+
+The answer is well-formed, in `200`, and **wrong**: nothing tells "the sum is zero" apart from "this field has no total". `Arango::AGGREGATABLE` closes that door.
+
+⚠ It keys on the **field token**, not on the output name — that one (`total`) is chosen freely by the client, so whitelisting it would mean nothing:
+
+```php
+use oihana\arango\models\enums\AggregatablePolicy;
+
+$measures = new Documents( $container ,
+[
+    Arango::COLLECTION          => 'measures' ,
+    Arango::AGGREGATABLE        => [ [ 'speed' => 'speed.value' ] , 'weight' ] ,
+    Arango::AGGREGATABLE_POLICY => AggregatablePolicy::STRICT ,
+]) ;
+// ?group={"agg":{"t":"sum:speed"}}           → AGGREGATE t = SUM(doc.speed.value)
+// ?group={"agg":{"t":"sum:pressure.value"}}  → per the policy (below)
+```
+
+The three [`AQL::SORTABLE`](sort.md) notations are accepted and may be mixed: the indexed shorthand (`'weight'`, token equals field), the indexed alias (`[ 'speed' => 'speed.value' ]`) and the historical associative form.
+
+#### The policy
+
+| `Arango::AGGREGATABLE_POLICY` | An undeclared aggregate | For whom |
+|---|---|---|
+| `AggregatablePolicy::OPEN` | **passes** on its raw path (a declared alias still resolves) | a migration ramp: the aliases first, the closing later |
+| `AggregatablePolicy::DROP` *(default once declared)* | **dropped**, like an undeclared dimension | a public API, where a missing column is seen at once |
+| `AggregatablePolicy::STRICT` | `ValidationException` **naming the refused token** | an internal API, where a plain refusal beats a plausible zero |
+
+A dropped aggregate takes nothing with it: the dimension, the count and the group sort stay intact (the sort never names a variable the `COLLECT` did not emit).
+
+> **Backward compatibility.** Without a declared `AGGREGATABLE`, every projected path stays aggregatable and the emitted AQL is identical **character for character**. **Declaring the whitelist is what closes the door**; with no policy named, it closes on `DROP`. An unknown policy code closes too, so a typo never reopens anything.
+
+> 🚨 **`STRICT` stops at the whitelist, never at the permission.** A whitelisted field refused by `Field::REQUIRES` is dropped **in silence**, even under `STRICT`: an error naming a protected field would tell the client that field exists — the very oracle the permission gate is there to close.
 
 ## Permission (`REQUIRES`)
 

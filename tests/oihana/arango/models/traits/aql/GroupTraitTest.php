@@ -4,6 +4,8 @@ namespace tests\oihana\arango\models\traits\aql;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
+use oihana\arango\models\enums\AggregatablePolicy;
 use oihana\arango\models\enums\Group;
 use oihana\arango\models\traits\aql\GroupTrait;
 
@@ -37,10 +39,6 @@ class GroupTraitTest extends TestCase
         return $stub ;
     }
 
-    /**
-     * @throws UnsupportedOperationException
-     * @throws ValidationException
-     */
     public function testInitializeGroupableReadsInitKey() :void
     {
         $stub = $this->stub() ;
@@ -280,4 +278,220 @@ class GroupTraitTest extends TestCase
         $this->assertNull( $this->stub()->prepareGroupSort( [ Arango::GROUP => [ Group::BY => 'category' ] ] ) ) ;
         $this->assertNull( $this->stub()->prepareGroupSort( [ Arango::GROUP => [ Group::SORT => ' , ' ] ] ) ) ;
     }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testInitializeAggregatableReadsInitKeysAndNormalises() :void
+    {
+        $stub = $this->stub() ;
+        $this->assertNull( $stub->aggregatable ) ;
+        $this->assertNull( $stub->aggregatablePolicy ) ;
+
+        // The three `sortable` notations are accepted and may be mixed.
+        $returned = $stub->initializeAggregatable(
+        [
+            Arango::AGGREGATABLE        => [ 'amount' , [ 'speed' => 'speed.value' ] ] ,
+            Arango::AGGREGATABLE_POLICY => AggregatablePolicy::STRICT ,
+        ]) ;
+
+        $this->assertSame( $stub , $returned ) ; // fluent
+        $this->assertSame( [ 'amount' => 'amount' , 'speed' => 'speed.value' ] , $stub->aggregatable ) ;
+        $this->assertSame( AggregatablePolicy::STRICT , $stub->aggregatablePolicy ) ;
+
+        // Absent keys keep the current values.
+        $stub->initializeAggregatable( [] ) ;
+        $this->assertSame( [ 'amount' => 'amount' , 'speed' => 'speed.value' ] , $stub->aggregatable ) ;
+        $this->assertSame( AggregatablePolicy::STRICT , $stub->aggregatablePolicy ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNoAggregatableKeepsEveryPathAggregatable() :void
+    {
+        // Backward compatibility: a model that never heard of AGGREGATABLE emits
+        // the exact query it emitted before the option existed — an undeclared,
+        // deeply dotted field included.
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $this->assertNull( $stub->aggregatable ) ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP => [ Group::BY => 'cat' , Group::AGG => [ 'total' => 'sum:pressure.value' ] ] ,
+        ]) ;
+
+        $this->assertSame( 'COLLECT cat = doc.category AGGREGATE total = SUM(doc.pressure.value)' , aqlCollect( $spec ) ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAggregatableWhitelistResolvesAliasAndDropsByDefault() :void
+    {
+        // Declaring the whitelist closes the gate: the default policy is DROP.
+        // The gate keys on the *field* token — the output name ('t', 'x') is chosen
+        // freely by the client and whitelisting it would mean nothing.
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $stub->aggregatable = [ 'speed' => 'speed.value' , 'city' => [ 'address' , 'city' ] ] ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP =>
+            [
+                Group::BY  => 'cat' ,
+                Group::AGG => [ 't' => 'sum:speed' , 'c' => 'max:city' , 'x' => 'sum:pressure.value' ] ,
+            ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'COLLECT cat = doc.category AGGREGATE t = SUM(doc.speed.value), c = MAX(doc.address.city)' ,
+            aqlCollect( $spec )
+        ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAggregatablePolicyOpenResolvesAliasesWithoutClosingTheGate() :void
+    {
+        // The migration ramp: the whitelist works as a pure alias map, an
+        // undeclared token still passes on its raw path.
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $stub->aggregatable       = [ 'speed' => 'speed.value' ] ;
+        $stub->aggregatablePolicy = AggregatablePolicy::OPEN ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP => [ Group::BY => 'cat' , Group::AGG => [ 't' => 'sum:speed' , 'x' => 'sum:amount' ] ] ,
+        ]) ;
+
+        $this->assertSame
+        (
+            'COLLECT cat = doc.category AGGREGATE t = SUM(doc.speed.value), x = SUM(doc.amount)' ,
+            aqlCollect( $spec )
+        ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAggregatablePolicyDropLeavesTheRestOfTheGroupIntact() :void
+    {
+        // A dropped aggregate takes nothing else with it: the dimension, the count
+        // and the surviving aggregate are untouched.
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $stub->aggregatable       = [ 'amount' => 'amount' ] ;
+        $stub->aggregatablePolicy = AggregatablePolicy::DROP ;
+
+        $init =
+        [
+            Arango::GROUP =>
+            [
+                Group::BY    => 'cat' ,
+                Group::AGG   => [ 'total' => 'sum:amount' , 'ghost' => 'sum:pressure.value' ] ,
+                Group::COUNT => 'n' ,
+                Group::SORT  => '-total,-ghost' ,
+            ] ,
+        ] ;
+
+        $spec = $stub->prepareCollect( $init ) ;
+
+        $this->assertSame
+        (
+            'COLLECT cat = doc.category AGGREGATE total = SUM(doc.amount), n = LENGTH(1)' ,
+            aqlCollect( $spec )
+        ) ;
+
+        // The group sort keeps the surviving variables and skips the dropped one —
+        // the existing guardrail, which never names a variable COLLECT did not emit.
+        $this->assertSame( 'total DESC' , $stub->prepareGroupSort( $init , [ 'cat' , 'total' , 'n' ] ) ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAggregatablePolicyStrictNamesTheRefusedToken() :void
+    {
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $stub->aggregatable       = [ 'amount' => 'amount' ] ;
+        $stub->aggregatablePolicy = AggregatablePolicy::STRICT ;
+
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( 'The aggregate "total" targets a field that is not aggregatable: "pressure.value".' ) ;
+
+        $stub->prepareCollect(
+        [
+            Arango::GROUP => [ Group::BY => 'cat' , Group::AGG => [ 'total' => 'sum:pressure.value' ] ] ,
+        ]) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testStrictNeverTurnsThePermissionGateIntoAnOracle() :void
+    {
+        // A whitelisted field refused by Field::REQUIRES is dropped in silence even
+        // under STRICT: an error naming it would tell the client the field exists.
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $stub->fields             = [ 'category' => true , 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+        $stub->aggregatable       = [ 'salary' => 'salary' ] ;
+        $stub->aggregatablePolicy = AggregatablePolicy::STRICT ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP      => [ Group::BY => 'cat' , Group::AGG => [ 'm' => 'max:salary' ] ] ,
+            Arango::AUTHORIZER => fn() => false ,
+        ]) ;
+
+        $this->assertSame( 'COLLECT cat = doc.category' , aqlCollect( $spec ) ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testUnknownAggregatablePolicyDrops() :void
+    {
+        // Fail-closed on a typo: an unrecognised policy code closes the gate rather
+        // than opening it.
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $stub->aggregatable       = [ 'amount' => 'amount' ] ;
+        $stub->aggregatablePolicy = 'oups' ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP => [ Group::BY => 'cat' , Group::AGG => [ 'x' => 'sum:pressure.value' ] ] ,
+        ]) ;
+
+        $this->assertSame( 'COLLECT cat = doc.category' , aqlCollect( $spec ) ) ;
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAggregatableEntryWithAnEmptyOrInvalidPathIsDropped() :void
+    {
+        // A misconfigured entry names no field: it is dropped, never emitted as an
+        // empty `doc.` accessor.
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $stub->aggregatable = [ 'empty' => '' , 'bad' => 123 ] ;
+
+        $spec = $stub->prepareCollect(
+        [
+            Arango::GROUP => [ Group::BY => 'cat' , Group::AGG => [ 'a' => 'sum:empty' , 'b' => 'sum:bad' ] ] ,
+        ]) ;
+
+        $this->assertSame( 'COLLECT cat = doc.category' , aqlCollect( $spec ) ) ;
+    }
+
 }

@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits\aql;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\AggregatablePolicy;
 use oihana\arango\models\enums\Group;
 use oihana\arango\models\enums\facets\FacetAggregator;
 
@@ -17,6 +18,7 @@ use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlAsc;
 use function oihana\arango\db\operations\aqlDesc;
 use function oihana\arango\models\helpers\isPathAuthorized;
+use function oihana\arango\models\helpers\normalizeSortable;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\func;
 use function oihana\core\strings\key;
@@ -35,10 +37,71 @@ use function oihana\core\strings\key;
  * A raw {@see Arango::COLLECT} spec is passed through untouched when no
  * {@see Arango::GROUP} is supplied, so power users keep full control.
  *
+ * ### One gate per half, and they do not default alike
+ * `by` is **fail-closed** through {@see GroupTrait::$groupable}: without a declared
+ * whitelist, nothing is groupable. `agg` is **fail-open** through
+ * {@see GroupTrait::$aggregatable}: without one, every projected path stays
+ * aggregatable — declaring the whitelist is what closes it, and
+ * {@see GroupTrait::$aggregatablePolicy} says whether an undeclared aggregate is
+ * then dropped or refused outright. Both halves are permission-gated the same way,
+ * on the resolved path, so a field hidden from reading is neither a dimension nor
+ * an aggregate.
+ *
  * @see GroupTrait::prepareCollect() The entry point.
  */
 trait GroupTrait
 {
+    /**
+     * Optional whitelist/mapping of aggregatable fields: `urlKey => fieldPath`.
+     *
+     * It is the `agg` counterpart of {@see GroupTrait::$groupable}, with one
+     * deliberate difference: it keys on the **field token**, not on the output
+     * name. In `[ 'total' => 'sum:speed' ]` the name `total` is chosen freely by
+     * the client — whitelisting it would mean nothing — while `speed` is the token
+     * this map resolves (to `speed.value`, say).
+     *
+     * The gate is **fail-open**: `null` (no whitelist) means every projected path
+     * stays aggregatable, exactly as before this option existed. Declaring it closes
+     * the gate, and {@see GroupTrait::$aggregatablePolicy} says how loudly.
+     *
+     * A whitelisted field is further permission-gated (`Field::REQUIRES` inherited
+     * from the projection), so a field hidden from reading cannot be aggregated on
+     * (`MAX`/`MIN`/`AVG`/`SUM` leak a bound of its values).
+     *
+     * @var array<string,string|array<int,string>>|null
+     */
+    public ?array $aggregatable = null ;
+
+    /**
+     * What happens to an aggregate absent from {@see GroupTrait::$aggregatable}:
+     * one of the {@see AggregatablePolicy} codes.
+     *
+     * `null` resolves to {@see AggregatablePolicy::DROP} when a whitelist is
+     * declared, and to {@see AggregatablePolicy::OPEN} when none is — so a model
+     * that never heard of the option emits the query it always emitted.
+     */
+    public ?string $aggregatablePolicy = null ;
+
+    /**
+     * Initializes the {@see GroupTrait::$aggregatable} whitelist and its policy from
+     * the model options.
+     *
+     * The whitelist is normalised through {@see normalizeSortable()}, so the three
+     * `sortable` notations are accepted and may be mixed: the associative
+     * `urlKey => fieldPath`, the indexed shorthand `fieldName` (token equals field),
+     * and the indexed alias `[ urlKey => fieldPath ]`.
+     *
+     * @param array $init The model options (`Arango::AGGREGATABLE`, `Arango::AGGREGATABLE_POLICY`).
+     *
+     * @return static
+     */
+    public function initializeAggregatable( array $init = [] ) :static
+    {
+        $this->aggregatable       = normalizeSortable( $init[ Arango::AGGREGATABLE ] ?? $this->aggregatable ) ;
+        $this->aggregatablePolicy = $init[ Arango::AGGREGATABLE_POLICY ] ?? $this->aggregatablePolicy ;
+        return $this ;
+    }
+
     /**
      * Optional whitelist/mapping of groupable dimensions: `urlKey => fieldPath`.
      *
@@ -179,6 +242,52 @@ trait GroupTrait
     }
 
     /**
+     * Resolves an aggregate field token against {@see GroupTrait::$aggregatable},
+     * applying {@see GroupTrait::$aggregatablePolicy} when the token is undeclared.
+     *
+     * A declared token always resolves to its mapped path, whatever the policy — so
+     * the whitelist doubles as a pure `publicKey => fieldPath` alias map. An
+     * undeclared one is answered by the policy: passed through
+     * ({@see AggregatablePolicy::OPEN}), dropped ({@see AggregatablePolicy::DROP}),
+     * or refused ({@see AggregatablePolicy::STRICT}). An unrecognised policy code
+     * drops, so a typo closes the gate rather than opening it.
+     *
+     * 🚨 This gate answers for the **whitelist only**, never for the permission gate
+     * that follows it. A whitelisted field refused by `Field::REQUIRES` is dropped in
+     * silence even under `STRICT`: an error naming a protected field would tell the
+     * client that field exists — the very oracle the permission gate closes.
+     *
+     * @param string $field The field token written by the client (`sum:speed` → `speed`).
+     * @param string $name  The aggregate output name, quoted in the strict error.
+     *
+     * @return string|null The resolved field path, or `null` when the aggregate is dropped.
+     *
+     * @throws ValidationException Under {@see AggregatablePolicy::STRICT}, naming the refused token.
+     */
+    private function aggregatableField( string $field , string $name ) :?string
+    {
+        $aggregatable = $this->aggregatable ;
+
+        if ( is_array( $aggregatable ) && array_key_exists( $field , $aggregatable ) )
+        {
+            $entry = $aggregatable[ $field ] ;
+            $path  = is_string( $entry ) || is_array( $entry ) ? key( $entry ) : Char::EMPTY ;
+            return $path === Char::EMPTY ? null : $path ;
+        }
+
+        // No whitelist at all keeps the historical behaviour; a declared one closes
+        // the gate, and drops unless the model asked for another noise.
+        $policy = $this->aggregatablePolicy ?? ( is_array( $aggregatable ) ? AggregatablePolicy::DROP : AggregatablePolicy::OPEN ) ;
+
+        return match( $policy )
+        {
+            AggregatablePolicy::OPEN   => $field ,
+            AggregatablePolicy::STRICT => throw new ValidationException( sprintf( 'The aggregate "%s" targets a field that is not aggregatable: "%s".' , $name , $field ) ) ,
+            default                    => null ,
+        } ;
+    }
+
+    /**
      * Builds the `AQL::AGGREGATE` map from {@see Group::AGG}.
      *
      * @param array $group The group spec.
@@ -207,11 +316,21 @@ trait GroupTrait
                 continue ;
             }
 
+            // Aggregatable whitelist: the client token resolves to its real field
+            // path, and an undeclared one meets the model's policy (pass, drop, or
+            // fail). Runs *before* the permission gate, so the two refusals stay
+            // distinguishable — see aggregatableField().
+            $field = $this->aggregatableField( (string) $field , (string) $name ) ;
+            if ( $field === null )
+            {
+                continue ;
+            }
+
             // Permission gate: aggregating a field hidden from the projection leaks
             // a bound of its value (MAX/MIN/AVG/SUM) — the aggregate is dropped. The
             // whole path is gated (not only its root), so a locked sub-field
             // (`address.city`) is honored in depth.
-            if ( !isPathAuthorized( (string) $field , $this->fields ?? null , $init ) )
+            if ( !isPathAuthorized( $field, $this->fields ?? null , $init ) )
             {
                 continue ;
             }
