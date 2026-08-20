@@ -582,6 +582,176 @@ class FilterFunctionTest extends TestCase
     }
 
     // ========================================
+    // APPLY - THE ARMS NO TEST HAD EVER TAKEN
+    // ========================================
+
+    /**
+     * Every entry below had never been exercised: the arm was written, no test had
+     * ever asked for it. Covering them is what surfaced the three ipv4 constants
+     * sharing one value, and the `toChar` arm that raised a `TypeError` on every
+     * call — both fixed in their own commits.
+     *
+     * ⚠ The expected AQL name is a **literal**, never the `FilterFunction::`
+     * constant `apply()` itself reads. Writing the constant on both sides compares
+     * a value to itself: the row passes whatever the constant holds, which is
+     * exactly how the ipv4 defect survived a green, fully covered suite.
+     */
+    #[DataProvider('provideSimpleUnaryFunctions')]
+    public function testApplySimpleUnaryFunctions( string $funcName , string $expectedFunc ): void
+    {
+        $this->assertSame( "{$expectedFunc}(doc.value)" , FilterFunction::apply( $funcName , 'doc.value' ) ) ;
+    }
+
+    public static function provideSimpleUnaryFunctions(): array
+    {
+        return
+        [
+            // Hashes and string encodings
+            'fnv64'           => [ FilterFunction::FNV64            , 'FNV64'            ] ,
+            'md5'             => [ FilterFunction::MD5              , 'MD5'              ] ,
+            'sha1'            => [ FilterFunction::SHA1             , 'SHA1'             ] ,
+            'sha256'          => [ FilterFunction::SHA256           , 'SHA256'           ] ,
+            'sha512'          => [ FilterFunction::SHA512           , 'SHA512'           ] ,
+            'soundex'         => [ FilterFunction::SOUNDEX          , 'SOUNDEX'          ] ,
+            'toBase64'        => [ FilterFunction::TO_BASE64        , 'TO_BASE64'        ] ,
+            'toChar'          => [ FilterFunction::TO_CHAR          , 'TO_CHAR'          ] ,
+            'toHex'           => [ FilterFunction::TO_HEX           , 'TO_HEX'           ] ,
+
+            // JSON
+            'jsonParse'       => [ FilterFunction::JSON_PARSE       , 'JSON_PARSE'       ] ,
+            'jsonStringify'   => [ FilterFunction::JSON_STRINGIFY   , 'JSON_STRINGIFY'   ] ,
+
+            // IPv4 — the two conversions are inverses of each other, so a shared
+            // value between their constants stayed invisible until this row existed.
+            'ipv4ToNumber'    => [ FilterFunction::IPV4_TO_NUMBER   , 'IPV4_TO_NUMBER'   ] ,
+            'ipv4FromNumber'  => [ FilterFunction::IPV4_FROM_NUMBER , 'IPV4_FROM_NUMBER' ] ,
+
+            // Date parts. Note the AQL names that drop the underscore.
+            'dateMinute'      => [ FilterFunction::DATE_MINUTE        , 'DATE_MINUTE'        ] ,
+            'dateSecond'      => [ FilterFunction::DATE_SECOND        , 'DATE_SECOND'        ] ,
+            'dateMillisecond' => [ FilterFunction::DATE_MILLISECOND   , 'DATE_MILLISECOND'   ] ,
+            'dateISO8601'     => [ FilterFunction::DATE_ISO_8601      , 'DATE_ISO8601'       ] ,
+            'dateDaysInMonth' => [ FilterFunction::DATE_DAYS_IN_MONTH , 'DATE_DAYS_IN_MONTH' ] ,
+            'dateIsoWeekYear' => [ FilterFunction::DATE_ISO_WEEK_YEAR , 'DATE_ISOWEEKYEAR'   ] ,
+            'dateTimeStamp'   => [ FilterFunction::DATE_TIMESTAMP     , 'DATE_TIMESTAMP'     ] ,
+        ];
+    }
+
+    /**
+     * Two unary arms return a boolean, so they pass through the comparison guard.
+     * A boolean `FilterParam::VAL` keeps it quiet — the guard itself is covered by
+     * {@see testApplyBooleanFunctionWithNonBooleanValueTriggersWarning()}.
+     */
+    public function testApplyBooleanUnaryFunctions(): void
+    {
+        $init = [ FilterParam::VAL => true ] ;
+
+        $this->assertSame( 'IS_IPV4(doc.value)'      , FilterFunction::apply( FilterFunction::IS_IPV4        , 'doc.value' , [] , $init ) ) ;
+        $this->assertSame( 'DATE_LEAPYEAR(doc.value)', FilterFunction::apply( FilterFunction::DATE_LEAP_YEAR , 'doc.value' , [] , $init ) ) ;
+    }
+
+    /**
+     * Three arms ignore the key entirely — they fabricate a value rather than
+     * transform a field. `randomToken` reads its length from the params.
+     */
+    public function testApplyFunctionsThatIgnoreTheKey(): void
+    {
+        $this->assertSame( 'UUID()'           , FilterFunction::apply( FilterFunction::UUID          , 'doc.value'   ) ) ;
+        $this->assertSame( 'DATE_TIMEZONE()'  , FilterFunction::apply( FilterFunction::DATE_TIMEZONE , 'doc.created' ) ) ;
+        $this->assertSame( 'RANDOM_TOKEN(32)' , FilterFunction::apply( FilterFunction::RANDOM_TOKEN  , 'doc.value' , [ 32 ] ) ) ;
+        $this->assertSame( 'RANDOM_TOKEN(16)' , FilterFunction::apply( FilterFunction::RANDOM_TOKEN  , 'doc.value' ) ) ; // default length
+    }
+
+    /**
+     * A parameter is emitted **as written**: quoted by the caller when it is text,
+     * left raw when it names another field. Quoting inside the helper would make
+     * the second form impossible, so the choice belongs to whoever calls.
+     */
+    public function testApplyKeepsAParameterAsWritten(): void
+    {
+        // Text — the caller quotes.
+        $this->assertSame( 'LIKE(doc.name,"%doe%",true)' , FilterFunction::apply( FilterFunction::LIKE , 'doc.name' , [ '"%doe%"' , true ] , [ FilterParam::VAL => true ] ) ) ;
+
+        // Another field — left raw, and that is the point.
+        $this->assertSame( 'LIKE(doc.name,doc.pattern)'  , FilterFunction::apply( FilterFunction::LIKE , 'doc.name' , [ 'doc.pattern' ]    , [ FilterParam::VAL => true ] ) ) ;
+    }
+
+    public function testApplyStringFunctionsWithParams(): void
+    {
+        $this->assertSame( 'FIND_LAST(doc.name,"o",0,5)'          , FilterFunction::apply( FilterFunction::FIND_LAST , 'doc.name' , [ '"o"' , 0 , 5 ] ) ) ;
+        $this->assertSame( 'SPLIT(doc.name,",",3)'                , FilterFunction::apply( FilterFunction::SPLIT     , 'doc.name' , [ '","' , 3 ]     ) ) ;
+        $this->assertSame( 'TOKENS(doc.name,"text_en")'           , FilterFunction::apply( FilterFunction::TOKENS    , 'doc.name' , [ '"text_en"' ]   ) ) ;
+        $this->assertSame( 'LEVENSHTEIN_DISTANCE(doc.name,"Doe")' , FilterFunction::apply( FilterFunction::LEVENSHTEIN , 'doc.name' , [ '"Doe"' ]     ) ) ;
+    }
+
+    /**
+     * `levenshtein` is the one arm that needs a second operand to mean anything:
+     * without it the key is returned untouched rather than wrapped.
+     */
+    public function testApplyLevenshteinWithoutOperandReturnsTheKey(): void
+    {
+        $this->assertSame( 'doc.name' , FilterFunction::apply( FilterFunction::LEVENSHTEIN , 'doc.name' ) ) ;
+    }
+
+    public function testApplyDateArithmetic(): void
+    {
+        $this->assertSame( 'DATE_ADD(doc.created,3,"month")'      , FilterFunction::apply( FilterFunction::DATE_ADD      , 'doc.created' , [ 3 , 'month' ] ) ) ;
+        $this->assertSame( 'DATE_SUBTRACT(doc.created,7,"day")'   , FilterFunction::apply( FilterFunction::DATE_SUBTRACT , 'doc.created' , [ 7 , 'day'   ] ) ) ;
+        $this->assertSame( 'DATE_TRUNC(doc.created,"month")'      , FilterFunction::apply( FilterFunction::DATE_TRUNC    , 'doc.created' , [ 'month'     ] ) ) ;
+
+        // Both take a second date, so another field is the natural operand.
+        $this->assertSame( 'DATE_COMPARE(doc.created,doc.other,"days")'    , FilterFunction::apply( FilterFunction::DATE_COMPARE , 'doc.created' , [ 'doc.other' , 'days' ] ) ) ;
+        $this->assertSame( 'DATE_DIFF(doc.created,doc.other,"day",true)'   , FilterFunction::apply( FilterFunction::DATE_DIFF    , 'doc.created' , [ 'doc.other' , 'day' , true ] ) ) ;
+    }
+
+    /**
+     * Omitted parameters fall back to the arm's own defaults, so a bare
+     * `alt:"dateAdd"` still produces valid AQL rather than a broken call.
+     */
+    public function testApplyDateArithmeticDefaults(): void
+    {
+        $this->assertSame( 'DATE_ADD(doc.created,0,"day")'      , FilterFunction::apply( FilterFunction::DATE_ADD      , 'doc.created' ) ) ;
+        $this->assertSame( 'DATE_SUBTRACT(doc.created,0,"day")' , FilterFunction::apply( FilterFunction::DATE_SUBTRACT , 'doc.created' ) ) ;
+        $this->assertSame( 'DATE_TRUNC(doc.created,"day")'      , FilterFunction::apply( FilterFunction::DATE_TRUNC    , 'doc.created' ) ) ;
+        $this->assertSame( 'DATE_COMPARE(doc.created,DATE_NOW())'          , FilterFunction::apply( FilterFunction::DATE_COMPARE , 'doc.created' ) ) ;
+        $this->assertSame( 'DATE_DIFF(doc.created,DATE_NOW(),"day",false)' , FilterFunction::apply( FilterFunction::DATE_DIFF    , 'doc.created' ) ) ;
+    }
+
+    /**
+     * `yesterday` / `tomorrow` are shorthands over the same arithmetic. With no
+     * param they shift the key; with one, they shift that date instead — which is
+     * why they read the base from `$params[0] ?? $key`.
+     */
+    public function testApplyRelativeDateShorthands(): void
+    {
+        $this->assertSame( 'DATE_SUBTRACT(doc.created,1,"day")' , FilterFunction::apply( FilterFunction::YESTERDAY , 'doc.created' ) ) ;
+        $this->assertSame( 'DATE_ADD(doc.created,1,"day")'      , FilterFunction::apply( FilterFunction::TOMORROW  , 'doc.created' ) ) ;
+
+        $this->assertSame( 'DATE_SUBTRACT(doc.other,1,"day")'   , FilterFunction::apply( FilterFunction::YESTERDAY , 'doc.created' , [ 'doc.other' ] ) ) ;
+        $this->assertSame( 'DATE_ADD(doc.other,1,"day")'        , FilterFunction::apply( FilterFunction::TOMORROW  , 'doc.created' , [ 'doc.other' ] ) ) ;
+    }
+
+    /**
+     * `dateFormat` does not follow the caller-quotes convention: its third
+     * parameter is a `useQuotes` switch, so the format is handed raw and the arm
+     * wraps it — or does not, when the format names a field.
+     */
+    public function testApplyDateFormat(): void
+    {
+        $this->assertSame( 'DATE_FORMAT(doc.created,"%yyyy-%mm")' , FilterFunction::apply( FilterFunction::DATE_FORMAT , 'doc.created' , [ '%yyyy-%mm' ] ) ) ;
+        $this->assertSame( 'DATE_FORMAT(doc.created,doc.fmt)'     , FilterFunction::apply( FilterFunction::DATE_FORMAT , 'doc.created' , [ 'doc.fmt' , false ] ) ) ;
+    }
+
+    public function testApplyTimezoneConversions(): void
+    {
+        $this->assertSame( 'DATE_LOCALTOUTC(doc.created,"Europe/Paris")' , FilterFunction::apply( FilterFunction::DATE_LOCAL_TO_UTC , 'doc.created' , [ '"Europe/Paris"' ] ) ) ;
+        $this->assertSame( 'DATE_UTCTOLOCAL(doc.created,"Europe/Paris")' , FilterFunction::apply( FilterFunction::DATE_UTC_TO_LOCAL , 'doc.created' , [ '"Europe/Paris"' ] ) ) ;
+
+        // Its own default is emitted unquoted — frozen as it stands today.
+        $this->assertSame( 'DATE_LOCALTOUTC(doc.created,UTC)' , FilterFunction::apply( FilterFunction::DATE_LOCAL_TO_UTC , 'doc.created' ) ) ;
+    }
+
+    // ========================================
     // INCLUDES
     // ========================================
 
