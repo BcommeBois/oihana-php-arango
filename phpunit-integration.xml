@@ -19,7 +19,6 @@
     beStrictAboutOutputDuringTests="true"
     bootstrap="vendor/autoload.php"
     cacheDirectory=".phpunit.cache"
-    cacheResult="false"
     colors="true"
     columns="max"
     displayDetailsOnIncompleteTests="true"
@@ -32,6 +31,7 @@
     failOnSkipped="false"
     failOnWarning="true"
     processIsolation="false"
+    recordTestRunHistory="false"
     testdox="true"
 >
     <testsuites>
