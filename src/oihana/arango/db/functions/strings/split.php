@@ -10,27 +10,42 @@ use function oihana\core\strings\func;
  *
  * This helper wraps the ArangoDB AQL function `SPLIT(value, separator, limit)`
  * which splits the given string into an array of strings using the specified
- * separator. You can optionally limit the number of splits.
+ * separator. The limit is optional, and omitting it splits the whole value.
  *
  * Example AQL usage:
  * ```aql
  * SPLIT("a,b,c", ",")           // returns ["a", "b", "c"]
  * SPLIT("hello world", " ")     // returns ["hello", "world"]
- * SPLIT("a,b,c", ",", 2)        // returns ["a", "b,c"] (limited to 2 parts)
  * SPLIT("hello", "")            // returns ["h", "e", "l", "l", "o"] (split by character)
  * ```
+ *
+ * ⚠ **The limit truncates, it does not merge.** AQL keeps the first `limit`
+ * parts and **discards the rest**, where PHP's own `explode()` merges the
+ * remainder into the last element. The two read alike and answer differently:
+ * ```aql
+ * SPLIT("a,b,c,d", ",", 3)      // returns ["a", "b", "c"]   — "d" is gone
+ * SPLIT("a,b,c,d", ",", 1)      // returns ["a"]
+ * SPLIT("a,b,c,d", ",", 0)      // returns []                — keep nothing
+ * ```
+ * ```php
+ * explode(",", "a,b,c,d", 3);   // returns ["a", "b", "c,d"] — "d" is kept
+ * explode(",", "a,b,c,d", 0);   // returns ["a,b,c,d"]       — 0 is read as 1
+ * ```
+ * A limit of `0` is therefore an empty answer in AQL and a whole one in PHP.
+ * Pass `null` — not `0` — to mean "no limit".
  *
  * @example
  * ```php
  * use function oihana\arango\db\functions\strings\split;
  *
- * $expr = split('doc.text', '","', null);
- * // Produces: 'SPLIT(doc.text, ",", )'
+ * split( 'doc.text' , '","' );            // SPLIT(doc.text,",")
+ * split( 'doc.text' , '","' , 2 );        // SPLIT(doc.text,",",2)
+ * split( 'doc.text' , 'doc.separator' );  // SPLIT(doc.text,doc.separator)
  * ```
  *
- * @param string $value String expression to split.
- * @param string $separator Separator string to split on.
- * @param int|null $limit Optional limit for number of splits.
+ * @param string   $value     String expression to split.
+ * @param string   $separator Separator string to split on, quoted by the caller when it is text.
+ * @param int|null $limit     Optional number of parts to keep. `null` omits the argument and splits the whole value.
  * @return string The formatted AQL expression.
  *
  * @see https://docs.arangodb.com/3.12/aql/functions/string/#split

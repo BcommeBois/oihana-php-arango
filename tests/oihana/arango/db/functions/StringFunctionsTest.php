@@ -63,6 +63,8 @@ class StringFunctionsTest extends TestCase
             'findLastWithEnd'    => [ 'findLast', 'FIND_LAST', ['doc.text', '"o"', 0, 5], 'doc.text,"o",0,5'],
             'split'              => [ 'split', 'SPLIT', ['doc.text', '","'], 'doc.text,","'],
             'splitWithLimit'     => [ 'split', 'SPLIT', ['doc.text', '","', 2], 'doc.text,",",2'],
+            // A separator naming another field is left raw, which is why the caller quotes text.
+            'splitOnAField'      => [ 'split', 'SPLIT', ['doc.text', 'doc.separator'], 'doc.text,doc.separator'],
             'tokens'             => [ 'tokens', 'TOKENS', ['doc.content', '"text_en"'], 'doc.content,"text_en"'],
         ];
     }
