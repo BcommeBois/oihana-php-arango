@@ -211,6 +211,59 @@ The `alt` key applies an AQL function to `doc.<key>` **before** comparison. It i
 
 Evaluation order is **inner-to-outer**: the first array element is applied first, the last is applied last.
 
+### ⚠ A parameter supplied by a request is a **value**
+
+**The situation.** A transformation parameter went straight into the query text. A client could therefore close the call and write the rest themselves:
+
+```
+?filter={"key":"name","alt":["split","a) RETURN doc //"]}
+```
+
+As of **1.6.0**, a parameter supplied by a request is no longer written into the query: it is **bound**, as the compared value always has been.
+
+| | What reaches the server |
+|---|---|
+| the text | `SPLIT(doc.name,@q_482913,0)` |
+| the values | `{ "q_482913" : "a) RETURN doc //" }` |
+
+The server reads the sentence first — the grammar is fixed at that point — and **then** fills the hole. What the hole holds can no longer be part of it.
+
+**First consequence: no more quoting.**
+
+```jsonc
+// before — the parameter went through raw, you had to quote it yourself
+{"key":"name","alt":["like","\"jean%\""]}
+
+// now — a value is a value
+{"key":"name","alt":["like","jean%"]}
+```
+
+**Second consequence: a parameter can no longer name a field.**
+
+| Asked from a URL | Result |
+|---|---|
+| `alt:["like","doc.pattern"]` | looks for the **text** `doc.pattern`, not the field |
+
+Comparing a field to another field is still possible — it is a model decision, not a request one. In code, sign the chain:
+
+```php
+use function oihana\arango\db\helpers\trustedAlt;
+
+$this->injectFilter( $init , 'name' , $v , alt: trustedAlt( [ 'like' , 'doc.pattern' ] ) ) ;
+```
+
+**What is not bound, and why.** Five entries already render their parameter safely, and a `@name` token would come back out of them as a literal:
+
+| Entry | What already protects it |
+|---|---|
+| `contains`, `concatSeparator` | quoted **and** escaped |
+| `coalesce`, `notNull` | inlined as strict literals (`json_encode`) |
+| `pluck` | its parameter is an attribute name, validated |
+
+Ints and booleans are not bound either: they cannot carry AQL.
+
+**Where the rule applies.** Everywhere a request may supply a string: `?filter=` (both sides, plus the date filters and the `[*]` expansion), `?group={"alt":…}`, and the `{op,val,alt}` object of [`?facets=`](facets.md) — including when it **overrides** an `alt` declared on the facet. A chain declared in your own code (`Field::ALTERS`, `Facet::ALT`) keeps the interpolation.
+
 ### Applying `alt` to the value (symmetric comparison)
 
 By default `alt` wraps only the **field** (left side): `LOWER(doc.email) == @v`. The value stays raw — which prevents, for instance, a case-insensitive equality. The **object form** applies the transformation to **both sides**:

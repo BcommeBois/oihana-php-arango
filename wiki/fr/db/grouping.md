@@ -40,6 +40,9 @@ Objet JSON (URL-encodé) avec des clés courtes :
 | `sort` | tri sur les variables de groupe/agrégat | `"-count"` · `"category,-total"` |
 | `alt` | transformations de clé | `{"year":"dateYear"}` |
 
+> ⚠ Un paramètre de transformation venu de l'URL est **lié**, pas écrit dans la requête — et ne peut donc plus désigner un autre champ. Voir [Un paramètre venu d'une requête est une valeur](filter.md#-un-paramètre-venu-dune-requête-est-une-valeur).
+
+
 ```
 GET /sales?group={"by":{"year":"created"},"alt":{"year":"dateYear"},"agg":{"total":"sum:amount"},"sort":"-total"}
 // COLLECT year = DATE_YEAR(doc.created) AGGREGATE total = SUM(doc.amount) SORT total DESC RETURN {year, total}

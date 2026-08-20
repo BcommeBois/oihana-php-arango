@@ -328,6 +328,8 @@ La facette `FIELD` accepte aussi l'opérateur **`between`** (plage inclusive), a
 
 ## Transformations `alt`
 
+> ⚠ Quand l'objet `{op,val,alt}` d'une requête **remplace** l'`alt` déclaré sur la facette, les paramètres de la chaîne de remplacement sont **liés** — voir [Un paramètre venu d'une requête est une valeur](filter.md#-un-paramètre-venu-dune-requête-est-une-valeur). L'`alt` déclaré, lui, garde l'interpolation.
+
 Comme les [filtres](filter.md#transformations-alt), une facette peut envelopper la comparaison par des fonctions AQL (`lower`, `trim`, `abs`, `dateDay`…). `alt` agit sur le **champ comparé** (gauche) et/ou la **valeur** (droite) :
 
 - `alt:"lower"` / `alt:["trim","lower"]` → **champ seul** (`LOWER(doc.x) == @v`).

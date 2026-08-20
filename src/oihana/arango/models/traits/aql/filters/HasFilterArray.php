@@ -17,6 +17,7 @@ use function oihana\arango\db\functions\arrays\arrayFilter;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\buildCombinedInlineFilter;
 use function oihana\arango\db\helpers\buildInlineFilterCondition;
+use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\db\helpers\resolveQuantifier;
 use function oihana\core\strings\betweenBrackets;
 use function oihana\core\strings\key;
@@ -126,7 +127,7 @@ trait HasFilterArray
         $operator = $init[ FilterParam::OP    ] ?? FilterComparator::EQ ;
         $value    = $init[ FilterParam::VAL   ] ?? null ;
         $match    = $init[ FilterParam::MATCH ] ?? null ;
-        $alt      = $init[ FilterParam::ALT   ] ?? null ;
+        $alt      = requestAlt( $init[ FilterParam::ALT   ] ?? null ) ; // request slot: presumed from the wire
         $quant    = $init[ FilterParam::QUANT ] ?? null ;
 
         // Legacy AT LEAST (n) — notation ["atLeast.ge", 2] → doc.x AT LEAST (2) >= @v.
@@ -310,7 +311,7 @@ trait HasFilterArray
         $count = (int) ( $op[ 1 ] ?? 1 ) ;
         $code  = substr( (string) $op[ 0 ] , strlen( FilterArrayComparator::AT_LEAST ) + 1 ) ; // "ge"
 
-        $comparator = Operator::AT_LEAST . ' (' . $count . ') ' . FilterComparator::getAlias( $code , Comparator::EQUAL ) ;
+        $comparator = Operator::AT_LEAST . ' (' . $count . ') ' . FilterComparator::getAlias( $code ) ;
 
         return predicate
         (
@@ -326,7 +327,7 @@ trait HasFilterArray
      *
      * The comparator stays in `op` (a plain {@see FilterComparator} code such as
      * `ge`); the element-axis quantifier comes from `quant` and is resolved by
-     * {@see \oihana\arango\db\helpers\resolveQuantifier()} into `ANY` / `ALL` /
+     * {@see resolveQuantifier} into `ANY` / `ALL` /
      * `NONE` / `AT LEAST (n)`. This is the unified, recommended form; the legacy
      * `op:"all.ge"` and `op:["atLeast.ge", n]` notations remain valid aliases.
      *
@@ -348,7 +349,7 @@ trait HasFilterArray
     protected function prepareFilterQuantified( array $init , ?array &$binds = null , string $docRef = AQL::DOC ) :string
     {
         $quantifier = resolveQuantifier( $init[ FilterParam::QUANT ] ) ;
-        $comparator = FilterComparator::getAlias( $init[ FilterParam::OP ] ?? null , Comparator::EQUAL ) ;
+        $comparator = FilterComparator::getAlias( $init[ FilterParam::OP ] ?? null ) ;
 
         return predicate
         (

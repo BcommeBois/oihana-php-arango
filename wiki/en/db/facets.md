@@ -361,6 +361,8 @@ The `FIELD` facet also accepts the **`between`** operator (inclusive range), wit
 
 ## `alt` transformations
 
+> ⚠ When a request's `{op,val,alt}` object **overrides** the `alt` declared on the facet, the overriding chain's parameters are **bound** — see [A parameter supplied by a request is a value](filter.md#-a-parameter-supplied-by-a-request-is-a-value). The declared `alt` keeps the interpolation.
+
 Like [filters](filter.md#alt-transformations), a facet can wrap the comparison with AQL functions (`lower`, `trim`, `abs`, `dateDay`…). `alt` acts on the **compared field** (left) and/or the **value** (right):
 
 - `alt:"lower"` / `alt:["trim","lower"]` → **field only** (`LOWER(doc.x) == @v`).

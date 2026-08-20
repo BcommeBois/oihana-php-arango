@@ -107,6 +107,29 @@ class HasFilterArrayTest extends TestCase
      * @throws ReflectionException
      * @throws BindException
      */
+    /**
+     * The array filter reads its `alt` from the same request slot as every other
+     * filter, and hands it to the inline condition built inside the `[*]` expansion.
+     * Its parameters are bound there too — the payload below would otherwise close
+     * the `SPLIT(` call inside `CURRENT.<field>`.
+     */
+    public function testArrayExpansionAltParameterIsBound(): void
+    {
+        $payload = '"zzz") || true || SPLIT(CURRENT.x,"y"' ;
+        $init    =
+        [
+            'key'   => 'items[*]' ,
+            'match' => [ 'email' => 'a' ] ,
+            'alt'   => [ 'key' => [ 'split' , $payload , 5 ] ] ,
+        ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertStringNotContainsString( '||' , $result ) ;
+        $this->assertMatchesRegularExpression( '/SPLIT\(CURRENT\.email,@\S+?,5\)/' , $result ) ;
+        $this->assertContains( $payload , $this->binds ) ;
+    }
+
     public function testArrayFilterWithAtIndexAndFunction(): void
     {
         $init = [ 'key' => 'tags' , 'at' => 0 , 'val' => 'FIRST' , 'alt' => 'upper' ] ;

@@ -211,6 +211,59 @@ La clé `alt` applique une fonction AQL à `doc.<key>` **avant** la comparaison.
 
 L'ordre d'évaluation est **inner-to-outer** : le premier élément du tableau est appliqué en premier, le dernier en dernier.
 
+### ⚠ Un paramètre venu d'une requête est une **valeur**
+
+**La situation.** Le paramètre d'une transformation partait directement dans le texte de la requête. Un client pouvait donc y refermer l'appel et écrire la suite lui-même :
+
+```
+?filter={"key":"name","alt":["split","a) RETURN doc //"]}
+```
+
+Depuis la **1.6.0**, un paramètre venu d'une requête n'est plus écrit dans la requête : il est **lié**, comme la valeur comparée l'a toujours été.
+
+| | Ce qui part au serveur |
+|---|---|
+| le texte | `SPLIT(doc.name,@q_482913,0)` |
+| les valeurs | `{ "q_482913" : "a) RETURN doc //" }` |
+
+Le serveur lit d'abord la phrase — la grammaire est figée à ce moment-là — **puis** remplit le trou. Le contenu du trou ne peut plus en faire partie.
+
+**Première conséquence : plus besoin de quoter.**
+
+```jsonc
+// avant — le paramètre partait brut, il fallait le quoter soi-même
+{"key":"name","alt":["like","\"jean%\""]}
+
+// maintenant — une valeur est une valeur
+{"key":"name","alt":["like","jean%"]}
+```
+
+**Seconde conséquence : un paramètre ne peut plus désigner un champ.**
+
+| Demandé depuis une URL | Résultat |
+|---|---|
+| `alt:["like","doc.pattern"]` | cherche le **texte** `doc.pattern`, pas le champ |
+
+Comparer un champ à un autre champ reste possible — c'est une décision de modèle, pas de requête. Côté code, on signe la chaîne :
+
+```php
+use function oihana\arango\db\helpers\trustedAlt;
+
+$this->injectFilter( $init , 'name' , $v , alt: trustedAlt( [ 'like' , 'doc.pattern' ] ) ) ;
+```
+
+**Ce qui n'est pas lié, et pourquoi.** Cinq entrées rendent déjà leur paramètre sans danger, et un `@nom` y ressortirait en littéral :
+
+| Entrée | Ce qui la protège déjà |
+|---|---|
+| `contains`, `concatSeparator` | quotées **et échappées** |
+| `coalesce`, `notNull` | inlinées en littéraux stricts (`json_encode`) |
+| `pluck` | son paramètre est un nom d'attribut, validé |
+
+Les entiers et les booléens ne sont pas liés non plus : ils ne peuvent pas porter d'AQL.
+
+**Où s'applique la règle.** Partout où une requête peut fournir une chaîne : `?filter=` (des deux côtés, plus les filtres de date et l'expansion `[*]`), `?group={"alt":…}`, et l'objet `{op,val,alt}` de [`?facets=`](facets.md) — y compris quand il **remplace** un `alt` déclaré sur la facette. Une chaîne déclarée dans ton code (`Field::ALTERS`, `Facet::ALT`) garde l'interpolation.
+
 ### Appliquer `alt` à la valeur (comparaison symétrique)
 
 Par défaut, `alt` n'enveloppe que le **champ** (côté gauche) : `LOWER(doc.email) == @v`. La valeur reste brute — ce qui empêche, par exemple, une égalité insensible à la casse. La **forme objet** applique la transformation des **deux côtés** :

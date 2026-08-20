@@ -3,6 +3,7 @@
 namespace oihana\arango\db\helpers;
 
 use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\enums\Arango;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
@@ -88,19 +89,27 @@ function buildInlineFilterCondition
         ) ) ;
     }
 
-    // `alt` wraps the compared field (left) and/or the bound value (right).
+    // `alt` wraps the compared field (left) and/or the bound value (right). The chain
+    // reaches here already marked when it came from a request, so the binder must
+    // travel with it — its parameters are bound, never written into the condition.
     [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
-    $left = alterExpression( "CURRENT.{$field}" , $keyChain ) ;
+
+    $bound = [ Arango::BINDER => function( mixed $v ) use ( &$binds ) :string
+    {
+        return aqlBind( $v , $binds ) ;
+    } ] ;
+
+    $left = alterExpression( "CURRENT.$field" , $keyChain , $bound ) ;
 
     // Build the condition
     if ( $value === null )
     {
-        return "{$left} {$aqlOperator} null" ;
+        return "$left $aqlOperator null" ;
     }
     else
     {
         // For value checks, bind the value for security
-        $boundValue = alterExpression( aqlBind( $value , $binds ) , $valChain ) ;
-        return "{$left} {$aqlOperator} {$boundValue}" ;
+        $boundValue = alterExpression( aqlBind( $value , $binds ) , $valChain , $bound ) ;
+        return "$left $aqlOperator $boundValue" ;
     }
 }

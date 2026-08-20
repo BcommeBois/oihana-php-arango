@@ -40,6 +40,9 @@ A JSON object (URL-encoded) with short keys:
 | `sort` | sort on group/aggregate variables | `"-count"` · `"category,-total"` |
 | `alt` | grouping-key transforms | `{"year":"dateYear"}` |
 
+> ⚠ A transformation parameter supplied by the URL is **bound**, not written into the query — so it can no longer name another field. See [A parameter supplied by a request is a value](filter.md#-a-parameter-supplied-by-a-request-is-a-value).
+
+
 ```
 GET /sales?group={"by":{"year":"created"},"alt":{"year":"dateYear"},"agg":{"total":"sum:amount"},"sort":"-total"}
 // COLLECT year = DATE_YEAR(doc.created) AGGREGATE total = SUM(doc.amount) SORT total DESC RETURN {year, total}
