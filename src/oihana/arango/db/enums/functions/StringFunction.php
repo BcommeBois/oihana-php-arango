@@ -23,8 +23,8 @@ class StringFunction
     public const string FIND_LAST = 'FIND_LAST' ;
     public const string FNV64 = 'FNV64' ;
     public const string IPV4_FROM_NUMBER = 'IPV4_FROM_NUMBER' ;
-    public const string IPV4_TO_NUMBER = 'IPV4_FROM_NUMBER' ;
-    public const string IS_IPV4 = 'IPV4_FROM_NUMBER' ;
+    public const string IPV4_TO_NUMBER = 'IPV4_TO_NUMBER' ;
+    public const string IS_IPV4 = 'IS_IPV4' ;
     public const string JSON_PARSE = 'JSON_PARSE' ;
     public const string JSON_STRINGIFY = 'JSON_STRINGIFY' ;
     public const string LEFT = 'LEFT' ;

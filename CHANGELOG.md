@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Three ipv4 constants held one value, so two helpers emitted the wrong AQL function — and a green, fully covered suite could not see it.** `StringFunction::IS_IPV4` and `StringFunction::IPV4_TO_NUMBER` both carried the literal `'IPV4_FROM_NUMBER'`, a copy-paste. Each helper therefore contradicted its own documented contract: `isIPV4('doc.ip')` promises `IS_IPV4(doc.ip)` and produced `IPV4_FROM_NUMBER(doc.ip)` — not a boolean test, so `?filter={"key":"ip","val":true,"alt":"isIPV4"}` (the example written in `FilterFunction`'s own comment) never matched; `ipv4ToNumber('doc.ip')` promises `IPV4_TO_NUMBER(doc.ip)` and produced **the inverse conversion**, silently. Both constants now equal their own name.
+  - **🚨 Why 100% line coverage proved nothing here.** `StringFunctionsTest::provideSimpleStringFunctions()` wrote the expected AQL name as the `StringFunction::` constant the helper itself reads — `assertSame(IS_IPV4, IS_IPV4)`, a tautology that stays green whatever the constant holds. Every one of the 29 rows had it. They now assert **literals**, and the reason is spelled out on the provider so the shortcut does not come back. The three ipv4 rows are what pins the fix.
+  - **Found by covering, not by reading.** The defect surfaced while exercising the never-called arms of `FilterFunction::apply()`, where `isIPV4`, `ipv4ToNumber` and `ipv4FromNumber` all emitted the same expression. Lines that no test executes hide the values no test compares.
+  - **`ArrayFunction::CONTAINS_ARRAY = 'COUNT'`** is the same copy-paste and is left alone for now: no code in `src/` reads it, so it is public surface only.
+
+### Fixed
+
 - **`InjectFilterTrait::injectFilter()` declared `array &$init` with no PHPDoc type, and every consumer paid for it.** A by-reference parameter's type is part of the contract PHPStan checks against overrides: a controller enriching a typed `$init` (`@param array<string, mixed> &$init`) inherited a `parameterByRef.type` notice it could not fix on its own side, once per such method, plus as many baseline entries. The docblock now says `array<string, mixed>`. One line, no behaviour change.
 
 ### Fixed

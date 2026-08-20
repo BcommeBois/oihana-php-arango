@@ -5,7 +5,6 @@ namespace tests\oihana\arango\db\functions;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-use oihana\arango\db\enums\functions\StringFunction;
 use oihana\exceptions\UnsupportedOperationException;
 use function oihana\arango\db\functions\strings\charLength;
 use function oihana\arango\db\functions\strings\concat;
@@ -25,38 +24,45 @@ class StringFunctionsTest extends TestCase
         $this->assertSame($expectedFunc . "($expected)", $result);
     }
 
+    /**
+     * The expected AQL function name is written as a **literal**, never as the
+     * `StringFunction::` constant the helper itself reads. Asserting through the
+     * constant compares a value to itself: the row stays green whatever the
+     * constant holds, which is exactly how `IS_IPV4` and `IPV4_TO_NUMBER` could
+     * both carry `'IPV4_FROM_NUMBER'` under a fully covered, fully green suite.
+     */
     public static function provideSimpleStringFunctions(): array
     {
         return [
-            'charLength'         => [ 'charLength', StringFunction::CHAR_LENGTH, ['foo'], 'foo'],
-            'crc32'              => [ 'crc32', StringFunction::CRC32, ['bar'], 'bar'],
-            'encodeURIComponent' => [ 'encodeURIComponent', StringFunction::ENCODE_URI_COMPONENT, ['héllo'], 'héllo'],
-            'fnv64'              => [ 'fnv64', StringFunction::FNV64, ['abc'], 'abc'],
-            'ipv4FromNumber'     => [ 'ipv4FromNumber', StringFunction::IPV4_FROM_NUMBER, ['12345'], '12345'],
-            'ipv4ToNumber'       => [ 'ipv4ToNumber', StringFunction::IPV4_TO_NUMBER, ['1.2.3.4'], '1.2.3.4'],
-            'isIPV4'             => [ 'isIPV4', StringFunction::IS_IPV4, ['1.2.3.4'], '1.2.3.4'],
-            'jsonParse'          => [ 'jsonParse', StringFunction::JSON_PARSE, ['{"a":1}'], '{"a":1}'],
-            'jsonStringify'      => [ 'jsonStringify', StringFunction::JSON_STRINGIFY, ['{"b":2}'], '{"b":2}'],
-            'left'               => [ 'left', StringFunction::LEFT, ['foobar', 3], 'foobar,3'],
-            'levenshtein'        => [ 'levenshtein', StringFunction::LEVENSHTEIN_DISTANCE, ['kitten','sitting'], 'kitten,sitting'],
-            'lower'              => [ 'lower', StringFunction::LOWER, ['TEST'], 'TEST'],
-            'md5'                => [ 'md5', StringFunction::MD5, ['abc'], 'abc'],
-            'randomToken'        => [ 'randomToken', StringFunction::RANDOM_TOKEN, [12], '12'],
-            'right'              => [ 'right', StringFunction::RIGHT, ['foobar', 2], 'foobar,2'],
-            'sha1'               => [ 'sha1', StringFunction::SHA1, ['x'], 'x'],
-            'sha256'             => [ 'sha256', StringFunction::SHA256, ['y'], 'y'],
-            'sha512'             => [ 'sha512', StringFunction::SHA512, ['z'], 'z'],
-            'soundex'            => [ 'soundex', StringFunction::SOUNDEX, ['hello'], 'hello'],
-            'toBase64'           => [ 'toBase64', StringFunction::TO_BASE64, ['abcd'], 'abcd'],
-            'toChar'             => [ 'toChar', StringFunction::TO_CHAR, [65], '65'],
-            'toHex'              => [ 'toHex', StringFunction::TO_HEX, ['hi'], 'hi'],
-            'upper'              => [ 'upper', StringFunction::UPPER, ['test'], 'test'],
-            'uuid'               => [ 'uuid', StringFunction::UUID, [], ''],
-            'findLast'           => [ 'findLast', StringFunction::FIND_LAST, ['doc.text', '"o"', 0, null], 'doc.text,"o",0'],
-            'findLastWithEnd'    => [ 'findLast', StringFunction::FIND_LAST, ['doc.text', '"o"', 0, 5], 'doc.text,"o",0,5'],
-            'split'              => [ 'split', StringFunction::SPLIT, ['doc.text', '","'], 'doc.text,","'],
-            'splitWithLimit'     => [ 'split', StringFunction::SPLIT, ['doc.text', '","', 2], 'doc.text,",",2'],
-            'tokens'             => [ 'tokens', StringFunction::TOKENS, ['doc.content', '"text_en"'], 'doc.content,"text_en"'],
+            'charLength'         => [ 'charLength', 'CHAR_LENGTH', ['foo'], 'foo'],
+            'crc32'              => [ 'crc32', 'CRC32', ['bar'], 'bar'],
+            'encodeURIComponent' => [ 'encodeURIComponent', 'ENCODE_URI_COMPONENT', ['héllo'], 'héllo'],
+            'fnv64'              => [ 'fnv64', 'FNV64', ['abc'], 'abc'],
+            'ipv4FromNumber'     => [ 'ipv4FromNumber', 'IPV4_FROM_NUMBER', ['12345'], '12345'],
+            'ipv4ToNumber'       => [ 'ipv4ToNumber', 'IPV4_TO_NUMBER', ['1.2.3.4'], '1.2.3.4'],
+            'isIPV4'             => [ 'isIPV4', 'IS_IPV4', ['1.2.3.4'], '1.2.3.4'],
+            'jsonParse'          => [ 'jsonParse', 'JSON_PARSE', ['{"a":1}'], '{"a":1}'],
+            'jsonStringify'      => [ 'jsonStringify', 'JSON_STRINGIFY', ['{"b":2}'], '{"b":2}'],
+            'left'               => [ 'left', 'LEFT', ['foobar', 3], 'foobar,3'],
+            'levenshtein'        => [ 'levenshtein', 'LEVENSHTEIN_DISTANCE', ['kitten','sitting'], 'kitten,sitting'],
+            'lower'              => [ 'lower', 'LOWER', ['TEST'], 'TEST'],
+            'md5'                => [ 'md5', 'MD5', ['abc'], 'abc'],
+            'randomToken'        => [ 'randomToken', 'RANDOM_TOKEN', [12], '12'],
+            'right'              => [ 'right', 'RIGHT', ['foobar', 2], 'foobar,2'],
+            'sha1'               => [ 'sha1', 'SHA1', ['x'], 'x'],
+            'sha256'             => [ 'sha256', 'SHA256', ['y'], 'y'],
+            'sha512'             => [ 'sha512', 'SHA512', ['z'], 'z'],
+            'soundex'            => [ 'soundex', 'SOUNDEX', ['hello'], 'hello'],
+            'toBase64'           => [ 'toBase64', 'TO_BASE64', ['abcd'], 'abcd'],
+            'toChar'             => [ 'toChar', 'TO_CHAR', [65], '65'],
+            'toHex'              => [ 'toHex', 'TO_HEX', ['hi'], 'hi'],
+            'upper'              => [ 'upper', 'UPPER', ['test'], 'test'],
+            'uuid'               => [ 'uuid', 'UUID', [], ''],
+            'findLast'           => [ 'findLast', 'FIND_LAST', ['doc.text', '"o"', 0, null], 'doc.text,"o",0'],
+            'findLastWithEnd'    => [ 'findLast', 'FIND_LAST', ['doc.text', '"o"', 0, 5], 'doc.text,"o",0,5'],
+            'split'              => [ 'split', 'SPLIT', ['doc.text', '","'], 'doc.text,","'],
+            'splitWithLimit'     => [ 'split', 'SPLIT', ['doc.text', '","', 2], 'doc.text,",",2'],
+            'tokens'             => [ 'tokens', 'TOKENS', ['doc.content', '"text_en"'], 'doc.content,"text_en"'],
         ];
     }
 
