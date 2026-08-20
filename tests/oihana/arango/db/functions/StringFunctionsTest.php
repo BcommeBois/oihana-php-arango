@@ -12,6 +12,7 @@ use function oihana\arango\db\functions\strings\concatSeparator;
 use function oihana\arango\db\functions\strings\contains;
 use function oihana\arango\db\functions\strings\like;
 use function oihana\arango\db\functions\strings\startsWith;
+use function oihana\arango\db\functions\strings\toChar;
 use function oihana\arango\db\helpers\aqlValue;
 use function oihana\core\strings\betweenDoubleQuotes;
 
@@ -70,6 +71,23 @@ class StringFunctionsTest extends TestCase
     {
         $this->assertSame('CHAR_LENGTH(doc.name)' , charLength('doc.name'));
         $this->assertSame('CHAR_LENGTH("name")'   , charLength( betweenDoubleQuotes('name') ));
+    }
+
+    public function testToCharAcceptsALiteralOrAnExpression() :void
+    {
+        // A literal codepoint — the historical form.
+        $this->assertSame( 'TO_CHAR(65)' , toChar( 65 ) );
+
+        // Any AQL expression producing one. This is what makes the `alt:"toChar"`
+        // transformation possible: it hands the field, like every other entry of
+        // the catalogue does.
+        $this->assertSame( 'TO_CHAR(doc.codepoint)' , toChar( 'doc.codepoint' ) );
+
+        // Emitted as written — a fractional codepoint names no character, but the
+        // helper does not arbitrate: refusing it here would guard nothing, since
+        // the same value passes as a string through the `string` arm anyway.
+        $this->assertSame( 'TO_CHAR(65.5)' , toChar( 65.5 ) );
+        $this->assertSame( 'TO_CHAR(65.5)' , toChar( '65.5' ) );
     }
 
     public function testLike() :void
