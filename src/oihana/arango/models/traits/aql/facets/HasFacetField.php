@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits\aql\facets;
 
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
+use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
@@ -16,6 +17,7 @@ use oihana\exceptions\ValidationException;
 
 use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\buildBetweenClauses;
+use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\key;
@@ -96,7 +98,13 @@ trait HasFacetField
         if( is_array( $value ) && !array_is_list( $value ) )
         {
             $op  = $value[ FilterParam::OP  ] ?? $op ;
-            $alt = $value[ FilterParam::ALT ] ?? $alt ;
+
+            // The request chain is marked so the engine binds its parameters; the
+            // declared one stays bare (see resolveFacetValue(), same rule).
+            if ( array_key_exists( FilterParam::ALT , $value ) )
+            {
+                $alt = requestAlt( $value[ FilterParam::ALT ] ) ;
+            }
 
             // `between` carries min/max instead of val — handle it before the val guard.
             if( $op === FilterComparator::BETWEEN )
@@ -132,7 +140,8 @@ trait HasFacetField
         // `alt` wraps the compared field (left) and/or the bound value (right):
         // alt:{ key:.. , val:.. } or val:true mirror. Legacy string/list = key only.
         [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
-        $left = alterExpression( key( $property , $doc ) , $keyChain ) ;
+        $bound = [ Arango::BINDER => $this->binder( $binds ) ] ;
+        $left  = alterExpression( key( $property , $doc ) , $keyChain , $bound ) ;
 
         $conditions = [] ;
         $logic      = Logic::OR ;
@@ -151,7 +160,7 @@ trait HasFacetField
             }
 
             $comparator   = FilterComparator::getAlias( $operator , Comparator::MATCH ) ;
-            $right        = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
+            $right        = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain , $bound ) ;
             $conditions[] = predicate( $left , $comparator , $right ) ;
         }
 

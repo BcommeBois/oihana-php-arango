@@ -28,8 +28,6 @@ use oihana\exceptions\BindException;
 
 use function oihana\arango\db\operations\aqlCollect;
 use function oihana\arango\db\operations\aqlCollectReturn;
-use function oihana\arango\db\operations\aqlFilter;
-use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLimit;
 use function oihana\arango\db\operations\aqlSort;
 use function oihana\core\strings\compile;
@@ -268,7 +266,7 @@ trait ListQueryTrait
         // Optional COLLECT (grouping/aggregation), from the high-level Arango::GROUP
         // spec or a raw Arango::COLLECT spec. When present, `doc` is out of scope:
         // the document-based SORT and RETURN are replaced by a grouped SORT/RETURN.
-        $collectSpec = $this->prepareCollect( $init ) ;
+        $collectSpec = $this->prepareCollect( $init , AQL::DOC , $bindVars ) ;
         $collect     = aqlCollect( $collectSpec ) ;
 
         if ( $collect !== Char::EMPTY )

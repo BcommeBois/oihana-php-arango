@@ -18,6 +18,7 @@ use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlAsc;
 use function oihana\arango\db\operations\aqlDesc;
 use function oihana\arango\models\helpers\isPathAuthorized;
+use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\models\helpers\normalizeSortable;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\func;
@@ -51,6 +52,8 @@ use function oihana\core\strings\key;
  */
 trait GroupTrait
 {
+    use BindTrait ;
+
     /**
      * Optional whitelist/mapping of aggregatable fields: `urlKey => fieldPath`.
      *
@@ -146,7 +149,7 @@ trait GroupTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function prepareCollect( array $init = [] , string $docRef = AQL::DOC ) :array
+    public function prepareCollect( array $init = [] , string $docRef = AQL::DOC , ?array &$binds = null ) :array
     {
         $group = $init[ Arango::GROUP ] ?? null ;
 
@@ -156,7 +159,7 @@ trait GroupTrait
         }
 
         $spec      = [] ;
-        $assign    = $this->collectAssign( $group , $docRef , $init ) ;
+        $assign    = $this->collectAssign( $group , $docRef , $init , $binds ) ;
         $aggregate = $this->collectAggregate( $group , $docRef , $init ) ;
 
         if ( !empty( $assign ) )
@@ -354,7 +357,7 @@ trait GroupTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function collectAssign( array $group , string $docRef , array $init = [] ) :array
+    private function collectAssign( array $group , string $docRef , array $init = [] , ?array &$binds = null ) :array
     {
         $fields = $this->normalizeGroupFields( $group[ Group::BY ] ?? null ) ;
         if ( empty( $fields ) )
@@ -369,8 +372,12 @@ trait GroupTrait
             return [] ;
         }
 
+        // `?group={"alt":…}` is a request slot: each chain is presumed to come from the
+        // wire, so its parameters are bound rather than written into the query.
         $alt    = $group[ Group::ALT ] ?? [] ;
         $assign = [] ;
+
+        $init[ Arango::BINDER ] = $this->binder( $binds ) ;
         foreach ( $fields as $var => $field )
         {
             // The variable (URL key) must be whitelisted and resolves to its field path.
@@ -392,8 +399,8 @@ trait GroupTrait
 
             assertAttributeName( $field ) ; // guards against AQL injection through the field path.
 
-            $chain          = is_array( $alt ) ? ( $alt[ $var ] ?? null ) : null ;
-            $assign[ $var ] = alterExpression( key( $field , $docRef ) , $chain ) ;
+            $chain          = requestAlt( is_array( $alt ) ? ( $alt[ $var ] ?? null ) : null ) ;
+            $assign[ $var ] = alterExpression( key( $field , $docRef ) , $chain , $init ) ;
         }
 
         return $assign ;

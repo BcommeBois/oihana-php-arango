@@ -4,6 +4,8 @@ namespace oihana\arango\models\helpers\facets;
 
 use oihana\arango\models\enums\filters\FilterParam;
 
+use function oihana\arango\db\helpers\requestAlt;
+
 /**
  * Reads a facet value coming from the URL, letting the `{op, val, alt}` request
  * object override the operator and the `alt` chain declared in the facet
@@ -54,7 +56,14 @@ function resolveFacetValue( mixed $value , mixed $op , mixed $alt ) : ?array
     if( is_array( $value ) && !array_is_list( $value ) )
     {
         $op  = $value[ FilterParam::OP  ] ?? $op ;
-        $alt = $value[ FilterParam::ALT ] ?? $alt ;
+
+        // The request wins over the declaration — and its chain is marked as such, so
+        // the engine binds its parameters instead of writing them into the query. The
+        // declared chain is left bare: the consumer's own code may name an expression.
+        if ( array_key_exists( FilterParam::ALT , $value ) )
+        {
+            $alt = requestAlt( $value[ FilterParam::ALT ] ) ;
+        }
 
         if( !array_key_exists( FilterParam::VAL , $value ) )
         {

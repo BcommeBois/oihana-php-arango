@@ -22,6 +22,13 @@ class GroupTraitStub
     use GroupTrait ;
 
     public ?array $fields = null ; // projection map — powers the inherited permission gate
+
+    public function __construct()
+    {
+        // GroupTrait now binds the parameters of a request-supplied `alt`, so it pulls
+        // in BindTrait — whose bind names are prefixed by the query id.
+        $this->initializeQueryID( 'q' ) ;
+    }
 }
 
 /**
@@ -261,6 +268,61 @@ class GroupTraitTest extends TestCase
             Arango::GROUP => [ Group::BY => 'cat,secret' , Group::COUNT => true ] ,
         ]) ;
         $this->assertSame( 'COLLECT cat = doc.category WITH COUNT INTO count' , aqlCollect( $spec ) ) ;
+    }
+
+    /**
+     * `?group={"alt":…}` is a request slot: the chain's parameters become bound
+     * values, so nothing a client writes there can reach the query as grammar.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAGroupAltParameterIsBound() :void
+    {
+        $stub  = $this->stub( [ 'cat' => 'category' ] ) ;
+        $binds = [] ;
+
+        $spec = $stub->prepareCollect
+        (
+            [
+                Arango::GROUP =>
+                [
+                    Group::BY  => 'cat' ,
+                    Group::ALT => [ 'cat' => [ 'split' , '"zzz") || true || SPLIT(doc.x,"y"' ] ] ,
+                ] ,
+            ] ,
+            AQL::DOC ,
+            $binds
+        ) ;
+
+        $aql = aqlCollect( $spec ) ;
+
+        $this->assertStringNotContainsString( '||' , $aql ) ;                          // nothing of it reached the AQL
+        $this->assertMatchesRegularExpression( '/SPLIT\(doc\.category,@[A-Za-z0-9_]+,0\)/' , $aql ) ;
+        $this->assertContains( '"zzz") || true || SPLIT(doc.x,"y"' , $binds ) ;        // it is a value, and only a value
+    }
+
+    /**
+     * And a legitimate one keeps working, without the client having to quote it.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testALegitimateGroupAltParameterStillTransforms() :void
+    {
+        $stub  = $this->stub( [ 'cat' => 'category' ] ) ;
+        $binds = [] ;
+
+        $spec = $stub->prepareCollect
+        (
+            [ Arango::GROUP => [ Group::BY => 'cat' , Group::ALT => [ 'cat' => 'lower' ] ] ] ,
+            AQL::DOC ,
+            $binds
+        ) ;
+
+        // A chain with no parameter binds nothing at all.
+        $this->assertSame( 'COLLECT cat = LOWER(doc.category)' , aqlCollect( $spec ) ) ;
+        $this->assertSame( [] , $binds ) ;
     }
 
     public function testPrepareGroupSortDirections() :void

@@ -162,6 +162,35 @@ class FacetAltTest extends TestCase
         $this->assertStringContainsString( 'ALL IN doc.tags[* RETURN LOWER(CURRENT)]' , $result ) ;
     }
 
+    /**
+     * A `?facets=` request object may **override** the declared `alt` — the code says
+     * so itself. So the overriding chain is request-supplied, and its parameters are
+     * bound rather than written into the query.
+     */
+    public function testAnAltOverriddenByTheRequestHasItsParameterBound(): void
+    {
+        $payload = '"zzz") || true || SPLIT(doc.x,"y"' ;
+        $value   = [ 'val' => 'TECH' , 'alt' => [ 'key' => [ 'split' , $payload ] ] ] ;
+
+        $result = $this->stub->callField( 'category' , $value , $this->binds , [] , AQL::DOC ) ;
+
+        $this->assertStringNotContainsString( '||' , $result ) ;
+        $this->assertMatchesRegularExpression( '/SPLIT\(doc\.category,@\S+,0\)/' , $result ) ;
+        $this->assertContains( $payload , $this->binds ) ;
+    }
+
+    /**
+     * A chain declared on the facet itself is the consumer's own code: it keeps the
+     * passthrough, so it may still name an expression.
+     */
+    public function testAnAltDeclaredOnTheFacetKeepsItsParameterInline(): void
+    {
+        $facet  = [ Facet::ALT => [ 'key' => [ 'split' , 'doc.separator' ] ] ] ;
+        $result = $this->stub->callField( 'category' , 'TECH' , $this->binds , $facet , AQL::DOC ) ;
+
+        $this->assertStringContainsString( 'SPLIT(doc.category,doc.separator,0)' , $result ) ;
+    }
+
     public function testInAltKeyOnlyLeavesValuesRaw(): void
     {
         $facet  = [ Facet::ALT => [ 'key' => 'lower' ] ] ;

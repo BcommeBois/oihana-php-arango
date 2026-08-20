@@ -192,6 +192,23 @@ class HasFilterDateTest extends TestCase
     // DATE FUNCTION TRANSFORMATIONS
     // ========================================
 
+    /**
+     * The value side of a date filter reads its `alt` from the same request slot as
+     * every other filter, so its parameters are bound too — the payload below would
+     * otherwise close the `DATE_FORMAT(` call.
+     */
+    public function testDateValueSideAltParameterIsBound(): void
+    {
+        $payload = '%yyyy") || true || DATE_FORMAT(doc.x,"%mm' ;
+        $init    = [ 'key' => 'created' , 'val' => '2024-01-15' , 'alt' => [ 'val' => [ 'dateFormat' , $payload ] ] ] ;
+
+        $result = $this->model->prepareFilter( $init , $this->binds ) ;
+
+        $this->assertStringNotContainsString( '||' , $result ) ;
+        $this->assertMatchesRegularExpression( '/DATE_FORMAT\(@\S+?,@\S+?\)/' , $result ) ;
+        $this->assertContains( $payload , $this->binds ) ;
+    }
+
     public function testDateFilterWithYearExtraction(): void
     {
         $init = [ 'key' => 'birthday' , 'val' => 1990 , 'alt' => 'dateYear' ] ;

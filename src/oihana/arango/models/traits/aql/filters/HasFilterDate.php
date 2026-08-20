@@ -3,6 +3,7 @@
 namespace oihana\arango\models\traits\aql\filters;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterDate;
 use oihana\arango\models\enums\filters\FilterParam;
@@ -16,6 +17,7 @@ use function oihana\arango\db\functions\dates\dateNow;
 use function oihana\arango\db\functions\dates\tomorrow;
 use function oihana\arango\db\functions\dates\yesterday;
 use function oihana\arango\db\helpers\alterExpression;
+use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\core\date\isValidTimezone;
 use function oihana\core\strings\predicate;
@@ -144,9 +146,18 @@ trait HasFilterDate
         // Apply the value-side (right) `alt` chain when one is set (object form
         // alt:{ key:.. , val:.. } or val:true mirror); string/list `alt` only
         // touches the key side, so extractor forms leave the value untouched.
-        [ , $valChain ] = resolveAltSides( $init[ FilterParam::ALT ] ?? null ) ;
+        // `$init[FilterParam::ALT]` is a request slot: presume the chain came from the
+        // wire unless the caller signed it, and hand the binder down with it.
+        [ , $valChain ] = resolveAltSides( requestAlt( $init[ FilterParam::ALT ] ?? null ) ) ;
 
-        return $valChain === null ? $expr : alterExpression( $expr , $valChain , $init ) ;
+        if ( $valChain === null )
+        {
+            return $expr ;
+        }
+
+        $init[ Arango::BINDER ] = $this->binder( $binds ) ;
+
+        return alterExpression( $expr , $valChain , $init ) ;
     }
 
     /**

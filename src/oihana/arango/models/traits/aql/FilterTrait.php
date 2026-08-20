@@ -635,12 +635,7 @@ trait FilterTrait
         // wire unless the caller signed it with trustedAlt(). The binder travels with
         // it so its parameters are bound rather than pasted into the query.
         [ $keyChain ] = resolveAltSides( requestAlt( $init[ FilterParam::ALT ] ?? null ) ) ;
-        // NOT an arrow function: fn() captures by value, so the bind would land in a
-        // copy and the query would declare a parameter nothing ever fills.
-        $init[ Arango::BINDER ] = function( mixed $value ) use ( &$binds ) :string
-        {
-            return $this->bind( $value , $binds ) ;
-        } ;
+        $init[ Arango::BINDER ] = $this->binder( $binds ) ;
         return alterExpression( $key , $keyChain , $init ) ;
     }
 
@@ -767,10 +762,7 @@ trait FilterTrait
             return $bound ;
         }
 
-        $init[ Arango::BINDER ] = function( mixed $v ) use ( &$binds ) :string
-        {
-            return $this->bind( $v , $binds ) ;
-        } ;
+        $init[ Arango::BINDER ] = $this->binder( $binds ) ;
 
         if ( is_array( $value ) )
         {

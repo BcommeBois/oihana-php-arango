@@ -37,6 +37,31 @@ trait BindTrait
     }
 
     /**
+     * Returns a binder over `$binds` — the callable {@see Arango::BINDER}
+     * carries down to the `alt` engine, so a parameter that arrived with a request
+     * becomes a bound value instead of text written into the query.
+     *
+     * ⚠ Deliberately a `function () use ( &$binds )` and **not** an arrow function:
+     * `fn()` captures by value, so the bind would land in a copy and the query would
+     * declare a parameter nothing ever fills. That mistake costs a `400` from the
+     * server and is invisible to any assertion made on the emitted AQL — which is
+     * why the closure is built here, once, rather than at each reading point.
+     *
+     * @param array|null $binds Reference to the array of existing bind variables; a `null` is initialised in place.
+     *
+     * @return callable(mixed):string A callable registering a value and returning its `@name`.
+     */
+    public function binder( ?array &$binds = null ) :callable
+    {
+        $binds ??= [] ; // written back through the reference, so the caller keeps the map
+
+        return function( mixed $value ) use ( &$binds ) :string
+        {
+            return $this->bind( $value , $binds ) ;
+        } ;
+    }
+
+    /**
      * Bind a collection name to an AQL query variable.
      *
      * Prepares a bind variable for a collection name. Uses the collection defined in `$init` or

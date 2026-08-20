@@ -147,6 +147,34 @@ class CollectIntegrationTest extends IntegrationTestCase
         $this->assertSame( [ 'A' => [ 330 , 3 ] , 'B' => [ 120 , 2 ] ] , $byCat ) ;
     }
 
+    /**
+     * ⚠ The measurement for the `?group=` reading point. The separator below carries
+     * AQL punctuation; written into the query it closed the `SPLIT(` call, and the
+     * whole statement stopped parsing. Bound, it is nothing but a separator — one
+     * `SPLIT` never finds, so each category stays a single whole element and the
+     * groups are exactly the ones a plain `?groupBy=category` would give.
+     */
+    public function testAGroupAltParameterIsBoundLive() :void
+    {
+        $rows = $this->rows(
+        [
+            Arango::GROUP =>
+            [
+                GroupSpec::BY    => 'category' ,
+                // The explicit limit matters: the arm defaults it to 0, and AQL reads
+                // SPLIT(value, sep, 0) as "keep nothing" — every row would land in one
+                // empty group and the assertion would prove nothing.
+                GroupSpec::ALT   => [ 'category' => [ 'split' , '") || true || ("' , 10 ] ] ,
+                GroupSpec::COUNT => true ,
+            ] ,
+        ]) ;
+
+        $counts = [] ;
+        foreach ( $rows as $r ) { $counts[ implode( '' , $r['category'] ) ] = $r['count'] ; }
+        ksort( $counts ) ;
+        $this->assertSame( [ 'A' => 3 , 'B' => 2 ] , $counts ) ;
+    }
+
     public function testHttpGroupByEndToEnd() :void
     {
         // Full HTTP chain: ?groupBy=category -> prepareGroup() -> Arango::GROUP -> live AQL.

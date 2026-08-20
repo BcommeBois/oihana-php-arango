@@ -6,6 +6,7 @@ use oihana\arango\db\enums\ArrayComparator;
 use oihana\arango\db\enums\Clause;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Operation;
+use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterArrayComparator;
 use oihana\enums\Char;
@@ -129,6 +130,7 @@ trait HasFacetIn
         // bracketed keeps the membership test and the SORT POSITION(...) clause
         // consistent.
         [ $keyChain , $valChain ] = resolveAltSides( $alt ) ;
+        $bound = [ Arango::BINDER => $this->binder( $binds ) ] ;
 
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
         $docProp  = key( $property , $doc ) ;
@@ -137,13 +139,13 @@ trait HasFacetIn
         // (LOWER(doc.tags) would be null; doc.tags[* RETURN LOWER(CURRENT)] is right).
         if( $keyChain !== null )
         {
-            $docProp = arrayMap( $docProp , alterExpression( Clause::CURRENT , $keyChain ) ) ;
+            $docProp = arrayMap( $docProp , alterExpression( Clause::CURRENT , $keyChain , $bound ) ) ;
         }
 
         $items = [] ;
         foreach( $values as $index => $item )
         {
-            $items[] = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
+            $items[] = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain , $bound ) ;
         }
         $array = betweenBrackets( compile( $items , Char::COMMA ) ) ;
 

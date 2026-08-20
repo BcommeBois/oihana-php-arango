@@ -5,6 +5,7 @@ namespace oihana\arango\models\traits\aql\facets;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
+use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\enums\Char;
@@ -107,6 +108,7 @@ trait HasFacetSimpleConditions
         // in the complex facets. A string is split on commas, a list is kept.
         $values = is_array( $value ) ? array_values( $value ) : explode( Char::COMMA , (string) $value ) ;
 
+        $bound     = [ Arango::BINDER => $this->binder( $binds ) ] ;
         $positives = [] ;
         $negatives = [] ;
 
@@ -114,12 +116,12 @@ trait HasFacetSimpleConditions
         {
             $negative = is_string( $item ) && strlen( $item ) > 1 && $item[ 0 ] === Char::HYPHEN ;
             $item     = $negative ? ltrim( $item , Char::HYPHEN ) : $item ;
-            $bind     = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain ) ;
+            $bind     = alterExpression( $this->bind( $item , $binds , $key . Char::UNDERLINE . $index ) , $valChain , $bound ) ;
 
             $group = [] ;
             foreach( $fields as $field )
             {
-                $group[] = predicate( alterExpression( key( $field , $docRef ) , $keyChain ) , $comparator , $bind ) ;
+                $group[] = predicate( alterExpression( key( $field , $docRef ) , $keyChain , $bound ) , $comparator , $bind ) ;
             }
             $term = count( $group ) > 1 ? betweenParentheses( predicates( $group , Logic::OR ) ) : $group[ 0 ] ;
 

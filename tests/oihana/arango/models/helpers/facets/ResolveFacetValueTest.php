@@ -6,6 +6,8 @@ use oihana\arango\models\enums\filters\FilterParam;
 
 use PHPUnit\Framework\TestCase;
 
+use oihana\arango\db\helpers\AltChain;
+
 use function oihana\arango\models\helpers\facets\resolveFacetValue;
 
 /**
@@ -37,22 +39,40 @@ final class ResolveFacetValueTest extends TestCase
         ) ;
     }
 
-    public function testRequestObjectOverridesOperatorAndAlt() :void
+    /**
+     * The request wins over the declaration — and its chain comes back **marked**,
+     * so the engine binds its parameters instead of writing them into the query.
+     */
+    public function testRequestObjectOverridesOperatorAndMarksItsAlt() :void
     {
-        $this->assertSame
+        [ $op , $alt , $value ] = resolveFacetValue
         (
-            [ 'like' , 'lower' , 'al' ] ,
-            resolveFacetValue
-            (
-                [
-                    FilterParam::OP  => 'like'  ,
-                    FilterParam::ALT => 'lower' ,
-                    FilterParam::VAL => 'al'    ,
-                ] ,
-                'eq' ,
-                null
-            )
+            [
+                FilterParam::OP  => 'like'  ,
+                FilterParam::ALT => 'lower' ,
+                FilterParam::VAL => 'al'    ,
+            ] ,
+            'eq' ,
+            null
         ) ;
+
+        $this->assertSame( 'like' , $op    ) ;
+        $this->assertSame( 'al'   , $value ) ;
+
+        $this->assertInstanceOf( AltChain::class , $alt ) ;
+        $this->assertFalse( $alt->trusted ) ;
+        $this->assertSame( 'lower' , $alt->chain ) ;
+    }
+
+    /**
+     * A declared chain the request does not override stays **bare**: the consumer's
+     * own code may name an expression, and interpolating it is the point.
+     */
+    public function testADeclaredAltIsLeftBareWhenTheRequestDoesNotOverrideIt() :void
+    {
+        [ , $alt ] = resolveFacetValue( [ FilterParam::VAL => 'al' ] , 'eq' , 'lower' ) ;
+
+        $this->assertSame( 'lower' , $alt ) ;
     }
 
     /**
