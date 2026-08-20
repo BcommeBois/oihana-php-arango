@@ -108,7 +108,6 @@ trait HasFacetArrayComplex
                         $negative = true ;
                     }
                     $subSearch = $search . $i ;
-                    $binds[ $subSearch ] = $si ;
                     $subFilter[] = predicate
                     (
                         $field ,

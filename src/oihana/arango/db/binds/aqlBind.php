@@ -22,7 +22,16 @@ use function oihana\core\strings\prepend;
  *
  * @return string The formatted AQL bind variable (e.g. `'@userId'` or `'@@collection'`).
  *
- * @throws BindException If the provided variable name is invalid according to ArangoDB naming rules.
+ * Two guarantees on the name:
+ * - an **auto-generated** name is drawn until it is free, so it can never land on a
+ *   slot already taken (the single draw allowed a birthday collision, and the loser
+ *   was overwritten in silence);
+ * - an **explicit** name already bound to a *different* value raises. Rebinding the
+ *   same value drops nothing and stays allowed. The comparison is strict, so `1` and
+ *   `'1'` count as different — AQL compares a number and a string differently.
+ *
+ * @throws BindException If the provided variable name is invalid according to ArangoDB
+ *                       naming rules, or is already bound to a different value.
  *
  * @example
  * ```php
@@ -54,11 +63,30 @@ function aqlBind
 :string
 {
     assertBindVariable( $to ) ;
+
+    $prefix = $isCollection ? Char::AT_SIGN : Char::EMPTY ;
+
     if ( $to == null )
     {
-        $to = mt_rand( 100000 , 999999 ) ;
-        $to = prepend( $to, $toPrefix ?? 'q' , Char::UNDERLINE ) ;
+        // Draw until the slot is free: the name is arbitrary, so retrying costs
+        // nothing and removes the birthday collision the single draw allowed.
+        do
+        {
+            $to = prepend( mt_rand( 100000 , 999999 ) , $toPrefix ?? 'q' , Char::UNDERLINE ) ;
+        }
+        while ( array_key_exists( $prefix . $to , $binds ) ) ;
     }
-    $binds[ ( $isCollection ? Char::AT_SIGN : Char::EMPTY ) . $to ] = $value ;
+    elseif ( array_key_exists( $prefix . $to , $binds ) && $binds[ $prefix . $to ] !== $value )
+    {
+        // Rebinding the *same* value drops nothing, so it stays allowed. A different
+        // one would silently replace the first and quietly change what the query asks.
+        throw new BindException( sprintf
+        (
+            'The bind variable "%s" is already bound to a different value: rebinding it would silently drop the first one.' ,
+            $prefix . $to
+        )) ;
+    }
+
+    $binds[ $prefix . $to ] = $value ;
     return formatBindVariable( $to , $isCollection ) ;
 }
