@@ -43,6 +43,9 @@ class MockDocuments extends Documents
     /** The last cursor options passed to a fetch seam. */
     public array $lastOptions = [] ;
 
+    /** The last `raw` flag passed to a fetch seam. */
+    public bool $lastRaw = false ;
+
     /** The last alteration context (the originating `$init`) passed to a fetch seam. */
     public array $lastContext = [] ;
 
@@ -166,7 +169,7 @@ class MockDocuments extends Documents
      * @param string                             $query    The AQL query the trait built.
      * @param array                              $bindVars The bind variables the trait built.
      * @param array                              $options  Cursor options (ignored by the double).
-     * @param bool                               $raw      Whether to skip hydration (ignored).
+     * @param bool                               $raw      Whether to skip hydration — captured in {@see $lastRaw}.
      * @param null|SchemaResolver|Closure|string $schema   Hydration schema (ignored).
      *
      * @return array The canned documents result.
@@ -186,6 +189,7 @@ class MockDocuments extends Documents
         $this->lastBinds   = $bindVars ;
         $this->lastOptions = $options ;
         $this->lastContext = $context ;
+        $this->lastRaw     = $raw ;
         return $this->documentsResult ;
     }
 
@@ -195,7 +199,7 @@ class MockDocuments extends Documents
      * @param string                             $query    The AQL query the trait built.
      * @param array                              $bindVars The bind variables the trait built.
      * @param array                              $options  Cursor options (ignored by the double).
-     * @param bool                               $raw      Whether to skip hydration (ignored).
+     * @param bool                               $raw      Whether to skip hydration — captured in {@see $lastRaw}.
      * @param null|SchemaResolver|Closure|string $schema   Hydration schema (ignored).
      *
      * @return Generator The canned documents, yielded one by one.
@@ -214,6 +218,7 @@ class MockDocuments extends Documents
         $this->lastQuery   = $query ;
         $this->lastBinds   = $bindVars ;
         $this->lastContext = $context ;
+        $this->lastRaw     = $raw ;
         yield from $this->streamResult ;
     }
 }

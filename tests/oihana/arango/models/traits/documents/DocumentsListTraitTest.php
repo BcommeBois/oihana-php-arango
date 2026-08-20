@@ -3,7 +3,9 @@
 namespace tests\oihana\arango\models\traits\documents;
 
 use oihana\arango\clients\cursor\enums\CursorField;
+use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\models\enums\Group;
 
 use PHPUnit\Framework\TestCase;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
@@ -22,6 +24,56 @@ final class DocumentsListTraitTest extends TestCase
 
         $this->assertSame( $model->documentsResult , $result ) ;
         $this->assertSame( 'FOR doc IN @@collection RETURN doc' , $model->lastQuery ) ;
+    }
+
+    public function testListHydratesAnUngroupedResult() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->list( [] ) ;
+
+        $this->assertFalse( $model->lastRaw ) ;
+    }
+
+    /**
+     * A grouped line is not a document: the schema and the alters are skipped, so an
+     * aggregate the schema class does not declare survives the read instead of being
+     * dropped — or, when the name does collide, coerced into that property's type.
+     */
+    public function testListReadsAGroupedResultRaw() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->groupable = [ 'year' => 'year' ] ; // fail-closed: the dimension must be whitelisted
+
+        $model->list( [ Arango::GROUP => [ Group::BY => 'year' , Group::AGG => [ 'total' => 'sum:amount' ] ] ] ) ;
+
+        $this->assertTrue( $model->lastRaw ) ;
+    }
+
+    /**
+     * The raw `Arango::COLLECT` spec is the other door into the same clause, and it
+     * switches the read just the same.
+     */
+    public function testListReadsARawCollectSpecRaw() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+
+        $model->list( [ Arango::COLLECT => [ AQL::ASSIGN => [ 'year' => 'doc.year' ] ] ] ) ;
+
+        $this->assertTrue( $model->lastRaw ) ;
+    }
+
+    /**
+     * The dimension is not whitelisted and there is no aggregate: no COLLECT is
+     * emitted, the query still returns documents, and they are still hydrated.
+     */
+    public function testListHydratesWhenTheGroupSpecEmitsNoCollect() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->groupable = [ 'year' => 'year' ] ;
+
+        $model->list( [ Arango::GROUP => [ Group::BY => 'unknown' ] ] ) ;
+
+        $this->assertFalse( $model->lastRaw ) ;
     }
 
     public function testListWithLimitAndSort() :void

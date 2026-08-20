@@ -106,6 +106,50 @@ $model->list
 
 > **Comptage + agrégats.** `AGGREGATE` et `WITH COUNT INTO` sont mutuellement exclusifs en AQL. Quand un `count` accompagne des agrégats, il est émis comme `n = LENGTH(1)` (et non `WITH COUNT`).
 
+## Ce que rend une requête groupée
+
+Un `COLLECT` remplace les documents par des lignes que la requête a inventées : les dimensions, les agrégats, le compteur. **Une ligne groupée n'est donc pas un document**, et ni le schéma du modèle ni ses `alters` ne s'y appliquent — leurs noms sont ceux de la collection, ceux de la ligne sont ceux que le client a demandés.
+
+`list()` et `stream()` lisent ces lignes **telles quelles**. Elles reviennent en objets simples portant exactement les variables que le `COLLECT` a émises :
+
+```php
+$model->list([ Arango::GROUP => [ Group::BY => 'year' , Group::AGG => [ 'total' => 'sum:speed.value' ] ] ]) ;
+// [ { "year": 2023, "total": 150.5 } , { "year": 2024, "total": 20.5 } ]
+```
+
+Une liste **sans** regroupement ne change pas d'un caractère : ses documents traversent le schéma et les `alters` comme avant.
+
+### ⚠ Pourquoi ce n'est pas un détail
+
+Tant que ces lignes traversaient le schéma, elles y perdaient tout ce que la requête avait inventé. Le constructeur d'un `Thing` ne recopie que les clés correspondant à une **propriété publique déclarée** — et une classe de collection ne déclare ni `year`, ni `total`. Mesuré, avec un schéma qui n'en déclare aucun :
+
+| ce que le serveur a calculé | ce qui arrivait au lecteur |
+|---|---|
+| `{ "year": 2023, "total": 150.5 }` | `{ "@type": "Thing" }` |
+
+Pas « l'agrégat manque » : **tout manque**, la dimension comprise. Et la réponse revenait en `200`, bien formée, avec un `@type` que la classe portait alors que la ligne n'était plus un document.
+
+🚨 **Le cas le plus dangereux est celui où le nom *correspond*.** Ces propriétés sont typées, et PHP convertit :
+
+| agrégat demandé | calculé | propriété heurtée | ce qui arrivait |
+|---|---|---|---|
+| `"name": "sum:speed.value"` | `150.5` | `name` (`string\|int\|null`) | **`150`** |
+| `"active": "sum:amount"` | `10` | `active` (`?bool`) | **`true`** |
+
+Une somme de `10` rendue `true`. Une valeur fausse ne se voit pas, là où une clé absente se remarque.
+
+### La bascule suit le `COLLECT` émis, pas le `?group=` demandé
+
+Une demande dont **toutes** les dimensions sautent — non déclarées dans `Arango::GROUPABLE`, ou fermées par la garde de permission — et qui ne porte aucun agrégat n'émet aucun `COLLECT` : la requête rend toujours des documents, et ils sont toujours hydratés.
+
+```php
+// 'unknown' n'est pas déclaré groupable et il n'y a pas d'agrégat :
+$model->list([ Arango::GROUP => [ Group::BY => 'unknown' ] ]) ;
+// aucun COLLECT → des documents, hydratés comme d'habitude
+```
+
+La [spec brute `Arango::COLLECT`](#spec-brute-arangocollect) est l'autre porte vers la même clause : elle bascule la lecture de la même façon.
+
 ## Champs à points et nommage
 
 Un champ imbriqué devient une variable à underscore (identifiant AQL valide) :

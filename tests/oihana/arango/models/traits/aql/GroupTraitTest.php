@@ -46,6 +46,50 @@ class GroupTraitTest extends TestCase
         return $stub ;
     }
 
+    /**
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testIsGroupedQueryFollowsTheEmittedCollect() :void
+    {
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+
+        // No group at all: the query returns documents.
+        $this->assertFalse( $stub->isGroupedQuery( [] ) ) ;
+
+        // A whitelisted dimension: the query groups.
+        $this->assertTrue( $stub->isGroupedQuery( [ Arango::GROUP => [ Group::BY => 'cat' ] ] ) ) ;
+
+        // A count alone still groups (COLLECT WITH COUNT INTO).
+        $this->assertTrue( $stub->isGroupedQuery( [ Arango::GROUP => [ Group::COUNT => true ] ] ) ) ;
+
+        // An aggregate alone groups too, even with every dimension dropped.
+        $this->assertTrue( $stub->isGroupedQuery
+        (
+            [ Arango::GROUP => [ Group::BY => 'unknown' , Group::AGG => [ 'total' => 'sum:amount' ] ] ]
+        ) ) ;
+
+        // The raw COLLECT spec is the other door into the same clause.
+        $this->assertTrue( $stub->isGroupedQuery( [ Arango::COLLECT => [ AQL::ASSIGN => [ 'y' => 'doc.year' ] ] ] ) ) ;
+    }
+
+    /**
+     * \u26a0 The test is the **emitted** COLLECT, never the requested group. A spec whose
+     * every dimension is dropped and which carries no aggregate produces no clause
+     * at all: the query still returns documents, and they must still be hydrated.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testIsGroupedQueryIsFalseWhenEveryDimensionIsDropped() :void
+    {
+        $stub = $this->stub( [ 'cat' => 'category' ] ) ;
+        $init = [ Arango::GROUP => [ Group::BY => 'unknown' ] ] ;
+
+        $this->assertSame( '' , aqlCollect( $stub->prepareCollect( $init ) ) ) ;
+        $this->assertFalse( $stub->isGroupedQuery( $init ) ) ;
+    }
+
     public function testInitializeGroupableReadsInitKey() :void
     {
         $stub = $this->stub() ;

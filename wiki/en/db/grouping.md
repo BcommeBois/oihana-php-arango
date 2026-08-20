@@ -106,6 +106,50 @@ $model->list
 
 > **Count + aggregates.** `AGGREGATE` and `WITH COUNT INTO` are mutually exclusive in AQL. When a `count` accompanies aggregates, it is emitted as `n = LENGTH(1)` (not `WITH COUNT`).
 
+## What a grouped query returns
+
+A `COLLECT` replaces the documents by rows the query invented: the dimensions, the aggregates, the count. **A grouped row is therefore not a document**, and neither the model's schema nor its `alters` apply to it — their names are the collection's, the row's are the ones the client asked for.
+
+`list()` and `stream()` read those rows **as they are**. They come back as plain objects carrying exactly the variables the `COLLECT` emitted:
+
+```php
+$model->list([ Arango::GROUP => [ Group::BY => 'year' , Group::AGG => [ 'total' => 'sum:speed.value' ] ] ]) ;
+// [ { "year": 2023, "total": 150.5 } , { "year": 2024, "total": 20.5 } ]
+```
+
+A list **without** grouping does not change by one character: its documents go through the schema and the `alters` as before.
+
+### ⚠ Why this is not a detail
+
+For as long as those rows went through the schema, they lost everything the query had invented there. A `Thing`'s constructor copies only the keys matching a **declared public property** — and a collection class declares neither `year` nor `total`. Measured, with a schema declaring neither:
+
+| what the server computed | what reached the reader |
+|---|---|
+| `{ "year": 2023, "total": 150.5 }` | `{ "@type": "Thing" }` |
+
+Not "the aggregate is missing": **everything is missing**, the dimension included. And the answer came back in `200`, well-formed, carrying an `@type` the class held while the row was no longer a document.
+
+🚨 **The dangerous case is the one where the name *does* match.** Those properties are typed, and PHP coerces:
+
+| requested aggregate | computed | property hit | what reached the reader |
+|---|---|---|---|
+| `"name": "sum:speed.value"` | `150.5` | `name` (`string\|int\|null`) | **`150`** |
+| `"active": "sum:amount"` | `10` | `active` (`?bool`) | **`true`** |
+
+A sum of `10` answered as `true`. A wrong value does not show, where a missing key does.
+
+### The switch follows the emitted `COLLECT`, not the requested `?group=`
+
+A request whose **every** dimension is dropped — undeclared in `Arango::GROUPABLE`, or closed by the permission gate — and which carries no aggregate emits no `COLLECT` at all: the query still returns documents, and they are still hydrated.
+
+```php
+// 'unknown' is not declared groupable and there is no aggregate:
+$model->list([ Arango::GROUP => [ Group::BY => 'unknown' ] ]) ;
+// no COLLECT → documents, hydrated as usual
+```
+
+The [raw `Arango::COLLECT` spec](#raw-arangocollect-spec) is the other door into the same clause: it switches the read just the same.
+
 ## Dotted fields and naming
 
 A nested field becomes an underscore variable (a valid AQL identifier):
