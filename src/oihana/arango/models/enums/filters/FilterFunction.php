@@ -412,7 +412,9 @@ class FilterFunction
             self::NTH            => nth           ( $key , (int) ( $params[0] ?? 0 ) ) ,
             self::PLUCK          => pluck         ( $key , (string) ( $params[0] ?? '' ) ) , // doc.items[* RETURN CURRENT.<field>]
             self::POP            => pop           ( $key ) ,
-            self::POSITION       => position      ( $key , $params[0] ?? null , (bool) ( $params[1] ?? false ) ) ,
+            self::POSITION       => isset( $params[0] )
+                                  ? position( $key , $params[0] , (bool) ( $params[1] ?? false ) )
+                                  : throw self::missingParameter( self::POSITION , 'search value' ) ,
             self::PUSH           => push          ( $key , $params[0] ?? null , (bool) ( $params[1] ?? false ) ) ,
             self::REMOVE         => removeValue   ( $key , $params[0] ?? null , $params[1] ?? null ) ,
             self::REMOVES        => removeValues  ( $key , aqlArray( $params[0] ?? [] ) ) ,
@@ -433,7 +435,9 @@ class FilterFunction
             self::ATAN2          => atan2         ( $key , $params[0] ?? 1 ) ,
             self::CEIL           => ceil          ( $key ) ,
             self::COS            => cos           ( $key ) ,
-            self::COS_SIMILARITY => cosSimilarity ( $key , $params[0] ?? null ) ,
+            self::COS_SIMILARITY => isset( $params[0] )
+                                  ? cosSimilarity( $key , $params[0] )
+                                  : throw self::missingParameter( self::COS_SIMILARITY , 'second operand' ) ,
             self::DEGREES        => degrees       ( $key ) ,
             self::EXP            => exp           ( $key ) ,
             self::EXP2           => exp2          ( $key ) ,
@@ -473,7 +477,9 @@ class FilterFunction
             self::JSON_PARSE       => jsonParse         ( $key ) ,
             self::JSON_STRINGIFY   => jsonStringify     ( $key ) ,
             self::LEFT             => left              ( $key , (int) ( $params[0] ?? 0 ) ) ,
-            self::LEVENSHTEIN      => isset( $params[0]) ? levenshtein( $key , (string) $params[0] ) : $key ,
+            self::LEVENSHTEIN      => isset( $params[0] )
+                                    ? levenshtein( $key , (string) $params[0] )
+                                    : throw self::missingParameter( self::LEVENSHTEIN , 'comparison value' ) ,
             self::LIKE             => like              ( $key , (string) ( $params[0] ?? '' ) , (bool) ( $params[1] ?? false ) ) ,
             self::MD5              => md5               ( $key ) ,
             self::RANDOM_TOKEN     => randomToken       ( (int) ( $params[0] ?? 16 ) ) ,
@@ -541,5 +547,25 @@ class FilterFunction
 
             default => $key ,
         };
+    }
+
+    /**
+     * Builds the refusal of an arm whose operand is required.
+     *
+     * Three entries of the catalogue take a **second operand** that has no
+     * meaningful default: AQL has no "position of nothing", no "similarity with
+     * nothing" and no "distance to nothing" — each of those functions is binary.
+     * Called bare, they used to fail in two unhelpful ways: a `TypeError` for a
+     * `null` handed to a non-nullable parameter, which is a fatal no caller
+     * declares or catches, or a silent no-op returning the key untouched, which
+     * quietly changes what the filter means — `POSITION(doc.tags, "x") == true`
+     * becomes `doc.tags == true`, a well-formed answer that matches nothing.
+     *
+     * A `ValidationException` is the refusal {@see apply()} already declares, and
+     * it names both the arm and the operand it wanted.
+     */
+    private static function missingParameter( string $funcName , string $operand ) :ValidationException
+    {
+        return new ValidationException( sprintf( 'The "%s" function requires a %s.' , $funcName , $operand ) ) ;
     }
 }

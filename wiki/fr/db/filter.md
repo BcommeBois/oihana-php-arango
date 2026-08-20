@@ -319,6 +319,26 @@ Les feuilles des traversées **edge / join / document** (`vendeur.nom`, etc.) h�
 
 > Pour la signature et la sémantique détaillée de chaque fonction, voir les pages [Fonctions de chaînes](../aql/aql-functions-strings.md), [Fonctions de dates](../aql/aql-functions-dates.md), [Fonctions numériques](../aql/aql-functions-numerics.md), [Fonctions de tableaux](../aql/aql-functions-arrays.md). Cette page liste leurs versions exposées côté URL.
 
+La plupart des paramètres sont optionnels et retombent sur un défaut. Quatre ne le sont pas,
+signalés **(requis)** dans les tables ci-dessous.
+
+Trois attendent un second opérande qu'AQL ne peut pas inventer — il n'existe ni « position de
+rien », ni « similarité avec rien », ni « distance à rien ». Omis, `position`, `cosSimilarity` et
+`levenshtein` **refusent** par une `ValidationException` nommant la fonction et l'opérande :
+
+```
+?filter={"key":"name","alt":["levenshtein"],"op":"le","val":2}
+→ The "levenshtein" function requires a comparison value.
+```
+
+C'est délibérément bruyant. Se taire reviendrait à laisser la transformation disparaître et la
+comparaison changer de sens sans le dire : `LEVENSHTEIN_DISTANCE(doc.name,"Doe") <= 2` devient
+`doc.name <= 2`, une réponse bien formée, en `200`, qui ne matche rien.
+
+Le quatrième, `pluck`, refuse lui aussi par une `ValidationException`, mais par son garde-fou de
+nom d'attribut — son paramètre est un **nom de champ**, pas une valeur, et la chaîne vide n'en est
+pas un : `Invalid AQL attribute name: ""`.
+
 #### Chaînes
 
 | `alt` | Effet | Paramètres |
@@ -346,7 +366,7 @@ Les feuilles des traversées **edge / join / document** (`vendeur.nom`, etc.) h�
 | `toHex` | Encode en hexadécimal | — |
 | `encodeURIComponent` | Encode pour URL | — |
 | `soundex` | Empreinte phonétique anglais | — |
-| `levenshtein` | Distance de Levenshtein | `compare` |
+| `levenshtein` | Distance de Levenshtein | `compare` **(requis)** |
 
 Le `limit` de `split` est optionnel, et l'omettre découpe la valeur entière :
 `["split", ","]` sur `"a,b,c"` rend `["a","b","c"]`. Une limite explicite est transmise telle
@@ -367,6 +387,7 @@ quelle — y compris `0`, qu'AQL lit comme « ne garde rien » : `["split", ",",
 | `sin` / `cos` / `tan` | Trigonométrie | — |
 | `asin` / `acos` / `atan` | Trigonométrie inverse | — |
 | `atan2` | Arc tangente à 2 arguments | `x` |
+| `cosSimilarity` | Similarité cosinus entre deux tableaux | `y` **(requis)** |
 | `degrees` | Convertit radians → degrés | — |
 | `radians` | Convertit degrés → radians | — |
 
@@ -384,8 +405,8 @@ quelle — y compris `0`, qu'AQL lit comme « ne garde rien » : `["split", ",",
 | `product` | Produit | — |
 | `first` / `last` | Premier / dernier élément | — |
 | `nth` | Élément à la position N | `position` |
-| `pluck` | Projette un tableau d'objets sur un seul sous-champ | `champ` |
-| `position` | Position d'une valeur | `search`, `returnIndex` |
+| `pluck` | Projette un tableau d'objets sur un seul sous-champ | `champ` **(requis)** |
+| `position` | Position d'une valeur | `search` **(requis)**, `returnIndex` |
 | `reverse` | Inverse l'ordre | — |
 | `sorted` | Trie | — |
 | `sortedUnique` | Trie et déduplique | — |

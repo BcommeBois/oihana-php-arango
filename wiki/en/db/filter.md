@@ -319,6 +319,26 @@ The leaves of **edge / join / document** traversals (`seller.name`, …) already
 
 > For the signature and detailed semantics of each function, see [String functions](../aql/aql-functions-strings.md), [Date functions](../aql/aql-functions-dates.md), [Numeric functions](../aql/aql-functions-numerics.md), [Array functions](../aql/aql-functions-arrays.md). This page lists their URL-side exposed versions.
 
+Most parameters are optional and fall back to a default. Four are not, and are marked
+**(required)** in the tables below.
+
+Three expect a second operand AQL cannot invent — there is no position of nothing, no similarity
+with nothing and no distance to nothing. Omitted, `position`, `cosSimilarity` and `levenshtein`
+**refuse** with a `ValidationException` naming the function and the operand:
+
+```
+?filter={"key":"name","alt":["levenshtein"],"op":"le","val":2}
+→ The "levenshtein" function requires a comparison value.
+```
+
+The noise is deliberate. Staying silent would let the transformation vanish and the comparison
+quietly change meaning: `LEVENSHTEIN_DISTANCE(doc.name,"Doe") <= 2` becomes `doc.name <= 2` —
+a well-formed answer, in `200`, matching nothing.
+
+The fourth, `pluck`, refuses with a `ValidationException` too, but through its attribute-name
+guard — its parameter is a **field name**, not a value, and the empty string is not one:
+`Invalid AQL attribute name: ""`.
+
 #### Strings
 
 | `alt` | Effect | Parameters |
@@ -346,7 +366,7 @@ The leaves of **edge / join / document** traversals (`seller.name`, …) already
 | `toHex` | Hex encoding | — |
 | `encodeURIComponent` | URL encoding | — |
 | `soundex` | English phonetic fingerprint | — |
-| `levenshtein` | Levenshtein distance | `compare` |
+| `levenshtein` | Levenshtein distance | `compare` **(required)** |
 
 The `limit` of `split` is optional, and omitting it splits the whole value:
 `["split", ","]` over `"a,b,c"` returns `["a","b","c"]`. An explicit limit is passed through as
@@ -367,6 +387,7 @@ written — `0` included, which AQL reads as "keep nothing": `["split", ",", 0]`
 | `sin` / `cos` / `tan` | Trigonometry | — |
 | `asin` / `acos` / `atan` | Inverse trigonometry | — |
 | `atan2` | Two-argument arctangent | `x` |
+| `cosSimilarity` | Cosine similarity between two arrays | `y` **(required)** |
 | `degrees` | Converts radians → degrees | — |
 | `radians` | Converts degrees → radians | — |
 
@@ -384,8 +405,8 @@ written — `0` included, which AQL reads as "keep nothing": `["split", ",", 0]`
 | `product` | Product | — |
 | `first` / `last` | First / last element | — |
 | `nth` | Element at position N | `position` |
-| `pluck` | Project an array of objects onto a single sub-field | `field` |
-| `position` | Position of a value | `search`, `returnIndex` |
+| `pluck` | Project an array of objects onto a single sub-field | `field` **(required)** |
+| `position` | Position of a value | `search` **(required)**, `returnIndex` |
 | `reverse` | Reverse order | — |
 | `sorted` | Sort | — |
 | `sortedUnique` | Sort and deduplicate | — |

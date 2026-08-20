@@ -699,12 +699,48 @@ class FilterFunctionTest extends TestCase
     }
 
     /**
-     * `levenshtein` is the one arm that needs a second operand to mean anything:
-     * without it the key is returned untouched rather than wrapped.
+     * Three arms take a second operand AQL cannot invent: there is no position of
+     * nothing, no similarity with nothing and no distance to nothing. Called bare,
+     * each refuses through the exception `apply()` already declares, naming the arm
+     * and the operand it wanted — the expected messages are written out in full,
+     * since reading them back from the code under test would prove nothing.
      */
-    public function testApplyLevenshteinWithoutOperandReturnsTheKey(): void
+    public function testApplyRefusesAnArmWhoseRequiredOperandIsMissing(): void
     {
-        $this->assertSame( 'doc.name' , FilterFunction::apply( FilterFunction::LEVENSHTEIN , 'doc.name' ) ) ;
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( 'The "position" function requires a search value.' ) ;
+        FilterFunction::apply( FilterFunction::POSITION , 'doc.tags' ) ;
+    }
+
+    public function testApplyRefusesCosSimilarityWithoutItsSecondOperand(): void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( 'The "cosSimilarity" function requires a second operand.' ) ;
+        FilterFunction::apply( FilterFunction::COS_SIMILARITY , 'doc.vector' ) ;
+    }
+
+    /**
+     * ⚠ This arm used to return the key untouched, which is worse than it looks:
+     * the transformation vanishes and the comparison silently changes meaning —
+     * `LEVENSHTEIN_DISTANCE(doc.name,"Doe") <= 2` becomes `doc.name <= 2`. A
+     * well-formed answer, in `200`, matching nothing.
+     */
+    public function testApplyRefusesLevenshteinWithoutItsComparisonValue(): void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( 'The "levenshtein" function requires a comparison value.' ) ;
+        FilterFunction::apply( FilterFunction::LEVENSHTEIN , 'doc.name' ) ;
+    }
+
+    /**
+     * The same three arms, supplied, are untouched by the refusal above.
+     */
+    public function testApplyKeepsTheSuppliedFormsOfTheOperandArms(): void
+    {
+        $this->assertSame( 'POSITION(doc.tags,"x")'                , FilterFunction::apply( FilterFunction::POSITION       , 'doc.tags'   , [ '"x"' ]         ) ) ;
+        $this->assertSame( 'POSITION(doc.tags,"x",true)'           , FilterFunction::apply( FilterFunction::POSITION       , 'doc.tags'   , [ '"x"' , true ]  ) ) ;
+        $this->assertSame( 'COSINE_SIMILARITY(doc.vector,doc.w)'   , FilterFunction::apply( FilterFunction::COS_SIMILARITY , 'doc.vector' , [ 'doc.w' ]       ) ) ;
+        $this->assertSame( 'LEVENSHTEIN_DISTANCE(doc.name,"Doe")'  , FilterFunction::apply( FilterFunction::LEVENSHTEIN    , 'doc.name'   , [ '"Doe"' ]       ) ) ;
     }
 
     public function testApplyDateArithmetic(): void
