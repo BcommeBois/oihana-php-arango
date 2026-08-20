@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`InjectFilterTrait::injectFilter()` declared `array &$init` with no PHPDoc type, and every consumer paid for it.** A by-reference parameter's type is part of the contract PHPStan checks against overrides: a controller enriching a typed `$init` (`@param array<string, mixed> &$init`) inherited a `parameterByRef.type` notice it could not fix on its own side, once per such method, plus as many baseline entries. The docblock now says `array<string, mixed>`. One line, no behaviour change.
+
+### Fixed
+
 - **`composer test` ended on `OK, but there were issues!` and exit code `1`, with nothing wrong in the tests.** Two signals, one cause: the configuration asked for an ordering it forbade in the next breath. `executionOrder="depends,defects"` replays last run's failures first; `cacheResult="false"` disabled the very history that ordering reads. PHPUnit therefore warned it could not order by defects — and, since `cacheResult` was renamed `recordTestRunHistory` in PHPUnit 12 (removed in 14), deprecated the attribute on top. Under `failOnWarning="true"`, both added up to a red run over 4757 green tests.
   - **The fix keeps the stated intent** — `recordTestRunHistory="true"` alongside the existing `executionOrder="depends,defects"`, so defect-first ordering finally does something on a suite this size. The history lands in `.phpunit.cache`, already git-ignored.
   - **🚨 Deleting the deprecated attribute would NOT have been neutral.** When neither `cacheResult` nor `recordTestRunHistory` is present, PHPUnit defaults to **`true`** (`TextUI/Configuration/Xml/Loader.php`, `parseRecordTestRunHistoryAttribute()`) — dropping the line would have silently enabled the history rather than preserving the behaviour. The opposite choice, had it been wanted, is `recordTestRunHistory="false"` **plus** `executionOrder="depends"`; leaving `defects` in place would just bring the warning back.

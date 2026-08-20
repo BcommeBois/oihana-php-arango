@@ -45,11 +45,11 @@ trait InjectFilterTrait
      * The filter will be transparently merged with any user-provided URL filters
      * in `prepareFilter()` without appearing in the response URL.
      *
-     * @param array       $init  The init array to enrich (passed by reference).
-     * @param string      $key   The field name to filter on.
-     * @param mixed       $value The filter value.
-     * @param string      $op    The comparison operator (default: FilterComparator::EQ).
-     * @param string|null $alt   Optional alteration function (e.g., 'lower', 'length').
+     * @param array<string, mixed> &$init  The init array to enrich (passed by reference).
+     * @param string               $key    The field name to filter on.
+     * @param mixed                $value  The filter value.
+     * @param string               $op     The comparison operator (default: FilterComparator::EQ).
+     * @param string|null          $alt    Optional alteration function (e.g., 'lower', 'length').
      *
      * @return void
      */
