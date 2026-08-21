@@ -14,6 +14,33 @@ class AQL
     public const string _DEPTH  = '_depth' ;
     public const string _PARENT = '_parent' ;
 
+    /**
+     * The 'aggregatable' parameter — the optional whitelist/mapping of aggregatable
+     * fields (`urlKey => fieldPath`) consumed by {@see \oihana\arango\models\traits\aql\GroupTrait::$aggregatable}.
+     *
+     * It is the `agg` counterpart of {@see AQL::GROUPABLE}, but it keys on the
+     * **field token**, not on the output name: in `[ 'total' => 'sum:speed' ]` the
+     * output name `total` is chosen freely by the client, while `speed` is what the
+     * whitelist resolves (to `speed.value`, say). Accepts the three
+     * {@see \oihana\arango\models\helpers\normalizeSortable()} notations.
+     *
+     * Absent (`null`), every projected path stays aggregatable — the historical
+     * behaviour. Declaring it closes the gate; {@see AQL::AGGREGATABLE_POLICY}
+     * chooses what happens to an undeclared aggregate.
+     */
+    public const string AGGREGATABLE = 'aggregatable' ;
+
+    /**
+     * The 'aggregatablePolicy' parameter — what happens to an aggregate whose field
+     * is absent from {@see AQL::AGGREGATABLE}. One of the
+     * {@see \oihana\arango\models\enums\AggregatablePolicy} codes.
+     *
+     * Defaults to {@see \oihana\arango\models\enums\AggregatablePolicy::DROP} when a
+     * whitelist is declared, and to
+     * {@see \oihana\arango\models\enums\AggregatablePolicy::OPEN} when none is.
+     */
+    public const string AGGREGATABLE_POLICY = 'aggregatablePolicy' ;
+
     public const string AGGREGATE       = 'aggregate' ;
     public const string ALTERS          = 'alters' ;
     public const string ANALYZER        = 'analyzer' ;
