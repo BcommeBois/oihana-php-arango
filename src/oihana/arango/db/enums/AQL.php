@@ -55,6 +55,19 @@ class AQL
     public const string FROM            = 'from' ;
     public const string GRAPH           = 'graph' ;
     public const string GRAPH_DEFAULT   = 'vertex, edge, path' ;
+
+    /**
+     * The 'group' parameter — holds a high-level grouping spec
+     * ({@see Group}) translated into an AQL `COLLECT` by {@see GroupTrait::prepareCollect()}.
+     */
+    public const string GROUP = 'group' ;
+
+    /**
+     * The 'groupable' parameter — the optional whitelist/mapping of groupable
+     * dimensions (`urlKey => fieldPath`) consumed by {@see GroupTrait::$groupable}.
+     */
+    public const string GROUPABLE = 'groupable' ;
+
     public const string HYDRATION       = 'hydration' ;
     public const string ID              = 'id' ;
     public const string INDEXES         = 'indexes' ;

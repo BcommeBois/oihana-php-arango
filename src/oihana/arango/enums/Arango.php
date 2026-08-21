@@ -169,18 +169,6 @@ class Arango extends AQL
     public const string FACETS_ONLY = 'facetsOnly' ;
 
     /**
-     * The 'group' parameter — holds a high-level grouping spec
-     * ({@see Group}) translated into an AQL `COLLECT` by {@see GroupTrait::prepareCollect()}.
-     */
-    public const string GROUP = 'group' ;
-
-    /**
-     * The 'groupable' parameter — the optional whitelist/mapping of groupable
-     * dimensions (`urlKey => fieldPath`) consumed by {@see GroupTrait::$groupable}.
-     */
-    public const string GROUPABLE = 'groupable' ;
-
-    /**
      * The 'init' parameter.
      */
     public const string INIT = 'init' ;
