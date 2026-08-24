@@ -87,8 +87,10 @@ and what to do about them when upgrading is in [`UPGRADING.md`](../../UPGRADING.
 - **`1.6.0`** — released 2026-08-24 (**computed** aggregates through
   `AggregateExpression`; the `Arango::AGGREGATABLE` whitelist and its policy; a
   grouped row is no longer hydrated as a document; the `alt` catalogue hardened —
-  a name it does not carry is now **refused**, which is **breaking**; request
-  refusals answer `400` instead of `500`, breaking as well; `Arango::OPERATION`,
+  a name it does not carry is now **refused**, which is **breaking**; a filter
+  operator the type cannot honour is **refused** rather than silently becoming an
+  equality, breaking as well; request refusals answer `400` instead of `500`,
+  breaking again; `Arango::OPERATION`,
   telling the lifecycle hooks which model call they serve;
   `ArrayPropertyController::RESPOND_WITH_OWNER`).
 - **Next minor** — nothing accumulated under `[Unreleased]` yet; upcoming
@@ -97,6 +99,22 @@ and what to do about them when upgrading is in [`UPGRADING.md`](../../UPGRADING.
 ## Backlog (to be triaged)
 
 Forward-looking items not yet scheduled, roughly by theme.
+
+### Documentation
+
+- **A pedagogical pass over `db/filter.md` (FR and EN)** — the page is written for
+  someone who already knows the vocabulary: some twenty technical terms are used
+  without ever being defined ("leaf", "init", "projection", "mirror", "expansion",
+  "predicate"…), and several passages stack more than one idea into a single
+  sentence. Measured: 1174 lines, 59 headings, 12 top-level sections — `alt` alone
+  is 345 lines, relations 211, practical cases 206. Method: one idea per sentence,
+  every term explained where it first appears or linked to the
+  [glossary](../getting-started/glossary.md), "The situation." before each example,
+  and **nothing removed** — the page carries hard-won warnings (ReDoS, permission
+  oracles, binding subtleties) that a rewrite "for clarity" would dilute. To be
+  delivered in slices, one commit each. Prompted by a note on `sw`/`ew`/`contains`
+  saying four things in one breath and using "infix comparator" without ever
+  explaining it; that note was rewritten in 1.6.0, the rest waits.
 
 ### Filtering & query DSL
 

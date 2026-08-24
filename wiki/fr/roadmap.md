@@ -98,8 +98,10 @@ un défaut (ainsi le passage de `?sort=` en liste blanche *fail-closed* en
   `AggregateExpression` ; liste blanche `Arango::AGGREGATABLE` et sa politique ;
   une ligne groupée n'est plus hydratée comme un document ; catalogue `alt`
   durci — un nom que le catalogue ne porte pas est désormais **refusé**, ce qui
-  est **cassant** ; les refus de requête répondent `400` au lieu de `500`,
-  **cassant** aussi ; `Arango::OPERATION`, qui dit aux crochets de cycle de vie
+  est **cassant** ; un opérateur de filtre que le type ne sait pas honorer est
+  **refusé** au lieu de devenir une égalité silencieuse, **cassant** aussi ; les
+  refus de requête répondent `400` au lieu de `500`, **cassant** encore ;
+  `Arango::OPERATION`, qui dit aux crochets de cycle de vie
   quel appel au modèle ils servent ; `ArrayPropertyController::RESPOND_WITH_OWNER`).
 - **Prochaine mineure** — rien n'est encore cumulé sous `[Unreleased]` ; les
   prochains ajouts y seront regroupés. Coupée quand Marc le décide.
@@ -107,6 +109,23 @@ un défaut (ainsi le passage de `?sort=` en liste blanche *fail-closed* en
 ## Backlog (à trier)
 
 Éléments prospectifs pas encore planifiés, regroupés grossièrement par thème.
+
+### Documentation
+
+- **Reprise pédagogique de `db/filter.md` (FR et EN)** — la page est écrite pour
+  quelqu'un qui connaît déjà le vocabulaire : une vingtaine de termes techniques y
+  sont employés sans être définis (« feuille », « init », « projection »,
+  « miroir », « expansion », « prédicat »…), et certains passages empilent
+  plusieurs idées en une phrase. Mesuré : 1174 lignes, 59 sections, 12 sections de
+  niveau 2 — dont `alt` (345 lignes), les relations (211) et les cas pratiques
+  (206). Méthode retenue : une idée par phrase, chaque terme expliqué à sa première
+  apparition ou lié au [glossaire](../getting-started/glossary.md), « La
+  situation. » avant chaque exemple, et **rien de retiré** — la page contient des
+  avertissements durement acquis (ReDoS, oracles de permission, subtilités de
+  liaison) qu'une réécriture « pour la clarté » diluerait. À livrer par tranches,
+  un commit chacune. Déclenché par une note sur `sw`/`ew`/`contains` qui disait
+  quatre choses d'un seul souffle et employait « comparateur infixe » sans jamais
+  l'expliquer ; cette note-là a été reprise en 1.6.0, le reste attend.
 
 ### Filtrage & DSL de requête
 
