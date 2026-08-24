@@ -13,7 +13,7 @@ pas. La bibliothèque est versionnée par *tags* git (pas de champ `version` dan
 
 ## Où en est-on
 
-À la version **1.5.0** (publiée le 2026-07-18), la bibliothèque couvre
+À la version **1.6.0** (publiée le 2026-08-24), la bibliothèque couvre
 l'essentiel de la surface AQL, une chaîne d'outils opérationnelle complète et un
 moteur de recherche fédérée :
 
@@ -71,7 +71,8 @@ et une API publique stable. Tout ce qui a suivi est **additif** — nouvelles
 fonctions, opérations, clients et outillage sont non cassants et sortent en
 versions **mineures**. Seule exception : un durcissement de sécurité peut changer
 un défaut (ainsi le passage de `?sort=` en liste blanche *fail-closed* en
-`1.5.0`) — ces cas sont signalés `(BREAKING)` dans le `CHANGELOG`.
+`1.5.0`) — ces cas sont signalés `(BREAKING)` dans le `CHANGELOG`, et la marche
+à suivre pour mettre à jour un projet est dans [`UPGRADING.md`](../../UPGRADING.md).
 
 - **`1.0.0`** — publiée le 2026-06-09 (toutes les opérations AQL haut-niveau).
 - **`1.1.0`** — publiée le 2026-06-10 (vectoriel/ANN, analyse de requête,
@@ -93,6 +94,13 @@ un défaut (ainsi le passage de `?sort=` en liste blanche *fail-closed* en
   `PipelineAnalyzer` typé ; champs de recherche sur tableaux d'objets (`[*]`),
   type d'analyzer `ngram`, plusieurs analyzers par champ, et recherche n-gram par
   seuil de similarité).
+- **`1.6.0`** — publiée le 2026-08-24 (agrégats **calculés** via
+  `AggregateExpression` ; liste blanche `Arango::AGGREGATABLE` et sa politique ;
+  une ligne groupée n'est plus hydratée comme un document ; catalogue `alt`
+  durci — un nom que le catalogue ne porte pas est désormais **refusé**, ce qui
+  est **cassant** ; les refus de requête répondent `400` au lieu de `500`,
+  **cassant** aussi ; `Arango::OPERATION`, qui dit aux crochets de cycle de vie
+  quel appel au modèle ils servent ; `ArrayPropertyController::RESPOND_WITH_OWNER`).
 - **Prochaine mineure** — rien n'est encore cumulé sous `[Unreleased]` ; les
   prochains ajouts y seront regroupés. Coupée quand Marc le décide.
 

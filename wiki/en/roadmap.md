@@ -13,7 +13,7 @@ duplicate it. The library is versioned through git tags (no `version` field in
 
 ## Where we are
 
-As of **1.5.0** (released 2026-07-18), the library covers the bulk of the AQL
+As of **1.6.0** (released 2026-08-24), the library covers the bulk of the AQL
 surface, a full operational toolchain, and a federated search engine:
 
 - **All 22 high-level operations** (`FOR`, `FILTER`, `SORT`, `LIMIT`, `LET`,
@@ -65,7 +65,8 @@ surface, a full operational toolchain, and a federated search engine:
 API. Everything since is **additive** — new functions, operations, clients and
 tooling are non-breaking and ship as **minor** releases. The one exception: a
 security hardening may change a default (e.g. `?sort=` becoming a *fail-closed*
-whitelist in `1.5.0`) — such cases are flagged `(BREAKING)` in the `CHANGELOG`.
+whitelist in `1.5.0`) — such cases are flagged `(BREAKING)` in the `CHANGELOG`,
+and what to do about them when upgrading is in [`UPGRADING.md`](../../UPGRADING.md).
 
 - **`1.0.0`** — released 2026-06-09 (all high-level AQL operations supported).
 - **`1.1.0`** — released 2026-06-10 (vector/ANN, query analysis, function consolidation).
@@ -83,6 +84,13 @@ whitelist in `1.5.0`) — such cases are flagged `(BREAKING)` in the `CHANGELOG`
   typed `PipelineAnalyzer`; object-array search fields (`[*]`), the `ngram`
   analyzer type, multiple analyzers per field, and n-gram search by similarity
   threshold).
+- **`1.6.0`** — released 2026-08-24 (**computed** aggregates through
+  `AggregateExpression`; the `Arango::AGGREGATABLE` whitelist and its policy; a
+  grouped row is no longer hydrated as a document; the `alt` catalogue hardened —
+  a name it does not carry is now **refused**, which is **breaking**; request
+  refusals answer `400` instead of `500`, breaking as well; `Arango::OPERATION`,
+  telling the lifecycle hooks which model call they serve;
+  `ArrayPropertyController::RESPOND_WITH_OWNER`).
 - **Next minor** — nothing accumulated under `[Unreleased]` yet; upcoming
   additions will gather there. Cut when Marc decides.
 
