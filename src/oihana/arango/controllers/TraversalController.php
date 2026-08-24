@@ -11,6 +11,7 @@ use oihana\arango\controllers\traits\AuthorizationContextTrait;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Edges;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\auth\controllers\traits\CapabilityContextTrait;
 use oihana\auth\controllers\traits\PermissionAuthorizerTrait;
@@ -372,6 +373,10 @@ class TraversalController extends Controller
 
         $modelInit = $this->prepareVertexFilter( $request , $init , $modelInit , $prune ) ;
 
+        // Neither `list` nor `get`: the call goes to the edges model, and no FILTER over
+        // the collection would describe what it does.
+        $modelInit[ Arango::OPERATION ] = ModelOperation::TRAVERSE ;
+
         // The authorization seat, posed LAST : a scope must have the final word over
         // the client `?filter=` already compiled into AQL::FILTER by the line above.
         $this->beforeModelCall( $request , $modelInit ) ;
@@ -595,6 +600,8 @@ class TraversalController extends Controller
         }
 
         $modelInit = $this->prepareVertexFilter( $request , $init , [] , $prune ) ;
+
+        $modelInit[ Arango::OPERATION ] = ModelOperation::TRAVERSE_FIRST ;
 
         // The authorization seat, posed LAST — see many().
         $this->beforeModelCall( $request , $modelInit ) ;

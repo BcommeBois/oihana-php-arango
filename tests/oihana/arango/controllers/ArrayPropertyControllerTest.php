@@ -7,6 +7,7 @@ use DI\NotFoundException;
 use oihana\arango\controllers\ArrayPropertyController;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\ArrayMode;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 
@@ -15,6 +16,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
 use tests\oihana\arango\controllers\mocks\ThrowingDocuments;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
+use tests\oihana\arango\controllers\mocks\RecordingDocuments;
 
 /**
  * Coverage for {@see ArrayPropertyController} — element-level operations on an
@@ -879,4 +881,25 @@ class ArrayPropertyControllerTest extends ControllerTestCase
 
         $this->assertSame( 404 , $response->getStatusCode() ) ;
     }
+
+    /**
+     * ⚠ An array operation announces `exist`, and that is not an approximation: the
+     * array queries build their own `FILTER` and never read this init, so the
+     * existence probe is the only model call this hook governs — which is exactly why
+     * the guard is where a scope bites.
+     */
+    public function testTheHookIsToldItGovernsTheExistenceProbe() :void
+    {
+        $model = new RecordingDocuments( 'Playlist' ) ;
+        $model->arrays      = [ 'tracks' => [ Arango::MODE => ArrayMode::LIST , Arango::COUNTER => null ] ] ;
+        $model->firstResult = 1 ;
+
+        $controller = $this->makeArrayPropertyController( $model , [ self::PROPERTY => 'tracks' ] ) ;
+        $request    = $this->makeRequest( [] , 'POST' )->withParsedBody( [ Arango::VALUE => 'Model A widget' ] ) ;
+
+        $controller->addItem( $request , null , [ Arango::ID => 'p42' ] ) ;
+
+        $this->assertSame( ModelOperation::EXIST , $model->initOf( 'exist' )[ Arango::OPERATION ] ?? null ) ;
+    }
+
 }

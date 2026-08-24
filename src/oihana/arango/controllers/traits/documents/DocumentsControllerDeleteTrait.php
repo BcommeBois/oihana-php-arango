@@ -8,6 +8,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\enums\Char;
 use oihana\enums\http\HttpStatusCode;
 use oihana\controllers\traits\StatusTrait;
@@ -119,7 +120,9 @@ trait DocumentsControllerDeleteTrait
 
             // $this->logger->debug( __METHOD__ . '(' . $id . ')' ) ;
 
-            $init = [ ...$init , Arango::ARGS => $args , Arango::VALUE => $ids ] ;
+            // The operation is posed after the spread: a caller init carrying one of
+            // its own must not survive into the announcement.
+            $init = [ ...$init , Arango::ARGS => $args , Arango::VALUE => $ids , Arango::OPERATION => ModelOperation::DELETE ] ;
 
             // Posed BEFORE the probe, so the probe and the deletion read the same
             // scope. Ran after it, the probe answered "it exists" for a document the

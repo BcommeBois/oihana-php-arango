@@ -10,6 +10,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\controllers\traits\CheckOwnerArgumentsTrait;
 use oihana\controllers\traits\HttpCacheTrait;
 use oihana\controllers\traits\OutputDocumentsTrait;
@@ -76,11 +77,14 @@ trait PropertyControllerGetTrait
                 Arango::KEY        => $init[ Arango::KEY        ] ?? Prop::_KEY  ,
                 Arango::IN         => $this->property , // returns only the specific property field
                 Arango::LANG       => $this->prepareLang( $request , $init , $params )  ,
+                Arango::OPERATION  => ModelOperation::GET ,
                 Arango::SKIN       => $this->prepareSkin( $request , $init , $params , HttpMethod::get ) ,
             ] ;
 
             $this->beforeModelCall( $request , $modelInit ) ;
+
             $document = $this->model->get( $modelInit ) ;
+
             $this->afterModelCall( $request , $modelInit , $document ) ;
 
             // A document filtered out by the scope and an unknown identifier are

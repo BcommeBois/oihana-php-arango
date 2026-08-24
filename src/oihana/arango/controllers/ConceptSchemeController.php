@@ -7,6 +7,7 @@ use DI\DependencyException;
 use DI\NotFoundException;
 
 use oihana\arango\clients\exceptions\ArangoException;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\arango\controllers\traits\AuthorizationContextTrait;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -211,6 +212,7 @@ class ConceptSchemeController extends Controller
             // when no authorization stack is wired (buildPermissionAuthorizer → null).
             Arango::AUTHORIZER => $init[ Arango::AUTHORIZER ] ?? $this->buildPermissionAuthorizer( $request ) ,
             Arango::FILTER     => $filter ,
+            Arango::OPERATION  => ModelOperation::LIST ,
             Arango::SEARCH     => $this->prepareSearch( $request , [] , $params ) ,
             Arango::SKIN       => $this->skin ,
             Arango::SORT       => $this->prepareSort( $request , [] , $params , Schema::NAME ) ,

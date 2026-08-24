@@ -17,6 +17,7 @@ use oihana\arango\controllers\ArrayPropertyController;
 use oihana\arango\controllers\PropertyController;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\ArrayMode;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\auth\CapabilityEnforcerInterface;
 use oihana\auth\PermissionSubjectResolverInterface;
 use oihana\controllers\enums\ControllerParam;
@@ -525,4 +526,27 @@ final class PropertyControllerScopeTest extends ControllerTestCase
         $args   = [ $request , &$init ] ;
         $method->invokeArgs( $controller , $args ) ;
     }
+
+    /**
+     * A property patch runs the same three model calls as a document update, and each
+     * one now says which it is — the probe and the read-back carry the same init keys,
+     * so nothing else could tell them apart.
+     */
+    public function testEachOfTheThreeCallsOfAPatchIsAnnounced() :void
+    {
+        $model      = $this->recordingModel() ;
+        $controller = $this->makePropertyController( $model , [ self::PROPERTY => 'emails' ] ) ;
+        $request    = $this->makeRequest( [] , 'PATCH' )->withParsedBody( [ 'emails' => [ 'jane.doe@example.org' ] ] ) ;
+
+        $controller->patch( $request , null , [ Arango::ID => 'k1' ] ) ;
+
+        $this->assertSame( ModelOperation::EXIST  , $model->initOf( 'exist'  )[ Arango::OPERATION ] ?? null ) ;
+        $this->assertSame( ModelOperation::UPDATE , $model->initOf( 'update' )[ Arango::OPERATION ] ?? null ) ;
+        $this->assertSame( ModelOperation::GET    , $model->initOf( 'get'    )[ Arango::OPERATION ] ?? null ) ;
+
+        // The read-back is a `get` like any other, flagged rather than renamed: a hook
+        // scoping every read must not be able to miss it.
+        $this->assertTrue( $model->initOf( 'get' )[ Arango::AFTER_WRITE ] ?? false ) ;
+    }
+
 }

@@ -12,6 +12,7 @@ use oihana\arango\controllers\traits\AuthorizationContextTrait;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\Edges;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\auth\controllers\traits\CapabilityContextTrait;
 use oihana\auth\controllers\traits\PermissionAuthorizerTrait;
@@ -326,7 +327,10 @@ class EdgesController extends Controller
             // The probe and the deletion share ONE init, so they cannot disagree:
             // an edge the scope hides is reported missing and is never removed —
             // no "404 on the probe, 200 on a deletion that touched nothing" gap.
-            $edgeInit = [ ...$init , self::CALL => self::EDGES ] ;
+            // Two orthogonal keys: CALL says which collection the call is about, and
+            // OPERATION says what it does to it. The probe below runs under the
+            // deletion's own init, on purpose — see the comment above.
+            $edgeInit = [ ...$init , self::CALL => self::EDGES , Arango::OPERATION => ModelOperation::DELETE ] ;
 
             $this->beforeModelCall( $request , $edgeInit ) ;
 
@@ -419,7 +423,7 @@ class EdgesController extends Controller
      */
     private function vertexInit( ?Request $request , array $init , string $value , string $call ) :array
     {
-        $probeInit = [ ...$init , Arango::VALUE => $value , self::CALL => $call ] ;
+        $probeInit = [ ...$init , Arango::VALUE => $value , self::CALL => $call , Arango::OPERATION => ModelOperation::EXIST ] ;
 
         $this->beforeModelCall( $request , $probeInit ) ;
 

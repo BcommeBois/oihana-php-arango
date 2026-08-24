@@ -11,6 +11,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\controllers\traits\OutputDocumentsTrait;
 use oihana\controllers\traits\prepare\PrepareBench;
 use oihana\controllers\traits\PrepareParamTrait;
@@ -56,11 +57,14 @@ trait DocumentsControllerLastTrait
             [
                 Arango::ARGS       => $args ,
                 Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? [] ,
+                Arango::OPERATION  => ModelOperation::LAST ,
                 Arango::SKIN       => $this->prepareSkin( $request , $init , $params , HttpMethod::get ) ,
             ] ;
 
             $this->beforeModelCall( $request , $modelInit ) ;
+
             $document = $this->model->last( $modelInit ) ;
+
             $this->afterModelCall( $request , $modelInit , $document ) ;
 
             $this->endBench( $timestamp , $options ) ;

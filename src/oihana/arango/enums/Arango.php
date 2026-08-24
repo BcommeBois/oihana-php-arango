@@ -34,6 +34,20 @@ class Arango extends AQL
     public const string ACTIVABLE = 'activable' ;
 
     /**
+     * The 'afterWrite' parameter — set on the init of the read a controller runs
+     * **after** a write, to hand back the document through the projection.
+     *
+     * That read is an ordinary `get`, and it says so through {@see Arango::OPERATION}:
+     * a hook posing a scope on every read must scope this one too, so the reload
+     * cannot become the one door that skips it. This flag is what a hook adds when it
+     * wants to tell the two apart — an audit trail that must not log the reload twice,
+     * a cache that must not be warmed from it.
+     *
+     * @see \oihana\arango\controllers\enums\ModelOperation
+     */
+    public const string AFTER_WRITE = 'afterWrite' ;
+
+    /**
      * The 'alter' parameter.
      */
     public const string ALTER = 'alter' ;
@@ -256,6 +270,36 @@ class Arango extends AQL
      * strings go to the `FILTER`.
      */
     public const string OMIT_WHEN = 'omitWhen' ;
+
+    /**
+     * The 'operation' parameter — what the controller is about to ask the model,
+     * named after the model call rather than after the HTTP verb.
+     *
+     * The two lifecycle hooks ({@see \oihana\controllers\traits\ModelCallTrait::beforeModelCall()}
+     * and {@see \oihana\controllers\traits\ModelCallTrait::afterModelCall()}) are
+     * shared by every verb, and one HTTP request runs several model calls through
+     * them: a `PATCH` reaches `beforeModelCall()` **three times** — the existence
+     * probe, the write, then the read that hands the document back. `getMethod()`
+     * answers `PATCH` to all three, and two of the three carry the same init keys, so
+     * nothing in the signature told the hook which one it was serving. Consumers were
+     * left sniffing the shape of `$init` — an undocumented convention that goes wrong
+     * in silence the day a call site composes its init differently.
+     *
+     * Posed **at the construction of the init**, so both hooks see it: the array is
+     * built once, handed to the first hook by reference, to the model, then to the
+     * second.
+     *
+     * ⚠ It names the operation the caller asked for, not each round trip to the
+     * database: `list()` and `delete()` deliberately run their probe or their counts
+     * under the same init, and therefore under a single announcement.
+     *
+     * ⚠ Not to be confused with {@see Arango::EXIST}, an init **key** stating that
+     * existence was already checked, where `exist` here is a **value**.
+     *
+     * @see \oihana\arango\controllers\enums\ModelOperation The vocabulary of its values.
+     * @see Arango::AFTER_WRITE Which read follows a write.
+     */
+    public const string OPERATION = 'operation' ;
 
     /**
      * The 'patch' parameter — the partial object merged into the array element

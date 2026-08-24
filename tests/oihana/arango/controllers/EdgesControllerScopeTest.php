@@ -16,6 +16,7 @@ use Slim\Factory\AppFactory;
 use oihana\arango\controllers\EdgesController;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\auth\CapabilityEnforcerInterface;
 use oihana\auth\PermissionSubjectResolverInterface;
@@ -232,7 +233,15 @@ final class EdgesControllerScopeTest extends ControllerTestCase
 
         $init = $from->initOf( 'exist' ) ;
 
-        $this->assertSame( [ Arango::VALUE => 'users/u1' , EdgesController::CALL => EdgesController::FROM ] , $init ) ;
+        $this->assertSame
+        (
+            [
+                Arango::VALUE     => 'users/u1' ,
+                EdgesController::CALL => EdgesController::FROM ,
+                Arango::OPERATION => ModelOperation::EXIST ,
+            ] ,
+            $init
+        ) ;
         $this->assertSame( [] , $edges->initOf( 'insertEdge' ) ) ;
     }
 

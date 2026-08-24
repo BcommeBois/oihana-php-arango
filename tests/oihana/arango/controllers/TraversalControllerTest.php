@@ -10,6 +10,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\controllers\TraversalController;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\controllers\enums\ControllerParam;
 
@@ -95,7 +96,7 @@ final class TraversalControllerTest extends ControllerTestCase
         $result = $this->makeController( $edges )->getParent( null , null , [ Schema::ID => '5' ] ) ;
 
         $this->assertSame( $parent , $result ) ;
-        $this->assertSame( [ [ 'getFirstInboundVertex' , '5' , [] ] ] , $edges->calls ) ;
+        $this->assertSame( [ [ 'getFirstInboundVertex' , '5' , [ Arango::OPERATION => ModelOperation::TRAVERSE_FIRST ] ] ] , $edges->calls ) ;
     }
 
     public function testGetParentReturnsNullForARoot() :void
@@ -118,7 +119,7 @@ final class TraversalControllerTest extends ControllerTestCase
         $result = $this->makeController( $edges )->getChildren( null , null , [ Schema::ID => '5' ] ) ;
 
         $this->assertSame( $children , $result ) ;
-        $this->assertSame( [ [ 'getOutboundVertices' , '5' , [] ] ] , $edges->calls ) ;
+        $this->assertSame( [ [ 'getOutboundVertices' , '5' , [ Arango::OPERATION => ModelOperation::TRAVERSE ] ] ] , $edges->calls ) ;
     }
 
     // ---- ancestors (INBOUND, transitive) --------------------------------
@@ -135,7 +136,7 @@ final class TraversalControllerTest extends ControllerTestCase
         $this->assertSame( $ancestors , $result ) ;
         $this->assertSame
         (
-            [ [ 'getInboundVertices' , '5' , [ AQL::MIN_DEPTH => 1 , AQL::MAX_DEPTH => TraversalController::DEFAULT_MAX_DEPTH ] ] ] ,
+            [ [ 'getInboundVertices' , '5' , [ AQL::MIN_DEPTH => 1 , AQL::MAX_DEPTH => TraversalController::DEFAULT_MAX_DEPTH , Arango::OPERATION => ModelOperation::TRAVERSE ] ] ] ,
             $edges->calls
         ) ;
     }
@@ -154,7 +155,7 @@ final class TraversalControllerTest extends ControllerTestCase
         $this->assertSame( $descendants , $result ) ;
         $this->assertSame
         (
-            [ [ 'getOutboundVertices' , '5' , [ AQL::MIN_DEPTH => 1 , AQL::MAX_DEPTH => TraversalController::DEFAULT_MAX_DEPTH ] ] ] ,
+            [ [ 'getOutboundVertices' , '5' , [ AQL::MIN_DEPTH => 1 , AQL::MAX_DEPTH => TraversalController::DEFAULT_MAX_DEPTH , Arango::OPERATION => ModelOperation::TRAVERSE ] ] ] ,
             $edges->calls
         ) ;
     }
@@ -169,7 +170,7 @@ final class TraversalControllerTest extends ControllerTestCase
         $this->assertSame( [] , $this->makeController( $edges )->getDescendants( $request , null , [ Schema::ID => '5' ] ) ) ;
         $this->assertSame
         (
-            [ [ 'getOutboundVertices' , '5' , [ AQL::MIN_DEPTH => 1 , AQL::MAX_DEPTH => 2 ] ] ] ,
+            [ [ 'getOutboundVertices' , '5' , [ AQL::MIN_DEPTH => 1 , AQL::MAX_DEPTH => 2 , Arango::OPERATION => ModelOperation::TRAVERSE ] ] ] ,
             $edges->calls
         ) ;
     }

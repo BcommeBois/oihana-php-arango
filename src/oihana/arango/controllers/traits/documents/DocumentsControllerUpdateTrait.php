@@ -9,6 +9,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\controllers\traits\PayloadsTrait;
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\controllers\traits\ModelCallTrait;
 use oihana\controllers\traits\prepare\PrepareLang;
@@ -92,7 +93,7 @@ trait DocumentsControllerUpdateTrait
             // so the answer never differed, but a write query ran for a document the
             // caller may not touch, and the two sibling verbs were wired opposite
             // ways for no reason.
-            $existInit = [ ...$init , Arango::VALUE => $value ] ;
+            $existInit = [ ...$init , Arango::VALUE => $value , Arango::OPERATION => ModelOperation::EXIST ] ;
 
             $this->beforeModelCall( $request , $existInit ) ;
 
@@ -122,10 +123,14 @@ trait DocumentsControllerUpdateTrait
             // hook BY REFERENCE, so it came out carrying the consumer predicate; the
             // reload below, seeded from it and hooked in turn, then posed that
             // predicate twice.
+            // The operation is named after the model call, which is the distinction the
+            // HTTP verb cannot make from a single call site — and it is posed after the
+            // spread, so a caller init carrying one of its own cannot survive into it.
             $writeInit =
             [
                 ...$init ,
                 Arango::DOC       => $payload ,
+                Arango::OPERATION => $method == HttpMethod::PATCH ? ModelOperation::UPDATE : ModelOperation::REPLACE ,
                 Arango::RELATIONS => $relations ,
                 Arango::VALUE     => $value ,
             ] ;

@@ -18,6 +18,7 @@ use Slim\Factory\AppFactory;
 use oihana\arango\controllers\TraversalController;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\auth\CapabilityEnforcerInterface;
 use oihana\auth\PermissionSubjectResolverInterface;
@@ -278,7 +279,7 @@ final class TraversalControllerScopeTest extends ControllerTestCase
 
         $this->makeController( $edges )->getChildren( $this->makeRequest() , null , [ Schema::ID => '5' ] ) ;
 
-        $this->assertSame( [ [ 'getOutboundVertices' , '5' , [] ] ] , $edges->calls ) ;
+        $this->assertSame( [ [ 'getOutboundVertices' , '5' , [ Arango::OPERATION => ModelOperation::TRAVERSE ] ] ] , $edges->calls ) ;
     }
 
     public function testTheDefaultHooksAreNoOps() :void

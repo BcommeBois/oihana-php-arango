@@ -20,6 +20,7 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\filters\FilterLogic;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\filters\FilterQuantifier;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\auth\CapabilityEnforcerInterface;
 use oihana\auth\PermissionSubjectResolverInterface;
@@ -293,4 +294,17 @@ final class ConceptSchemeControllerScopeTest extends ControllerTestCase
             }
         } ;
     }
+
+    /**
+     * The scheme roots are a listing like any other, and say so.
+     */
+    public function testTheRootListingIsAnnouncedAsAList() :void
+    {
+        $model = $this->model() ;
+
+        $this->makeController( $model )->get( $this->makeRequest() ) ;
+
+        $this->assertSame( ModelOperation::LIST , $model->listInit[ Arango::OPERATION ] ?? null ) ;
+    }
+
 }

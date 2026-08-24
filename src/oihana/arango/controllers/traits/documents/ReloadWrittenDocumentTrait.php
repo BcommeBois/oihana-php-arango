@@ -2,9 +2,12 @@
 
 namespace oihana\arango\controllers\traits\documents;
 
+use Casbin\Exceptions\CasbinException;
+use oihana\exceptions\http\Error403;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\controllers\traits\ModelCallTrait;
 use oihana\controllers\traits\prepare\PrepareLang;
@@ -43,23 +46,31 @@ trait ReloadWrittenDocumentTrait
     /**
      * Re-reads a written document through the lifecycle hooks.
      *
-     * @param Request|null        $request  The current PSR-7 request.
-     * @param array               $args     The route placeholders, forwarded as `Arango::ARGS`.
-     * @param array               $init     The caller init the lang / skin are read from.
-     * @param object              $document The document the write returned.
-     * @param string              $method   The HTTP method, for the per-verb skin default.
+     * @param Request|null $request The current PSR-7 request.
+     * @param array $args The route placeholders, forwarded as `Arango::ARGS`.
+     * @param array $init The caller init the lang / skin are read from.
+     * @param object $document The document the write returned.
+     * @param string $method The HTTP method, for the per-verb skin default.
      *
      * @return mixed The reloaded document, after {@see ModelCallTrait::afterModelCall()}.
+     *
+     * @throws CasbinException
+     * @throws Error403
      */
     protected function reload( ?Request $request , array $args , array $init , object $document , string $method ) :mixed
     {
         $modelInit =
         [
-            Arango::ARGS       => $args ,
-            Arango::VALUE      => $document->_key ,
-            Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? [] ,
-            Arango::LANG       => $this->prepareLang( $request , $init ) ,
-            Arango::SKIN       => $this->prepareSkin( $request , $init , method: $method ) ,
+            // A `get` in every respect — a hook scoping reads must reach this one too,
+            // so it is not given an operation of its own. The flag is what tells the
+            // two apart for a hook that needs to.
+            Arango::OPERATION   => ModelOperation::GET ,
+            Arango::AFTER_WRITE => true ,
+            Arango::ARGS        => $args ,
+            Arango::VALUE       => $document->_key ,
+            Arango::CONDITIONS  => $init[ Arango::CONDITIONS ] ?? [] ,
+            Arango::LANG        => $this->prepareLang( $request , $init ) ,
+            Arango::SKIN        => $this->prepareSkin( $request , $init , method: $method ) ,
         ] ;
 
         $this->beforeModelCall( $request , $modelInit ) ;

@@ -11,6 +11,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\controllers\traits\documents\DocumentsControllerUpdateTrait;
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\enums\http\HttpStatusCode;
 
 use org\schema\constants\Schema;
@@ -51,7 +52,7 @@ trait PropertyControllerPatchTrait
 
             $value = $args[ Schema::ID ] ?? null ;
 
-            $existInit = [ ...$init , Arango::VALUE => $value ] ;
+            $existInit = [ ...$init , Arango::VALUE => $value , Arango::OPERATION => ModelOperation::EXIST ] ;
 
             $this->beforeModelCall( $request , $existInit ) ;
 
@@ -82,6 +83,7 @@ trait PropertyControllerPatchTrait
                 [
                     ...$init ,
                     Arango::DOC       => $payload ,
+                    Arango::OPERATION => ModelOperation::UPDATE ,
                     Arango::RELATIONS => $relations ,
                     Arango::VALUE     => $value ,
                 ] ;
@@ -154,15 +156,20 @@ trait PropertyControllerPatchTrait
     {
         $modelInit =
         [
-            Arango::ARGS       => $args ,
-            Arango::VALUE      => $document->_key ,
-            Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? [] ,
-            Arango::IN         => $this->property , // returns only the specific property field
-            Arango::LANG       => $this->prepareLang( $request , $init ) ,
+            // A `get` that follows a write — see ReloadWrittenDocumentTrait::reload().
+            Arango::OPERATION   => ModelOperation::GET ,
+            Arango::AFTER_WRITE => true ,
+            Arango::ARGS        => $args ,
+            Arango::VALUE       => $document->_key ,
+            Arango::CONDITIONS  => $init[ Arango::CONDITIONS ] ?? [] ,
+            Arango::IN          => $this->property , // returns only the specific property field
+            Arango::LANG        => $this->prepareLang( $request , $init ) ,
         ] ;
 
         $this->beforeModelCall( $request , $modelInit ) ;
+
         $reloaded = $this->model->get( $modelInit ) ;
+
         $this->afterModelCall( $request , $modelInit , $reloaded ) ;
 
         return $reloaded->{ $this->property } ?? null ;

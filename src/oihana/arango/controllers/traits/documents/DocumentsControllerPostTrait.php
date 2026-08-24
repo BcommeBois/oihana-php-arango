@@ -9,6 +9,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\controllers\traits\PayloadsTrait;
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\controllers\traits\prepare\PrepareLang;
 use oihana\controllers\traits\prepare\PrepareSkin;
@@ -61,6 +62,7 @@ trait DocumentsControllerPostTrait
             [
                 Arango::ARGS      => $args ,
                 Arango::DOC       => $payload ,
+                Arango::OPERATION => ModelOperation::INSERT ,
                 Arango::RELATIONS => $relations ,
             ] ;
 

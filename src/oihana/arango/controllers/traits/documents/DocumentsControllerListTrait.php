@@ -16,6 +16,7 @@ use oihana\arango\controllers\traits\PrepareGroupTrait;
 use oihana\arango\controllers\traits\PrepareMetaOnlyTrait;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\controllers\traits\BenchTrait;
 use oihana\controllers\traits\CheckOwnerArgumentsTrait;
 use oihana\controllers\traits\OutputDocumentsTrait;
@@ -79,6 +80,9 @@ trait DocumentsControllerListTrait
                 Arango::LANG       => $this->prepareLang  ( $request , $init , $params ) ,
                 Arango::LIMIT      => $limit ,
                 Arango::OFFSET     => $this->prepareOffset( $request , $init , $params ) ,
+                // One announcement for the whole listing: the count, the facet counts
+                // and the bounds below run under this same init, by design.
+                Arango::OPERATION  => ModelOperation::LIST ,
                 Arango::SEARCH     => $this->prepareSearch( $request , $init , $params ) ,
                 Arango::SKIN       => $this->prepareSkin  ( $request , $init , $params , HttpMethod::list ) ,
                 Arango::SORT       => $this->prepareSort   ( $request , $init , $params ) ,

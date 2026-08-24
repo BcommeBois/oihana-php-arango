@@ -10,6 +10,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\controllers\enums\ModelOperation;
 use oihana\controllers\enums\ControllerParam;
 use oihana\controllers\traits\CheckOwnerArgumentsTrait;
 use oihana\controllers\traits\HttpCacheTrait;
@@ -55,14 +56,17 @@ trait DocumentsControllerCountTrait
 
             $modelInit =
             [
-                Arango::ACTIVE => $this->prepareActive( $request , $init ) ,
-                Arango::FACETS => $this->prepareFacets( $request , $init , $params ) ,
-                Arango::FILTER => $this->prepareFilter( $request , $init , $params ) ,
-                Arango::SEARCH => $this->prepareSearch( $request , $init , $params ) ,
+                Arango::ACTIVE    => $this->prepareActive( $request , $init ) ,
+                Arango::FACETS    => $this->prepareFacets( $request , $init , $params ) ,
+                Arango::FILTER    => $this->prepareFilter( $request , $init , $params ) ,
+                Arango::OPERATION => ModelOperation::COUNT ,
+                Arango::SEARCH    => $this->prepareSearch( $request , $init , $params ) ,
             ] ;
 
             $this->beforeModelCall( $request , $modelInit ) ;
+
             $count = $this->model->count( $modelInit ) ;
+
             $this->afterModelCall( $request , $modelInit , $count ) ;
 
             $this->endBench( $timestamp , $options ) ;

@@ -11,6 +11,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
+use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\enums\http\HttpMethod;
 use oihana\enums\http\HttpStatusCode;
@@ -464,16 +465,21 @@ trait ArrayPropertyControllerTrait
     {
         $modelInit =
         [
-            Arango::ARGS       => $args ,
-            Arango::VALUE      => $args[ Arango::ID ] ?? null ,
-            Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? [] ,
-            Arango::KEY        => $init[ Arango::KEY ] ?? Schema::_KEY ,
-            Arango::LANG       => $this->prepareLang( $request , $init ) ,
-            Arango::SKIN       => $this->prepareSkin( $request , $init , method: HttpMethod::get ) ,
+            // A `get` that follows a write — see ReloadWrittenDocumentTrait::reload().
+            Arango::OPERATION   => ModelOperation::GET ,
+            Arango::AFTER_WRITE => true ,
+            Arango::ARGS        => $args ,
+            Arango::VALUE       => $args[ Arango::ID ] ?? null ,
+            Arango::CONDITIONS  => $init[ Arango::CONDITIONS ] ?? [] ,
+            Arango::KEY         => $init[ Arango::KEY ] ?? Schema::_KEY ,
+            Arango::LANG        => $this->prepareLang( $request , $init ) ,
+            Arango::SKIN        => $this->prepareSkin( $request , $init , method: HttpMethod::get ) ,
         ] ;
 
         $this->beforeModelCall( $request , $modelInit ) ;
+
         $document = $this->model->get( $modelInit ) ;
+
         $this->afterModelCall( $request , $modelInit , $document ) ;
 
         return is_object( $document ) ? $document : null ;
@@ -617,6 +623,11 @@ trait ArrayPropertyControllerTrait
             // init here is what puts the six of them behind the same scope as
             // get() and patch(). It must run *before* the existence guard — that
             // guard is where a scope actually bites (see the method docblock).
+            // `exist` and not the array operation that follows: the array queries build
+            // their own FILTER and never read this init, so the probe is the only model
+            // call this hook governs — which is exactly why the guard is the gate.
+            $init[ Arango::OPERATION ] = ModelOperation::EXIST ;
+
             $this->beforeModelCall( $request , $init ) ;
 
             if ( !$model->exist( [ ...$init , Arango::VALUE => $owner ] ) )

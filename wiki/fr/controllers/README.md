@@ -187,6 +187,73 @@ final class UsersController extends DocumentsController
 
 Avantage : **un seul override couvre tous les verbes HTTP**. Pas besoin de répéter la logique transverse dans `list()`, `get()`, `post()`, etc.
 
+### Savoir quel appel on est en train de servir (`Arango::OPERATION`)
+
+Un seul *override* couvre tous les verbes — mais **un même verbe déclenche plusieurs appels au
+modèle**, et les crochets sont invoqués une fois par appel. `$request->getMethod()` répond la même
+chose à chacun : c'est `Arango::OPERATION`, posé dans l'`$init`, qui les distingue.
+
+| Verbe | `beforeModelCall` | `afterModelCall` | Opérations annoncées, dans l'ordre |
+|---|:--:|:--:|---|
+| `POST` | 2 | 2 | `insert`, puis `get` (+ `afterWrite`) |
+| `PATCH` | 3 | 2 | `exist`, `update`, `get` (+ `afterWrite`) |
+| `PUT` | 3 | 2 | `exist`, `replace`, `get` (+ `afterWrite`) |
+| `DELETE` | 1 | 1 | `delete` |
+| `GET` un document | 1 | 1 | `get` |
+| `GET` une liste | 1 | 1 | `list` |
+| `GET` un comptage | 1 | 1 | `count` |
+| `GET` le dernier | 1 | 1 | `last` |
+
+Une sonde d'existence n'a **pas** de `afterModelCall` : elle répond un booléen, il n'y a pas de
+résultat à remettre.
+
+La situation : agir à la création, et **pas** sur la relecture qui la suit.
+
+```php
+protected function beforeModelCall( ?Request $request , array &$init ) : void
+{
+    parent::beforeModelCall( $request , $init ) ;
+
+    if ( ( $init[ Arango::OPERATION ] ?? null ) === ModelOperation::INSERT )
+    {
+        // La vraie insertion — pas le `get` qui rend le document juste après.
+    }
+}
+```
+
+Sur `afterModelCall`, l'opération dit aussi **ce que `$result` contient** : un document sur
+`insert` / `update` / `replace` / `get` / `last`, une liste sur `list`, un entier sur `count`.
+
+#### La relecture qui suit une écriture est un `get`, marqué
+
+Après une écriture, le contrôleur relit le document pour le rendre à travers la projection. Cette
+lecture annonce `get` — pas une opération à elle — et porte en plus `Arango::AFTER_WRITE => true`.
+
+C'est délibéré : un crochet qui périmètre « toutes les lectures » énumère `get`, `list`, `count`,
+`last`. Si la relecture portait un nom à part, il l'oublierait, et elle deviendrait la seule porte
+sans périmètre. Marquée, l'oubli tombe du bon côté — et le crochet qui a besoin de les séparer
+(un journal d'audit, un cache) lit le drapeau.
+
+#### Les deux irrégularités, énoncées
+
+- **`list` couvre plus qu'une requête.** Le comptage, les comptes de facettes et les bornes qui
+  accompagnent la liste tournent sous le **même** `$init`, donc sous une seule annonce.
+- **`delete` couvre sa sonde.** La sonde d'existence d'une suppression tourne sous l'`$init` de la
+  suppression, pour que les deux ne puissent pas diverger sur le périmètre posé par le crochet.
+
+#### Les autres contrôleurs
+
+| Contrôleur | Ce qui est annoncé |
+|---|---|
+| `PropertyController` | `get` ; et sur `patch` : `exist`, `update`, `get` (+ `afterWrite`) |
+| `ArrayPropertyController` | `exist` — les requêtes de tableau construisent leur propre `FILTER` et ne lisent pas cet `$init` : la sonde est le seul appel que le crochet gouverne, et c'est là que le périmètre mord ; plus `get` (+ `afterWrite`) quand `RESPOND_WITH_OWNER` relit le document porteur |
+| `EdgesController` | `delete` et `exist`, à composer avec `EdgesController::CALL`, qui dit **sur quelle collection** porte l'appel (`from`, `to`, `edges`) |
+| `TraversalController` | `traverse` et `traverseFirst` — ni `list` ni `get` : l'appel part vers le modèle d'arêtes |
+| `ConceptSchemeController` | `list` |
+
+> Purement additif : la clé est **posée à la construction de l'`$init`**, donc vue par les deux
+> crochets. Un contrôleur qui l'ignore se comporte exactement comme avant.
+
 ### ⚠️ `Arango::CONDITIONS` ne veut pas dire la même chose selon l'opération
 
 Cet avantage a un angle vif, et mieux vaut le connaître avant d'écrire son premier hook : `conditions` s'écrit pareil dans tous les `$init`, mais le modèle le lit avec **deux dictionnaires différents** selon l'opération.

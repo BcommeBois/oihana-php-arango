@@ -187,6 +187,73 @@ final class UsersController extends DocumentsController
 
 Advantage: **a single override covers all HTTP verbs**. No need to repeat cross-cutting logic in `list()`, `get()`, `post()`, etc.
 
+### Knowing which call you are serving (`Arango::OPERATION`)
+
+A single override covers every verb — but **one verb runs several model calls**, and the hooks are
+invoked once per call. `$request->getMethod()` answers the same to all of them: `Arango::OPERATION`,
+posed in the `$init`, is what tells them apart.
+
+| Verb | `beforeModelCall` | `afterModelCall` | Operations announced, in order |
+|---|:--:|:--:|---|
+| `POST` | 2 | 2 | `insert`, then `get` (+ `afterWrite`) |
+| `PATCH` | 3 | 2 | `exist`, `update`, `get` (+ `afterWrite`) |
+| `PUT` | 3 | 2 | `exist`, `replace`, `get` (+ `afterWrite`) |
+| `DELETE` | 1 | 1 | `delete` |
+| `GET` one document | 1 | 1 | `get` |
+| `GET` a list | 1 | 1 | `list` |
+| `GET` a count | 1 | 1 | `count` |
+| `GET` the last one | 1 | 1 | `last` |
+
+An existence probe has **no** `afterModelCall`: it answers a boolean, so there is no result to hand
+back.
+
+The situation: acting on the creation, and **not** on the read that follows it.
+
+```php
+protected function beforeModelCall( ?Request $request , array &$init ) : void
+{
+    parent::beforeModelCall( $request , $init ) ;
+
+    if ( ( $init[ Arango::OPERATION ] ?? null ) === ModelOperation::INSERT )
+    {
+        // The real insertion — not the `get` that hands the document back right after.
+    }
+}
+```
+
+On `afterModelCall`, the operation also states **what `$result` holds**: a document on `insert` /
+`update` / `replace` / `get` / `last`, a list on `list`, an integer on `count`.
+
+#### The read that follows a write is a `get`, flagged
+
+After a write, the controller reads the document back to hand it through the projection. That read
+announces `get` — not an operation of its own — and carries `Arango::AFTER_WRITE => true` as well.
+
+Deliberately so: a hook scoping "every read" enumerates `get`, `list`, `count`, `last`. Were the
+read-back named separately, it would be left out, and it would become the one door with no scope.
+Flagged, the oversight falls on the safe side — and a hook that does need to tell them apart (an
+audit trail, a cache) reads the flag.
+
+#### The two irregularities, stated
+
+- **`list` covers more than one query.** The count, the facet counts and the bounds answered
+  alongside the list run under the **same** `$init`, and therefore under a single announcement.
+- **`delete` covers its probe.** The existence probe of a deletion runs under the deletion's own
+  `$init`, so the two cannot disagree on the scope the hook poses.
+
+#### The other controllers
+
+| Controller | What is announced |
+|---|---|
+| `PropertyController` | `get`; and on `patch`: `exist`, `update`, `get` (+ `afterWrite`) |
+| `ArrayPropertyController` | `exist` — the array queries build their own `FILTER` and never read this `$init`, so the probe is the only call that hook governs, and it is where the scope bites; plus `get` (+ `afterWrite`) when `RESPOND_WITH_OWNER` reads the owner back |
+| `EdgesController` | `delete` and `exist`, composed with `EdgesController::CALL`, which says **which collection** the call is about (`from`, `to`, `edges`) |
+| `TraversalController` | `traverse` and `traverseFirst` — neither `list` nor `get`: the call goes to the edges model |
+| `ConceptSchemeController` | `list` |
+
+> Purely additive: the key is **posed at the construction of the `$init`**, so both hooks see it. A
+> controller that ignores it behaves exactly as before.
+
 ### ⚠️ `Arango::CONDITIONS` does not mean the same thing on every operation
 
 That advantage has one sharp edge, and it is worth knowing before you write your first hook: `conditions` is spelled the same in every `$init`, but the model reads it with **two different dictionaries** depending on the operation.
