@@ -91,8 +91,21 @@ The `op` values are defined by the `FilterComparator` enum.
 | `between` | Inclusive range (`min`/`max` keys instead of `val`) | `(doc.x >= @min && doc.x <= @max)` |
 | `distance` | Geo radius (`geo` type; `val` = point, `min`/`max` = radius in meters) | `DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) <= @max` |
 
-> `sw`, `ew` and `contains` are **function forms** (not infix comparators) and match **literally**: `%`/`_` are not wildcards (unlike `like`), so nothing needs escaping. AQL has no native `ENDS_WITH`, so `ew` is written `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`. These three are case-insensitive via the `alt` mirror: `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))` (likewise for `ew`/`contains`).
+> **Two ways of writing a comparison.** Most operators are written **between** the field and the value, as in maths: `doc.price > @val`. A few cannot be — AQL writes them as functions, the name in front and both operands inside: `STARTS_WITH(doc.name, @val)`. Those are `sw`, `ew`, `contains`, `regex` and their negations.
 >
+> **They match to the letter.** With `like`, the `%` character means "anything": `"AC%"` finds everything starting with `AC`. With `sw`, `%` is an ordinary percent sign. Nothing to escape, then — but nothing to wildcard either.
+>
+> **`ew` is built rather than native**, because AQL has no "ends with" function: it takes the last N characters of the field, N being the length of the value looked for, and compares them — `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`.
+>
+> **To ignore capitals**, apply `lower` to both sides at once through the `alt` *mirror*: `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))`. Works for `sw`, `ew` and `contains` — but **not** for `regex`, see just below.
+>
+> ⚠️ **An operator does not apply to every kind of field.** "Starts with" means nothing for a
+> number: the function forms (`sw`, `nsw`, `ew`, `new`, `contains`, `ncontains`, `regex`,
+> `nregex`) only apply to a `string` filter. `between` applies to `string`, `number` and
+> `date`; `distance` to `geo`. **The twelve others** (`eq`, `ne`, `gt`, `ge`, `lt`, `le`,
+> `in`, `nin`, `like`, `nlike`, `match`, `nmatch`) apply everywhere. Used off its own ground,
+> an operator is **refused** — see [below](#what-a-caller-gets-wrong).
+
 > `regex` tests an ICU **regular expression**. The value is **bound** (`@val`): no AQL injection is possible. For case-insensitivity, prefix the pattern with an *inline* `(?i)` flag (e.g. `"(?i)^eka.*on$"`) — do **not** use the `alt` mirror, which would also lowercase character classes (`[A-Z]`). ⚠️ A client-supplied pattern can be expensive (*ReDoS*): validate/bound it on the application side when the input is untrusted.
 >
 > **Negated forms**: each function-form operator has an `n`-prefixed negation that wraps the positive form in `!( … )`: `nsw` (not starts with), `new` (not ends with), `ncontains` (not contains), `nregex` (not matching). E.g. `{"op":"ncontains","val":"mele"}` → `!(CONTAINS(doc.x, @val))`.
@@ -1130,6 +1143,24 @@ aggregate outside the whitelist under `AggregatablePolicy::STRICT`.
 > invalid position key, an `alt` declared in a `Field::ALTERS` that does not exist. No URL will fix
 > those: answering "bad request" would send the caller hunting through their URL for a fault that
 > is in your code.
+
+**An operator used off its own ground is refused the same way.** Until 1.6.0 it became an
+**equality**, in silence:
+
+```
+?filter={"key":"price","op":"sw","val":12}      ← "prices starting with 12"
+→ before: doc.price == 12                        ← "prices equal to 12"
+→ now:    400  Unsupported filter operator "sw". Supported here: eq, ne, gt, …
+```
+
+A handful of plausible rows, in `200`, answering a question nobody asked. An operator that
+does not exist (`GT`, `>`, `zzz`) fell into the same hole. An empty page gets noticed; a
+wrong page does not.
+
+> An **absent** `op` still means `eq`: that is the documented default, and the one case
+> where falling back to equality is what the caller meant. An empty string (`"op":""`) is
+> treated as an absence — an unfilled `<select>` submits one, and that is an absence
+> expressed, not a typo.
 
 Under the hood the former raise a `RequestValidationException` and the latter a
 `ValidationException` — the first **extends** the second, so an existing `catch` still catches both.

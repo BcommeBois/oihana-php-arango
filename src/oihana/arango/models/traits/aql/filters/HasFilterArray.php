@@ -246,11 +246,15 @@ trait HasFilterArray
      */
     protected function prepareFilterArrayComparator( array $init = [] ):string
     {
-        return FilterArrayComparator::getAlias
-        (
-            $init[ FilterParam::OP ] ?? null
-        )
-        ?? $this->prepareFilterComparator( $init ) ;
+        $op = $init[ FilterParam::OP ] ?? null ;
+
+        // A non-string operator reached `__ALIAS__[ $op ]` and raised a TypeError — a PHP
+        // fatal nobody declares or catches, for what is only a malformed request. The
+        // shapes that mean something (`[ 'atLeast.ge' , 3 ]`) are routed upstream; anything
+        // else falls through to the plain comparator, which refuses it by name.
+        $alias = is_string( $op ) ? FilterArrayComparator::getAlias( $op ) : null ;
+
+        return $alias ?? $this->prepareFilterComparator( $init ) ;
     }
 
     /**
@@ -311,7 +315,8 @@ trait HasFilterArray
         $count = (int) ( $op[ 1 ] ?? 1 ) ;
         $code  = substr( (string) $op[ 0 ] , strlen( FilterArrayComparator::AT_LEAST ) + 1 ) ; // "ge"
 
-        $comparator = Operator::AT_LEAST . ' (' . $count . ') ' . FilterComparator::getAlias( $code ) ;
+        // Same guard as the plain comparator: `at_least.zzz` used to become `at_least (n) ==`.
+        $comparator = Operator::AT_LEAST . ' (' . $count . ') ' . $this->resolveFilterComparator( $code ) ;
 
         return predicate
         (
@@ -349,7 +354,7 @@ trait HasFilterArray
     protected function prepareFilterQuantified( array $init , ?array &$binds = null , string $docRef = AQL::DOC ) :string
     {
         $quantifier = resolveQuantifier( $init[ FilterParam::QUANT ] ) ;
-        $comparator = FilterComparator::getAlias( $init[ FilterParam::OP ] ?? null ) ;
+        $comparator = $this->prepareFilterComparator( $init ) ;
 
         return predicate
         (

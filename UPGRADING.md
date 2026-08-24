@@ -13,9 +13,9 @@ the CHANGELOG entries.
 
 ## 1.5.0 → 1.6.0 - 2026-08-24
 
-Two breaking changes, both about **telling a caller that their request was not understood** instead
-of quietly answering something else. Neither changes a signature: no override in a consuming project
-has to be rewritten.
+Three breaking changes, all about **telling a caller that their request was not understood** instead
+of quietly answering something else. None changes a signature: no override in a consuming project has
+to be rewritten.
 
 ### 🚨 Breaking
 
@@ -81,6 +81,44 @@ engine with no binder. No URL will ever fix those.
 **In PHP, nothing breaks.** The new `RequestValidationException` **extends** the `ValidationException`
 every existing `catch` already names. If you want to tell the two apart, catch the new type first.
 
+#### 3. An operator the filter cannot honour is refused
+
+**Before.** An `op` the filter could not translate became an **equality**, in silence. Two mistakes
+landed there:
+
+- a code that does not exist — `zzz`, `GT` with the wrong case, `>` instead of `gt`, `sw ` with a
+  trailing space ;
+- a code that exists but not for that field — `sw` means "starts with", which is meaningful on text
+  and meaningless on a number.
+
+```
+?filter={"key":"price","op":"sw","val":12}      ← "prices starting with 12"
+→ doc.price == 12                                ← "prices equal to 12"
+```
+
+A handful of plausible rows, in `200`, answering a question nobody asked. The second case is the
+dangerous one: an empty page gets noticed, a wrong page does not.
+
+**Now.** Both are refused with a `400`, naming the refused code and listing what is accepted. The
+same applies to the two array forms — `?quant=` and `atLeast.<op>` — and an operator handed as a
+list of the wrong shape, which used to raise a PHP `TypeError`.
+
+**What to do.**
+
+1. **Check the operators your front-end sends.** The accepted spellings are lowercase names, not
+   AQL symbols: `gt`, not `>` or `GT`.
+2. **Check where you use a function form.** `sw`, `nsw`, `ew`, `new`, `contains`, `ncontains`,
+   `regex` and `nregex` apply to `string` filters only; `between` to `string`, `number` and `date`;
+   `distance` to `geo`. The twelve plain comparators (`eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`,
+   `nin`, `like`, `nlike`, `match`, `nmatch`) apply everywhere.
+3. **Nothing else.** An absent `op` still means `eq`, and so does an empty one — an unfilled
+   `<select>` submits an empty string, and that keeps meaning "no operator".
+
+**How much this is likely to affect you:** applying the fix turned red exactly the 39 combinations a
+new test matrix had pinned as degrading, and **nothing else in the library's 5000 essays**. Nothing
+depended on the old behaviour there, which is the best available signal that little consumer code
+does either.
+
 #### `assertAttributeName()` takes a second parameter
 
 `assertAttributeName( mixed $value , bool $fromRequest = false )`. The default keeps the previous
@@ -126,6 +164,8 @@ a difference between two arrays. See `wiki/en/db/grouping.md`.
 
 - [ ] `Field::ALTERS`, `Field::WHEN`, `Facet::ALT`: every function name spelled in full and present
       in the catalogue
+- [ ] the `op` values your front-end sends: lowercase names (`gt`), never AQL symbols (`>`), and
+      function forms (`sw`, `contains`, `regex`, …) only on `string` filters
 - [ ] tests asserting `500` on a malformed request
 - [ ] middlewares, loggers and alerts that branch on `4xx` vs `5xx`
 - [ ] retry policies, client-side or at the gateway

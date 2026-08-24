@@ -11,9 +11,11 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterType;
+use oihana\enums\http\HttpStatusCode;
 
 /**
  * The AQL every `op` compiles to, for every filter type, pinned character for character.
@@ -67,22 +69,29 @@ class FilterOperatorMatrixTest extends TestCase
     }
 
     /**
-     * ⚠ **These are wrong, and they are pinned to say so.**
+     * The other half of the matrix: an operator this filter type cannot honour is refused,
+     * naming what was refused.
      *
-     * An operator the type does not handle falls through to the generic comparator, whose
-     * default is `==` — so `{"key":"price","op":"sw","val":12}` asks for "prices starting
-     * with 12" and compiles to "prices equal to 12". A handful of plausible results, in
-     * `200`, answering a question nobody asked. `distance` on a non-geo field, and every
-     * function form (`contains`, `sw`, `ew`, `regex` and their negations) outside `string`,
-     * land here.
-     *
-     * They are pinned rather than left unmeasured so the next lot — which refuses them —
-     * turns this data set red on purpose, and so nobody reads the silence as intent.
+     * ⚠ Until 1.6.0 every one of these compiled to an equality. `distance` on a non-geo
+     * field, and every function form outside `string` — `contains`, `sw`, `ew`, `regex`
+     * and their negations — plus `between` on `bool` and `array`.
+     * `{"key":"price","op":"sw","val":12}` asked for prices *starting with* 12 and answered
+     * prices *equal to* 12: a handful of plausible rows, in `200`, answering a question
+     * nobody asked. An empty page gets noticed; a wrong page does not.
      */
-    #[DataProvider( 'silentDegradations' )]
-    public function testAnOperatorTheTypeDoesNotHandleSilentlyBecomesAnEquality( string $field , string $op , mixed $value , string $expected ) :void
+    #[DataProvider( 'refusedCombinations' )]
+    public function testAnOperatorTheTypeCannotHonourIsRefused( string $field , string $op , mixed $value ) :void
     {
-        $this->assertSame( $expected , $this->compile( $field , $op , $value ) ) ;
+        try
+        {
+            $this->compile( $field , $op , $value ) ;
+            $this->fail( sprintf( 'the "%s" operator must be refused on "%s"' , $op , $field ) ) ;
+        }
+        catch ( RequestValidationException $exception )
+        {
+            $this->assertSame( HttpStatusCode::BAD_REQUEST , $exception->getCode() ) ;
+            $this->assertStringContainsString( sprintf( '"%s"' , $op ) , $exception->getMessage() ) ;
+        }
     }
 
     public static function soundCombinations() :array
@@ -163,49 +172,49 @@ class FilterOperatorMatrixTest extends TestCase
         ] ;
     }
 
-    public static function silentDegradations() :array
+    public static function refusedCombinations() :array
     {
         return
         [
-            'string · distance' => [ 'name' , 'distance' , 'AC' , 'doc.name == @v0' ] ,
-            'number · contains' => [ 'age' , 'contains' , 12 , 'doc.age == @v0' ] ,
-            'number · ncontains' => [ 'age' , 'ncontains' , 12 , 'doc.age == @v0' ] ,
-            'number · sw' => [ 'age' , 'sw' , 12 , 'doc.age == @v0' ] ,
-            'number · nsw' => [ 'age' , 'nsw' , 12 , 'doc.age == @v0' ] ,
-            'number · ew' => [ 'age' , 'ew' , 12 , 'doc.age == @v0' ] ,
-            'number · new' => [ 'age' , 'new' , 12 , 'doc.age == @v0' ] ,
-            'number · regex' => [ 'age' , 'regex' , 12 , 'doc.age == @v0' ] ,
-            'number · nregex' => [ 'age' , 'nregex' , 12 , 'doc.age == @v0' ] ,
-            'number · distance' => [ 'age' , 'distance' , 12 , 'doc.age == @v0' ] ,
-            'bool · between' => [ 'active' , 'between' , null , 'doc.active == @v0' ] ,
-            'bool · contains' => [ 'active' , 'contains' , true , 'doc.active == @v0' ] ,
-            'bool · ncontains' => [ 'active' , 'ncontains' , true , 'doc.active == @v0' ] ,
-            'bool · sw' => [ 'active' , 'sw' , true , 'doc.active == @v0' ] ,
-            'bool · nsw' => [ 'active' , 'nsw' , true , 'doc.active == @v0' ] ,
-            'bool · ew' => [ 'active' , 'ew' , true , 'doc.active == @v0' ] ,
-            'bool · new' => [ 'active' , 'new' , true , 'doc.active == @v0' ] ,
-            'bool · regex' => [ 'active' , 'regex' , true , 'doc.active == @v0' ] ,
-            'bool · nregex' => [ 'active' , 'nregex' , true , 'doc.active == @v0' ] ,
-            'bool · distance' => [ 'active' , 'distance' , true , 'doc.active == @v0' ] ,
-            'date · contains' => [ 'created' , 'contains' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · ncontains' => [ 'created' , 'ncontains' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · sw' => [ 'created' , 'sw' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · nsw' => [ 'created' , 'nsw' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · ew' => [ 'created' , 'ew' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · new' => [ 'created' , 'new' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · regex' => [ 'created' , 'regex' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · nregex' => [ 'created' , 'nregex' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'date · distance' => [ 'created' , 'distance' , '2026-01-01' , 'doc.created == @v0' ] ,
-            'array · between' => [ 'tags' , 'between' , null , 'doc.tags == @v0' ] ,
-            'array · contains' => [ 'tags' , 'contains' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · ncontains' => [ 'tags' , 'ncontains' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · sw' => [ 'tags' , 'sw' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · nsw' => [ 'tags' , 'nsw' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · ew' => [ 'tags' , 'ew' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · new' => [ 'tags' , 'new' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · regex' => [ 'tags' , 'regex' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · nregex' => [ 'tags' , 'nregex' , 'AC' , 'doc.tags == @v0' ] ,
-            'array · distance' => [ 'tags' , 'distance' , 'AC' , 'doc.tags == @v0' ] ,
+            'string · distance' => [ 'name' , 'distance' , 'AC' ] ,
+            'number · contains' => [ 'age' , 'contains' , 12 ] ,
+            'number · ncontains' => [ 'age' , 'ncontains' , 12 ] ,
+            'number · sw' => [ 'age' , 'sw' , 12 ] ,
+            'number · nsw' => [ 'age' , 'nsw' , 12 ] ,
+            'number · ew' => [ 'age' , 'ew' , 12 ] ,
+            'number · new' => [ 'age' , 'new' , 12 ] ,
+            'number · regex' => [ 'age' , 'regex' , 12 ] ,
+            'number · nregex' => [ 'age' , 'nregex' , 12 ] ,
+            'number · distance' => [ 'age' , 'distance' , 12 ] ,
+            'bool · between' => [ 'active' , 'between' , null ] ,
+            'bool · contains' => [ 'active' , 'contains' , true ] ,
+            'bool · ncontains' => [ 'active' , 'ncontains' , true ] ,
+            'bool · sw' => [ 'active' , 'sw' , true ] ,
+            'bool · nsw' => [ 'active' , 'nsw' , true ] ,
+            'bool · ew' => [ 'active' , 'ew' , true ] ,
+            'bool · new' => [ 'active' , 'new' , true ] ,
+            'bool · regex' => [ 'active' , 'regex' , true ] ,
+            'bool · nregex' => [ 'active' , 'nregex' , true ] ,
+            'bool · distance' => [ 'active' , 'distance' , true ] ,
+            'date · contains' => [ 'created' , 'contains' , '2026-01-01' ] ,
+            'date · ncontains' => [ 'created' , 'ncontains' , '2026-01-01' ] ,
+            'date · sw' => [ 'created' , 'sw' , '2026-01-01' ] ,
+            'date · nsw' => [ 'created' , 'nsw' , '2026-01-01' ] ,
+            'date · ew' => [ 'created' , 'ew' , '2026-01-01' ] ,
+            'date · new' => [ 'created' , 'new' , '2026-01-01' ] ,
+            'date · regex' => [ 'created' , 'regex' , '2026-01-01' ] ,
+            'date · nregex' => [ 'created' , 'nregex' , '2026-01-01' ] ,
+            'date · distance' => [ 'created' , 'distance' , '2026-01-01' ] ,
+            'array · between' => [ 'tags' , 'between' , null ] ,
+            'array · contains' => [ 'tags' , 'contains' , 'AC' ] ,
+            'array · ncontains' => [ 'tags' , 'ncontains' , 'AC' ] ,
+            'array · sw' => [ 'tags' , 'sw' , 'AC' ] ,
+            'array · nsw' => [ 'tags' , 'nsw' , 'AC' ] ,
+            'array · ew' => [ 'tags' , 'ew' , 'AC' ] ,
+            'array · new' => [ 'tags' , 'new' , 'AC' ] ,
+            'array · regex' => [ 'tags' , 'regex' , 'AC' ] ,
+            'array · nregex' => [ 'tags' , 'nregex' , 'AC' ] ,
+            'array · distance' => [ 'tags' , 'distance' , 'AC' ] ,
         ] ;
     }
 
@@ -227,7 +236,7 @@ class FilterOperatorMatrixTest extends TestCase
         ) ) ;
 
         $covered = [] ;
-        foreach ( [ ...self::soundCombinations() , ...self::silentDegradations() ] as $case )
+        foreach ( [ ...self::soundCombinations() , ...self::refusedCombinations() ] as $case )
         {
             $covered[ $case[ 1 ] ] = true ;
         }
@@ -247,7 +256,7 @@ class FilterOperatorMatrixTest extends TestCase
     public function testEveryTypeIsMeasuredAgainstTheWholeCatalogue() :void
     {
         $perType = [] ;
-        foreach ( [ ...self::soundCombinations() , ...self::silentDegradations() ] as $name => $case )
+        foreach ( [ ...self::soundCombinations() , ...self::refusedCombinations() ] as $name => $case )
         {
             $perType[ explode( ' ' , (string) $name )[ 0 ] ][] = $case[ 1 ] ;
         }
@@ -287,6 +296,65 @@ class FilterOperatorMatrixTest extends TestCase
 
         // No radius, no clause — a filter that cannot be honoured is not silently widened.
         $this->assertSame( '' , $this->compile( 'geo' , 'distance' , $point ) ) ;
+    }
+
+    // ---------------------------------------------------------------- the two array forms
+
+    /**
+     * `?quant=` carried the same default. `{"key":"tags","quant":"any","op":"zzz"}` used to
+     * compile to `tags ANY == @v` — the quantifier honoured, the comparison invented.
+     */
+    public function testAQuantifiedFilterRefusesAnUnknownOperator() :void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'Unsupported filter operator "zzz"' ) ;
+
+        $binds = [] ;
+        $this->model->prepareFilter( [ 'key' => 'tags' , 'quant' => 'any' , 'op' => 'zzz' , 'val' => 'AC' ] , $binds ) ;
+    }
+
+    /**
+     * And so did `atLeast.<op>`: a mistyped code became `at least (n) ==`.
+     */
+    public function testAnAtLeastFilterRefusesAnUnknownOperator() :void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'Unsupported filter operator "zzz"' ) ;
+
+        $binds = [] ;
+        $this->model->prepareFilter( [ 'key' => 'tags' , 'op' => [ 'atLeast.zzz' , 2 ] , 'val' => 'AC' ] , $binds ) ;
+    }
+
+    /**
+     * ⚠ A shape rather than a spelling: an operator handed as a list the router does not
+     * recognise reached `__ALIAS__[ $op ]` and raised a **TypeError** — a PHP fatal, for a
+     * malformed request. It is a refusal like any other now.
+     */
+    public function testAnOperatorOfTheWrongShapeIsRefusedRatherThanFatal() :void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+
+        $binds = [] ;
+        $this->model->prepareFilter( [ 'key' => 'tags' , 'op' => [ 'zzz' , 2 ] , 'val' => 'AC' ] , $binds ) ;
+    }
+
+    /**
+     * The `atLeast` form still honours a code it can translate.
+     */
+    public function testAnAtLeastFilterKeepsTheOperatorsItUnderstands() :void
+    {
+        $binds = [] ;
+        $out   = (string) $this->model->prepareFilter( [ 'key' => 'tags' , 'op' => [ 'atLeast.ge' , 2 ] , 'val' => 'AC' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'AT LEAST (2) >=' , $out ) ;
+    }
+
+    /**
+     * The quantified form still honours an operator it can translate.
+     */
+    public function testAQuantifiedFilterKeepsTheOperatorsItUnderstands() :void
+    {
+        $this->assertSame( 'doc.tags ANY >= @v0' , $this->compile( 'tags' , 'ge' , 'AC' , [ 'quant' => 'any' ] ) ) ;
     }
 
     // ---------------------------------------------------------------- harness

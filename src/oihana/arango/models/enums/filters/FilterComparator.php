@@ -58,4 +58,23 @@ class FilterComparator
     {
         return self::__ALIAS__[ $value ] ?? $default ;
     }
+
+    /**
+     * The operator codes this catalogue can translate on its own, in declaration order.
+     *
+     * These are the **infix** comparators — the ones any filter type understands, whatever
+     * the field holds. The function forms (`sw`, `ew`, `contains`, `regex` and their
+     * negations) are deliberately absent: they are handled upstream by the filter types
+     * that can honour them, and reaching this catalogue with one of them means the type at
+     * hand cannot. Same for `between`, resolved by the string, number and date filters, and
+     * for `distance`, which belongs to the geo filter.
+     *
+     * Used to tell a caller what is accepted where their operator was refused.
+     *
+     * @return array<int,string>
+     */
+    public static function supported() :array
+    {
+        return array_keys( self::__ALIAS__ ) ;
+    }
 }

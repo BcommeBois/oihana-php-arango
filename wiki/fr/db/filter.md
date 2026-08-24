@@ -91,8 +91,22 @@ Les valeurs de `op` sont définies par l'enum `FilterComparator`.
 | `between` | Plage inclusive (clés `min`/`max` au lieu de `val`) | `(doc.x >= @min && doc.x <= @max)` |
 | `distance` | Rayon géo (type `geo` ; `val` = point, `min`/`max` = rayon en mètres) | `DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) <= @max` |
 
-> `sw`, `ew` et `contains` sont des **formes fonction** (pas des comparateurs infixes) et comparent **littéralement** : les `%`/`_` ne sont pas des jokers (contrairement à `like`), donc rien à échapper. AQL n'a pas de `ENDS_WITH` natif → `ew` s'écrit `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`. Ces trois-là sont insensibles à la casse via le miroir `alt` : `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))` (idem `ew`/`contains`).
+> **Deux façons d'écrire une comparaison.** La plupart des opérateurs s'écrivent **entre** le champ et la valeur, comme en maths : `doc.price > @val`. Quelques-uns ne le peuvent pas — AQL les écrit comme des fonctions, le nom devant et les deux opérandes à l'intérieur : `STARTS_WITH(doc.name, @val)`. Ce sont `sw`, `ew`, `contains`, `regex` et leurs négations.
 >
+> **Elles comparent au pied de la lettre.** Avec `like`, le caractère `%` veut dire « n'importe quoi » : `"AC%"` trouve tout ce qui commence par `AC`. Avec `sw`, `%` n'est qu'un pourcent ordinaire. Rien à échapper, donc — mais rien à joker non plus.
+>
+> **`ew` est fabriqué**, parce qu'AQL n'a pas de fonction « finit par » : on prend les N derniers caractères du champ, N étant la longueur de la valeur cherchée, et on les compare — `RIGHT(doc.x, CHAR_LENGTH(@val)) == @val`.
+>
+> **Pour ignorer les majuscules**, applique `lower` des deux côtés à la fois grâce au *miroir* `alt` : `{"op":"sw","alt":{"key":"lower","val":true}}` → `STARTS_WITH(LOWER(doc.x), LOWER(@val))`. Vaut pour `sw`, `ew` et `contains` — mais **pas** pour `regex`, voir juste en dessous.
+>
+> ⚠️ **Un opérateur ne s'applique pas à tous les types de champ.** « Commence par » ne veut
+> rien dire pour un nombre : les formes fonction (`sw`, `nsw`, `ew`, `new`, `contains`,
+> `ncontains`, `regex`, `nregex`) ne valent que sur un filtre `string`. `between` vaut pour
+> `string`, `number` et `date` ; `distance` pour `geo`. **Les douze autres** (`eq`, `ne`,
+> `gt`, `ge`, `lt`, `le`, `in`, `nin`, `like`, `nlike`, `match`, `nmatch`) valent partout.
+> Employé hors de son terrain, un opérateur est **refusé** — voir
+> [ci-dessous](#ce-que-reçoit-un-client-qui-se-trompe).
+
 > `regex` teste une **expression régulière** (ICU). La valeur est **bindée** (`@val`) : aucune injection AQL possible. Pour l'insensibilité à la casse, préfixe ton motif d'un flag *inline* `(?i)` (ex. `"(?i)^eka.*on$"`) — ne passe **pas** par le miroir `alt`, qui abaisserait aussi les classes de caractères (`[A-Z]`). ⚠️ Un motif fourni par le client peut être coûteux (*ReDoS*) : valide/limite-le côté application si l'entrée n'est pas de confiance.
 >
 > **Formes négatives** : chaque opérateur fonction a sa négation préfixée `n` qui enveloppe la forme positive dans `!( … )` : `nsw` (ne commence pas par), `new` (ne finit pas par), `ncontains` (ne contient pas), `nregex` (ne correspond pas). Ex. `{"op":"ncontains","val":"mele"}` → `!(CONTAINS(doc.x, @val))`.
@@ -1129,6 +1143,24 @@ facette inconnu, et un agrégat hors liste blanche sous `AggregatablePolicy::STR
 > clé de position invalide, un `alt` déclaré dans un `Field::ALTERS` qui n'existe pas. Aucune URL ne
 > corrigera ça : dire « mauvaise requête » enverrait le client chercher dans son URL une faute qui
 > est dans ton code.
+
+**Un opérateur employé hors de son terrain est refusé de la même façon.** Jusqu'en 1.6.0,
+il devenait une **égalité**, en silence :
+
+```
+?filter={"key":"price","op":"sw","val":12}      ← « les prix qui commencent par 12 »
+→ avant : doc.price == 12                        ← « les prix qui valent exactement 12 »
+→ maintenant : 400  Unsupported filter operator "sw". Supported here: eq, ne, gt, …
+```
+
+Une poignée de résultats plausibles, en `200`, répondant à une question que personne n'avait
+posée. Un opérateur qui n'existe pas (`GT`, `>`, `zzz`) tombait dans le même défaut. Une page
+vide, ça se remarque ; une page fausse, non.
+
+> `op` **absent** vaut toujours `eq` : c'est le défaut documenté, et le seul cas où retomber
+> sur l'égalité est bien ce que l'appelant voulait. Une chaîne vide (`"op":""`) est traitée
+> comme une absence — un `<select>` non renseigné en envoie une, et c'est une absence
+> exprimée, pas une faute de frappe.
 
 Techniquement, les premiers lèvent une `RequestValidationException`, les seconds une
 `ValidationException` — la première **étend** la seconde, donc un `catch` existant les attrape

@@ -27,6 +27,8 @@ use oihana\arango\models\traits\aql\filters\HasFilterDocumentation;
 use oihana\arango\models\traits\aql\filters\HasFilterNumber;
 use oihana\arango\models\traits\aql\filters\HasFilterString;
 use oihana\arango\models\traits\aql\filters\HasHierarchicalFilter;
+use oihana\arango\db\enums\Comparator;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
@@ -675,12 +677,68 @@ trait FilterTrait
 
     /**
      * Prepares the filter clause with a specific operator.
+     *
      * @param array $init
+     *
      * @return string
+     *
+     * @throws RequestValidationException When an operator is supplied that this filter cannot honour.
      */
     protected function prepareFilterComparator( array $init = [] ):string
     {
-        return FilterComparator::getAlias($init[ FilterParam::OP ] ?? null ) ;
+        return $this->resolveFilterComparator( $init[ FilterParam::OP ] ?? null ) ;
+    }
+
+    /**
+     * Translates an operator code into its AQL comparator, refusing the ones this filter
+     * cannot honour.
+     *
+     * 🚨 **Reaching this point means the operator was not handled upstream.** The filter
+     * types intercept what they can — `sw` / `ew` / `contains` / `regex` on a string,
+     * `between` on a string, a number or a date, `distance` on a geo field — and everything
+     * else falls through to the infix catalogue. So an operator arriving here that the
+     * catalogue does not carry is one of two mistakes, and both used to compile to `==`:
+     *
+     * - a code that does not exist (`zzz`, `GT`, `>`), plainly a typo ;
+     * - a code that exists but not for this field: `{"key":"price","op":"sw","val":12}`
+     *   asks for prices *starting with* 12 and used to answer prices *equal to* 12 — a
+     *   handful of plausible rows, in `200`, answering a question nobody asked.
+     *
+     * The second is the dangerous one: an empty page is noticed, a wrong page is not.
+     *
+     * ⚠ **An absent operator still means equality.** `null` is the documented default and
+     * the one case where falling back to `==` is what the caller meant. An empty string is
+     * treated the same way rather than refused — an unfilled `<select>` submits one, and
+     * that is an absence expressed, not a typo.
+     *
+     * @param mixed $op The operator code supplied by the caller, if any.
+     *
+     * @return string The AQL comparator.
+     *
+     * @throws RequestValidationException When the operator is supplied and cannot be honoured here.
+     */
+    protected function resolveFilterComparator( mixed $op ) :string
+    {
+        if ( $op === null || $op === Char::EMPTY )
+        {
+            return Comparator::EQUAL ;
+        }
+
+        $comparator = is_string( $op ) ? FilterComparator::getAlias( $op , null ) : null ;
+
+        if ( $comparator === null )
+        {
+            throw new RequestValidationException( sprintf
+            (
+                'Unsupported filter operator "%s". Supported here: %s. The function forms ' .
+                '(sw, nsw, ew, new, contains, ncontains, regex, nregex) apply to string filters only, ' .
+                'between to string, number and date filters, and distance to geo filters.' ,
+                is_string( $op ) ? $op : get_debug_type( $op ) ,
+                implode( ', ' , FilterComparator::supported() )
+            ) ) ;
+        }
+
+        return $comparator ;
     }
 
     /**
