@@ -27,5 +27,6 @@ class Facet
     public const string OP                = 'facet_op' ;
     public const string PROPERTY          = 'facet_property' ;
     public const string TYPE              = 'facet_type' ;
+    public const string VALUE             = 'facet_value' ;
 
 }

@@ -7,6 +7,7 @@ use DI\NotFoundException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Operator;
+use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\Group;
@@ -32,11 +33,13 @@ use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\expandArrayPath;
 use function oihana\arango\db\operations\aqlCollect;
 use function oihana\arango\db\operations\aqlCollectReturn;
+use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlSort;
 use function oihana\arango\db\helpers\aqlDocument;
+use function oihana\arango\models\helpers\facets\resolveFacetJoin;
 use function oihana\arango\models\helpers\isAttributeAuthorized;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\core\strings\compile;
@@ -57,21 +60,40 @@ use function oihana\core\strings\key;
  * RETURN { category, status }
  * ```
  *
- * v1 supports the scalar {@see Facet::FIELD} and the array-membership
+ * Supported types: the scalar {@see Facet::FIELD}, the array-membership
  * {@see Facet::IN} family ({@see Facet::LIST}, {@see Facet::LIST_FIELD},
- * {@see Facet::LIST_FIELD_SORTED}); other facet types are skipped. A
- * `Facet::PROPERTY` carrying the `[*]` array-expansion marker (e.g.
- * `offers[*].priceCurrency`) unwinds the object array and counts the sub-field
- * per element — see {@see FacetCountsQueryTrait::buildFacetCountSubquery()}.
+ * {@see Facet::LIST_FIELD_SORTED}) and the two linked facets {@see Facet::EDGE}
+ * and {@see Facet::JOIN}; other facet types are skipped. A `Facet::PROPERTY`
+ * carrying the `[*]` array-expansion marker (e.g. `offers[*].priceCurrency`)
+ * unwinds the object array and counts the sub-field per element — see
+ * {@see FacetCountsQueryTrait::buildFacetCountSubquery()}.
  *
- * The unwinding facet types (the `[*]` expansion and the {@see Facet::IN}
- * family) count array *elements* by default, so a document whose array repeats
- * the same value in several elements is counted several times — diverging from
- * the equivalent `?filter=` existence test, which counts *documents*. Declaring
- * `Facet::DISTINCT => true` on such a facet switches its bucket count to
- * `COUNT_DISTINCT( doc._key )`, so the count reflects distinct root documents
+ * A **linked** dimension counts the documents reached through the relation it
+ * already filters on — an `INBOUND` edge traversal or a key-join — bucketing on
+ * a field of the *related* document named by `Facet::VALUE` (default `_key`):
+ *
+ * ```aql
+ * LET location = (FOR doc IN @@coll FILTER <same filters> FOR doc_location IN INBOUND doc places_edges COLLECT value = doc_location.name WITH COUNT INTO count SORT count DESC RETURN { value, count })
+ * ```
+ *
+ * The unwinding facet types (the `[*]` expansion, the {@see Facet::IN} family
+ * and the linked facets) count *rows* by default, so a document reaching the
+ * same value several times — a repeated array element, two parallel edges to the
+ * same vertex, several joined documents — is counted several times, diverging
+ * from the equivalent `?filter=` existence test, which counts *documents*.
+ * Declaring `Facet::DISTINCT => true` on such a facet switches its bucket count
+ * to `COUNT_DISTINCT( doc._key )`, so the count reflects distinct root documents
  * and matches the filter. The flag is opt-in (default unchanged) and a no-op on
  * the scalar {@see Facet::FIELD} type, which already counts one row per document.
+ *
+ * **Permission.** The dimension gate runs before the type is dispatched, so it
+ * covers the linked types unchanged — but the two guards do not weigh the same
+ * for them: the projection inheritance
+ * ({@see isAttributeAuthorized}) looks the
+ * dimension up in the *main* model's fields, which cannot say anything about a
+ * field of another collection. A linked facet is therefore gated by the
+ * `Field::REQUIRES` declared **on the facet itself**, exactly as on the
+ * filtering side.
  *
  * @see FacetCountsQueryTrait::buildFacetCountsQuery() The entry point.
  */
@@ -200,6 +222,30 @@ trait FacetCountsQueryTrait
         // ROOT document key (whatever the `[*]` hop depth) — see facetCountCollect().
         $distinctKey = !empty( $facet[ Facet::DISTINCT ] ) ? key( Schema::_KEY , $docRef ) : null ;
 
+        // A linked facet counts the RELATED documents — those reached through an
+        // edge traversal (EDGE) or a key-join (JOIN) — so its bucket value is a
+        // field of the *related* document, named by `Facet::VALUE` (default
+        // `_key`). Handled before the `[*]` branch below on purpose: the source of
+        // a linked facet is the relation, never an array of the main document, and
+        // `Facet::PROPERTY` keeps its join meaning (the main-side attribute) rather
+        // than naming a path to unwind.
+        if ( $type === Facet::EDGE || $type === Facet::JOIN )
+        {
+            [ $relationRef , $relation ] = $this->facetCountRelation( $facet , $key , $type , $docRef ) ;
+
+            $bucket = $facet[ Facet::VALUE ] ?? Schema::_KEY ;
+
+            assertAttributeName( $bucket ) ; // defensive: config-trusted, but cheap to guard.
+
+            return compile
+            ([
+                $for ,
+                $filter ,
+                ...$relation ,
+                ...$this->facetCountCollect( key( $bucket , $relationRef ) , $sort , $distinctKey ) ,
+            ]) ;
+        }
+
         // An object-array sub-field is declared with the `[*]` expansion marker
         // (e.g. `offers[*].priceCurrency`). Unlike `?filter=` / `?search`, which
         // flatten the path, a facet count must *unwind* the array with a FOR and
@@ -284,5 +330,60 @@ trait FacetCountsQueryTrait
                 ] ;
 
         return [ aqlCollect( $spec ) , $sort , aqlCollectReturn( $spec ) ] ;
+    }
+
+    /**
+     * Resolves how a linked facet reaches the documents it counts: the `FOR`
+     * opening the related documents and — for a key-join — the `FILTER` tying
+     * them to the main one.
+     *
+     * The two types differ only in that reaching, exactly as they do on the
+     * filtering side ({@see \oihana\arango\models\traits\aql\facets\HasFacetEdge}
+     * vs {@see \oihana\arango\models\traits\aql\facets\HasFacetJoin}): an `INBOUND`
+     * traversal needs no predicate — it already targets the right vertices —
+     * while a join opens the whole collection and narrows it with its match.
+     * The join anchor is shared with the filtering facets through {@see resolveFacetJoin},
+     * so a declaration counts over exactly the relation it filters on.
+     *
+     * The declared names are guarded by {@see assertAttributeName()}: they are
+     * config-trusted, but a missing edge collection or joined collection would
+     * otherwise compile to a truncated `FOR … IN` — a broken query blamed on the
+     * request rather than on the declaration.
+     *
+     * @param array  $facet  The facet definition (`AQL::EDGE`, or `AQL::COLLECTION` / `AQL::KEY` / `Facet::PROPERTY` / `AQL::ARRAY`).
+     * @param string $key    The facet key; drives the related document reference (`doc_<key>`).
+     * @param string $type   The facet type ({@see Facet::EDGE} or {@see Facet::JOIN}).
+     * @param string $docRef The main document reference.
+     *
+     * @return array{0:string,1:array<int,string>} The related document reference,
+     *         and the AQL fragments reaching it (a `FOR`, plus a `FILTER` for a join).
+     *
+     * @throws ReflectionException
+     * @throws ValidationException
+     */
+    private function facetCountRelation( array $facet , string $key , string $type , string $docRef ) :array
+    {
+        if ( $type === Facet::EDGE )
+        {
+            $edge = $facet[ AQL::EDGE ] ?? null ;
+
+            assertAttributeName( $edge ) ;
+
+            $relationRef = AQL::DOC_PREFIX . $key ;
+
+            return
+            [
+                $relationRef ,
+                [ aqlFor( [ AQL::DOC_REF => $relationRef , AQL::IN => compile( [ Traversal::INBOUND , $docRef , $edge ] ) ] ) ] ,
+            ] ;
+        }
+
+        assertAttributeName( $facet[ AQL::COLLECTION ] ?? null ) ;
+        assertAttributeName( $facet[ AQL::KEY        ] ?? Schema::_KEY ) ;
+        assertAttributeName( $facet[ Facet::PROPERTY ] ?? $key ) ;
+
+        [ $relationRef , $joinFor , $match ] = resolveFacetJoin( $key , $facet , $docRef ) ;
+
+        return [ $relationRef , [ $joinFor , aqlFilter( $match ) ] ] ;
     }
 }

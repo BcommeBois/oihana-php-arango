@@ -4,6 +4,7 @@ namespace tests\oihana\arango\models\traits\queries;
 
 use PHPUnit\Framework\TestCase;
 
+use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\models\enums\Facet;
@@ -81,5 +82,35 @@ class FacetCountsRequiresGateTest extends TestCase
         $init  = [ Arango::FACET_COUNTS => 'secret' , Arango::AUTHORIZER => fn() => false ] ;
 
         $this->assertSame( '' , $stub->buildFacetCountsQuery( $init , $binds ) ) ;
+    }
+
+    public function testRefusedLinkedDimensionIsDropped(): void
+    {
+        // A linked dimension buckets on a field of ANOTHER collection, which the
+        // main projection cannot speak for: the gate that answers for it is the
+        // REQUIRES declared on the facet itself — the same one the filtering side
+        // obeys. Both linked types are measured, so neither can be the door left open.
+        $stub = $this->stub() ;
+        $stub->facets =
+        [
+            'location' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'places_edges' , Field::REQUIRES => 'geo:read' ] ,
+            'author'   => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'authors' , Field::REQUIRES => 'hr:read' ] ,
+        ] ;
+
+        $binds = [] ;
+        $init  = [ Arango::FACET_COUNTS => 'location,author' , Arango::AUTHORIZER => fn() => false ] ;
+
+        $this->assertSame( '' , $stub->buildFacetCountsQuery( $init , $binds ) ) ;
+    }
+
+    public function testGrantedLinkedDimensionIsCounted(): void
+    {
+        $stub = $this->stub() ;
+        $stub->facets = [ 'location' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'places_edges' , Field::REQUIRES => 'geo:read' ] ] ;
+
+        $binds = [] ;
+        $init  = [ Arango::FACET_COUNTS => 'location' , Arango::AUTHORIZER => fn( string $s ) => $s === 'geo:read' ] ;
+
+        $this->assertStringContainsString( 'INBOUND doc places_edges' , $stub->buildFacetCountsQuery( $init , $binds ) ) ;
     }
 }

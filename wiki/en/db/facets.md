@@ -160,6 +160,8 @@ vertex fields with `like`:
                             //   FILTER (doc_subjects._key LIKE @0 || doc_subjects.name LIKE @0 || doc_subjects.alternateName LIKE @0)
                             //   RETURN doc_subjects._key) > 0
 ```
+> The same declaration can be **counted**: `?facetCounts=` buckets the linked
+> vertices, see [Counting linked documents](#counting-linked-documents-facetedge--facetjoin).
 
 ### `Facet::EDGE_COMPLEX` — linked vertex matching several fields *(complex)*
 
@@ -197,6 +199,9 @@ The join is `doc_join.<KEY> == doc.<PROPERTY>`.
   the field on the main document (default the facet key).
 - `AQL::ARRAY => true`: the join becomes `doc_join.<KEY> IN doc.<PROPERTY>` (the main
   document holds an **array** of keys).
+
+> The same declaration can be **counted**: `?facetCounts=` buckets the joined
+> documents, see [Counting linked documents](#counting-linked-documents-facetedge--facetjoin).
 
 ### `Facet::JOIN_COMPLEX` — joined document matching several fields *(complex)*
 
@@ -521,7 +526,7 @@ GET /articles?facetCounts=category,keywords
 ```
 
 - Dimensions are keys of the already-declared `Arango::FACETS` (the filterable facets become the counted facets); an unknown key is ignored.
-- v1 supports `Facet::FIELD` (scalar field) and `Facet::IN` (array membership, unwound), plus **object-array sub-fields via `[*]`** (e.g. `offers[*].priceCurrency`, see below); other types are skipped.
+- Supported types: `Facet::FIELD` (scalar field), `Facet::IN` (array membership, unwound), **object-array sub-fields via `[*]`** (e.g. `offers[*].priceCurrency`) and the **linked** `Facet::EDGE` / `Facet::JOIN` facets (see below); other types are skipped.
 - Counts are **conjunctive**: computed over the **already-filtered** set (same `?filter` / `?facets` / `?search` as the list). With an active [View search](search/overview.md), every counting sub-query iterates the View with the **same `SEARCH`** as the list, so the buckets reflect exactly the displayed set.
 
 Buckets are returned under the `facets` key of the standard success envelope,
@@ -607,13 +612,94 @@ LET currency = (FOR doc IN @@products FILTER <same filters>
 > This is the right tool for **several independent breakdowns** in one response.
 > To turn the list itself into **one** aggregation, see [Grouping `?groupBy=` / `?group=`](grouping.md).
 
+### Counting linked documents (`Facet::EDGE` / `Facet::JOIN`)
+
+The situation. An article's **location** is not a field of the article: it is a
+vertex reached through an edge, or a document joined by key. The facet already
+**filters** on it (`?facets={"location":"1234"}`) — the sidebar now wants the
+number **next to each value**: "Paris (12), Lyon (8)". A linked dimension counts
+the documents at the **other end of the relation**, over the same filtered set as
+any other count.
+
+Declare which field of the **related** document becomes the bucket value with
+`Facet::VALUE` (default `_key`) — everything else is the declaration the facet
+already filters on:
+
+```php
+Arango::FACETS => [
+    // Edge: the vertices reached by an INBOUND traversal
+    'location' => [
+        Facet::TYPE  => Facet::EDGE ,
+        AQL::EDGE    => 'organizations_places' ,
+        Facet::VALUE => 'name' ,  // the vertex field feeding `value` (default _key)
+    ] ,
+    // Key-join: the documents joined on doc.authorId == author._key
+    'author' => [
+        Facet::TYPE     => Facet::JOIN ,
+        AQL::COLLECTION => 'authors' ,
+        Facet::PROPERTY => 'authorId' , // main side, unchanged (the join, not the bucket)
+        Facet::VALUE    => 'name' ,
+    ] ,
+]
+```
+```
+GET /articles?facetCounts=location,author
+```
+
+The relation is the source of the count: an edge traversal needs no predicate —
+it already targets the right vertices — while a join opens the collection and
+narrows it with its match:
+
+```aql
+LET location = (FOR doc IN @@articles FILTER <same filters>
+                FOR doc_location IN INBOUND doc organizations_places
+                COLLECT value = doc_location.name WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+LET author   = (FOR doc IN @@articles FILTER <same filters>
+                FOR doc_author IN authors FILTER doc_author._key == doc.authorId
+                COLLECT value = doc_author.name WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+```
+```json
+"facets": { "location": [ {"value":"Paris","count":12}, {"value":"Lyon","count":8} ] }
+```
+
+- **`Facet::VALUE` names the bucket, never the join.** On a `JOIN`,
+  `Facet::PROPERTY` keeps its meaning — the main side of the join predicate — so
+  the two never compete. Bucketing on a **label** (`name`) rather than on the
+  default `_key` makes the bucket self-sufficient: the UI has nothing left to
+  resolve.
+- **The join declaration is shared with the filtering facet**, so a dimension
+  counts over exactly the relation it filters on: `AQL::KEY` (joined side,
+  default `_key`) covers the reverse one-to-many, and `AQL::ARRAY => true` turns
+  the predicate into a membership test when the main side holds an **array of
+  keys** (`doc_tags._key IN doc.tagIds`).
+- **A linked facet never unwinds the main document.** Its source is the relation,
+  so a `[*]` marker in its `Facet::PROPERTY` is a mis-declaration and is
+  **refused**, rather than silently counting the raw keys instead of the joined
+  documents. The declared names — edge collection, joined collection, join keys
+  and `Facet::VALUE` — are guarded by
+  [`assertAttributeName`](helpers.md#injection-guard--isattributename--assertattributename);
+  a **missing** collection is refused too, rather than compiling to a truncated
+  `FOR … IN`.
+- **Counts rows by default**, so see `Facet::DISTINCT` below — over-counting is
+  more common here than on an array (two parallel edges to the same vertex, or
+  several joined documents).
+- The **aggregate** facets (`EDGE_AGGREGATE` / `JOIN_AGGREGATE`) compare a
+  threshold rather than naming a dimension: there is no bucket to count, so they
+  stay skipped, as do the `*_COMPLEX` facets.
+- ⚠ **Permission**: the projection inheritance cannot speak for a field of
+  **another** collection, so a linked dimension is gated by the `Field::REQUIRES`
+  declared **on the facet itself** — exactly as on the filtering side. See
+  [Permission](#permission-requires).
+
 ### Counting distinct documents per bucket (`Facet::DISTINCT`)
 
-The setup. A facet that **unwinds an array** — whether a `[*]` sub-field
-(`offers[*].sellerId`) or an `Facet::IN` membership facet (`keywords`) — counts
-the array **elements** by default, not the documents. If the **same** seller
-appears in 3 offers of the **same** product, that product is counted **3 times**
-in the bucket.
+The setup. A facet that **unwinds** — whether a `[*]` sub-field
+(`offers[*].sellerId`), an `Facet::IN` membership facet (`keywords`) or a
+**linked** `EDGE` / `JOIN` facet — counts the **rows** by default, not the
+documents. If the **same** seller appears in 3 offers of the **same** product,
+that product is counted **3 times** in the bucket.
 
 That is consistent when you want "how many elements match". But a UI sidebar
 usually expects "how many **documents** match" — the same number the equivalent
@@ -655,8 +741,10 @@ LET seller = (FOR doc IN @@products FILTER <same filters>
 - **Opt-in, backward compatible**: without the flag the behaviour (per-element
   count) is **unchanged**.
 - Applies to **every unwinding facet**: the `[*]` sub-fields (single- and
-  multi-hop) **and** the `Facet::IN` / `Facet::LIST` / `Facet::LIST_FIELD` /
-  `Facet::LIST_FIELD_SORTED` family.
+  multi-hop), the `Facet::IN` / `Facet::LIST` / `Facet::LIST_FIELD` /
+  `Facet::LIST_FIELD_SORTED` family, **and** the linked `Facet::EDGE` /
+  `Facet::JOIN` facets — where two parallel edges to the same vertex, or several
+  joined documents, over-count exactly like a repeated array element.
 - The distinct always targets the **root document** key (`doc._key`), whatever
   the `[*]` hop depth (`a[*].b[*].c` still counts distinct root documents).
 - **No effect** on a scalar `Facet::FIELD` facet: it already emits one row per

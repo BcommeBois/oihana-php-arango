@@ -140,6 +140,8 @@ Opérateurs (de `FilterArrayComparator`) : `any.in` (défaut), `all.in`, `none.i
                             //   FILTER (doc_subjects._key LIKE @0 || doc_subjects.name LIKE @0 || doc_subjects.alternateName LIKE @0)
                             //   RETURN doc_subjects._key) > 0
 ```
+> La même déclaration peut être **comptée** : `?facetCounts=` bucketise les
+> sommets liés, voir [Compter des documents liés](#compter-des-documents-liés-facetedge--facetjoin).
 
 ### `Facet::EDGE_COMPLEX` — sommet lié matchant plusieurs champs *(complexe)*
 
@@ -171,6 +173,9 @@ Le pendant **key-join** d'`EDGE` (pas d'edge : une jointure par attribut). « Ga
 ```
 - `AQL::KEY` : le champ côté collection jointe (défaut `_key`). `Facet::PROPERTY` : le champ côté document principal (défaut = la clé de facette).
 - `AQL::ARRAY => true` : la jointure devient `doc_join.<KEY> IN doc.<PROPERTY>` (le document principal porte un **tableau** de clés).
+
+> La même déclaration peut être **comptée** : `?facetCounts=` bucketise les
+> documents joints, voir [Compter des documents liés](#compter-des-documents-liés-facetedge--facetjoin).
 
 ### `Facet::JOIN_COMPLEX` — document joint matchant plusieurs champs *(complexe)*
 
@@ -478,7 +483,7 @@ GET /articles?facetCounts=category,keywords
 ```
 
 - Les dimensions sont des **clés de `Arango::FACETS`** déjà déclarées (les facettes filtrables deviennent les facettes comptées) ; une clé inconnue est ignorée.
-- v1 supporte les types `Facet::FIELD` (champ scalaire) et `Facet::IN` (appartenance à un tableau, dépliée), plus les **sous-champs de tableaux d'objets via `[*]`** (ex. `offers[*].priceCurrency`, voir plus bas) ; les autres types sont ignorés.
+- Types supportés : `Facet::FIELD` (champ scalaire), `Facet::IN` (appartenance à un tableau, dépliée), les **sous-champs de tableaux d'objets via `[*]`** (ex. `offers[*].priceCurrency`) et les facettes **liées** `Facet::EDGE` / `Facet::JOIN` (voir plus bas) ; les autres types sont ignorés.
 - Les comptes sont **conjonctifs** : calculés sur l'ensemble **déjà filtré** (mêmes `?filter` / `?facets` / `?search` que la liste). Avec une [recherche View](search/overview.md) active, chaque sous-requête de comptage itère la View avec le **même `SEARCH`** que la liste, donc les buckets reflètent exactement l'ensemble affiché.
 
 Les buckets sont renvoyés sous la clé `facets` de l'enveloppe de succès standard,
@@ -563,13 +568,94 @@ LET currency = (FOR doc IN @@products FILTER <mêmes filtres>
 
 > C'est le bon outil quand on veut **plusieurs ventilations indépendantes** dans une réponse. Pour transformer la liste elle-même en **une** agrégation, voir le [Regroupement `?groupBy=` / `?group=`](grouping.md).
 
+### Compter des documents liés (`Facet::EDGE` / `Facet::JOIN`)
+
+La situation. Le **lieu** d'un article n'est pas un champ de l'article : c'est un
+sommet atteint par une arête, ou un document joint par clé. La facette sait déjà
+**filtrer** dessus (`?facets={"location":"1234"}`) — la barre latérale veut
+maintenant le nombre **à côté de chaque valeur** : « Paris (12), Lyon (8) ». Une
+dimension liée compte les documents à l'**autre bout de la relation**, sur le
+même ensemble filtré que n'importe quel autre compteur.
+
+On déclare quel champ du document **lié** devient la valeur du bucket avec
+`Facet::VALUE` (défaut `_key`) — tout le reste est la déclaration sur laquelle la
+facette filtre déjà :
+
+```php
+Arango::FACETS => [
+    // Arête : les sommets atteints par une traversée INBOUND
+    'location' => [
+        Facet::TYPE  => Facet::EDGE ,
+        AQL::EDGE    => 'organizations_places' ,
+        Facet::VALUE => 'name' ,  // le champ du sommet qui alimente `value` (défaut _key)
+    ] ,
+    // Jointure par clé : les documents joints sur doc.authorId == author._key
+    'author' => [
+        Facet::TYPE     => Facet::JOIN ,
+        AQL::COLLECTION => 'authors' ,
+        Facet::PROPERTY => 'authorId' , // côté principal, inchangé (la jointure, pas le bucket)
+        Facet::VALUE    => 'name' ,
+    ] ,
+]
+```
+```
+GET /articles?facetCounts=location,author
+```
+
+La relation est la source du comptage : une traversée d'arête n'a besoin d'aucun
+prédicat — elle vise déjà les bons sommets — tandis qu'une jointure ouvre la
+collection et la resserre avec son match :
+
+```aql
+LET location = (FOR doc IN @@articles FILTER <mêmes filtres>
+                FOR doc_location IN INBOUND doc organizations_places
+                COLLECT value = doc_location.name WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+LET author   = (FOR doc IN @@articles FILTER <mêmes filtres>
+                FOR doc_author IN authors FILTER doc_author._key == doc.authorId
+                COLLECT value = doc_author.name WITH COUNT INTO count
+                SORT count DESC RETURN { value, count })
+```
+```json
+"facets": { "location": [ {"value":"Paris","count":12}, {"value":"Lyon","count":8} ] }
+```
+
+- **`Facet::VALUE` nomme le bucket, jamais la jointure.** Sur un `JOIN`,
+  `Facet::PROPERTY` garde son sens — le côté principal du prédicat de jointure —
+  donc les deux n'entrent jamais en concurrence. Bucketer sur un **libellé**
+  (`name`) plutôt que sur le `_key` par défaut rend le bucket auto-suffisant :
+  l'UI n'a plus rien à résoudre.
+- **La déclaration de jointure est partagée avec la facette filtrante**, donc une
+  dimension compte exactement sur la relation qu'elle filtre : `AQL::KEY` (côté
+  joint, défaut `_key`) couvre le un-à-plusieurs inversé, et `AQL::ARRAY => true`
+  transforme le prédicat en test d'appartenance quand le côté principal porte un
+  **tableau de clés** (`doc_tags._key IN doc.tagIds`).
+- **Une facette liée ne déplie jamais le document principal.** Sa source est la
+  relation, donc un marqueur `[*]` dans son `Facet::PROPERTY` est une déclaration
+  fautive et se voit **refusée**, plutôt que de compter en silence les clés
+  brutes au lieu des documents joints. Les noms déclarés — collection d'arêtes,
+  collection jointe, clés de jointure et `Facet::VALUE` — sont gardés par
+  [`assertAttributeName`](helpers.md#garde-anti-injection--isattributename--assertattributename) ;
+  une collection **manquante** est refusée elle aussi, plutôt que compilée en
+  `FOR … IN` tronqué.
+- **Compte des lignes par défaut**, donc voir `Facet::DISTINCT` ci-dessous — le
+  sur-comptage y est plus fréquent que sur un tableau (deux arêtes parallèles
+  vers le même sommet, ou plusieurs documents joints).
+- Les facettes **agrégats** (`EDGE_AGGREGATE` / `JOIN_AGGREGATE`) comparent un
+  seuil au lieu de nommer une dimension : il n'y a pas de bucket à compter, elles
+  restent donc ignorées, comme les facettes `*_COMPLEX`.
+- ⚠ **Permission** : l'héritage de projection ne peut rien dire d'un champ d'une
+  **autre** collection, donc une dimension liée est gardée par le
+  `Field::REQUIRES` déclaré **sur la facette elle-même** — exactement comme du
+  côté filtrant. Voir [Permission](#permission-requires).
+
 ### Compter des documents distincts par bucket (`Facet::DISTINCT`)
 
-La situation. Une facette qui **déplie un tableau** — que ce soit un sous-champ
-`[*]` (`offers[*].sellerId`) ou une facette d'appartenance `Facet::IN`
-(`keywords`) — compte par défaut les **éléments** du tableau, pas les documents.
-Si le **même** vendeur apparaît dans 3 offres du **même** produit, ce produit est
-compté **3 fois** dans le bucket.
+La situation. Une facette qui **déplie** — que ce soit un sous-champ `[*]`
+(`offers[*].sellerId`), une facette d'appartenance `Facet::IN` (`keywords`) ou
+une facette **liée** `EDGE` / `JOIN` — compte par défaut les **lignes**, pas les
+documents. Si le **même** vendeur apparaît dans 3 offres du **même** produit, ce
+produit est compté **3 fois** dans le bucket.
 
 C'est cohérent tant qu'on veut « combien d'éléments matchent ». Mais une barre
 latérale d'UI attend en général « combien de **documents** matchent » — le même
@@ -612,8 +698,10 @@ LET seller = (FOR doc IN @@products FILTER <mêmes filtres>
 - **Opt-in, rétro-compatible** : sans le flag, le comportement (compte par
   éléments) est **inchangé**.
 - S'applique à **toutes les facettes qui déplient** : les sous-champs `[*]`
-  (mono‑ et multi‑hops) **et** la famille `Facet::IN` / `Facet::LIST` /
-  `Facet::LIST_FIELD` / `Facet::LIST_FIELD_SORTED`.
+  (mono‑ et multi‑hops), la famille `Facet::IN` / `Facet::LIST` /
+  `Facet::LIST_FIELD` / `Facet::LIST_FIELD_SORTED`, **et** les facettes liées
+  `Facet::EDGE` / `Facet::JOIN` — où deux arêtes parallèles vers le même sommet,
+  ou plusieurs documents joints, sur-comptent exactement comme un élément répété.
 - Le « distinct » porte **toujours** sur la clé du **document racine**
   (`doc._key`), quelle que soit la profondeur des `[*]` (`a[*].b[*].c` compte
   quand même des documents racine distincts).

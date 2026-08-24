@@ -2,6 +2,7 @@
 
 namespace tests\oihana\arango\models\traits\queries;
 
+use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\traits\queries\FacetCountsQueryTrait;
@@ -28,7 +29,7 @@ class FacetCountsQueryTraitStub
             'category'      => [ Facet::TYPE => Facet::FIELD ] ,
             'status'        => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => 'state' ] ,
             'keywords'      => [ Facet::TYPE => Facet::IN ] ,
-            'author'        => [ Facet::TYPE => Facet::JOIN ] , // unsupported in v1
+            'ranking'       => [ Facet::TYPE => Facet::EDGE_AGGREGATE , AQL::EDGE => 'rankings' ] , // a threshold, not a dimension → skipped
             'currency'      => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].priceCurrency' ] , // object-array sub-field
             'currencyField' => [ Facet::TYPE => Facet::FIELD , Facet::PROPERTY => 'offers[*].priceCurrency' ] , // [*] overrides FIELD
             'tags'          => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'tags[*]' ] , // expansion marker, no sub-field
@@ -42,6 +43,22 @@ class FacetCountsQueryTraitStub
             'keywordsDistinct' => [ Facet::TYPE => Facet::IN    , Facet::DISTINCT => true ] , // IN family unwind
             'deepDistinct'     => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'a[*].b[*].c' , Facet::DISTINCT => true ] , // multi-hop → distinct still on root _key
             'categoryDistinct' => [ Facet::TYPE => Facet::FIELD , Facet::DISTINCT => true ] , // scalar FIELD → flag is a no-op
+
+            // Linked facets: the bucket is a field of the RELATED document,
+            // named by Facet::VALUE (default _key).
+            'location'         => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' ] , // default bucket: the vertex _key
+            'locationName'     => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' ] ,
+            'locationDistinct' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' , Facet::DISTINCT => true ] ,
+            'edgeMissing'      => [ Facet::TYPE => Facet::EDGE ] , // no edge collection declared → refused
+            'edgeDanger'       => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'x);y' ] , // dangerous bucket → refused
+
+            'author'           => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , Facet::VALUE => 'name' ] ,
+            'authorKey'        => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' ] , // default bucket: the joined _key
+            'authorDistinct'   => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , Facet::VALUE => 'name' , Facet::DISTINCT => true ] ,
+            'comments'         => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'comments' , AQL::KEY => 'articleId' , Facet::PROPERTY => '_key' , Facet::VALUE => 'lang' ] , // reverse one-to-many
+            'tagsJoin'         => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' , Facet::VALUE => 'name' ] , // main side holds an array of keys
+            'joinMissing'      => [ Facet::TYPE => Facet::JOIN , Facet::PROPERTY => 'authorId' ] , // no joined collection declared → refused
+            'joinExpansion'    => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'tags' , Facet::PROPERTY => 'tagIds[*]' ] , // a linked facet never unwinds → refused
         ] ;
     }
 }
@@ -72,8 +89,9 @@ class FacetCountsQueryTraitTest extends TestCase
     public function testUnsupportedFacetTypeIsSkipped() :void
     {
         $binds = [] ;
-        // 'author' is a JOIN facet → not countable in v1 → nothing emitted.
-        $this->assertSame( '' , $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'author' ] , $binds ) ) ;
+        // An aggregate facet compares a threshold, it does not name a dimension —
+        // there is no bucket to count, so it stays skipped.
+        $this->assertSame( '' , $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'ranking' ] , $binds ) ) ;
     }
 
     public function testFieldFacet() :void
@@ -115,7 +133,7 @@ class FacetCountsQueryTraitTest extends TestCase
             'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
             . 'LET keywords = (FOR doc IN @@collection FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
             . 'RETURN {category, keywords}' ,
-            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category,author,keywords' ] , $binds ) ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category,ranking,keywords' ] , $binds ) ,
         ) ;
     }
 
@@ -270,5 +288,167 @@ class FacetCountsQueryTraitTest extends TestCase
             'LET currencyDistinct = (FOR doc IN @@collection FILTER doc.active==1 FOR item IN doc.offers COLLECT value = item.priceCurrency AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {currencyDistinct}' ,
             $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currencyDistinct' ] , $binds ) ,
         ) ;
+    }
+
+    public function testEdgeFacetCountsLinkedVerticesByKey() :void
+    {
+        $binds = [] ;
+        // A linked dimension counts the vertices the facet already filters on:
+        // the traversal is the source, and the bucket defaults to the vertex _key.
+        $this->assertSame
+        (
+            'LET location = (FOR doc IN @@collection FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {location}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'location' ] , $binds ) ,
+        ) ;
+        $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
+    }
+
+    public function testEdgeFacetBucketsOnTheDeclaredVertexField() :void
+    {
+        $binds = [] ;
+        // Facet::VALUE names the vertex field feeding `value`, so the bucket is
+        // self-sufficient (a label, not a key the UI must resolve again).
+        $this->assertSame
+        (
+            'LET locationName = (FOR doc IN @@collection FOR doc_locationName IN INBOUND doc organizations_places COLLECT value = doc_locationName.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {locationName}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationName' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testEdgeFacetInheritsListFilter() :void
+    {
+        $stub = $this->stub() ;
+        $stub->conditions = [ 'doc.active==1' ] ;
+
+        $binds = [] ;
+        // The traversal hangs off the shared filtered scope, so the buckets tally
+        // over exactly the displayed set.
+        $this->assertSame
+        (
+            'LET location = (FOR doc IN @@collection FILTER doc.active==1 FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {location}' ,
+            $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'location' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testEdgeFacetDistinctCountsRootDocuments() :void
+    {
+        $binds = [] ;
+        // Two parallel edges to the same vertex unwind into two rows, so a
+        // traversal over-counts exactly like an array — DISTINCT applies.
+        $this->assertSame
+        (
+            'LET locationDistinct = (FOR doc IN @@collection FOR doc_locationDistinct IN INBOUND doc organizations_places COLLECT value = doc_locationDistinct.name AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {locationDistinct}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationDistinct' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testJoinFacetCountsJoinedDocuments() :void
+    {
+        $binds = [] ;
+        // The key-join opens the joined collection and narrows it with the join
+        // predicate — the same anchor the filtering facet uses.
+        $this->assertSame
+        (
+            'LET author = (FOR doc IN @@collection FOR doc_author IN authors FILTER doc_author._key == doc.authorId COLLECT value = doc_author.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {author}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'author' ] , $binds ) ,
+        ) ;
+        $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
+    }
+
+    public function testJoinFacetDefaultsToTheJoinedKey() :void
+    {
+        $binds = [] ;
+        // No Facet::VALUE: the bucket is the joined document's _key.
+        $this->assertSame
+        (
+            'LET authorKey = (FOR doc IN @@collection FOR doc_authorKey IN authors FILTER doc_authorKey._key == doc.authorId COLLECT value = doc_authorKey._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {authorKey}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'authorKey' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testJoinFacetOnAnArrayOfKeysUsesMembership() :void
+    {
+        $binds = [] ;
+        // AQL::ARRAY: the main side holds an array of keys, so the join predicate
+        // becomes a membership test — inherited from resolveFacetJoin().
+        $this->assertSame
+        (
+            'LET tagsJoin = (FOR doc IN @@collection FOR doc_tagsJoin IN tags FILTER doc_tagsJoin._key IN doc.tagIds COLLECT value = doc_tagsJoin.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {tagsJoin}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'tagsJoin' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testJoinFacetOnAReverseOneToMany() :void
+    {
+        $binds = [] ;
+        // The joined side carries the foreign key (AQL::KEY): the documents
+        // referencing this one are counted, bucketed on one of their fields.
+        $this->assertSame
+        (
+            'LET comments = (FOR doc IN @@collection FOR doc_comments IN comments FILTER doc_comments.articleId == doc._key COLLECT value = doc_comments.lang WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {comments}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'comments' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testJoinFacetDistinctCountsRootDocuments() :void
+    {
+        $binds = [] ;
+        // Several joined documents per main document over-count the bucket the
+        // same way an unwound array does.
+        $this->assertSame
+        (
+            'LET authorDistinct = (FOR doc IN @@collection FOR doc_authorDistinct IN authors FILTER doc_authorDistinct._key == doc.authorId COLLECT value = doc_authorDistinct.name AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {authorDistinct}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'authorDistinct' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testLinkedFacetsCombineWithDocumentSideDimensions() :void
+    {
+        $binds = [] ;
+        // One LET per dimension, whatever the source: a document field, an array,
+        // a traversal and a join sit side by side in the same query.
+        $this->assertSame
+        (
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
+            . 'LET location = (FOR doc IN @@collection FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
+            . 'LET author = (FOR doc IN @@collection FOR doc_author IN authors FILTER doc_author._key == doc.authorId COLLECT value = doc_author.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
+            . 'RETURN {category, location, author}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category,location,author' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testMissingEdgeCollectionIsRefused() :void
+    {
+        // A declaration with no edge collection would compile to a truncated
+        // `FOR … IN INBOUND doc` — refused instead of emitted.
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'edgeMissing' ] , $binds ) ;
+    }
+
+    public function testMissingJoinedCollectionIsRefused() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'joinMissing' ] , $binds ) ;
+    }
+
+    public function testDangerousBucketFieldIsGuarded() :void
+    {
+        // Facet::VALUE is interpolated into the COLLECT, so it is guarded like
+        // any other declared attribute name.
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'edgeDanger' ] , $binds ) ;
+    }
+
+    public function testLinkedFacetNeverUnwindsTheMainDocument() :void
+    {
+        // On a linked facet, Facet::PROPERTY is the join's main side, not a path
+        // to unwind: an `[*]` marker there is a mis-declaration, refused rather
+        // than silently counting the raw keys instead of the joined documents.
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'joinExpansion' ] , $binds ) ;
     }
 }
