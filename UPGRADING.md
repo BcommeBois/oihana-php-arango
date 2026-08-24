@@ -13,9 +13,9 @@ the CHANGELOG entries.
 
 ## 1.5.0 → 1.6.0 - 2026-08-24
 
-Three breaking changes, all about **telling a caller that their request was not understood** instead
-of quietly answering something else. None changes a signature: no override in a consuming project has
-to be rewritten.
+Four breaking changes. Three are about **telling a caller that their request was not understood**
+instead of quietly answering something else; the fourth stops a projection from rewriting an
+identifier. None changes a signature: no override in a consuming project has to be rewritten.
 
 ### 🚨 Breaking
 
@@ -119,6 +119,34 @@ new test matrix had pinned as degrading, and **nothing else in the library's 500
 depended on the old behaviour there, which is the best available signal that little consumer code
 does either.
 
+#### 4. A projected id is no longer converted to a number
+
+**Before.** `Filter::ID` projects the document key under a public name, and it did so through
+`TO_NUMBER(doc._key)`. An ArangoDB key **is** a string, and that conversion never fails — it returns
+`0`. Measured on a real server:
+
+| `_key` | before | after |
+|---|---|---|
+| `"007"` | `7` | `"007"` |
+| `"1234"` | `1234` | `"1234"` |
+| `"abc-42"` | `0` | `"abc-42"` |
+| `"t9"` | `0` | `"t9"` |
+
+The damage was **identity**, not precision: four documents came back carrying three identifiers,
+with nothing in the response saying so, and a client indexing or de-duplicating on id silently lost
+rows. Purely numeric keys were hit too — a zero-padded `"007"` came back as `7`, which no longer
+addresses anything, and a key above 2^53 lost precision.
+
+**Now.** The projected id is the key, as a string.
+
+**What to do.**
+
+1. **Anything comparing an id with `===` against a number breaks.** `id === 7` becomes
+   `id === "007"`. Front-end code, caches keyed by id, and fixtures are the usual places.
+2. **Check your sorts.** A column sorted on a projected id now sorts as text: `"10"` comes before
+   `"9"`. If you need numeric order, sort on a numeric field rather than on the key.
+3. **Your JSON schemas / OpenAPI** should declare the id as a string.
+
 #### `assertAttributeName()` takes a second parameter
 
 `assertAttributeName( mixed $value , bool $fromRequest = false )`. The default keeps the previous
@@ -164,6 +192,7 @@ a difference between two arrays. See `wiki/en/db/grouping.md`.
 
 - [ ] `Field::ALTERS`, `Field::WHEN`, `Facet::ALT`: every function name spelled in full and present
       in the catalogue
+- [ ] comparisons and caches keyed on a projected id, which is now a string (`"007"`, not `7`)
 - [ ] the `op` values your front-end sends: lowercase names (`gt`), never AQL symbols (`>`), and
       function forms (`sw`, `contains`, `regex`, …) only on `string` filters
 - [ ] tests asserting `500` on a malformed request

@@ -90,7 +90,8 @@ and what to do about them when upgrading is in [`UPGRADING.md`](../../UPGRADING.
   a name it does not carry is now **refused**, which is **breaking**; a filter
   operator the type cannot honour is **refused** rather than silently becoming an
   equality, breaking as well; request refusals answer `400` instead of `500`,
-  breaking again; `Arango::OPERATION`,
+  breaking again; a projected id is no longer converted to a number, breaking too;
+  `Arango::OPERATION`,
   telling the lifecycle hooks which model call they serve;
   `ArrayPropertyController::RESPOND_WITH_OWNER`).
 - **Next minor** — nothing accumulated under `[Unreleased]` yet; upcoming

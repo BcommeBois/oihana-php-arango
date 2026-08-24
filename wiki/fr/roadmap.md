@@ -100,7 +100,8 @@ un défaut (ainsi le passage de `?sort=` en liste blanche *fail-closed* en
   durci — un nom que le catalogue ne porte pas est désormais **refusé**, ce qui
   est **cassant** ; un opérateur de filtre que le type ne sait pas honorer est
   **refusé** au lieu de devenir une égalité silencieuse, **cassant** aussi ; les
-  refus de requête répondent `400` au lieu de `500`, **cassant** encore ;
+  refus de requête répondent `400` au lieu de `500`, **cassant** encore ; un
+  identifiant projeté n'est plus converti en nombre, **cassant** aussi ;
   `Arango::OPERATION`, qui dit aux crochets de cycle de vie
   quel appel au modèle ils servent ; `ArrayPropertyController::RESPOND_WITH_OWNER`).
 - **Prochaine mineure** — rien n'est encore cumulé sous `[Unreleased]` ; les
