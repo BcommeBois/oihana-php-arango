@@ -7,6 +7,7 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\AggregatablePolicy;
 use oihana\arango\models\enums\Group;
 use oihana\arango\models\enums\facets\FacetAggregator;
+use oihana\arango\models\interfaces\AggregateExpression;
 
 use oihana\enums\Char;
 use oihana\exceptions\UnsupportedOperationException;
@@ -199,7 +200,7 @@ trait GroupTrait
 
         $spec      = [] ;
         $assign    = $this->collectAssign( $group , $docRef , $init , $binds ) ;
-        $aggregate = $this->collectAggregate( $group , $docRef , $init ) ;
+        $aggregate = $this->collectAggregate( $group , $docRef , $init , $binds ) ;
 
         if ( !empty( $assign ) )
         {
@@ -299,21 +300,34 @@ trait GroupTrait
      * silence even under `STRICT`: an error naming a protected field would tell the
      * client that field exists — the very oracle the permission gate closes.
      *
+     * A declared entry may also be an {@see AggregateExpression} rather than a path,
+     * which is handed back as it is: what it reads and what it compiles is decided
+     * further down, by {@see GroupTrait::aggregateExpression()}. Only a **declared**
+     * entry can be one — `OPEN` answers an undeclared token with the client's own
+     * token, which is a path by construction.
+     *
      * @param string $field The field token written by the client (`sum:speed` → `speed`).
      * @param string $name  The aggregate output name, quoted in the strict error.
      *
-     * @return string|null The resolved field path, or `null` when the aggregate is dropped.
+     * @return string|AggregateExpression|null The resolved field path, the declared expression,
+     *                                          or `null` when the aggregate is dropped.
      *
      * @throws ValidationException Under {@see AggregatablePolicy::STRICT}, naming the refused token.
      */
-    private function aggregatableField( string $field , string $name ) :?string
+    private function aggregatableEntry( string $field , string $name ) :string|AggregateExpression|null
     {
         $aggregatable = $this->aggregatable ;
 
         if ( is_array( $aggregatable ) && array_key_exists( $field , $aggregatable ) )
         {
             $entry = $aggregatable[ $field ] ;
-            $path  = is_string( $entry ) || is_array( $entry ) ? key( $entry ) : Char::EMPTY ;
+
+            if ( $entry instanceof AggregateExpression )
+            {
+                return $entry ;
+            }
+
+            $path = is_string( $entry ) || is_array( $entry ) ? key( $entry ) : Char::EMPTY ;
             return $path === Char::EMPTY ? null : $path ;
         }
 
@@ -330,22 +344,82 @@ trait GroupTrait
     }
 
     /**
+     * Resolves a declared {@see AggregateExpression} into the operand the aggregate
+     * function wraps, or `null` when it must be withdrawn.
+     *
+     * 🚨 **Every path the expression reads is gated, and one refusal is enough.** A
+     * path-based aggregate has a single path to check; an expression has several —
+     * that is what it is for. Checking none of them, or only the first, would make a
+     * derived expression the way around `Field::REQUIRES`: a field closed to the
+     * projection would come back out as a sum, in silence, without a single existing
+     * essay turning red.
+     *
+     * ⚠ **An empty `paths()` withdraws the aggregate.** An expression that declares
+     * no path declares that it reads nothing. Read as "nothing to gate", it would be
+     * precisely the hole above; read as a refusal, a mis-declaration costs the
+     * aggregate and shows. The refusal is silent, like every permission refusal here
+     * — naming a protected field would tell the client it exists.
+     *
+     * The attribute-name guard does not apply: an expression is not an attribute
+     * name, and its paths are never interpolated — they only feed the gate. What
+     * replaces that guard is origin, not trust: an expression is always a
+     * declaration of the consumer's own code, reachable only through a public key
+     * already on the whitelist, and any value from the request goes through
+     * {@see Arango::BINDER}.
+     *
+     * @param AggregateExpression $expression The declared expression.
+     * @param string              $docRef     The document reference to read from.
+     * @param array               $init       The query init, carrying the binder and the authorizer.
+     *
+     * @return string|null The per-document expression, or `null` when the aggregate is dropped.
+     */
+    private function aggregateExpression( AggregateExpression $expression , string $docRef , array $init ) :?string
+    {
+        $paths = $expression->paths() ;
+
+        if ( empty( $paths ) )
+        {
+            return null ;
+        }
+
+        foreach ( $paths as $path )
+        {
+            if ( !isPathAuthorized( (string) $path , $this->fields ?? null , $init ) )
+            {
+                return null ;
+            }
+        }
+
+        return $expression->compile( $docRef , $init ) ;
+    }
+
+    /**
      * Builds the `AQL::AGGREGATE` map from {@see Group::AGG}.
      *
-     * @param array $group The group spec.
+     * An entry of the whitelist may be an {@see AggregateExpression} instead of a
+     * path, in which case the engine wraps what the expression compiles rather than
+     * `doc.<path>` — one function, one **computed** operand.
+     *
+     * @param array  $group  The group spec.
      * @param string $docRef The document reference.
+     * @param array  $init   The query init.
+     * @param array|null $binds The bind map, by reference: an expression binds its values through it.
      *
      * @return array `[ outName => 'FN(doc.field)' ]`.
      *
      * @throws ValidationException
      */
-    private function collectAggregate( array $group , string $docRef , array $init = [] ) :array
+    private function collectAggregate( array $group , string $docRef , array $init = [] , ?array &$binds = null ) :array
     {
         $agg = $group[ Group::AGG ] ?? null ;
         if ( !is_array( $agg ) || empty( $agg ) )
         {
             return [] ;
         }
+
+        // An expression may carry values, and a value never reaches the query text:
+        // it is bound. Same channel as the `alt` chains of collectAssign().
+        $init[ Arango::BINDER ] = $this->binder( $binds ) ;
 
         $out = [] ;
         foreach ( $agg as $name => $definition )
@@ -362,9 +436,24 @@ trait GroupTrait
             // path, and an undeclared one meets the model's policy (pass, drop, or
             // fail). Runs *before* the permission gate, so the two refusals stay
             // distinguishable — see aggregatableField().
-            $field = $this->aggregatableField( (string) $field , (string) $name ) ;
-            if ( $field === null )
+            $entry = $this->aggregatableEntry( (string) $field , (string) $name ) ;
+            if ( $entry === null )
             {
+                continue ;
+            }
+
+            // A declared expression carries its own guards — it reads several paths,
+            // and it writes its own AQL, so neither the single-path gate nor the
+            // attribute-name guard below applies to it.
+            if ( $entry instanceof AggregateExpression )
+            {
+                $expression = $this->aggregateExpression( $entry , $docRef , $init ) ;
+
+                if ( $expression !== null )
+                {
+                    $out[ $name ] = func( $function , $expression ) ;
+                }
+
                 continue ;
             }
 
@@ -372,14 +461,14 @@ trait GroupTrait
             // a bound of its value (MAX/MIN/AVG/SUM) — the aggregate is dropped. The
             // whole path is gated (not only its root), so a locked sub-field
             // (`address.city`) is honored in depth.
-            if ( !isPathAuthorized( $field, $this->fields ?? null , $init ) )
+            if ( !isPathAuthorized( $entry , $this->fields ?? null , $init ) )
             {
                 continue ;
             }
 
-            assertAttributeName( $field ) ; // guards against AQL injection through the field path.
+            assertAttributeName( $entry ) ; // guards against AQL injection through the field path.
 
-            $out[ $name ] = func( $function , key( $field , $docRef ) ) ;
+            $out[ $name ] = func( $function , key( $entry , $docRef ) ) ;
         }
 
         return $out ;

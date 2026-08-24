@@ -263,6 +263,96 @@ Un agrégat écarté n'emporte rien avec lui : la dimension, le compteur et le t
 
 > 🚨 **`STRICT` s'arrête à la whitelist, jamais à la permission.** Un champ déclaré mais refusé par `Field::REQUIRES` reste écarté **en silence**, même sous `STRICT` : une erreur nommant un champ protégé dirait au client que ce champ existe — l'oracle même que le portail de permission est là pour fermer.
 
+
+#### Un agrégat calculé : `AggregateExpression`
+
+**La situation.** Un agrégat compile `FONCTION(doc.chemin)` — une fonction, un chemin, rien entre
+les deux. Il ne peut donc lire qu'**un seul endroit** du document. Tout ce qui demande une lecture
+composée est hors d'atteinte : additionner trois relevés parmi les douze rangés dans
+`pressure.values`, ou sommer la différence entre deux tableaux — une mesure dérivée que la source
+ne stocke pas.
+
+Une entrée de `Arango::AGGREGATABLE` peut donc valoir une **expression déclarée** au lieu d'un
+chemin. La bibliothèque apprend qu'un agrégat peut se calculer ; **ce qu'il calcule** reste
+l'affaire du modèle qui le déclare.
+
+```php
+use oihana\arango\models\interfaces\AggregateExpression;
+
+final class PressureWindow implements AggregateExpression
+{
+    public function paths() : array
+    {
+        return [ 'pressure.values' ] ; // ce que l'expression LIT
+    }
+
+    public function compile( string $docRef , array $init ) : ?string
+    {
+        $binder = $init[ Arango::BINDER ] ?? null ;
+        $offset = is_callable( $binder ) ? $binder( 3 ) : 3 ; // une valeur se LIE
+
+        return sprintf( 'SUM(SLICE(%s.pressure.values,%s,3))' , $docRef , $offset ) ;
+    }
+}
+
+Arango::AGGREGATABLE => [ 'pressureWindow' => new PressureWindow() ] ,
+```
+
+```
+?group={"by":"sensor","agg":{"total":"sum:pressureWindow"}}
+→ COLLECT sensor = doc.sensor AGGREGATE total = SUM(SUM(SLICE(doc.pressure.values,@q_0,3)))
+```
+
+🔑 **L'expression est par document, l'agrégation reste au moteur.** `compile()` rend un scalaire, et
+le moteur l'enveloppe dans la fonction demandée — exactement comme il enveloppe un chemin. `sum`,
+`avg`, `min` et `max` gardent le sens qu'ils avaient.
+
+⚠ Une expression se déclare en forme **associative** (`'clé' => new Expression()`). Les deux
+notations indexées n'acceptent qu'une chaîne ou un tableau.
+
+##### Les deux gardes, et pourquoi `paths()` existe
+
+**1. La garde de nom ne s'applique plus.** `assertAttributeName()` protège un chemin contre
+l'injection ; une expression n'est pas un nom d'attribut, par construction. Ce qui la remplace n'est
+pas de la confiance, c'est l'**origine** : une expression est **toujours** une déclaration de ton
+code, jamais une valeur de requête. L'appelant ne fournit qu'une **clé publique déjà en liste
+blanche** — la liste blanche reste la seule porte — et tout ce qui vient du réseau entre par
+`Arango::BINDER`, jamais par concaténation. C'est la distinction que
+[`AltChain`](filter.md#-un-paramètre-venu-dune-requête-est-une-valeur) trace déjà entre une chaîne
+signée et une chaîne de requête.
+
+**2. 🚨 La garde de permission doit interroger *tous* les chemins lus — c'est la raison d'être de
+`paths()`.** Un agrégat sur un chemin n'en a qu'un à vérifier ; une expression en lit plusieurs,
+c'est même son intérêt. N'en vérifier aucun, ou seulement le premier, ferait d'une expression
+dérivée le **chemin de contournement de `Field::REQUIRES`** : un champ fermé à la projection
+ressortirait sous forme de somme, en silence, sans qu'un seul essai ne rougisse. Le moteur les passe
+donc **tous** à la garde, et **un seul refus écarte l'agrégat entier**, sans un mot — nommer le
+champ protégé dirait au client qu'il existe.
+
+⚠ **Un `paths()` vide écarte l'agrégat.** Une expression qui ne déclare aucun chemin déclare qu'elle
+ne lit rien. Lu comme « rien à garder », ce serait exactement le trou ci-dessus ; lu comme un refus,
+une mauvaise déclaration coûte l'agrégat et **se voit**. Déclare ce que tu lis.
+
+##### `compile()` doit être pure
+
+`compile()` tourne **plus d'une fois par requête** : la spec du `COLLECT` est résolue une première
+fois pour décider si la requête groupe (voir [la bascule](#la-bascule-suit-le-collect-émis-pas-le-group-demandé)),
+puis une seconde fois pour la construire — et les variables liées du premier passage sont jetées.
+Une implémentation qui compterait ses appels, incrémenterait un compteur ou mettrait en cache sa
+première réponse produirait une requête qui ne dit pas ce qu'elle veut dire.
+
+##### Se retirer
+
+`compile()` peut rendre `null` : l'agrégat est écarté et **rien d'autre** — la dimension, le
+compteur et le tri survivent. C'est la règle déjà en place pour un chemin non agrégeable, héritée
+plutôt que réinventée. Le compteur repasse alors de `LENGTH(1)` à `WITH COUNT INTO`, qui est le même
+compte par une autre clause.
+
+> **Rétrocompatibilité.** Une entrée de type chaîne compile **au caractère près** l'AQL
+> d'aujourd'hui, épinglé par un essai. La politique `OPEN`/`DROP`/`STRICT` ne bouge pas : elle
+> répond pour la liste blanche, et une expression y **est** — une clé déclarée résout quel que soit
+> le code de politique.
+
 ## Permission (`REQUIRES`)
 
 `?groupBy=` est **fail-closed** : sans `AQL::GROUPABLE` déclaré, **rien n'est groupable** (comme le tri). Et une dimension whitelistée sur un champ **caché à la lecture** (`Field::REQUIRES`) reste un **oracle** : `COLLECT` révèle ses valeurs distinctes et leurs comptes ; un agrégat (`MAX/MIN/AVG/SUM`) fuit une **borne**.

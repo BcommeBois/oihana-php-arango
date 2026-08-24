@@ -263,6 +263,94 @@ A dropped aggregate takes nothing with it: the dimension, the count and the grou
 
 > 🚨 **`STRICT` stops at the whitelist, never at the permission.** A whitelisted field refused by `Field::REQUIRES` is dropped **in silence**, even under `STRICT`: an error naming a protected field would tell the client that field exists — the very oracle the permission gate is there to close.
 
+
+#### A computed aggregate: `AggregateExpression`
+
+**The situation.** An aggregate compiles `FUNCTION(doc.path)` — one function, one path, nothing in
+between. It can therefore read only **one place** in the document. Anything needing a composed read
+is out of reach: summing three of the twelve readings stored in `pressure.values`, or summing the
+difference between two arrays — a derived measure the source does not store.
+
+An entry of `Arango::AGGREGATABLE` may therefore hold a **declared expression** instead of a path.
+The library learns that an aggregate can be computed; **what** it computes stays the business of the
+model that declares it.
+
+```php
+use oihana\arango\models\interfaces\AggregateExpression;
+
+final class PressureWindow implements AggregateExpression
+{
+    public function paths() : array
+    {
+        return [ 'pressure.values' ] ; // what the expression READS
+    }
+
+    public function compile( string $docRef , array $init ) : ?string
+    {
+        $binder = $init[ Arango::BINDER ] ?? null ;
+        $offset = is_callable( $binder ) ? $binder( 3 ) : 3 ; // a value is BOUND
+
+        return sprintf( 'SUM(SLICE(%s.pressure.values,%s,3))' , $docRef , $offset ) ;
+    }
+}
+
+Arango::AGGREGATABLE => [ 'pressureWindow' => new PressureWindow() ] ,
+```
+
+```
+?group={"by":"sensor","agg":{"total":"sum:pressureWindow"}}
+→ COLLECT sensor = doc.sensor AGGREGATE total = SUM(SUM(SLICE(doc.pressure.values,@q_0,3)))
+```
+
+🔑 **The expression is per document, the aggregation stays with the engine.** `compile()` returns a
+scalar, and the engine wraps it in the requested function — exactly as it wraps a path. `sum`,
+`avg`, `min` and `max` keep the meaning they had.
+
+⚠ An expression is declared in the **associative** form (`'key' => new Expression()`). The two
+indexed notations only accept a string or an array.
+
+##### The two guards, and why `paths()` exists
+
+**1. The name guard no longer applies.** `assertAttributeName()` protects a path against injection;
+an expression is not an attribute name, by construction. What replaces it is not trust, it is
+**origin**: an expression is **always** a declaration of your own code, never a value from a
+request. The caller only supplies a **public key already on the whitelist** — the whitelist stays
+the only door — and everything coming from the wire enters through `Arango::BINDER`, never through
+concatenation. It is the distinction
+[`AltChain`](filter.md#-a-parameter-supplied-by-a-request-is-a-value) already draws between a signed
+chain and a request one.
+
+**2. 🚨 The permission gate must interrogate *every* path read — that is what `paths()` is for.** A
+path-based aggregate has exactly one path to check; an expression reads several, which is the whole
+point. Checking none of them, or only the first, would make a derived expression the **way around
+`Field::REQUIRES`**: a field closed to the projection would come back out as a sum, in silence,
+without a single essay turning red. The engine therefore hands them **all** to the gate, and **one
+refusal withdraws the whole aggregate**, without a word — naming the protected field would tell the
+client it exists.
+
+⚠ **An empty `paths()` withdraws the aggregate.** An expression declaring no path declares that it
+reads nothing. Read as "nothing to gate", it would be exactly the hole above; read as a refusal, a
+mis-declaration costs the aggregate and **shows**. Declare what you read.
+
+##### `compile()` must be pure
+
+`compile()` runs **more than once per request**: the `COLLECT` spec is resolved once to decide
+whether the query groups at all (see [the switch](#the-switch-follows-the-emitted-collect-not-the-requested-group)),
+then again to build it — and the binds of that first pass are thrown away. An implementation
+counting its calls, incrementing a counter or caching its first answer would emit a query that does
+not say what it means.
+
+##### Withdrawing
+
+`compile()` may return `null`: the aggregate is withdrawn and **nothing else** — the dimension, the
+count and the sort survive. It is the rule already in place for a path that is not aggregatable,
+inherited rather than reinvented. The count then reverts from `LENGTH(1)` to `WITH COUNT INTO`,
+which is the same count by another clause.
+
+> **Backward compatibility.** A string entry compiles today's AQL **byte for byte**, pinned by an
+> essay. The `OPEN`/`DROP`/`STRICT` policy does not move: it answers for the whitelist, and an
+> expression **is** on it — a declared key resolves whatever the policy code says.
+
 ## Permission (`REQUIRES`)
 
 `?groupBy=` is **fail-closed**: without a declared `AQL::GROUPABLE`, **nothing is groupable** (like sorting). And a whitelisted dimension on a field **hidden from reading** (`Field::REQUIRES`) is still an **oracle**: `COLLECT` reveals its distinct values and their counts; an aggregate (`MAX/MIN/AVG/SUM`) leaks a **bound**.
