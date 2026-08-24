@@ -7,9 +7,11 @@ This file answers a narrower question: *I am upgrading — what breaks, and what
 it?* It starts at 1.6.0; for earlier versions, read the "Backward compatibility" paragraphs inside
 the CHANGELOG entries.
 
+## [Unreleased]
+
 ---
 
-## 1.5.0 → 1.6.0
+## 1.5.0 → 1.6.0 - 2026-08-24
 
 Two breaking changes, both about **telling a caller that their request was not understood** instead
 of quietly answering something else. Neither changes a signature: no override in a consuming project
