@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-24
+
 ### Added
+
+- **Nothing measured what an operator actually compiles to, so a silent degradation stayed green.** The essays around the filters check **fragments** — that the field appears, that an `==` appears somewhere. That is exactly the assertion a degraded operator satisfies: when `sw` falls through to an equality, `assertStringContainsString( '==' , $result )` turns **green**. A new `FilterOperatorMatrixTest` drives a real `Documents` model over **5 filter types × the 22 declared operators** and compares the whole expression, character for character, bind tokens renumbered in order of appearance.
+  - **It earned its keep on its first run**, like the source guard of `22740c5` before it: **39 of the 110 combinations silently compile to an equality.** Every function form outside `string` — `contains`, `ncontains`, `sw`, `nsw`, `ew`, `new`, `regex`, `nregex` — plus `distance` on a non-geo field, and `between` on `bool` and `array`. `{"key":"price","op":"sw","val":12}` asks for prices *starting with* 12 and compiles to `doc.price == 12`: a handful of plausible results, in `200`, answering a question nobody asked.
+  - **Those 39 are pinned as wrong, not merely pinned.** They live in their own data set, `silentDegradations()`, under a docblock stating what they should do instead — so the next lot, which refuses them, turns that set red on purpose, and so nobody reads the silence as intent. The 71 sound combinations are in `soundCombinations()`.
+  - **Two guards keep the matrix from going stale**: one walks `FilterComparator` and fails when a declared operator has no line here (with an assertion that the catalogue is not empty, so it cannot pass vacuously); the other requires each of the five comparator types to be measured against all 22. Adding an operator without measuring it is now a red test, which is the only way a matrix stays a matrix.
+  - **The two contracts that are not operators** are pinned beside it: no `op` at all *is* an equality — the documented default, and the one case where falling back to `==` is what the caller meant — and the `geo` filter answers to `min`/`max` rather than to `op`, emitting nothing at all without a radius. That empty cell is the one legitimate blank of the matrix.
 
 - **An aggregate could only ever read one place in the document — an `Arango::AGGREGATABLE` entry may now be a declared expression.** `collectAggregate()` compiled `FUNCTION(doc.path)` with nothing in between, so anything needing a composed read was out of reach: summing three of the twelve readings an array holds, or summing the difference between two arrays — a derived measure the source does not store. The `alt` engine lived in the same file, but only `collectAssign()` called it: you could transform what you **grouped on**, never what you **summed**.
   - **The new `AggregateExpression` interface has two methods, and both are load-bearing.** `compile( string $docRef , array $init )` returns the per-document AQL, and `paths()` returns every document path that expression reads.
