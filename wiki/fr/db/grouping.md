@@ -42,6 +42,8 @@ Objet JSON (URL-encodé) avec des clés courtes :
 
 > ⚠ Un paramètre de transformation venu de l'URL est **lié**, pas écrit dans la requête — et ne peut donc plus désigner un autre champ. Voir [Un paramètre venu d'une requête est une valeur](filter.md#-un-paramètre-venu-dune-requête-est-une-valeur).
 
+> ⚠ Un `alt` nommant une fonction que le catalogue ne porte pas est **refusé** (`400`), et non appliqué en silence sur la clé brute. Voir [Un nom que le catalogue ne porte pas est refusé](filter.md#un-nom-que-le-catalogue-ne-porte-pas-est-refusé).
+
 
 ```
 GET /sales?group={"by":{"year":"created"},"alt":{"year":"dateYear"},"agg":{"total":"sum:amount"},"sort":"-total"}

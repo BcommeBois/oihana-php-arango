@@ -339,6 +339,45 @@ Le quatrième, `pluck`, refuse lui aussi par une `ValidationException`, mais par
 nom d'attribut — son paramètre est un **nom de champ**, pas une valeur, et la chaîne vide n'en est
 pas un : `Invalid AQL attribute name: ""`.
 
+#### Un nom que le catalogue ne porte pas est **refusé**
+
+Un nom de fonction est un identifiant fermé : il figure dans les tables ci-dessous, ou il n'existe
+pas. Un nom inconnu ne demandait rien d'utile — il **disparaissait**, et la comparaison se faisait
+sur le champ brut.
+
+La situation : le client veut les rendez-vous de la semaine ISO 34, et se trompe de nom
+(`dateIsoWeek` s'écrit en entier).
+
+```
+?filter={"key":"startDate","val":34,"alt":"iw"}
+```
+
+| | Réponse |
+|---|---|
+| Avant | `doc.startDate == @v` — **aucune date n'est jamais égale à `34`** : page vide, `200`, aucun indice |
+| Maintenant | `400` — `The alt function "iw" is not supported.` |
+
+**Chaque maillon** d'une chaîne est vérifié, pas seulement le premier :
+`["trim",["substring",0,3],"lowr"]` est refusé sur `lowr`. Les formes qui ne nomment aucune
+fonction le sont aussi : `"alt":[]`, `"alt":""`, `"alt":42`.
+
+Selon qui a écrit la chaîne, ce n'est pas la même faute — et ce n'est donc pas la même réponse :
+
+| Origine de la chaîne | Réponse |
+|---|---|
+| Une requête (`?filter=`, `?group=`, `?facets=`) | `400` — le client corrige son URL |
+| Une déclaration de modèle (`Field::ALTERS`, `Field::WHEN`, `Facet::ALT`) | `500` — c'est le code qui est faux, aucune URL ne le corrigera |
+
+> ⚠️ **Une position échappe à la vérification.** Dans `["trim","lowr","lower"]`, le deuxième
+> élément est lu comme un **paramètre** de `trim` — exactement comme dans le `["trim","-"]`
+> légitime, qui veut dire « enlève les tirets ». Les deux écritures sont rigoureusement
+> identiques, donc une faute de frappe à cette place reste silencieuse : elle devient un
+> paramètre, et la fin de la chaîne est jetée. Écris la chaîne avec ses maillons imbriqués —
+> `["trim",["substring",0,3],"lower"]` — et chaque maillon redevient vérifiable.
+
+À ne pas confondre avec une **clé** inconnue, qui reste silencieusement ignorée : celle-là
+renvoie *plus* de résultats, jamais un résultat faux.
+
 #### Chaînes
 
 | `alt` | Effet | Paramètres |

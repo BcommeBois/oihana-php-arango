@@ -325,7 +325,9 @@ class FilterFunction
      * @return string The key wrapped in the AQL function
      *
      * @throws UnsupportedOperationException
-     * @throws ValidationException When a `pluck` sub-field name is unsafe.
+     * @throws ValidationException When a `pluck` sub-field name is unsafe, when a
+     *                              required operand is missing, or when `$funcName`
+     *                              names no function of this catalogue.
      *
      * @example
      * ```php
@@ -543,9 +545,9 @@ class FilterFunction
             self::YESTERDAY => yesterday ( $params[0] ?? $key ) ,
             self::TOMORROW  => tomorrow  ( $params[0] ?? $key ) ,
 
-            // Unknown function = no-op
+            // A name the catalogue does not carry is a mistake, not a no-op.
 
-            default => $key ,
+            default => throw self::unknownFunction( $funcName ) ,
         };
     }
 
@@ -567,5 +569,26 @@ class FilterFunction
     private static function missingParameter( string $funcName , string $operand ) :ValidationException
     {
         return new ValidationException( sprintf( 'The "%s" function requires a %s.' , $funcName , $operand ) ) ;
+    }
+
+    /**
+     * Builds the refusal of a name this catalogue does not carry.
+     *
+     * The arm used to return the key untouched, on the reading that an unknown
+     * name asks for nothing. It asks for something the engine cannot deliver,
+     * which is not the same: `DATE_ISOWEEK(doc.startDate) == @week` silently
+     * became `doc.startDate == @week`, and **no date is ever equal to `34`** —
+     * a well-formed query, in `200`, matching nothing. A caller mistyping
+     * `dateIsoWeek` therefore read the collection as empty.
+     *
+     * A function name is a closed identifier: it belongs to the catalogue or it
+     * does not, so there is no ambiguity to preserve and nothing to keep for
+     * compatibility. {@see \oihana\arango\db\helpers\alterExpression()} refuses
+     * before reaching here — it knows who wrote the chain and answers accordingly.
+     * This arm is the backstop for the callers that reach `apply()` directly.
+     */
+    private static function unknownFunction( string $funcName ) :ValidationException
+    {
+        return new ValidationException( sprintf( 'The "%s" function is not supported.' , $funcName ) ) ;
     }
 }

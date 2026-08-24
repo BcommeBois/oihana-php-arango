@@ -424,10 +424,29 @@ class FilterFunctionTest extends TestCase
     // APPLY - UNKNOWN FUNCTION
     // ========================================
 
-    public function testApplyUnknownFunctionReturnsKeyUnchanged(): void
+    /**
+     * ⚠ Reversed behaviour — the essay this one replaces asserted the opposite, and
+     * that is the whole point: the arm used to return the key untouched. A name is a
+     * closed identifier, so a mistyped one does not ask for nothing, it asks for
+     * something the engine cannot deliver: `DATE_ISOWEEK(doc.startDate) == @week`
+     * silently became `doc.startDate == @week`, and no date is ever equal to `34`.
+     * The caller got an empty page, in `200`, and read the collection as empty.
+     */
+    public function testApplyRefusesANameTheCatalogueDoesNotCarry(): void
     {
-        $this->assertSame( 'doc.name' , FilterFunction::apply( 'unknown' , 'doc.name' ) ) ;
-        $this->assertSame( 'doc.name' , FilterFunction::apply( ''        , 'doc.name' ) ) ;
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( 'The "iw" function is not supported.' ) ;
+        FilterFunction::apply( 'iw' , 'doc.startDate' ) ;
+    }
+
+    /**
+     * The empty name is refused by the same arm: it names no function either.
+     */
+    public function testApplyRefusesTheEmptyName(): void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( 'The "" function is not supported.' ) ;
+        FilterFunction::apply( '' , 'doc.name' ) ;
     }
 
     // ========================================

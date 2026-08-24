@@ -27,6 +27,8 @@ Facets are one of a model's three filtering levers, alongside [`?filter=`](filte
 
 In short: `?facets=` shines for **compact multi-select** and for the **relation existentials/aggregates** (edge/join) that filters can't express; it **reuses the same `op` vocabulary and the same `alt` engine** as filters. All three combine in one request (each produces a slice of the `FILTER`, joined with `&&`).
 
+> The `alt` engine being the same, so are its refusals: a `Facet::ALT` naming an unknown function is **refused**, not ignored. See [A name the catalog does not carry is refused](filter.md#a-name-the-catalog-does-not-carry-is-refused).
+
 ## URL syntax
 
 The `?facets=` parameter is a **JSON object** whose every key is the **name of a

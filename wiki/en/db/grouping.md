@@ -42,6 +42,8 @@ A JSON object (URL-encoded) with short keys:
 
 > ⚠ A transformation parameter supplied by the URL is **bound**, not written into the query — so it can no longer name another field. See [A parameter supplied by a request is a value](filter.md#-a-parameter-supplied-by-a-request-is-a-value).
 
+> ⚠ An `alt` naming a function the catalog does not carry is **refused** (`400`), not silently applied to the raw key. See [A name the catalog does not carry is refused](filter.md#a-name-the-catalog-does-not-carry-is-refused).
+
 
 ```
 GET /sales?group={"by":{"year":"created"},"alt":{"year":"dateYear"},"agg":{"total":"sum:amount"},"sort":"-total"}

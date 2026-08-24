@@ -339,6 +339,45 @@ The fourth, `pluck`, refuses with a `ValidationException` too, but through its a
 guard — its parameter is a **field name**, not a value, and the empty string is not one:
 `Invalid AQL attribute name: ""`.
 
+#### A name the catalog does not carry is **refused**
+
+A function name is a closed identifier: it appears in the tables below, or it does not exist. An
+unknown name asked for nothing useful — it simply **vanished**, and the comparison ran on the raw
+field.
+
+The situation: the caller wants the appointments of ISO week 34, and mistypes the name
+(`dateIsoWeek` is spelled in full).
+
+```
+?filter={"key":"startDate","val":34,"alt":"iw"}
+```
+
+| | Answer |
+|---|---|
+| Before | `doc.startDate == @v` — **no date is ever equal to `34`**: empty page, `200`, no hint |
+| Now | `400` — `The alt function "iw" is not supported.` |
+
+**Every link** of a chain is checked, not only the first:
+`["trim",["substring",0,3],"lowr"]` is refused on `lowr`. Shapes that name no function at all are
+refused too: `"alt":[]`, `"alt":""`, `"alt":42`.
+
+Who wrote the chain decides which fault it is — and therefore which answer:
+
+| Origin of the chain | Answer |
+|---|---|
+| A request (`?filter=`, `?group=`, `?facets=`) | `400` — the caller fixes their URL |
+| A model declaration (`Field::ALTERS`, `Field::WHEN`, `Facet::ALT`) | `500` — the code is what is wrong, and no URL will fix it |
+
+> ⚠️ **One position escapes the check.** In `["trim","lowr","lower"]` the second element is read
+> as a **parameter** of `trim` — exactly as it is in the legitimate `["trim","-"]`, which means
+> "strip dashes". The two notations are strictly identical, so a name mistyped in that position
+> stays silent: it becomes a parameter, and the tail of the chain is dropped. Write the chain
+> with its links nested — `["trim",["substring",0,3],"lower"]` — and every link becomes
+> checkable again.
+
+Not to be confused with an unknown **key**, which stays silently ignored: that one returns *more*
+results, never a wrong one.
+
 #### Strings
 
 | `alt` | Effect | Parameters |

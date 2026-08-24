@@ -20,6 +20,8 @@ Les facettes sont l'un des trois leviers de filtrage d'un modèle, aux côtés d
 
 En bref : `?facets=` brille pour la **multi-sélection compacte** et les **existentiels/agrégats sur relations** (edge/join) que les filtres n'expriment pas ; il **réutilise le même vocabulaire `op` et le même moteur `alt`** que les filtres. Les trois se combinent dans la même requête (chacun produit une portion du `FILTER`, jointes par `&&`).
 
+> Le moteur `alt` étant le même, ses refus le sont aussi : un `Facet::ALT` nommant une fonction inconnue est **refusé**, pas ignoré. Voir [Un nom que le catalogue ne porte pas est refusé](filter.md#un-nom-que-le-catalogue-ne-porte-pas-est-refusé).
+
 ## Syntaxe URL
 
 Le paramètre `?facets=` est un **objet JSON** dont chaque clé est le **nom d'une facette déclarée** sur le modèle, et la valeur l'intention de filtrage :
