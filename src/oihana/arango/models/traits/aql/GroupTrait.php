@@ -8,6 +8,7 @@ use oihana\arango\models\enums\AggregatablePolicy;
 use oihana\arango\models\enums\Group;
 use oihana\arango\models\enums\facets\FacetAggregator;
 use oihana\arango\models\interfaces\AggregateExpression;
+use oihana\arango\exceptions\RequestValidationException;
 
 use oihana\enums\Char;
 use oihana\exceptions\UnsupportedOperationException;
@@ -338,7 +339,7 @@ trait GroupTrait
         return match( $policy )
         {
             AggregatablePolicy::OPEN   => $field ,
-            AggregatablePolicy::STRICT => throw new ValidationException( sprintf( 'The aggregate "%s" targets a field that is not aggregatable: "%s".' , $name , $field ) ) ,
+            AggregatablePolicy::STRICT => throw new RequestValidationException( sprintf( 'The aggregate "%s" targets a field that is not aggregatable: "%s".' , $name , $field ) ) ,
             default                    => null ,
         } ;
     }

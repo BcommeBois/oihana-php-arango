@@ -21,6 +21,7 @@ use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\Edges;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
@@ -510,7 +511,7 @@ trait HasHierarchicalFilter
             if ( $innerCondition === null )
             {
                 $pathStr = implode( '.' , $segmentInfo->path ) ;
-                throw new ValidationException
+                throw new RequestValidationException
                 (
                     "The 'all' quantifier requires a condition to satisfy at path: $pathStr. " .
                     "Use 'none' to match documents with no related match."
@@ -677,7 +678,7 @@ trait HasHierarchicalFilter
             if ( $innerCondition === null )
             {
                 $pathStr = implode( '.' , $segmentInfo->path ) ;
-                throw new ValidationException
+                throw new RequestValidationException
                 (
                     "The 'all' quantifier requires a condition to satisfy at path: $pathStr. " .
                     "Use 'none' to match documents with no related match."

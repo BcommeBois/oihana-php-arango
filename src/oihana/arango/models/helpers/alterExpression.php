@@ -5,8 +5,8 @@ namespace oihana\arango\db\helpers;
 use Exception;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\enums\filters\FilterFunction;
-use oihana\enums\http\HttpStatusCode;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
@@ -116,7 +116,7 @@ function alterExpression( string $expr , mixed $chain , array $init = [] ): stri
     // else — no query fragment, no field name it did not already send.
     $refuse = static fn( string $message ) :Exception => $trusted
             ? new UnsupportedOperationException( 'alterExpression failed, ' . $message )
-            : new ValidationException( ucfirst( $message ) , HttpStatusCode::BAD_REQUEST ) ;
+            : new RequestValidationException( ucfirst( $message ) ) ;
 
     $catalogue = FilterFunction::enums() ;
 

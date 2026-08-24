@@ -5,6 +5,7 @@ namespace oihana\arango\db\helpers;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\models\enums\filters\FilterQuantifier;
 use oihana\arango\models\utils\TraversalQuantifier;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\exceptions\ValidationException;
 
 /**
@@ -79,7 +80,7 @@ function resolveTraversalQuantifier( mixed $value ) : TraversalQuantifier
 
         if ( $n < 1 )
         {
-            throw new ValidationException
+            throw new RequestValidationException
             (
                 "Invalid traversal quantifier '$n'. An integer quantifier means " .
                 "« at least n » and must be >= 1; use 'none' to match documents with no related match."
@@ -89,7 +90,7 @@ function resolveTraversalQuantifier( mixed $value ) : TraversalQuantifier
         return new TraversalQuantifier( Comparator::GREATER_THAN_OR_EQUAL , $n , false , false ) ;
     }
 
-    throw new ValidationException
+    throw new RequestValidationException
     (
         "Invalid traversal quantifier '" . ( is_scalar( $value ) ? (string) $value : gettype( $value ) ) .
         "'. Expected one of: any, all, none, or an integer (at least n)."

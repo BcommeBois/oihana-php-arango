@@ -67,7 +67,7 @@ trait HasFacetComplexConditions
 
         foreach( $value as $subKey => $terms )
         {
-            assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
+            assertAttributeName( $subKey , fromRequest: true ) ; // guard the URL-provided sub-field against AQL injection
             $field = alterExpression( key( $subKey , $docRef ) , $keyChain ) ;
 
             if( is_array( $terms ) )

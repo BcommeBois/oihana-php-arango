@@ -47,6 +47,6 @@ use function oihana\arango\db\helpers\assertAttributeName;
  */
 function pluck( string $array , string $field ) : string
 {
-    assertAttributeName( $field ) ; // URL-provided sub-field → guard against AQL injection
+    assertAttributeName( $field , fromRequest: true ) ; // URL-provided sub-field → guard against AQL injection
     return arrayMap( $array , Clause::CURRENT . Char::DOT . $field ) ;
 }

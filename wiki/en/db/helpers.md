@@ -370,7 +370,7 @@ An untrusted **value** always goes behind a *bind* (see [Bind variables](binds.m
 | Function | Signature | Role |
 |---|---|---|
 | `isAttributeName` | `(mixed $value) : bool` | Predicate: `true` when the string is a safe attribute name (or dotted path). |
-| `assertAttributeName` | `(mixed $value) : void` | Throws `ValidationException` when the name is unsafe. |
+| `assertAttributeName` | `(mixed $value, bool $fromRequest = false) : void` | Throws `ValidationException` when the name is unsafe — a `RequestValidationException` (`400`) when the name came from the request. |
 
 The accepted pattern is `^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`: any character able to break out of an attribute path (space, `(`, `||`, `"`, `;`, `-`, ...) is rejected.
 

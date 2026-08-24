@@ -4,6 +4,7 @@ namespace oihana\arango\db\helpers;
 
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\enums\Arango;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
@@ -68,7 +69,7 @@ function buildInlineFilterCondition
     // Defense in depth: the field is interpolated into `CURRENT.<field>`, so it
     // must be a safe attribute name — the sole guard on a `match` sub-field name
     // when the caller declares no `AQL::FILTERS` whitelist (never trust the path).
-    assertAttributeName( $field ) ;
+    assertAttributeName( $field , fromRequest: true ) ; // the field of an inline `match` comes from the wire
 
     // Fail-loud: only the recognised comparators (FilterComparator::__ALIAS__) have a
     // meaningful inline form (`CURRENT.<field> <op> …`). An unknown operator — a range
@@ -80,7 +81,7 @@ function buildInlineFilterCondition
 
     if ( $aqlOperator === null )
     {
-        throw new ValidationException( sprintf
+        throw new RequestValidationException( sprintf
         (
             "Operator '%s' is not supported inside a `match` / array-expansion inline filter. " .
             "Supported operators: eq, ne, gt, ge, lt, le, in, nin, like, nlike, match, nmatch. " .

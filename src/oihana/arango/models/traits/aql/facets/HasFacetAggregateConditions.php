@@ -11,6 +11,7 @@ use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\facets\FacetAggregator;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
@@ -147,7 +148,7 @@ trait HasFacetAggregateConditions
         $function = FacetAggregator::getAlias( $agg ) ;
         if( $function === null )
         {
-            throw new ValidationException( "Unsupported facet aggregator '" . $agg . "'." ) ;
+            throw new RequestValidationException( "Unsupported facet aggregator '" . $agg . "'." ) ;
         }
 
         // `count` is field-less (RETURN 1); every other aggregator needs a
@@ -171,7 +172,7 @@ trait HasFacetAggregateConditions
                 }
             }
 
-            assertAttributeName( $field ) ; // guard the (possibly URL-provided) field against AQL injection
+            assertAttributeName( $field , fromRequest: true ) ; // guard the (possibly URL-provided) field against AQL injection
             $return = aqlReturn( key( $field , $docRef ) ) ;
         }
 

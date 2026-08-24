@@ -19,6 +19,7 @@ A few entry points:
 - [Getting started](wiki/en/getting-started/introduction.md) — concepts and dependencies.
 - [Search & filtering](wiki/en/db/search-and-filtering.md) — the `?search=` / `?filter=` / `?facets=` query DSL.
 - [Testing](wiki/en/testing.md) — unit tests, code coverage and the live smoke tests.
+- [Upgrading](UPGRADING.md) — what breaks between versions, and what to do about it.
 - [Contributing](CONTRIBUTING.md) — setup, conventions and the PR workflow.
 
 ## 📦 Installation

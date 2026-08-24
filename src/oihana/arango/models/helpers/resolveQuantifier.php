@@ -4,6 +4,7 @@ namespace oihana\arango\db\helpers;
 
 use oihana\arango\db\enums\Operator;
 use oihana\arango\models\enums\filters\FilterQuantifier;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\exceptions\ValidationException;
 
 /**
@@ -53,7 +54,7 @@ function resolveQuantifier( mixed $value ) :string
 
     if ( $keyword === null )
     {
-        throw new ValidationException
+        throw new RequestValidationException
         (
             "Invalid filter quantifier '" . ( is_scalar( $value ) ? (string) $value : gettype( $value ) ) .
             "'. Expected one of: any, all, none, or an integer (at least n)."

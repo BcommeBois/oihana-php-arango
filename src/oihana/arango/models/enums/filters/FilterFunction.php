@@ -3,6 +3,7 @@
 namespace oihana\arango\models\enums\filters;
 
 use oihana\arango\enums\Arango;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 use oihana\reflect\traits\ConstantsTrait;
@@ -568,7 +569,7 @@ class FilterFunction
      */
     private static function missingParameter( string $funcName , string $operand ) :ValidationException
     {
-        return new ValidationException( sprintf( 'The "%s" function requires a %s.' , $funcName , $operand ) ) ;
+        return new RequestValidationException( sprintf( 'The "%s" function requires a %s.' , $funcName , $operand ) ) ;
     }
 
     /**

@@ -1111,6 +1111,29 @@ Order changes the result. Always **reduce data before transforming it**:
 
 The longer the chain, the more expensive the generated AQL function. In practice, 2-3 transformations cover 95 % of needs.
 
+## What a caller gets wrong
+
+A refusal answers **`400 Bad Request`** when the request is malformed, and the message says what to
+fix:
+
+```
+?filter={"key":"tags","quant":"evry","val":"x"}
+→ 400  Invalid filter quantifier 'evry'. Expected one of: any, all, none, or an integer (at least n).
+```
+
+Covered: an unknown `quant` or one below 1, an `all` with no leaf condition, an operator not
+recognised inside a `match`, a `match` value that is not a scalar, an unsafe sub-field name coming
+from the URL, an unknown `alt` or one missing its operand, an unknown facet aggregator, and an
+aggregate outside the whitelist under `AggregatablePolicy::STRICT`.
+
+> ⚠ **A refusal coming from your own declaration answers `500`** — a mistyped `Field::PATH`, an
+> invalid position key, an `alt` declared in a `Field::ALTERS` that does not exist. No URL will fix
+> those: answering "bad request" would send the caller hunting through their URL for a fault that
+> is in your code.
+
+Under the hood the former raise a `RequestValidationException` and the latter a
+`ValidationException` — the first **extends** the second, so an existing `catch` still catches both.
+
 ## See also
 
 - [Internal filtering `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) — server-only conditions, `FilterType::VIRTUAL`.

@@ -5,6 +5,7 @@ namespace oihana\arango\db\helpers;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterMatch;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\enums\Boolean;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
@@ -151,7 +152,7 @@ function buildCombinedInlineFilter
             // explicit `all` form for an operator (or an object equality).
             if ( $value !== null && !is_scalar( $value ) )
             {
-                throw new ValidationException( sprintf
+                throw new RequestValidationException( sprintf
                 (
                     "Invalid `match` value for field '%s': the simple object form only compares to a scalar. " .
                     "Use the explicit `all` form for an operator or an object comparison, e.g. " .

@@ -86,7 +86,7 @@ trait HasFacetArrayComplex
         $filter = [] ;
         foreach( $value as $subKey => $s )
         {
-            assertAttributeName( $subKey ) ; // guard the URL-provided sub-field against AQL injection
+            assertAttributeName( $subKey , fromRequest: true ) ; // guard the URL-provided sub-field against AQL injection
             $search = preg_replace( '/\./' , Char::UNDERLINE , $key . Char::UNDERLINE . $subKey ) ;
             $field  = alterExpression( key( $subKey , AQL::DOC_PREFIX . $key ) , $keyChain ) ; // [alt] doc_$key.$subKey
             if( is_array( $s ) && !empty( $s ) ) // test negative and multiple

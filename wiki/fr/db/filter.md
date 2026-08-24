@@ -1110,6 +1110,30 @@ L'ordre change le résultat. Toujours **réduire la donnée avant de la transfor
 
 Plus la chaîne est longue, plus la fonction AQL générée est coûteuse. En pratique, 2-3 transformations suffisent pour 95 % des besoins.
 
+## Ce que reçoit un client qui se trompe
+
+Un refus de la bibliothèque répond **`400 Bad Request`** quand la demande est malformée, et le
+message dit quoi corriger :
+
+```
+?filter={"key":"tags","quant":"evry","val":"x"}
+→ 400  Invalid filter quantifier 'evry'. Expected one of: any, all, none, or an integer (at least n).
+```
+
+Sont concernés : un `quant` inconnu ou inférieur à 1, un `all` sans condition de feuille, un
+opérateur non reconnu dans un `match`, une valeur de `match` qui n'est pas un scalaire, un nom de
+sous-champ dangereux venu de l'URL, un `alt` inconnu ou privé de son opérande, un agrégateur de
+facette inconnu, et un agrégat hors liste blanche sous `AggregatablePolicy::STRICT`.
+
+> ⚠ **Un refus qui vient de ta déclaration, lui, répond `500`** — un `Field::PATH` mal écrit, une
+> clé de position invalide, un `alt` déclaré dans un `Field::ALTERS` qui n'existe pas. Aucune URL ne
+> corrigera ça : dire « mauvaise requête » enverrait le client chercher dans son URL une faute qui
+> est dans ton code.
+
+Techniquement, les premiers lèvent une `RequestValidationException`, les seconds une
+`ValidationException` — la première **étend** la seconde, donc un `catch` existant les attrape
+toujours toutes les deux.
+
 ## Voir aussi
 
 - [Filtrage interne `AQL::CONDITIONS` + `AQL::BINDS`](filter-internal.md) — conditions serveur-only, `FilterType::VIRTUAL`.

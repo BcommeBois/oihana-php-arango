@@ -371,7 +371,7 @@ Une **valeur** non fiable est toujours placée derrière un *bind* (voir [Bind v
 | Fonction | Signature | Rôle |
 |---|---|---|
 | `isAttributeName` | `(mixed $value) : bool` | Prédicat : `true` si la chaîne est un nom (ou chemin pointé) d'attribut sûr. |
-| `assertAttributeName` | `(mixed $value) : void` | Lève `ValidationException` si le nom n'est pas sûr. |
+| `assertAttributeName` | `(mixed $value, bool $fromRequest = false) : void` | Lève `ValidationException` si le nom n'est pas sûr — une `RequestValidationException` (`400`) quand le nom vient de la requête. |
 
 Le motif accepté est `^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$` : tout caractère capable de s'échapper d'un chemin d'attribut (espace, `(`, `||`, `"`, `;`, `-`, ...) est rejeté.
 
