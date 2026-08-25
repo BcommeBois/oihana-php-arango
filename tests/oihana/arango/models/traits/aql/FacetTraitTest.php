@@ -3,11 +3,14 @@
 namespace tests\oihana\arango\models\traits\aql;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Traversal;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\exceptions\ValidationException;
+
+use oihana\reflect\exceptions\ConstantException;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
@@ -371,6 +374,73 @@ class FacetTraitTest extends TestCase
             $this->stub()->callEdge( 'location' , '5678,-1234' , $binds , [ AQL::EDGE => 'orgs_places' ] , AQL::DOC ) ,
         ) ;
         $this->assertSame( [ 'location_0' => '5678' , 'location_1' => '1234' ] , $binds ) ;
+    }
+
+    public function testEdgeFollowsTheDeclaredDirection() :void
+    {
+        // A model whose edges LEAVE the document reaches its vertices OUTBOUND.
+        // Followed the wrong way the traversal is valid AQL and matches nothing,
+        // so the facet would filter everything out without a word.
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_location IN OUTBOUND doc orgs_places FILTER doc_location._key == @location_0 RETURN doc_location._key) > 0' ,
+            $this->stub()->callEdge( 'location' , 1234 , $binds , [ AQL::EDGE => 'orgs_places' , AQL::DIRECTION => Traversal::OUTBOUND ] , AQL::DOC ) ,
+        ) ;
+        $this->assertSame( [ 'location_0' => '1234' ] , $binds ) ;
+    }
+
+    public function testEdgeAcceptsAnyDirection() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LENGTH(FOR doc_location IN ANY doc orgs_places FILTER doc_location._key == @location_0 RETURN doc_location._key) > 0' ,
+            $this->stub()->callEdge( 'location' , 1234 , $binds , [ AQL::EDGE => 'orgs_places' , AQL::DIRECTION => Traversal::ANY ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testEdgeDefaultDirectionIsUnchanged() :void
+    {
+        // Saying nothing must compile exactly like saying INBOUND.
+        $silent = [] ;
+        $spoken = [] ;
+        $this->assertSame
+        (
+            $this->stub()->callEdge( 'location' , 1234 , $silent , [ AQL::EDGE => 'orgs_places' ] , AQL::DOC ) ,
+            $this->stub()->callEdge( 'location' , 1234 , $spoken , [ AQL::EDGE => 'orgs_places' , AQL::DIRECTION => Traversal::INBOUND ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testEdgeUnknownDirectionIsRefused() :void
+    {
+        // Never quietly replaced by the default: a typo must not become an
+        // empty result set.
+        $this->expectException( ConstantException::class ) ;
+        $binds = [] ;
+        $this->stub()->callEdge( 'location' , 1234 , $binds , [ AQL::EDGE => 'orgs_places' , AQL::DIRECTION => 'sideways' ] , AQL::DOC ) ;
+    }
+
+    public function testEdgeComplexFollowsTheDeclaredDirection() :void
+    {
+        $binds = [] ;
+        $this->assertStringContainsString
+        (
+            'FOR doc_location IN OUTBOUND doc orgs_places' ,
+            $this->stub()->callEdgeComplex( 'location' , [ 'name' => 'paris' ] , $binds , [ AQL::EDGE => 'orgs_places' , AQL::DIRECTION => Traversal::OUTBOUND ] , AQL::DOC ) ,
+        ) ;
+    }
+
+    public function testEdgeAggregateFollowsTheDeclaredDirection() :void
+    {
+        // The three edge builders honour one declaration, so a dimension counts
+        // and filters on exactly the same relation — the promise the wiki makes.
+        $binds = [] ;
+        $this->assertStringContainsString
+        (
+            'FOR doc_reviews IN OUTBOUND doc has_review' ,
+            $this->stub()->callEdgeAggregate( 'reviews' , 5 , $binds , [ AQL::EDGE => 'has_review' , AQL::DIRECTION => Traversal::OUTBOUND ] , AQL::DOC ) ,
+        ) ;
     }
 
     public function testEdgeCustomFieldsTargetsConfiguredVertexProperty() :void

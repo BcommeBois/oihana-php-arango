@@ -19,6 +19,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\ArangoConfig;
+use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\models\Documents;
@@ -131,6 +132,21 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
         $notes->insert( [ '_key' => 'n3' , 'orgId' => 'o2' , 'lang' => 'en' ] ) ;
         $notes->insert( [ '_key' => 'n4' , 'orgId' => 'o3' , 'lang' => 'fr' ] ) ;
 
+        // --- AQL::DIRECTION : an OUTBOUND topology ---------------------------
+        // Here the organization is the `_from` and the subject the `_to` — the
+        // mirror image of `orgs_places` above. Followed INBOUND (the default),
+        // this relation matches NOTHING, which is the whole point of the case.
+        $subjects = $db->collection( 'subjects' ) ;
+        $subjects->create() ;
+        $subjects->insert( [ '_key' => 'sArt'     , 'name' => 'Art'     ] ) ;
+        $subjects->insert( [ '_key' => 'sScience' , 'name' => 'Science' ] ) ;
+
+        $hasSubject = $db->collection( 'orgs_subjects' ) ;
+        $hasSubject->create( [ 'type' => self::EDGE_TYPE ] ) ;
+        $hasSubject->insert( [ '_from' => 'organizations/o1' , '_to' => 'subjects/sArt'     ] ) ;
+        $hasSubject->insert( [ '_from' => 'organizations/o2' , '_to' => 'subjects/sArt'     ] ) ;
+        $hasSubject->insert( [ '_from' => 'organizations/o3' , '_to' => 'subjects/sScience' ] ) ;
+
         // --- Bounds on a relation : the numeric measure lives on the linked doc.
         // `score` frames a real extent (7 → 19) and carries a 0 that encodes
         // "not rated", so an exclusion option has something to exclude.
@@ -216,6 +232,10 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
             // Reverse one-to-many: the joined side carries the foreign key.
             'lang'          => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'notes' , AQL::KEY => 'orgId' , Facet::PROPERTY => '_key' , Facet::VALUE => 'lang' ] ,
             'langDistinct'  => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'notes' , AQL::KEY => 'orgId' , Facet::PROPERTY => '_key' , Facet::VALUE => 'lang' , Facet::DISTINCT => true ] ,
+
+            // AQL::DIRECTION: the same OUTBOUND relation, declared both ways.
+            'subject'        => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'orgs_subjects' , Facet::VALUE => 'name' , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+            'subjectInbound' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'orgs_subjects' , Facet::VALUE => 'name' ] , // the default — finds nothing here
 
             // Top-N buckets: the sidebar shows one place, not all of them.
             'placeTop'      => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'orgs_places' , Facet::VALUE => 'name' , Facet::LIMIT => 1 ] ,
@@ -511,6 +531,44 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
         $this->assertSame( [ 'Alice' => 2 , 'Bob' => 2 ]      , $this->buckets( $counts , 'author' ) ) ;
         $this->assertSame( [ 'Database' => 2 , 'PHP' => 2 ]   , $this->buckets( $counts , 'tag'    ) ) ;
         $this->assertSame( [ 'en' => 1 , 'fr' => 3 ]          , $this->buckets( $counts , 'lang'   ) ) ;
+    }
+
+    /**
+     * 🔑 The case that would have caught the hole: a relation whose edges
+     * **leave** the listed document.
+     *
+     * `orgs_subjects` is the mirror of the places graph — the organization is
+     * the `_from`. Followed `OUTBOUND` it finds the subjects; followed the
+     * default `INBOUND` it is **valid AQL that matches nothing**, and the
+     * dimension answers an empty bucket list in `200` without a word. Both are
+     * measured here, because the empty answer is the failure mode: seen alone it
+     * looks exactly like "this relation has no values".
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testOutboundRelationIsCountedOnlyWithTheRightDirection() :void
+    {
+        $model = $this->model() ;
+
+        $counts = $model->facetCounts( [ Arango::FACET_COUNTS => 'subject,subjectInbound' ] ) ;
+
+        // OUTBOUND: o1 and o2 do Art, o3 does Science.
+        $this->assertSame( [ 'Art' => 2 , 'Science' => 1 ] , $this->buckets( $counts , 'subject' ) ) ;
+
+        // INBOUND on the same relation: no error, no warning, nothing at all.
+        // This is what every model with an outgoing topology used to receive.
+        $this->assertSame( [] , $this->buckets( $counts , 'subjectInbound' ) , 'The wrong direction is silent, which is why it needed measuring.' ) ;
     }
 
     /**

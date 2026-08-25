@@ -9,11 +9,13 @@ use org\schema\constants\Prop;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Logic;
-use oihana\arango\db\enums\Traversal;
 use oihana\arango\models\enums\Facet;
 use oihana\exceptions\BindException;
+
+use oihana\reflect\exceptions\ConstantException;
 use oihana\exceptions\ValidationException;
 
+use function oihana\arango\models\helpers\facets\resolveFacetDirection;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
@@ -56,6 +58,7 @@ trait HasFacetEdgeComplex
      * @return string
      *
      * @throws BindException
+     * @throws ConstantException
      * @throws ReflectionException
      * @throws UnsupportedOperationException
      * @throws ValidationException
@@ -104,7 +107,7 @@ trait HasFacetEdgeComplex
         // LENGTH( FOR doc_$key IN INBOUND $doc $edge FILTER ...$filters RETURN doc_$key._key ) > 0
         return greaterThan( length
         ([
-            aqlFor    ( [ AQL::DOC_REF => $docRef , AQL::IN => compile( [ Traversal::INBOUND , $doc , $edge ] ) ] )    ,
+            aqlFor    ( [ AQL::DOC_REF => $docRef , AQL::IN => compile( [ resolveFacetDirection( $facet ) , $doc , $edge ] ) ] )    ,
             aqlFilter ( predicates( $filters ,  Logic::AND ) ) ,
             aqlReturn ( key( Prop::_KEY , $docRef ) )
         ]) , 0 ) ;

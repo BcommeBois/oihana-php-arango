@@ -85,7 +85,8 @@ Common configuration keys:
 | `Facet::PROPERTY` | The targeted document property (alias of the URL key). | the facet key |
 | `Facet::OP` | The comparison operator (type-dependent). | `eq` (except `IN` → `any.in`, `FIELD` → `match`) |
 | `AQL::FIELDS` | The searched field(s) (EDGE/JOIN), CSV or list. | `_key` |
-| `AQL::EDGE` | The edge collection (EDGE / EDGE_COMPLEX). | — |
+| `AQL::EDGE` | The edge collection (EDGE / EDGE_COMPLEX / EDGE_AGGREGATE). | — |
+| `AQL::DIRECTION` | Which way the edges are followed (`INBOUND` / `OUTBOUND` / `ANY`). | `INBOUND` |
 | `AQL::COLLECTION` | The joined collection (JOIN / JOIN_COMPLEX). | — |
 | `AQL::KEY` | The field on the joined collection. | `_key` |
 | `AQL::ARRAY` | Join on an **array** of keys (`IN`). | `false` |
@@ -137,8 +138,10 @@ Operators (from `FilterArrayComparator`): `any.in` (default), `all.in`, `none.in
 
 ### `Facet::EDGE` — existence of a linked vertex *(simple)*
 
-"Keep documents linked (or not linked) to a vertex through an **INBOUND** edge
-traversal". Matches one or more vertex fields (`AQL::FIELDS`, OR), configurable operator.
+"Keep documents linked (or not linked) to a vertex through an edge traversal".
+Matches one or more vertex fields (`AQL::FIELDS`, OR), configurable operator. The
+traversal follows `AQL::DIRECTION` — `INBOUND` by default, see
+[Traversal direction](#traversal-direction-aqldirection).
 
 ```php
 'location' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'orgs_places' ] ,
@@ -674,6 +677,9 @@ LET author   = (FOR doc IN @@articles FILTER <same filters>
   default `_key`) covers the reverse one-to-many, and `AQL::ARRAY => true` turns
   the predicate into a membership test when the main side holds an **array of
   keys** (`doc_tags._key IN doc.tagIds`).
+- **`AQL::DIRECTION` says which way the edges are followed** — see
+  [Traversal direction](#traversal-direction-aqldirection) below. It applies to
+  the filtering builders too, so one declaration serves both.
 - **A linked facet never unwinds the main document.** Its source is the relation,
   so a `[*]` marker in its `Facet::PROPERTY` is a mis-declaration and is
   **refused**, rather than silently counting the raw keys instead of the joined
@@ -698,6 +704,51 @@ LET author   = (FOR doc IN @@articles FILTER <same filters>
   ⚠ On a **cluster**, a traversal inside a sub-query needs a `WITH` naming the
   vertex collections, which the query does not emit; the library targets a single
   server (the same already applies to an `EDGE` facet used as a filter).
+
+### Traversal direction (`AQL::DIRECTION`)
+
+The situation. An edge has a direction, and a facet has to follow it the right
+way. If the vocabulary terms point **at** your documents (`term → document`),
+they are reached `INBOUND`; if your documents point **at** the terms
+(`document → term`), they are reached `OUTBOUND`.
+
+This matters more than it looks, because **the wrong direction is silent**. The
+traversal is still valid AQL; it simply matches nothing — so the dimension
+answers an empty bucket list, in `200`, without a warning. Seen alone, that is
+indistinguishable from "this relation has no values".
+
+```php
+Arango::FACETS => [
+    // The document is the `_from`: the edges LEAVE it.
+    'subject' => [
+        Facet::TYPE    => Facet::EDGE ,
+        AQL::EDGE      => 'articles_subjects' ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        Facet::VALUE   => 'name' ,
+    ] ,
+]
+```
+```aql
+FOR doc_subject IN OUTBOUND doc articles_subjects
+```
+
+- **Values**: `Traversal::INBOUND` (the default), `Traversal::OUTBOUND`, and
+  `Traversal::ANY` — linked either way, the right answer for a relation that is
+  not oriented. ⚠ With `ANY`, a document linked **both** ways to the same vertex
+  is reached twice, so `Facet::DISTINCT` earns its keep.
+- **The default is `INBOUND`**, which is what every linked facet compiled before
+  the option existed: a declaration that says nothing keeps its query byte for
+  byte.
+- **It applies to the filtering side too** (`Facet::EDGE`, `EDGE_COMPLEX`,
+  `EDGE_AGGREGATE`) — one declaration, so a dimension still *counts exactly on
+  the relation it filters on*.
+- ⚠ **An unknown value is refused**, never quietly replaced by the default. A
+  typo that fell back would turn into empty buckets, which is the failure this
+  option exists to close.
+- ⚠ The **edge surfaces** (`?edges=`, traversals, hierarchies) default to
+  `OUTBOUND`, not `INBOUND`. The facet default differs for backward
+  compatibility alone — so state the direction explicitly rather than relying on
+  a default that is not the same everywhere.
 
 ### Counting distinct documents per bucket (`Facet::DISTINCT`)
 

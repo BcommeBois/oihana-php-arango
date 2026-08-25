@@ -7,7 +7,6 @@ use DI\NotFoundException;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Operator;
-use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\Group;
@@ -28,6 +27,7 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use ReflectionException;
 
+use function oihana\arango\models\helpers\facets\resolveFacetDirection;
 use function oihana\arango\db\functions\arrays\countDistinct;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\expandArrayPath;
@@ -251,6 +251,7 @@ trait FacetCountsQueryTrait
      * @return string|null
      *
      * @throws BindException
+     * @throws ConstantException
      * @throws ReflectionException
      * @throws UnsupportedOperationException
      * @throws ValidationException
@@ -478,14 +479,15 @@ trait FacetCountsQueryTrait
      * otherwise compile to a truncated `FOR … IN` — a broken query blamed on the
      * request rather than on the declaration.
      *
-     * @param array  $facet  The facet definition (`AQL::EDGE`, or `AQL::COLLECTION` / `AQL::KEY` / `Facet::PROPERTY` / `AQL::ARRAY`).
-     * @param string $key    The facet key; drives the related document reference (`doc_<key>`).
-     * @param string $type   The facet type ({@see Facet::EDGE} or {@see Facet::JOIN}).
+     * @param array $facet The facet definition (`AQL::EDGE`, or `AQL::COLLECTION` / `AQL::KEY` / `Facet::PROPERTY` / `AQL::ARRAY`).
+     * @param string $key The facet key; drives the related document reference (`doc_<key>`).
+     * @param string $type The facet type ({@see Facet::EDGE} or {@see Facet::JOIN}).
      * @param string $docRef The main document reference.
      *
      * @return array{0:string,1:array<int,string>} The related document reference,
      *         and the AQL fragments reaching it (a `FOR`, plus a `FILTER` for a join).
      *
+     * @throws ConstantException
      * @throws ReflectionException
      * @throws ValidationException
      */
@@ -502,7 +504,7 @@ trait FacetCountsQueryTrait
             return
             [
                 $relationRef ,
-                [ aqlFor( [ AQL::DOC_REF => $relationRef , AQL::IN => compile( [ Traversal::INBOUND , $docRef , $edge ] ) ] ) ] ,
+                [ aqlFor( [ AQL::DOC_REF => $relationRef , AQL::IN => compile( [ resolveFacetDirection( $facet ) , $docRef , $edge ] ) ] ) ] ,
             ] ;
         }
 

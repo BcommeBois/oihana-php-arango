@@ -73,7 +73,8 @@ Clés de configuration communes :
 | `Facet::PROPERTY` | La propriété document visée (alias de la clé d'URL). | la clé de facette |
 | `Facet::OP` | L'opérateur de comparaison (selon le type). | `eq` (sauf `IN` → `any.in`, `FIELD` → `match`) |
 | `AQL::FIELDS` | Le(s) champ(s) recherché(s) (EDGE/JOIN), CSV ou liste. | `_key` |
-| `AQL::EDGE` | La collection d'edges (EDGE / EDGE_COMPLEX). | — |
+| `AQL::EDGE` | La collection d'edges (EDGE / EDGE_COMPLEX / EDGE_AGGREGATE). | — |
+| `AQL::DIRECTION` | Le sens de suivi des arêtes (`INBOUND` / `OUTBOUND` / `ANY`). | `INBOUND` |
 | `AQL::COLLECTION` | La collection jointe (JOIN / JOIN_COMPLEX). | — |
 | `AQL::KEY` | Le champ côté collection jointe. | `_key` |
 | `AQL::ARRAY` | Jointure sur un **tableau** de clés (`IN`). | `false` |
@@ -119,7 +120,7 @@ Opérateurs (de `FilterArrayComparator`) : `any.in` (défaut), `all.in`, `none.i
 
 ### `Facet::EDGE` — existence d'un sommet lié *(simple)*
 
-« Garder les documents liés (ou non liés) à un sommet via une traversée d'edge **INBOUND** ». Match sur un ou plusieurs champs du sommet (`AQL::FIELDS`, OR), opérateur configurable.
+« Garder les documents liés (ou non liés) à un sommet via une traversée d'edge ». Match sur un ou plusieurs champs du sommet (`AQL::FIELDS`, OR), opérateur configurable. La traversée suit `AQL::DIRECTION` — `INBOUND` par défaut, voir [Sens de traversée](#sens-de-traversée-aqldirection).
 
 ```php
 'location' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'orgs_places' ] ,
@@ -630,6 +631,9 @@ LET author   = (FOR doc IN @@articles FILTER <mêmes filtres>
   joint, défaut `_key`) couvre le un-à-plusieurs inversé, et `AQL::ARRAY => true`
   transforme le prédicat en test d'appartenance quand le côté principal porte un
   **tableau de clés** (`doc_tags._key IN doc.tagIds`).
+- **`AQL::DIRECTION` dit dans quel sens les arêtes sont suivies** — voir
+  [Sens de traversée](#sens-de-traversée-aqldirection) plus bas. Elle vaut aussi
+  pour les constructeurs de filtre : une seule déclaration sert les deux.
 - **Une facette liée ne déplie jamais le document principal.** Sa source est la
   relation, donc un marqueur `[*]` dans son `Facet::PROPERTY` est une déclaration
   fautive et se voit **refusée**, plutôt que de compter en silence les clés
@@ -655,6 +659,51 @@ LET author   = (FOR doc IN @@articles FILTER <mêmes filtres>
   un `WITH` nommant les collections de sommets, que la requête n'émet pas ; la
   librairie vise le serveur unique (c'est déjà le cas d'une facette `EDGE`
   employée comme filtre).
+
+### Sens de traversée (`AQL::DIRECTION`)
+
+La situation. Une arête a un sens, et une facette doit la suivre dans le bon.
+Si les termes de vocabulaire pointent **vers** vos documents (`terme → document`),
+on les atteint en `INBOUND` ; si vos documents pointent **vers** les termes
+(`document → terme`), on les atteint en `OUTBOUND`.
+
+Ça compte plus qu'il n'y paraît, parce que **le mauvais sens est silencieux**. La
+traversée reste de l'AQL valide ; elle ne correspond simplement à rien — donc la
+dimension renvoie une liste de seaux **vide**, en `200`, sans un avertissement.
+Vue seule, elle est indistinguable de « cette relation n'a aucune valeur ».
+
+```php
+Arango::FACETS => [
+    // Le document est le `_from` : les arêtes en SORTENT.
+    'subject' => [
+        Facet::TYPE    => Facet::EDGE ,
+        AQL::EDGE      => 'articles_subjects' ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        Facet::VALUE   => 'name' ,
+    ] ,
+]
+```
+```aql
+FOR doc_subject IN OUTBOUND doc articles_subjects
+```
+
+- **Valeurs** : `Traversal::INBOUND` (le défaut), `Traversal::OUTBOUND` et
+  `Traversal::ANY` — lié dans un sens ou dans l'autre, la bonne réponse pour une
+  relation non orientée. ⚠ Avec `ANY`, un document lié **dans les deux sens** au
+  même sommet est atteint deux fois : `Facet::DISTINCT` y gagne son utilité.
+- **Le défaut est `INBOUND`**, c'est-à-dire ce que compilait toute facette liée
+  avant que l'option existe : une déclaration qui ne dit rien garde sa requête
+  octet pour octet.
+- **Elle vaut aussi côté filtre** (`Facet::EDGE`, `EDGE_COMPLEX`,
+  `EDGE_AGGREGATE`) — une seule déclaration, donc une dimension *compte toujours
+  exactement sur la relation qu'elle filtre*.
+- ⚠ **Une valeur inconnue est refusée**, jamais remplacée en silence par le
+  défaut. Une faute de frappe qui se replierait deviendrait des seaux vides,
+  c'est-à-dire précisément la panne que cette option ferme.
+- ⚠ Les **surfaces d'arêtes** (`?edges=`, traversées, hiérarchies) ont pour
+  défaut `OUTBOUND`, pas `INBOUND`. Le défaut des facettes diffère pour la seule
+  compatibilité ascendante — donc mieux vaut déclarer le sens explicitement que
+  se fier à un défaut qui n'est pas le même partout.
 
 ### Compter des documents distincts par bucket (`Facet::DISTINCT`)
 

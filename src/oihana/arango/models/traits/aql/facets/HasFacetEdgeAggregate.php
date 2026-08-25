@@ -2,13 +2,17 @@
 
 namespace oihana\arango\models\traits\aql\facets;
 
+use DI\DependencyException;
+use DI\NotFoundException;
 use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\Traversal;
 use oihana\exceptions\BindException;
+
+use oihana\reflect\exceptions\ConstantException;
 use oihana\exceptions\ValidationException;
 
+use function oihana\arango\models\helpers\facets\resolveFacetDirection;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\core\strings\compile;
 
@@ -40,9 +44,13 @@ trait HasFacetEdgeAggregate
      * @param array $facet The facet definition (`AQL::EDGE`, `Facet::AGG`, `AQL::FIELDS`, `Facet::OP`).
      * @param string $doc The main document reference.
      *
+     * @param array $init
      * @return string
      *
      * @throws BindException
+     * @throws ConstantException
+     * @throws DependencyException
+     * @throws NotFoundException
      * @throws ReflectionException
      * @throws ValidationException
      *
@@ -75,7 +83,7 @@ trait HasFacetEdgeAggregate
         $docRef = AQL::DOC_PREFIX . $key ;
         $edge   = $facet[ AQL::EDGE ] ?? null ;
 
-        $for = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => compile( [ Traversal::INBOUND , $doc , $edge ] ) ] ) ;
+        $for = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => compile( [ resolveFacetDirection( $facet ) , $doc , $edge ] ) ] ) ;
 
         return $this->prepareAggregateConditions( $value , $facet , $for , null , $docRef , $key , $binds , $init ) ;
     }

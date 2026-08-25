@@ -3,11 +3,15 @@
 namespace oihana\arango\models\traits\aql\facets;
 
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\Traversal;
 use oihana\exceptions\BindException;
+
+use oihana\exceptions\UnsupportedOperationException;
+use oihana\exceptions\ValidationException;
+use oihana\reflect\exceptions\ConstantException;
 use org\schema\constants\Prop;
 use ReflectionException;
 
+use function oihana\arango\models\helpers\facets\resolveFacetDirection;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\core\strings\compile;
@@ -43,7 +47,10 @@ trait HasFacetEdge
      * @return string
      *
      * @throws BindException
+     * @throws ConstantException
      * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
      *
      * @example
      * Set the facetable definition in the model :
@@ -85,7 +92,7 @@ trait HasFacetEdge
         $docRef = AQL::DOC_PREFIX . $key ;
         $edge   = $facet[ AQL::EDGE ] ?? null ;
 
-        $for    = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => compile( [ Traversal::INBOUND , $doc , $edge ] ) ] ) ;
+        $for    = aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => compile( [ resolveFacetDirection( $facet ) , $doc , $edge ] ) ] ) ;
         $return = aqlReturn( key( Prop::_KEY , $docRef ) ) ;
 
         return $this->prepareSimpleConditions( $value , $facet , $for , null , $docRef , $key , $binds , $return ) ;

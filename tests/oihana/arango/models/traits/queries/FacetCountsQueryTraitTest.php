@@ -3,12 +3,15 @@
 namespace tests\oihana\arango\models\traits\queries;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\traits\queries\FacetCountsQueryTrait;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
 use oihana\exceptions\ValidationException;
+
+use oihana\reflect\exceptions\ConstantException;
 
 use PHPUnit\Framework\TestCase;
 
@@ -49,6 +52,12 @@ class FacetCountsQueryTraitStub
             'location'         => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' ] , // default bucket: the vertex _key
             'locationName'     => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' ] ,
             'locationDistinct' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' , Facet::DISTINCT => true ] ,
+
+            // AQL::DIRECTION : which way the edges are followed from the document.
+            'locationOut'      => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+            'locationAny'      => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' , AQL::DIRECTION => Traversal::ANY ] ,
+            'locationIn'       => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' , AQL::DIRECTION => Traversal::INBOUND ] , // explicit default
+            'locationSideways' => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' , AQL::DIRECTION => 'sideways' ] , // → refused
             'edgeMissing'      => [ Facet::TYPE => Facet::EDGE ] , // no edge collection declared → refused
             'edgeDanger'       => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'x);y' ] , // dangerous bucket → refused
 
@@ -667,5 +676,54 @@ class FacetCountsQueryTraitTest extends TestCase
         $this->expectException( ValidationException::class ) ;
         $binds = [] ;
         $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'joinExpansion' ] , $binds ) ;
+    }
+
+    public function testEdgeDimensionFollowsTheDeclaredDirection() :void
+    {
+        // A model whose edges LEAVE the document reaches its vertices OUTBOUND.
+        // Followed the wrong way the traversal is valid AQL and matches nothing,
+        // so the dimension would answer empty buckets without a word.
+        $binds = [] ;
+        $this->assertSame
+        (
+            'LET locationOut = (FOR doc IN @@collection FOR doc_locationOut IN OUTBOUND doc organizations_places COLLECT value = doc_locationOut.name WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {locationOut}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationOut' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testEdgeDimensionAcceptsAny() :void
+    {
+        $binds = [] ;
+        // ANY means what it says: linked either way. Worth knowing that a
+        // document linked BOTH ways to one vertex is then reached twice.
+        $this->assertStringContainsString
+        (
+            'FOR doc_locationAny IN ANY doc organizations_places' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationAny' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testTheDefaultDirectionIsUnchangedByteForByte() :void
+    {
+        // A declaration that says nothing about direction must compile exactly
+        // like one that says INBOUND — the guarantee that adding the option
+        // moved nothing for existing consumers.
+        $silent = [] ;
+        $spoken = [] ;
+
+        $this->assertSame
+        (
+            str_replace( 'locationName' , 'X' , $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationName' ] , $silent ) ) ,
+            str_replace( 'locationIn'   , 'X' , $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationIn'   ] , $spoken ) ) ,
+        ) ;
+    }
+
+    public function testAnUnknownDirectionIsRefused() :void
+    {
+        // Traversal::get() would have fallen back on the default, turning a typo
+        // into empty buckets — the very failure the option exists to close.
+        $this->expectException( ConstantException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationSideways' ] , $binds ) ;
     }
 }
