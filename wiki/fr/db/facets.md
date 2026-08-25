@@ -717,6 +717,46 @@ LET seller = (FOR doc IN @@products FILTER <mêmes filtres>
 - Ne touche ni au mode `?metaOnly=` (ni à son alias déprécié `?facetsOnly=`) ni au
   `total` exact — ils proviennent déjà d'un `count()` dédié.
 
+### Ne garder que les plus gros buckets (`Facet::LIMIT`)
+
+La situation. Une dimension renvoie **toutes** les valeurs qu'elle trouve. Une
+barre latérale en affiche dix — et un vocabulaire lié peut en contenir des
+milliers, toutes sérialisées, toutes transférées, pour une liste que personne ne
+déroule. `Facet::LIMIT => n` garde les **n plus gros** buckets :
+
+```php
+Arango::FACETS => [
+    'category' => [ Facet::TYPE => Facet::FIELD , Facet::LIMIT => 10 ] ,
+]
+```
+
+Seule la fin de la sous-requête change — le `LIMIT` la referme **après** le tri,
+donc ce qui survit ce sont les plus gros buckets, pas n buckets au hasard :
+
+```aql
+LET category = (FOR doc IN @@articles FILTER <mêmes filtres>
+                COLLECT value = doc.category WITH COUNT INTO count
+                SORT count DESC LIMIT 10 RETURN { value, count })
+```
+
+- **S'applique à tous les types** — le champ scalaire, la famille `Facet::IN`,
+  les sous-champs `[*]` et les facettes liées `EDGE` / `JOIN` — parce qu'ils
+  finissent tous sur la même fin de requête. Se combine librement avec
+  `Facet::DISTINCT` : le compte devient par document, et la limite garde toujours
+  les plus gros de ces buckets.
+- **Opt-in, rétro-compatible** : sans l'option, tous les buckets sont renvoyés
+  comme avant.
+- ⚠ **Une limite nulle, négative ou non entière est refusée**, pas ignorée.
+  `LIMIT 0` n'émettrait **aucune clause `LIMIT`** et renverrait donc *tout* en
+  silence — l'exact contraire de ce que la déclaration demande. Pour tous les
+  buckets, on omet l'option.
+- ⚠ **Les ex æquo sont tranchés arbitrairement.** Les buckets sont ordonnés par
+  le seul compte : quand le n-ième et le (n+1)-ième partagent le même compte,
+  lequel survit n'est pas déterministe. Un top-N stable demanderait un critère de
+  départage que le tri ne porte pas aujourd'hui.
+- Le **total** n'est pas affecté : il vient d'un `count()` dédié, pas de la somme
+  des buckets — qu'une dimension limitée ne peut de toute façon plus fournir.
+
 ### Les comptes sans les documents (`?metaOnly=`)
 
 Une barre latérale de recherche à facettes n'a souvent besoin **que des comptes**

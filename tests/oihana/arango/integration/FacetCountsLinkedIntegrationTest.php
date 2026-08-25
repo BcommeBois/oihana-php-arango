@@ -192,6 +192,10 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
             // Reverse one-to-many: the joined side carries the foreign key.
             'lang'          => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'notes' , AQL::KEY => 'orgId' , Facet::PROPERTY => '_key' , Facet::VALUE => 'lang' ] ,
             'langDistinct'  => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'notes' , AQL::KEY => 'orgId' , Facet::PROPERTY => '_key' , Facet::VALUE => 'lang' , Facet::DISTINCT => true ] ,
+
+            // Top-N buckets: the sidebar shows one place, not all of them.
+            'placeTop'      => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'orgs_places' , Facet::VALUE => 'name' , Facet::LIMIT => 1 ] ,
+            'langTop'       => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'notes' , AQL::KEY => 'orgId' , Facet::PROPERTY => '_key' , Facet::VALUE => 'lang' , Facet::LIMIT => 1 ] ,
         ] ;
     }
 
@@ -583,6 +587,43 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
 
         $this->assertSame( [ 'Lyon' => 2 , 'Paris' => 4 ] , $this->buckets( $granted , 'place' ) , 'The granted subject restores its dimension.' ) ;
         $this->assertArrayNotHasKey( 'author' , $granted , 'The other subject stays refused.' ) ;
+    }
+
+    /**
+     * `Facet::LIMIT` keeps the **biggest** buckets, which is the one thing an
+     * assertion on the AQL string cannot establish: a `LIMIT 1` placed before
+     * the sort — or a sort the server ordered otherwise — would return the same
+     * *number* of buckets and the wrong one. Both relations are asked for their
+     * single top bucket, and both answer the value with the highest count.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testLimitKeepsTheBiggestBucketLive() :void
+    {
+        $model = $this->model() ;
+
+        // Unlimited, the two dimensions have two buckets each, and the biggest
+        // is unambiguous: Paris (4) over Lyon (2), fr (3) over en (1).
+        $counts = $model->facetCounts( [ Arango::FACET_COUNTS => 'place,lang' ] ) ;
+
+        $this->assertSame( [ 'Lyon' => 2 , 'Paris' => 4 ] , $this->buckets( $counts , 'place' ) ) ;
+        $this->assertSame( [ 'en' => 1 , 'fr' => 3 ]      , $this->buckets( $counts , 'lang'  ) ) ;
+
+        $top = $model->facetCounts( [ Arango::FACET_COUNTS => 'placeTop,langTop' ] ) ;
+
+        $this->assertSame( [ 'Paris' => 4 ] , $this->buckets( $top , 'placeTop' ) , 'The kept bucket must be the biggest, not the first met.' ) ;
+        $this->assertSame( [ 'fr' => 3 ]    , $this->buckets( $top , 'langTop'  ) ) ;
     }
 
     /**

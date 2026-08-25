@@ -758,6 +758,42 @@ LET seller = (FOR doc IN @@products FILTER <same filters>
 - Touches neither the `?metaOnly=` mode (nor its deprecated `?facetsOnly=` alias)
   nor the exact `total` — they already come from a dedicated `count()`.
 
+### Keeping only the biggest buckets (`Facet::LIMIT`)
+
+The situation. A dimension returns **every** value it finds. A sidebar shows ten
+entries — and a linked vocabulary can hold thousands of them, all serialized,
+all transferred, for a list nobody unrolls. `Facet::LIMIT => n` keeps the **n
+biggest** buckets:
+
+```php
+Arango::FACETS => [
+    'category' => [ Facet::TYPE => Facet::FIELD , Facet::LIMIT => 10 ] ,
+]
+```
+
+Only the tail changes — the `LIMIT` closes it **after** the sort, so what
+survives is the biggest buckets, not an arbitrary n of them:
+
+```aql
+LET category = (FOR doc IN @@articles FILTER <same filters>
+                COLLECT value = doc.category WITH COUNT INTO count
+                SORT count DESC LIMIT 10 RETURN { value, count })
+```
+
+- **Applies to every type** — the scalar field, the `Facet::IN` family, the `[*]`
+  sub-fields and the linked `EDGE` / `JOIN` facets — because they all end on the
+  same tail. It combines freely with `Facet::DISTINCT`: the count becomes
+  per-document, and the limit still keeps the biggest of those buckets.
+- **Opt-in, backward compatible**: without it, every bucket is returned as before.
+- ⚠ **A non-positive or non-integer limit is refused**, not ignored. `LIMIT 0`
+  would emit **no `LIMIT` clause at all** and silently return *everything* — the
+  opposite of what the declaration asks. Omit the option for all the buckets.
+- ⚠ **Ties are cut arbitrarily.** Buckets are ordered by count alone, so when the
+  n-th and the (n+1)-th share a count, which one survives is not deterministic.
+  A stable top-N would need a tie-breaker the sort does not carry today.
+- The **total** is unaffected: it comes from a dedicated `count()`, not from the
+  sum of the buckets — which a limited dimension can no longer provide anyway.
+
 ### Counts without the documents (`?metaOnly=`)
 
 A faceted-search sidebar often needs **only the counts** — the documents are

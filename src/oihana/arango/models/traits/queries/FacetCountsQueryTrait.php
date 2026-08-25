@@ -36,6 +36,7 @@ use function oihana\arango\db\operations\aqlCollectReturn;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
+use function oihana\arango\db\operations\aqlLimit;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlSort;
 use function oihana\arango\db\helpers\aqlDocument;
@@ -85,6 +86,13 @@ use function oihana\core\strings\key;
  * to `COUNT_DISTINCT( doc._key )`, so the count reflects distinct root documents
  * and matches the filter. The flag is opt-in (default unchanged) and a no-op on
  * the scalar {@see Facet::FIELD} type, which already counts one row per document.
+ *
+ * **Top-N buckets.** Every dimension returns *all* its values by default, which
+ * a sidebar showing ten entries does not need. `Facet::LIMIT => n` closes the
+ * shared tail with a `LIMIT n` placed **after** the `SORT count DESC`, so what
+ * survives is the n **biggest** buckets. It is read once for every type — the
+ * scalar field, the unwound array, the `[*]` sub-field and the linked
+ * relations — because they all end on the same tail.
  *
  * **Permission.** The dimension gate runs before the type is dispatched, so it
  * covers the linked types unchanged — but the two guards do not weigh the same
@@ -190,16 +198,17 @@ trait FacetCountsQueryTrait
     /**
      * Builds one dimension's counting sub-query, or null for an unsupported type.
      *
-     * @param array       $facet The facet definition (`Facet::TYPE`, `Facet::PROPERTY`).
-     * @param string      $key The facet key (default property).
-     * @param string      $for The pre-built `FOR` segment shared by every dimension —
+     * @param array $facet The facet definition (`Facet::TYPE`, `Facet::PROPERTY`).
+     * @param string $key The facet key (default property).
+     * @param string $for The pre-built `FOR` segment shared by every dimension —
      *                         the bound collection, or the bound View with its `SEARCH`
      *                         segment when the View search is active.
      * @param string|null $filter The shared `FILTER` clause.
-     * @param string      $docRef The document reference.
+     * @param string $docRef The document reference.
      *
      * @return string|null
      *
+     * @throws BindException
      * @throws ReflectionException
      * @throws UnsupportedOperationException
      * @throws ValidationException
@@ -222,6 +231,10 @@ trait FacetCountsQueryTrait
         // ROOT document key (whatever the `[*]` hop depth) — see facetCountCollect().
         $distinctKey = !empty( $facet[ Facet::DISTINCT ] ) ? key( Schema::_KEY , $docRef ) : null ;
 
+        // Opt-in `Facet::LIMIT => n`: keep only the n biggest buckets. Resolved
+        // here so every branch below shares it — see facetCountLimit().
+        $limit = $this->facetCountLimit( $facet , $key ) ;
+
         // A linked facet counts the RELATED documents — those reached through an
         // edge traversal (EDGE) or a key-join (JOIN) — so its bucket value is a
         // field of the *related* document, named by `Facet::VALUE` (default
@@ -242,7 +255,7 @@ trait FacetCountsQueryTrait
                 $for ,
                 $filter ,
                 ...$relation ,
-                ...$this->facetCountCollect( key( $bucket , $relationRef ) , $sort , $distinctKey ) ,
+                ...$this->facetCountCollect( key( $bucket , $relationRef ) , $sort , $distinctKey , $limit ) ,
             ]) ;
         }
 
@@ -266,7 +279,7 @@ trait FacetCountsQueryTrait
                 $for ,
                 $filter ,
                 ...$fors ,
-                ...$this->facetCountCollect( $value , $sort , $distinctKey ) ,
+                ...$this->facetCountCollect( $value , $sort , $distinctKey , $limit ) ,
             ]) ;
         }
 
@@ -278,7 +291,7 @@ trait FacetCountsQueryTrait
             ([
                 $for ,
                 $filter ,
-                ...$this->facetCountCollect( key( $property , $docRef ) , $sort ) ,
+                ...$this->facetCountCollect( key( $property , $docRef ) , $sort , null , $limit ) ,
             ]) ,
 
             Facet::IN , Facet::LIST , Facet::LIST_FIELD , Facet::LIST_FIELD_SORTED => compile
@@ -286,7 +299,7 @@ trait FacetCountsQueryTrait
                 $for ,
                 $filter ,
                 aqlFor( [ AQL::DOC_REF => self::FACET_COUNT_ITEM , AQL::IN => key( $property , $docRef ) ] ) ,
-                ...$this->facetCountCollect( self::FACET_COUNT_ITEM , $sort , $distinctKey ) ,
+                ...$this->facetCountCollect( self::FACET_COUNT_ITEM , $sort , $distinctKey , $limit ) ,
             ]) ,
 
             default => null ,
@@ -306,18 +319,24 @@ trait FacetCountsQueryTrait
      * {@see Group::COUNT_NAME} (`count`) so the derived `RETURN { value, count }`
      * and the `SORT count DESC` clause stay identical in both modes.
      *
-     * @param string      $expression The value expression to group on.
-     * @param string      $sort The pre-built `SORT count DESC` clause.
+     * When `$limit` is provided (opt-in `Facet::LIMIT => n`), a `LIMIT n` closes
+     * the tail **after** the sort, so what survives is the *n biggest* buckets
+     * rather than an arbitrary n of them.
+     *
+     * @param string $expression The value expression to group on.
+     * @param string $sort The pre-built `SORT count DESC` clause.
      * @param string|null $distinctKey The root document key expression to count
      *                                 distinctly (e.g. `doc._key`), or null for
      *                                 the default per-element count.
+     * @param int|null $limit The number of buckets to keep, or null for all of them.
      *
-     * @return array{0:string,1:string,2:string} `[ COLLECT, SORT, RETURN ]` fragments.
+     * @return array<int,string> The `[ COLLECT, SORT, (LIMIT,) RETURN ]` fragments.
      *
+     * @throws BindException
      * @throws ReflectionException
      * @throws UnsupportedOperationException
      */
-    private function facetCountCollect( string $expression , string $sort , ?string $distinctKey = null ) :array
+    private function facetCountCollect( string $expression , string $sort , ?string $distinctKey = null , ?int $limit = null ) :array
     {
         $spec = $distinctKey !== null
               ? [
@@ -329,7 +348,54 @@ trait FacetCountsQueryTrait
                     AQL::WITH_COUNT => Group::COUNT_NAME ,
                 ] ;
 
-        return [ aqlCollect( $spec ) , $sort , aqlCollectReturn( $spec ) ] ;
+        // The limit is written in clear rather than bound: the counting
+        // sub-queries of every requested dimension share one bind map, so a
+        // per-dimension `@LIMIT` would collide. It is an integer already
+        // validated by facetCountLimit(), so nothing from the wire reaches the
+        // query text — the same reasoning as the inlined `quant` of the filters.
+        $tail = $limit === null ? [] : [ aqlLimit( $limit ) ] ;
+
+        return [ aqlCollect( $spec ) , $sort , ...$tail , aqlCollectReturn( $spec ) ] ;
+    }
+
+    /**
+     * Resolves the opt-in `Facet::LIMIT => n` of a facet declaration: the number
+     * of buckets to keep, or null when the dimension is unlimited (the default).
+     *
+     * A **non-positive or non-integer** limit is refused rather than ignored,
+     * and the reason is the helper it would reach: {@see aqlLimit()} answers an
+     * empty string to `0` or less, which emits **no `LIMIT` clause at all** —
+     * so a declaration asking for nothing would silently return *everything*,
+     * the exact opposite of what it says. A limit that cannot be honoured is a
+     * mis-declaration, and it shows.
+     *
+     * @param array  $facet The facet definition.
+     * @param string $key   The facet key, named in the refusal message.
+     *
+     * @return int|null The number of buckets to keep, or null when unlimited.
+     *
+     * @throws ValidationException When the declared limit is not a positive integer.
+     */
+    private function facetCountLimit( array $facet , string $key ) :?int
+    {
+        $limit = $facet[ Facet::LIMIT ] ?? null ;
+
+        if ( $limit === null )
+        {
+            return null ;
+        }
+
+        if ( !is_int( $limit ) || $limit < 1 )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Invalid facet limit on "%s": %s. Facet::LIMIT expects a positive integer (the number of buckets to keep); omit it for all of them.' ,
+                $key ,
+                is_scalar( $limit ) ? var_export( $limit , true ) : get_debug_type( $limit ) ,
+            )) ;
+        }
+
+        return $limit ;
     }
 
     /**

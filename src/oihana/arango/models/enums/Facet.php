@@ -20,6 +20,7 @@ class Facet
     public const string JOIN              = 'facet_join' ;
     public const string JOIN_AGGREGATE    = 'facet_join_aggregate' ;
     public const string JOIN_COMPLEX      = 'facet_join_complex' ;
+    public const string LIMIT             = 'facet_limit' ;
     public const string LOGIC             = 'facet_logic' ;
     public const string LIST              = 'facet_list' ;
     public const string LIST_FIELD        = 'facet_list_field' ;

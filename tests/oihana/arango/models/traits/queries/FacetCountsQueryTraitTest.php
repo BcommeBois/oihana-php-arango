@@ -59,6 +59,18 @@ class FacetCountsQueryTraitStub
             'tagsJoin'         => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Facet::PROPERTY => 'tagIds' , Facet::VALUE => 'name' ] , // main side holds an array of keys
             'joinMissing'      => [ Facet::TYPE => Facet::JOIN , Facet::PROPERTY => 'authorId' ] , // no joined collection declared → refused
             'joinExpansion'    => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'tags' , Facet::PROPERTY => 'tagIds[*]' ] , // a linked facet never unwinds → refused
+
+            // Facet::LIMIT => n : keep only the n biggest buckets. Declared on
+            // one facet of each family, since they all end on the same tail.
+            'categoryTop'      => [ Facet::TYPE => Facet::FIELD , Facet::LIMIT => 10 ] ,
+            'keywordsTop'      => [ Facet::TYPE => Facet::IN    , Facet::LIMIT => 5 ] ,
+            'currencyTop'      => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].priceCurrency' , Facet::LIMIT => 3 ] ,
+            'locationTop'      => [ Facet::TYPE => Facet::EDGE  , AQL::EDGE => 'organizations_places' , Facet::VALUE => 'name' , Facet::LIMIT => 2 ] ,
+            'authorTop'        => [ Facet::TYPE => Facet::JOIN  , AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , Facet::VALUE => 'name' , Facet::LIMIT => 4 ] ,
+            'sellerTop'        => [ Facet::TYPE => Facet::IN    , Facet::PROPERTY => 'offers[*].sellerId' , Facet::DISTINCT => true , Facet::LIMIT => 7 ] , // limit + distinct
+            'limitZero'        => [ Facet::TYPE => Facet::FIELD , Facet::LIMIT => 0 ] ,      // would emit NO limit at all → refused
+            'limitNegative'    => [ Facet::TYPE => Facet::FIELD , Facet::LIMIT => -3 ] ,     // idem
+            'limitString'      => [ Facet::TYPE => Facet::FIELD , Facet::LIMIT => '10' ] ,   // not an integer → refused
         ] ;
     }
 }
@@ -440,6 +452,81 @@ class FacetCountsQueryTraitTest extends TestCase
         $this->expectException( ValidationException::class ) ;
         $binds = [] ;
         $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'edgeDanger' ] , $binds ) ;
+    }
+
+    public function testLimitKeepsTheBiggestBucketsOnAScalarField() :void
+    {
+        $binds = [] ;
+        // The LIMIT closes the tail AFTER the sort, so what survives is the n
+        // biggest buckets — not an arbitrary n of them.
+        $this->assertSame
+        (
+            'LET categoryTop = (FOR doc IN @@collection COLLECT value = doc.categoryTop WITH COUNT INTO count SORT count DESC LIMIT 10 RETURN {value, count}) RETURN {categoryTop}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' ] , $binds ) ,
+        ) ;
+        $this->assertSame( [ '@collection' => 'articles' ] , $binds , 'The limit is written in clear, not bound: the dimensions share one bind map.' ) ;
+    }
+
+    public function testLimitAppliesToEveryFacetFamily() :void
+    {
+        // One tail, every type: the unwound array, the `[*]` sub-field, the edge
+        // traversal and the key-join all honour the same declaration.
+        foreach (
+        [
+            'keywordsTop' => 'LET keywordsTop = (FOR doc IN @@collection FOR item IN doc.keywordsTop COLLECT value = item WITH COUNT INTO count SORT count DESC LIMIT 5 RETURN {value, count}) RETURN {keywordsTop}' ,
+            'currencyTop' => 'LET currencyTop = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC LIMIT 3 RETURN {value, count}) RETURN {currencyTop}' ,
+            'locationTop' => 'LET locationTop = (FOR doc IN @@collection FOR doc_locationTop IN INBOUND doc organizations_places COLLECT value = doc_locationTop.name WITH COUNT INTO count SORT count DESC LIMIT 2 RETURN {value, count}) RETURN {locationTop}' ,
+            'authorTop'   => 'LET authorTop = (FOR doc IN @@collection FOR doc_authorTop IN authors FILTER doc_authorTop._key == doc.authorId COLLECT value = doc_authorTop.name WITH COUNT INTO count SORT count DESC LIMIT 4 RETURN {value, count}) RETURN {authorTop}' ,
+        ] as $dimension => $expected )
+        {
+            $binds = [] ;
+            $this->assertSame( $expected , $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => $dimension ] , $binds ) , $dimension ) ;
+        }
+    }
+
+    public function testLimitCombinesWithDistinct() :void
+    {
+        $binds = [] ;
+        // The two options are independent: the count is per document, and the
+        // LIMIT still keeps the biggest of those per-document buckets.
+        $this->assertSame
+        (
+            'LET sellerTop = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.sellerId AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC LIMIT 7 RETURN {value, count}) RETURN {sellerTop}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'sellerTop' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testAbsentLimitEmitsNoLimitClause() :void
+    {
+        $binds = [] ;
+        // The default is unchanged, byte for byte: no LIMIT, all the buckets.
+        $this->assertStringNotContainsString
+        (
+            'LIMIT' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category,keywords,location,author' ] , $binds ) ,
+        ) ;
+    }
+
+    /**
+     * A limit that cannot be honoured is refused rather than ignored: aqlLimit()
+     * answers an empty string to 0 or less, so such a declaration would emit no
+     * LIMIT at all and silently return EVERY bucket — the opposite of what it asks.
+     */
+    public function testUnhonourableLimitIsRefused() :void
+    {
+        foreach ( [ 'limitZero' , 'limitNegative' , 'limitString' ] as $dimension )
+        {
+            $binds = [] ;
+            try
+            {
+                $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => $dimension ] , $binds ) ;
+                $this->fail( 'A limit of "' . $dimension . '" must be refused, not ignored.' ) ;
+            }
+            catch ( ValidationException $exception )
+            {
+                $this->assertStringContainsString( $dimension , $exception->getMessage() , 'The refusal must name the faulty facet.' ) ;
+            }
+        }
     }
 
     public function testLinkedFacetNeverUnwindsTheMainDocument() :void
