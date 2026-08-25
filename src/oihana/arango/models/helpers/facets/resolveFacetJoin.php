@@ -4,15 +4,9 @@ namespace oihana\arango\models\helpers\facets;
 
 use ReflectionException;
 
-use oihana\arango\db\enums\AQL;
 use oihana\arango\models\enums\Facet;
 
-use org\schema\constants\Prop;
-
-use function oihana\arango\db\operations\aqlFor;
-use function oihana\arango\db\operators\equal;
-use function oihana\arango\db\operators\in;
-use function oihana\core\strings\key;
+use function oihana\arango\models\helpers\resolveJoinAnchor;
 
 /**
  * Resolves the **anchor** of a key-join facet: the `FOR` opening the joined
@@ -64,20 +58,5 @@ use function oihana\core\strings\key;
  */
 function resolveFacetJoin( string $key , array $facet , string $doc ) : array
 {
-    $docRef     = AQL::DOC_PREFIX . $key ;
-    $collection = $facet[ AQL::COLLECTION ] ?? null ;
-    $joinKey    = $facet[ AQL::KEY        ] ?? Prop::_KEY ;
-    $property   = $facet[ Facet::PROPERTY ] ?? $key ;
-    $isArray    = $facet[ AQL::ARRAY      ] ?? false ;
-
-    // Join match: doc_<key>.<KEY> == doc.<PROPERTY>  (or IN for an array of keys)
-    $joinLeft  = key( $joinKey  , $docRef ) ;
-    $joinRight = key( $property , $doc ) ;
-
-    return
-    [
-        $docRef ,
-        aqlFor( [ AQL::DOC_REF => $docRef , AQL::IN => $collection ] ) ,
-        $isArray ? in( $joinLeft , $joinRight ) : equal( $joinLeft , $joinRight ) ,
-    ] ;
+    return resolveJoinAnchor( $key , $facet , $doc , Facet::PROPERTY ) ;
 }

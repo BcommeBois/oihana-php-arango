@@ -132,6 +132,114 @@ RETURN MERGE( __bounds, { price: price } )
 
 > C'est l'optimum atteignable par `COLLECT` : borner six champs plats coûte **une** passe, pas six. Pour transformer la liste elle-même en agrégation, voir le [Regroupement `?groupBy=`](grouping.md).
 
+## Mesurer à travers une relation (arête / jointure)
+
+La situation. La **note** d'un produit n'est pas un de ses champs : elle vit sur
+les avis qui le référencent. Le curseur d'intervalle a quand même besoin de
+l'étendue — et elle doit encadrer les avis des produits que la liste affiche, pas
+tous les avis de la base.
+
+Soit cinq avis répartis sur quatre produits, dont un `0` qui encode
+« pas encore noté » :
+
+```json
+[ { "_key": "r1", "productId": "p1", "score": 12 },
+  { "_key": "r2", "productId": "p1", "score": 19 },
+  { "_key": "r3", "productId": "p2", "score": 7  },
+  { "_key": "r4", "productId": "p3", "score": 0  },
+  { "_key": "r5", "productId": "p4", "score": 15 } ]
+```
+
+Le `0` de `r4` est la sentinelle : le produit existe, personne ne l'a noté.
+
+**1. Déclarer la borne.** Une borne atteint une relation en la nommant, comme le
+fait une facette. `AQL::COLLECTION` donne une jointure par clé (`AQL::EDGE` une
+traversée `INBOUND`), et `Bound::VALUE` nomme le champ du document **lié** à
+mesurer. Ici la même relation est déclarée deux fois, une fois brute et une fois
+en excluant la sentinelle :
+
+```php
+public array $bounds =
+[
+    'score' => [
+        AQL::COLLECTION => 'reviews' ,
+        AQL::KEY        => 'productId' , // côté joint : l'avis porte la clé
+        Bound::PROPERTY => '_key' ,      // côté principal (la jointure, pas la mesure)
+        Bound::VALUE    => 'score' ,     // le champ mesuré, sur l'avis
+    ] ,
+    'scoreNet' => [
+        AQL::COLLECTION => 'reviews' ,
+        AQL::KEY        => 'productId' ,
+        Bound::PROPERTY => '_key' ,
+        Bound::VALUE    => 'score' ,
+        Bound::POSITIVE => true ,        // écarte le 0 « pas noté »
+    ] ,
+] ;
+```
+
+**2. La demander.** Rien de neuf côté URL — une borne liée se demande par son
+nom, comme n'importe quelle autre :
+
+```
+GET /products?bounds=score,scoreNet
+```
+
+**3. Lire l'étendue.** `score` couvre tous les avis ; `scoreNet` écarte le `0`,
+donc son plancher est la vraie note la plus basse, et son `count` dit combien de
+valeurs ont encadré l'étendue :
+
+```json
+"bounds": {
+  "score":    { "min": 0, "max": 19, "count": 5 },
+  "scoreNet": { "min": 7, "max": 19, "count": 4 }
+}
+```
+
+**Avec un filtre**, l'étendue suit la liste. `GET
+/products?filter={"key":"kind","val":"outil"}&bounds=score` n'encadre que les
+avis des outils — s'il ne reste que `r1`, `r2` et `r3`, la réponse devient
+`{ "min": 7, "max": 19, "count": 3 }`.
+
+Sous le capot, une mesure liée ne peut pas partager le `COLLECT` racine — il lui
+faut sa propre itération d'abord — donc, comme une mesure imbriquée `[*]`, elle
+obtient son propre `LET` :
+
+```aql
+LET scoreNet = FIRST(( FOR doc IN @@products FILTER <mêmes filtres>
+                       FOR doc_scoreNet IN reviews FILTER doc_scoreNet.productId == doc._key
+                       COLLECT AGGREGATE lo = MIN(doc_scoreNet.score > 0 ? doc_scoreNet.score : null), … 
+                       RETURN { min: lo, max: hi, count: cnt } ))
+```
+
+Une relation par **arête** ne diffère que par cette itération — `FOR doc_rating
+IN INBOUND doc product_reviews` — et n'a besoin d'aucun prédicat de jointure, la
+traversée visant déjà les bons sommets :
+
+```php
+'rating' => [ AQL::EDGE => 'product_reviews' , Bound::VALUE => 'score' ] ,
+```
+
+- **`Bound::VALUE` est obligatoire, et sans défaut.** Contrairement au bucket
+  d'une facette, qui se rabat sur `_key`, aucun champ ne peut être deviné pour y
+  mesurer une étendue numérique. `Bound::PROPERTY` ne peut pas le porter non
+  plus : sur une jointure, il nomme déjà le **côté principal** du prédicat.
+- **L'ancrage de jointure est celui des facettes**, donc `AQL::KEY` (le
+  un-à-plusieurs inversé) et `AQL::ARRAY => true` (un côté principal portant un
+  tableau de clés, apparié par `IN`) se comportent à l'identique — une relation se
+  mesure là où elle se filtre.
+- **Les options d'exclusion s'appliquent sans changement** (`POSITIVE`,
+  `MIN` / `MAX`, `IGNORE`), parce que la fin de requête agrégeante est partagée
+  avec le cas imbriqué.
+- **L'étendue encadre l'ensemble filtré** : la traversée s'accroche aux mêmes
+  `FOR` et `FILTER` que la liste, donc restreindre la liste restreint le curseur.
+- ⚠ **Deux relations sur une même borne sont refusées**, tout comme une relation
+  sans `Bound::VALUE` — une déclaration qui ne peut pas être honorée se voit,
+  plutôt que de compiler en quelque chose qui dit moins qu'elle. Les noms
+  déclarés sont gardés par [`assertAttributeName`](helpers.md#garde-anti-injection--isattributename--assertattributename).
+- ⚠ **Permission** : l'héritage de projection ne peut rien dire d'un champ d'une
+  **autre** collection, donc une borne liée est gardée par le `Bound::REQUIRES`
+  déclaré **sur la borne elle-même** — voir ci-dessous.
+
 ## Permission (`REQUIRES`)
 
 Une borne sur un champ **caché à la lecture** (`Field::REQUIRES`) fuit **plus fort** qu'un compteur : un `{ min, max }` **est** une valeur réelle du champ (le prix le plus bas, la dimension d'un produit confidentiel), pas seulement un dénombrement. La garde n'est donc **pas optionnelle**.

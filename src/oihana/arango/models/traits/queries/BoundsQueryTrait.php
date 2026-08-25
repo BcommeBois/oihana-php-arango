@@ -9,8 +9,11 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\Logic;
 use oihana\arango\db\enums\Operator;
+use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Bound;
+
+use org\schema\constants\Prop;
 
 use oihana\enums\Char;
 
@@ -36,9 +39,12 @@ use function oihana\arango\db\helpers\aqlDocument;
 use function oihana\arango\db\helpers\aqlValue;
 use function oihana\arango\db\helpers\expandArrayPath;
 use function oihana\arango\db\operations\aqlCollect;
+use function oihana\arango\db\operations\aqlFilter;
+use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLet;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\models\helpers\isAuthorized;
+use function oihana\arango\models\helpers\resolveJoinAnchor;
 use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\core\strings\betweenParentheses;
 use function oihana\core\strings\compile;
@@ -204,11 +210,17 @@ trait BoundsQueryTrait
                 continue ;
             }
 
-            // A nested measure (`offers[*].price`) must unwind the array, so it
-            // cannot share the root FOR — it becomes its own FIRST(( … )) LET.
-            if ( str_contains( $property , Operator::ARRAY_EXPANSION ) )
+            // A measure that is not a plain path of the document cannot share the
+            // root COLLECT — it needs its own iteration first — so it becomes its
+            // own FIRST(( … )) LET. Two shapes reach that point: a nested measure
+            // unwinding an array (`offers[*].price`), and a **linked** measure
+            // living on a related document, reached by an edge traversal or a
+            // key-join. Only the source differs; the aggregating tail is shared.
+            $sources = $this->boundsRelationSources( $field , $definition , $docRef ) ;
+
+            if ( $sources !== null || str_contains( $property , Operator::ARRAY_EXPANSION ) )
             {
-                $subquery     = $this->buildBoundsSubquery( $property , $definition , $for , $filter , $docRef ) ;
+                $subquery     = $this->buildBoundsSubquery( $property , $definition , $for , $filter , $docRef , $sources ) ;
                 $lets[]       = aqlLet( $field , first( betweenParentheses( $subquery ) ) ) ;
                 $mergeParts[] = $field . Char::COLON . Char::SPACE . $field ;
                 continue ;
@@ -320,6 +332,88 @@ trait BoundsQueryTrait
     }
 
     /**
+     * Resolves the source of a **linked** bound — one measuring a field of a
+     * *related* document rather than of the document itself — or null when the
+     * declaration names no relation, which is the ordinary case.
+     *
+     * The relation is inferred from the declaration rather than announced by a
+     * type: `AQL::EDGE` names an edge collection and yields an `INBOUND`
+     * traversal, `AQL::COLLECTION` names a joined collection and yields a `FOR`
+     * plus its join predicate. That inference matches how this builder already
+     * reads a bound — the `[*]` marker in the path is likewise the signal, not a
+     * declared type — and the join anchor is the very one the facets use
+     * ({@see resolveJoinAnchor()}), so a relation measures where it filters.
+     *
+     * Three refusals, all of them mis-declarations that would otherwise compile
+     * to something meaning less than it says: naming **both** an edge and a
+     * joined collection (which relation was meant?), naming a relation without
+     * `Bound::VALUE` (there is no field to measure, and no sensible default),
+     * and a dangerous name reaching the query text.
+     *
+     * @param string $field      The bound key; drives the related document reference (`doc_<field>`).
+     * @param array  $definition The bound definition.
+     * @param string $docRef     The main document reference.
+     *
+     * @return array{0:array<int,string>,1:string}|null The `[ fragments , measure ]`
+     *         pair — the AQL reaching the related documents, and the measured
+     *         expression — or null when the bound is not linked.
+     *
+     * @throws ReflectionException
+     * @throws ValidationException
+     */
+    private function boundsRelationSources( string $field , array $definition , string $docRef ) :?array
+    {
+        $edge       = $definition[ AQL::EDGE       ] ?? null ;
+        $collection = $definition[ AQL::COLLECTION ] ?? null ;
+
+        if ( $edge === null && $collection === null )
+        {
+            return null ; // an ordinary bound, measured on the document itself.
+        }
+
+        if ( $edge !== null && $collection !== null )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Ambiguous bound "%s": it declares both an edge collection (AQL::EDGE) and a joined collection (AQL::COLLECTION). A bound reaches through one relation, not two.' ,
+                $field ,
+            )) ;
+        }
+
+        $measure = $definition[ Bound::VALUE ] ?? null ;
+        if ( $measure === null )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Incomplete bound "%s": a bound reaching through a relation must declare Bound::VALUE — the field of the related document to measure.' ,
+                $field ,
+            )) ;
+        }
+
+        assertAttributeName( $measure ) ; // defensive: config-trusted, but cheap to guard.
+
+        if ( $edge !== null )
+        {
+            assertAttributeName( $edge ) ;
+
+            $relationRef = AQL::DOC_PREFIX . $field ;
+            $fragments   = [ aqlFor( [ AQL::DOC_REF => $relationRef , AQL::IN => compile( [ Traversal::INBOUND , $docRef , $edge ] ) ] ) ] ;
+        }
+        else
+        {
+            assertAttributeName( $collection ) ;
+            assertAttributeName( $definition[ AQL::KEY       ] ?? Prop::_KEY ) ;
+            assertAttributeName( $definition[ Bound::PROPERTY ] ?? $field ) ;
+
+            [ $relationRef , $joinFor , $match ] = resolveJoinAnchor( $field , $definition , $docRef , Bound::PROPERTY ) ;
+
+            $fragments = [ $joinFor , aqlFilter( $match ) ] ;
+        }
+
+        return [ $fragments , key( $measure , $relationRef ) ] ;
+    }
+
+    /**
      * Builds one nested ([*]) field's extent sub-query, unwinding each `[*]` hop
      * with a `FOR` and aggregating `MIN` / `MAX` / count over the projected leaf.
      *
@@ -328,6 +422,9 @@ trait BoundsQueryTrait
      * @param string $for The pre-built root `FOR` segment.
      * @param string|null $filter The shared `FILTER` clause.
      * @param string $docRef The document reference.
+     * @param array|null $sources The pre-resolved `[ fragments , measure ]` pair
+     *                            of a **linked** bound, or null to unwind the
+     *                            `[*]` path instead.
      *
      * @return string The `FOR … COLLECT AGGREGATE … RETURN { min, max, count }` sub-query.
      *
@@ -335,11 +432,14 @@ trait BoundsQueryTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function buildBoundsSubquery( string $property , array $definition , string $for , ?string $filter , string $docRef ) :string
+    private function buildBoundsSubquery( string $property , array $definition , string $for , ?string $filter , string $docRef , ?array $sources = null ) :string
     {
-        // One FOR hop per `[*]`, then the projected leaf — shared with the facet
-        // count sub-query, which unwinds the same way before its own tail.
-        [ $fors , $value ] = expandArrayPath( $property , $docRef , self::BOUND_ITEM ) ;
+        // A linked bound arrives with its source already resolved (a traversal or
+        // a join); otherwise one FOR hop per `[*]`, then the projected leaf —
+        // shared with the facet count sub-query, which unwinds the same way
+        // before its own tail. Either way the tail below is identical, which is
+        // what keeps the exclusion options working on both.
+        [ $fors , $value ] = $sources ?? expandArrayPath( $property , $docRef , self::BOUND_ITEM ) ;
 
         $aggregate =
         [

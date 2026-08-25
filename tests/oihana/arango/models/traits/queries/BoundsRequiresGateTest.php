@@ -10,6 +10,7 @@ use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 use PHPUnit\Framework\TestCase;
 
+use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\models\enums\Bound;
@@ -125,5 +126,35 @@ class BoundsRequiresGateTest extends TestCase
         $init  = [ Arango::BOUNDS => 'width' ] ; // no authorizer injected
 
         $this->assertStringContainsString( 'width_min = MIN(doc.width)' , $stub->buildBoundsQuery( $init , $binds ) ) ;
+    }
+
+    public function testRefusedLinkedBoundIsDropped() :void
+    {
+        // A linked bound measures a field of ANOTHER collection, which the main
+        // projection cannot speak for: the gate that answers for it is the
+        // REQUIRES declared on the bound itself. Both relation shapes are
+        // measured, so neither can be the door left open.
+        $stub = $this->stub() ;
+        $stub->bounds =
+        [
+            'rating' => [ AQL::EDGE => 'product_reviews' , Bound::VALUE => 'score' , Bound::REQUIRES => 'reviews:read' ] ,
+            'offer'  => [ AQL::COLLECTION => 'offers' , Bound::VALUE => 'price' , Bound::REQUIRES => 'sales:read' ] ,
+        ] ;
+
+        $binds = [] ;
+        $init  = [ Arango::BOUNDS => 'rating,offer' , Arango::AUTHORIZER => fn() => false ] ;
+
+        $this->assertSame( '' , $stub->buildBoundsQuery( $init , $binds ) ) ;
+    }
+
+    public function testGrantedLinkedBoundIsMeasured() :void
+    {
+        $stub = $this->stub() ;
+        $stub->bounds = [ 'rating' => [ AQL::EDGE => 'product_reviews' , Bound::VALUE => 'score' , Bound::REQUIRES => 'reviews:read' ] ] ;
+
+        $binds = [] ;
+        $init  = [ Arango::BOUNDS => 'rating' , Arango::AUTHORIZER => fn( string $s ) => $s === 'reviews:read' ] ;
+
+        $this->assertStringContainsString( 'INBOUND doc product_reviews' , $stub->buildBoundsQuery( $init , $binds ) ) ;
     }
 }

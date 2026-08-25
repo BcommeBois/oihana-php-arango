@@ -8,6 +8,8 @@ use oihana\arango\models\enums\Bound;
 use oihana\arango\models\traits\queries\BoundsQueryTrait;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
+use oihana\exceptions\ValidationException;
+
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -29,6 +31,17 @@ class BoundsQueryTraitStub
             'weight' => [ Bound::PROPERTY => 'grossWeight' ] ,          // flat, renamed property
             'price'  => [ Bound::PROPERTY => 'offers[*].price' ] ,      // nested, one hop
             'deep'   => [ Bound::PROPERTY => 'offers[*].tiers[*].amount' ] , // nested, two hops
+
+            // Linked bounds: the measure lives on a RELATED document, named by
+            // Bound::VALUE — reached by a traversal or a key-join.
+            'rating'    => [ AQL::EDGE => 'product_reviews' , Bound::VALUE => 'score' ] ,
+            'offer'     => [ AQL::COLLECTION => 'offers' , AQL::KEY => 'productId' , Bound::PROPERTY => '_key' , Bound::VALUE => 'price' ] , // reverse one-to-many
+            'offerNet'  => [ AQL::COLLECTION => 'offers' , AQL::KEY => 'productId' , Bound::PROPERTY => '_key' , Bound::VALUE => 'price' , Bound::POSITIVE => true ] , // exclusion on a linked measure
+            'tagWeight' => [ AQL::COLLECTION => 'tags' , AQL::ARRAY => true , Bound::PROPERTY => 'tagIds' , Bound::VALUE => 'weight' ] , // main side holds an array of keys
+
+            'both'      => [ AQL::EDGE => 'product_reviews' , AQL::COLLECTION => 'offers' , Bound::VALUE => 'score' ] , // two relations → refused
+            'noMeasure' => [ AQL::EDGE => 'product_reviews' ] ,                                                        // no Bound::VALUE → refused
+            'badMeasure'=> [ AQL::EDGE => 'product_reviews' , Bound::VALUE => 'x);y' ] ,                               // dangerous name → refused
         ] ;
     }
 }
@@ -248,5 +261,106 @@ class BoundsQueryTraitTest extends TestCase
         // No exclusion: raw value, count of the non-null.
         $this->assertStringContainsString( 'width_min = MIN(doc.width),' , $query ) ;
         $this->assertStringContainsString( 'width_count = SUM(doc.width != null ? 1 : 0)' , $query ) ;
+    }
+
+    public function testEdgeBoundMeasuresTheLinkedVertices() :void
+    {
+        $binds = [] ;
+        // A linked measure cannot share the root COLLECT — it needs its own
+        // traversal first — so it becomes its own FIRST(( … )) LET, like a
+        // nested measure does.
+        $this->assertSame
+        (
+            'LET rating = FIRST((FOR doc IN @@collection FOR doc_rating IN INBOUND doc product_reviews '
+            . 'COLLECT AGGREGATE lo = MIN(doc_rating.score), hi = MAX(doc_rating.score), cnt = SUM(doc_rating.score != null ? 1 : 0) '
+            . 'RETURN {min: lo, max: hi, count: cnt})) RETURN {rating: rating}' ,
+            $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'rating' ] , $binds ) ,
+        ) ;
+        $this->assertSame( [ '@collection' => 'products' ] , $binds ) ;
+    }
+
+    public function testJoinBoundMeasuresTheJoinedDocuments() :void
+    {
+        $binds = [] ;
+        // The joined side carries the foreign key (the reverse one-to-many), and
+        // the anchor is the very one the facets join on.
+        $this->assertStringContainsString
+        (
+            'FOR doc_offer IN offers FILTER doc_offer.productId == doc._key '
+            . 'COLLECT AGGREGATE lo = MIN(doc_offer.price), hi = MAX(doc_offer.price)' ,
+            $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'offer' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testJoinBoundOnAnArrayOfKeysUsesMembership() :void
+    {
+        $binds = [] ;
+        $this->assertStringContainsString
+        (
+            'FOR doc_tagWeight IN tags FILTER doc_tagWeight._key IN doc.tagIds COLLECT AGGREGATE lo = MIN(doc_tagWeight.weight)' ,
+            $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'tagWeight' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testExclusionOptionsApplyToALinkedMeasure() :void
+    {
+        $binds = [] ;
+        // The tail is shared with the nested case, so the exclusion options work
+        // on a linked measure without a line of their own.
+        $query = $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'offerNet' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'lo = MIN(doc_offerNet.price > 0 ? doc_offerNet.price : null)' , $query ) ;
+        $this->assertStringContainsString( 'cnt = SUM(doc_offerNet.price > 0 ? 1 : 0)' , $query ) ;
+    }
+
+    public function testLinkedBoundInheritsTheListFilter() :void
+    {
+        $stub = $this->stub() ;
+        $stub->conditions = [ 'doc.active==1' ] ;
+
+        $binds = [] ;
+        // The traversal hangs off the shared filtered scope, so the extent frames
+        // exactly the displayed set.
+        $this->assertStringContainsString
+        (
+            'FOR doc IN @@collection FILTER doc.active==1 FOR doc_rating IN INBOUND doc product_reviews' ,
+            $stub->buildBoundsQuery( [ Arango::BOUNDS => 'rating' ] , $binds ) ,
+        ) ;
+    }
+
+    public function testFlatAndLinkedBoundsAreMerged() :void
+    {
+        $binds = [] ;
+        // A flat field still shares the one-pass COLLECT; the linked one is its
+        // own LET, and the two are merged.
+        $query = $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'width,rating' ] , $binds ) ;
+
+        $this->assertStringContainsString( 'LET __bounds = FIRST((FOR doc IN @@collection COLLECT AGGREGATE width_min = MIN(doc.width)' , $query ) ;
+        $this->assertStringContainsString( 'LET rating = FIRST((FOR doc IN @@collection FOR doc_rating IN INBOUND doc product_reviews' , $query ) ;
+        $this->assertStringContainsString( 'RETURN MERGE(__bounds,{rating: rating})' , $query ) ;
+    }
+
+    public function testTwoRelationsOnOneBoundAreRefused() :void
+    {
+        // A bound reaches through one relation, not two — which one was meant?
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'both' ] , $binds ) ;
+    }
+
+    public function testALinkedBoundWithoutAMeasureIsRefused() :void
+    {
+        // Unlike a facet bucket, which falls back on _key, there is no field a
+        // numeric extent could be measured on by guessing.
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'noMeasure' ] , $binds ) ;
+    }
+
+    public function testADangerousMeasureIsGuarded() :void
+    {
+        $this->expectException( ValidationException::class ) ;
+        $binds = [] ;
+        $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'badMeasure' ] , $binds ) ;
     }
 }

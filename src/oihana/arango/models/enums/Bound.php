@@ -63,4 +63,17 @@ class Bound
      * mirroring {@see Field::REQUIRES} for projections.
      */
     public const string REQUIRES = 'requires' ;
+
+    /**
+     * The **measured field of the related document**, on a bound that reaches
+     * through a relation — an edge traversal (`AQL::EDGE`) or a key-join
+     * (`AQL::COLLECTION`).
+     *
+     * It is required on such a bound and has no default: unlike a facet bucket,
+     * which falls back on `_key`, there is no field a numeric extent could
+     * sensibly be measured on by guessing. `PROPERTY` cannot carry it either —
+     * on a join it already names the **main side** of the join predicate, the
+     * same meaning it has for facets.
+     */
+    public const string VALUE = 'value' ;
 }

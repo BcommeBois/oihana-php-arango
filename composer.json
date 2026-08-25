@@ -436,6 +436,7 @@
             "src/oihana/arango/models/helpers/buildVariables.php",
             "src/oihana/arango/models/helpers/isPolymorphic.php",
             "src/oihana/arango/models/helpers/prepareRelationDefinition.php",
+            "src/oihana/arango/models/helpers/resolveJoinAnchor.php",
             "src/oihana/arango/models/helpers/edges/assertEdges.php",
             "src/oihana/arango/models/helpers/edges/buildEdgeCountVariable.php",
             "src/oihana/arango/models/helpers/edges/buildEdgeSubquery.php",

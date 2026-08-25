@@ -22,6 +22,7 @@ use oihana\arango\db\enums\ArangoConfig;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\models\Documents;
+use oihana\arango\models\enums\Bound;
 use oihana\arango\models\enums\Facet;
 use oihana\arango\models\enums\filters\FilterType;
 use oihana\arango\models\enums\Search;
@@ -37,18 +38,23 @@ use PHPUnit\Framework\Attributes\Group;
 use function oihana\init\initConfig;
 
 /**
- * Live validation of the **linked** facet counts: a `?facetCounts=` dimension
- * whose values live at the other end of a relation — an `INBOUND` edge
- * traversal ({@see Facet::EDGE}) or a key-join ({@see Facet::JOIN}).
+ * Live validation of the **linked** sidebar surfaces: a `?facetCounts=`
+ * dimension, and a `?bounds=` measure, whose values live at the other end of a
+ * relation — an `INBOUND` edge traversal or a key-join.
+ *
+ * The two share this class because they share what has to be seeded: the same
+ * relations, declared the same way, reached through the same join anchor. A
+ * second disposable database would only duplicate that seed, and the point of
+ * the bounds cases is precisely that they measure *where the counts count*.
  *
  * The unit suite freezes the generated AQL character for character; it cannot
  * say whether a real server accepts a traversal inside a `LET` sub-query, nor
  * whether `COUNT_DISTINCT( doc._key )` actually collapses the duplicate rows.
  * The seed is therefore built around **measurable divergences**: an
- * organization reached twice through two parallel edges to the same place, and
- * an organization referenced by two notes of the same language. Both make the
- * per-row and per-document counts differ by a real number, so `Facet::DISTINCT`
- * cannot pass by returning the default.
+ * organization reached twice through two parallel edges to the same place, an
+ * organization referenced by two notes of the same language, and a review whose
+ * `0` means "not rated". Each makes a default and its option differ by a real
+ * number, so a flag cannot pass by returning the default.
  *
  * Skipped when no ArangoDB is reachable (see {@see IntegrationTestCase}).
  *
@@ -124,6 +130,17 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
         $notes->insert( [ '_key' => 'n2' , 'orgId' => 'o1' , 'lang' => 'fr' ] ) ; // ⚠ the duplicate row
         $notes->insert( [ '_key' => 'n3' , 'orgId' => 'o2' , 'lang' => 'en' ] ) ;
         $notes->insert( [ '_key' => 'n4' , 'orgId' => 'o3' , 'lang' => 'fr' ] ) ;
+
+        // --- Bounds on a relation : the numeric measure lives on the linked doc.
+        // `score` frames a real extent (7 → 19) and carries a 0 that encodes
+        // "not rated", so an exclusion option has something to exclude.
+        $reviews = $db->collection( 'reviews' ) ;
+        $reviews->create() ;
+        $reviews->insert( [ '_key' => 'r1' , 'orgId' => 'o1' , 'score' => 12 ] ) ;
+        $reviews->insert( [ '_key' => 'r2' , 'orgId' => 'o1' , 'score' => 19 ] ) ;
+        $reviews->insert( [ '_key' => 'r3' , 'orgId' => 'o2' , 'score' => 7  ] ) ;
+        $reviews->insert( [ '_key' => 'r4' , 'orgId' => 'o3' , 'score' => 0  ] ) ; // "not rated"
+        $reviews->insert( [ '_key' => 'r5' , 'orgId' => 'o4' , 'score' => 15 ] ) ;
     }
 
     /**
@@ -157,6 +174,13 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
             AQL::COLLECTION  => self::COLLECTION ,
             AQL::FILTERS     => [ 'kind' => FilterType::STRING ] ,
             AQL::FACETS      => $facets ?? self::facets() ,
+            AQL::BOUNDS      =>
+            [
+                // The measure lives on the joined reviews, not on the organization.
+                'score'    => [ AQL::COLLECTION => 'reviews' , AQL::KEY => 'orgId' , Bound::PROPERTY => '_key' , Bound::VALUE => 'score' ] ,
+                // Same relation, with the "not rated" 0 excluded from the extent.
+                'scoreNet' => [ AQL::COLLECTION => 'reviews' , AQL::KEY => 'orgId' , Bound::PROPERTY => '_key' , Bound::VALUE => 'score' , Bound::POSITIVE => true ] ,
+            ] ,
         ] ;
 
         if ( $view !== null )
@@ -750,6 +774,66 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
         // Asking for more buckets than exist returns the ones that exist.
         $excess = $model->facetCounts([ Arango::FACET_COUNTS => 'place' , Arango::FACET_COUNTS_LIMIT => 10_000 ]) ;
         $this->assertSame( [ 'Lyon' => 2 , 'Paris' => 4 ] , $this->buckets( $excess , 'place' ) ) ;
+    }
+
+    /**
+     * 🔑 A **bound** reaches through a relation too: the numeric extent is
+     * measured on the joined documents, not on the listed ones. The seed makes
+     * that measurable — the reviews span 0 → 19 while the organizations carry no
+     * score at all — and the exclusion option has a real `0` to drop, which is
+     * how the shared aggregating tail proves it still applies on a relation.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testLinkedBoundsMeasureTheRelatedDocuments() :void
+    {
+        $model = $this->model() ;
+
+        $bounds = $model->bounds( [ Arango::BOUNDS => 'score,scoreNet' ] ) ;
+
+        // Every review counts: five values, the lowest being the "not rated" 0.
+        $this->assertSame( [ 'min' => 0 , 'max' => 19 , 'count' => 5 ] , (array) $bounds[ 'score' ] ) ;
+
+        // Bound::POSITIVE drops that 0 — the floor becomes the real lowest score,
+        // and the count says how many values framed the extent.
+        $this->assertSame( [ 'min' => 7 , 'max' => 19 , 'count' => 4 ] , (array) $bounds[ 'scoreNet' ] ) ;
+    }
+
+    /**
+     * A linked bound frames the **filtered** set, exactly as a count does: the
+     * reviews of the organizations the list would show, and no others.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testLinkedBoundsInheritTheListFilter() :void
+    {
+        $init = [ Arango::BOUNDS => 'score' , Arango::FILTER => [ 'key' => 'kind' , 'val' => 'ngo' ] ] ;
+
+        // Only o1 and o2 are NGOs, so only their three reviews (12, 19, 7) frame
+        // the extent — the 0 of o3 and the 15 of o4 are out of scope entirely.
+        $this->assertSame( [ 'min' => 7 , 'max' => 19 , 'count' => 3 ] , (array) $this->model()->bounds( $init )[ 'score' ] ) ;
     }
 
     /**

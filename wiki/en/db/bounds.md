@@ -132,6 +132,111 @@ RETURN MERGE( __bounds, { price: price } )
 
 > This is the optimum reachable through `COLLECT`: bounding six flat fields costs **one** pass, not six. To turn the list itself into an aggregation, see [Grouping `?groupBy=`](grouping.md).
 
+## Measuring through a relation (edge / join)
+
+The situation. A product's **rating** is not one of its fields: it lives on the
+reviews that reference it. The range slider still needs the extent — and it must
+frame the reviews of the products the list is showing, not every review in the
+database.
+
+Take five reviews across four products, one of them a `0` that encodes
+"not rated":
+
+```json
+[ { "_key": "r1", "productId": "p1", "score": 12 },
+  { "_key": "r2", "productId": "p1", "score": 19 },
+  { "_key": "r3", "productId": "p2", "score": 7  },
+  { "_key": "r4", "productId": "p3", "score": 0  },
+  { "_key": "r5", "productId": "p4", "score": 15 } ]
+```
+
+The `0` of `r4` is the sentinel: the product exists, nobody rated it.
+
+**1. Declare the bound.** A bound reaches a relation by naming it, the same way a
+facet does. `AQL::COLLECTION` gives a key-join (`AQL::EDGE` an `INBOUND`
+traversal), and `Bound::VALUE` names the field of the **related** document to
+measure. Here the same relation is declared twice, once raw and once excluding
+the sentinel:
+
+```php
+public array $bounds =
+[
+    'score' => [
+        AQL::COLLECTION => 'reviews' ,
+        AQL::KEY        => 'productId' , // joined side: the review holds the key
+        Bound::PROPERTY => '_key' ,      // main side (the join, not the measure)
+        Bound::VALUE    => 'score' ,     // the measured field, on the review
+    ] ,
+    'scoreNet' => [
+        AQL::COLLECTION => 'reviews' ,
+        AQL::KEY        => 'productId' ,
+        Bound::PROPERTY => '_key' ,
+        Bound::VALUE    => 'score' ,
+        Bound::POSITIVE => true ,        // drop the "not rated" 0
+    ] ,
+] ;
+```
+
+**2. Ask for it.** Nothing new on the URL — a linked bound is requested by name
+like any other:
+
+```
+GET /products?bounds=score,scoreNet
+```
+
+**3. Read the extent.** `score` spans every review; `scoreNet` drops the `0`, so
+its floor is the real lowest rating and its `count` says how many values framed
+it:
+
+```json
+"bounds": {
+  "score":    { "min": 0, "max": 19, "count": 5 },
+  "scoreNet": { "min": 7, "max": 19, "count": 4 }
+}
+```
+
+**With a filter**, the extent follows the list. `GET
+/products?filter={"key":"kind","val":"tool"}&bounds=score` frames only the
+reviews of the tools — if that leaves `r1`, `r2` and `r3`, the answer becomes
+`{ "min": 7, "max": 19, "count": 3 }`.
+
+Under the hood, a linked measure cannot share the root `COLLECT` — it needs its
+own iteration first — so, like a nested `[*]` measure, it gets its own `LET`:
+
+```aql
+LET scoreNet = FIRST(( FOR doc IN @@products FILTER <same filters>
+                       FOR doc_scoreNet IN reviews FILTER doc_scoreNet.productId == doc._key
+                       COLLECT AGGREGATE lo = MIN(doc_scoreNet.score > 0 ? doc_scoreNet.score : null), … 
+                       RETURN { min: lo, max: hi, count: cnt } ))
+```
+
+An **edge** relation differs only in that iteration — `FOR doc_rating IN INBOUND
+doc product_reviews` — and needs no join predicate, the traversal already
+targeting the right vertices:
+
+```php
+'rating' => [ AQL::EDGE => 'product_reviews' , Bound::VALUE => 'score' ] ,
+```
+
+- **`Bound::VALUE` is required, and has no default.** Unlike a facet bucket,
+  which falls back on `_key`, there is no field a numeric extent could be
+  measured on by guessing. `Bound::PROPERTY` cannot carry it either: on a join it
+  already names the **main side** of the join predicate.
+- **The join anchor is the one the facets use**, so `AQL::KEY` (the reverse
+  one-to-many) and `AQL::ARRAY => true` (a main side holding an array of keys,
+  matched with `IN`) behave identically — a relation measures where it filters.
+- **The exclusion options apply unchanged** (`POSITIVE`, `MIN` / `MAX`,
+  `IGNORE`), because the aggregating tail is shared with the nested case.
+- **The extent frames the filtered set**: the traversal hangs off the same `FOR`
+  and `FILTER` as the list, so narrowing the list narrows the range control.
+- ⚠ **Two relations on one bound are refused**, as is a relation without
+  `Bound::VALUE` — a declaration that cannot be honoured shows rather than
+  compiling to something meaning less than it says. Declared names are guarded by
+  [`assertAttributeName`](helpers.md#anti-injection-guard--isattributename--assertattributename).
+- ⚠ **Permission**: the projection inheritance cannot speak for a field of
+  **another** collection, so a linked bound is gated by the `Bound::REQUIRES`
+  declared **on the bound itself** — see below.
+
 ## Permission (`REQUIRES`)
 
 A bound on a field **hidden from reading** (`Field::REQUIRES`) leaks **harder** than a count: a `{ min, max }` **is** a real value of the field (the lowest price, the dimension of a confidential product), not merely a tally. The gate is therefore **not optional**.
