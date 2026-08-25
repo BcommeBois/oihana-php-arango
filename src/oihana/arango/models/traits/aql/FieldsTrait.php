@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits\aql;
 
 use Exception;
 
+use function oihana\arango\db\helpers\assertVariableName;
 use function oihana\arango\db\helpers\matchesSkin;
 
 use InvalidArgumentException;
@@ -16,6 +17,7 @@ use oihana\arango\models\traits\edges\EdgesTrait;
 use oihana\arango\models\traits\joins\JoinsTrait;
 use oihana\core\arrays\CleanFlag;
 use oihana\enums\Char;
+use oihana\exceptions\ValidationException;
 
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -359,7 +361,52 @@ trait FieldsTrait
             $queryFields[ $key ] = $definition ;
         }
 
+        $this->assertUniqueVariableNames( $queryFields ) ;
+
         return count( $queryFields ) > 0 ? $queryFields : null ;
+    }
+
+    /**
+     * Refuses two projected fields bound to the same `LET` variable name.
+     *
+     * Generated names cannot collide — that is what the random suffix is for —
+     * but a **declared** `Field::UNIQUE` can, and the failure would be silent:
+     * two `LET`s sharing a name compile to a query the server accepts and
+     * answers, with one relation shadowing the other. A wrong answer in `200`
+     * costs more than a refusal, so the duplicate stops here.
+     *
+     * @param array<string,array> $queryFields The normalized projection map.
+     *
+     * @return void
+     *
+     * @throws ValidationException When two fields declare the same variable name.
+     */
+    private function assertUniqueVariableNames( array $queryFields ) :void
+    {
+        $seen = [] ;
+
+        foreach ( $queryFields as $key => $definition )
+        {
+            $name = is_array( $definition ) ? ( $definition[ Field::UNIQUE ] ?? null ) : null ;
+
+            if ( $name === null )
+            {
+                continue ;
+            }
+
+            if ( isset( $seen[ $name ] ) )
+            {
+                throw new ValidationException( sprintf
+                (
+                    'Duplicate Field::UNIQUE "%s": declared on both "%s" and "%s". Two projected fields cannot share one LET variable — the second would shadow the first.' ,
+                    $name ,
+                    $seen[ $name ] ,
+                    $key ,
+                )) ;
+            }
+
+            $seen[ $name ] = $key ;
+        }
     }
 
     /**
@@ -543,16 +590,48 @@ trait FieldsTrait
     }
 
     /**
-     * Generates a unique key for special filters like edges, joins, or unique names.
+     * Resolves the name of the `LET` variable a relation field is bound to: the
+     * one **declared** on the field, or a generated one.
      *
-     * @param string      $key       Base field key
-     * @param string|null $filter    Filter type
+     * A relation is projected through a `LET`, and that variable needs a name no
+     * other field can collide with — hence the generated `author_e1626906831`,
+     * random by design. The cost of that randomness is that **nothing else can
+     * refer to the variable**: it is not knowable when the model is declared, so
+     * a sort, a filter or any other clause wanting to reach the projected
+     * relation has nothing to name.
+     *
+     * Declaring `Field::UNIQUE` answers that, and the option is now honoured
+     * rather than overwritten. Two guards come with it, because a name that
+     * reaches the query text unchecked is a name that can break it:
+     *
+     * - the declared value passes {@see assertAttributeName()}, so it cannot
+     *   smuggle anything into the `LET`;
+     * - a duplicate is refused by the caller ({@see prepareQueryFields()}), since
+     *   two `LET`s sharing a name compile to a query that runs and answers the
+     *   wrong thing — the silent failure this library refuses.
+     *
+     * Without a declaration the generated name is byte for byte the one emitted
+     * before, so nothing moves for an existing model.
+     *
+     * @param string      $key       Base field key.
+     * @param string|null $filter    Filter type.
      * @param string|null $parentKey Optional parent key.
+     * @param array       $options   The raw field declaration. Reads `Field::UNIQUE`.
      *
-     * @return string|null Generated unique key or existing
+     * @return string|null The declared or generated variable name.
+     *
+     * @throws ValidationException When the declared name is not a safe attribute name.
      */
-    private function generateUniqueKey( string $key , ?string $filter, ?string $parentKey = null ): ?string
+    private function generateUniqueKey( string $key , ?string $filter, ?string $parentKey = null , array $options = [] ): ?string
     {
+        $declared = $options[ Field::UNIQUE ] ?? null ;
+
+        if ( $declared !== null )
+        {
+            assertVariableName( $declared ) ; // it lands in the query as a LET identifier, not a path.
+            return $declared ;
+        }
+
         $prefix = $parentKey ? $parentKey . Char::UNDERLINE : Char::EMPTY ;
         return match( $filter )
         {
@@ -711,7 +790,7 @@ trait FieldsTrait
         }
         else
         {
-            $definition[ Field::UNIQUE ] = $this->generateUniqueKey( $key , $filter  , $parentKey ) ;
+            $definition[ Field::UNIQUE ] = $this->generateUniqueKey( $key , $filter , $parentKey , $options ) ;
         }
 
         return array_filter( $definition , fn($v) => $v !== null ) ;

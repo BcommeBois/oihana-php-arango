@@ -223,7 +223,7 @@ Besides `Field::FILTER`, each field definition accepts options:
 | `Field::NAME` | Alias: the output key differs from the source attribute | `slug:doc.title` |
 | `Field::ALTERS` | `alt` transformation chain applied to the projected value | `name:LOWER(TRIM(doc.name))` |
 | `Field::QUOTED` | Double-quoted output label (keys with special characters) | `` "my-key":doc.`my-key` `` |
-| `Field::UNIQUE` | Unique variable name for the AQL expression | — |
+| `Field::UNIQUE` | Names the `LET` variable a **relation** is bound to. Declared, it is honoured and **stable**; absent, a random one is generated (`author_e1626906831`) and nothing else in the query can refer to it. Two fields may not share a name — the duplicate is refused. | `LET authorRef = ( … )` |
 | `Field::REQUIRES` | Permission subject(s): the field is dropped if authorization is denied | — |
 | `Field::SCOPE` | Projection source inside an edge sub-query: `Scope::VERTEX` (default) or `Scope::EDGE` (the relationship metadata) | `since:DATE_ISO8601(e.created)` |
 | `Field::WHEN` / `Field::ELSE` | Conditional value: project the field only when a condition holds, else fall back. See [Conditional fields](conditional-fields.md). | `price:doc.visibility == 'public' ? doc.price : null` |
@@ -382,6 +382,37 @@ assertAttributeName( 'a || 1==1' );              // throws ValidationException
 ```
 
 Used by the complex facets (`Facet::ARRAY_COMPLEX`, `Facet::EDGE_COMPLEX`) to validate the **sub-field names** supplied in `?facets=` before interpolating them into the query: a malicious sub-field makes the facet fail (dropped + warning logged), and no fragment ever reaches the AQL. See [Facets](facets.md).
+
+### Variable-name guard — `isVariableName` / `assertVariableName`
+
+The **variable** counterpart of the pair above, and not interchangeable with it.
+An attribute name may be a *path* (`address.city`); a variable name may not —
+`LET address.city = …` is a syntax error. Anything interpolated as a `LET`
+identifier (a projected relation's `Field::UNIQUE`, for instance) goes through
+this one instead.
+
+| Function | Signature | Role |
+|---|---|---|
+| `isVariableName` | `(mixed $value) : bool` | Predicate: `true` when the string is a single, well-formed identifier. |
+| `assertVariableName` | `(mixed $value) : void` | Throws `ValidationException` naming what was written and what is expected. |
+
+The accepted pattern is `^[a-zA-Z_][a-zA-Z0-9_]*$` — the attribute pattern
+**without** the dotted continuation.
+
+```php
+use function oihana\arango\db\helpers\assertVariableName;
+
+assertVariableName( 'authorRef'    ) ; // ok
+assertVariableName( 'address.city' ) ; // throws — a path, not an identifier
+```
+
+> ⚠ **Two failures this guard cannot see**, because they are not about shape: an
+> **AQL keyword** (`LET`, `RETURN`, …) and a name **already bound** in the query
+> (`doc` above all) are both well-formed identifiers. ArangoDB refuses them
+> loudly at the first query — `syntax error … expecting identifier`, and
+> `variable 'doc' is assigned multiple times` — so they surface at once instead
+> of corrupting a result. Enumerating the server's keyword list here would only
+> be a copy to keep in sync.
 
 ## *Skin* projection helpers
 

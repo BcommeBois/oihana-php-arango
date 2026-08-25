@@ -10,6 +10,7 @@ use oihana\arango\db\binds\AqlBindReference;
 use oihana\arango\models\traits\aql\FieldsTrait;
 
 use InvalidArgumentException;
+use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 use function oihana\arango\db\binds\aqlBindRef;
@@ -930,5 +931,113 @@ class FieldsTraitTest extends TestCase
         $this->expectException( InvalidArgumentException::class ) ;
         $this->expectExceptionMessageIsOrContains( 'got int' ) ;
         $this->stub()->returnFields( [ Arango::FIELDS => 123 ] ) ;
+    }
+
+    // ---------------------------------------------------------------- Field::UNIQUE (declared)
+
+    public function testDeclaredUniqueNamesTheRelationVariable() :void
+    {
+        // A relation is projected through a LET whose name is generated at random,
+        // so nothing else in the query can refer to it. Declaring the name makes
+        // the variable designatable — by a sort, or by anything else that needs
+        // to reach the projected relation.
+        $prepared = $this->stub()->prepareQueryFields
+        ([
+            'author' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'authorRef' ] ,
+        ]) ;
+
+        $this->assertSame( 'authorRef' , $prepared[ 'author' ][ Field::UNIQUE ] ) ;
+    }
+
+    public function testTheDeclaredNameIsStableAcrossPreparations() :void
+    {
+        // The point of declaring it: the name must be the same every time, which
+        // a generated one is not.
+        $fields = [ 'author' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'authorRef' ] ] ;
+
+        $first  = $this->stub()->prepareQueryFields( $fields ) ;
+        $second = $this->stub()->prepareQueryFields( $fields ) ;
+
+        $this->assertSame( $first[ 'author' ][ Field::UNIQUE ] , $second[ 'author' ][ Field::UNIQUE ] ) ;
+    }
+
+    public function testWithoutADeclarationTheNameIsStillGeneratedAndUnstable() :void
+    {
+        // The default is unchanged: a random suffix, different at each preparation.
+        $fields = [ 'author' => [ Field::FILTER => Filter::EDGE ] ] ;
+
+        $first  = $this->stub()->prepareQueryFields( $fields )[ 'author' ][ Field::UNIQUE ] ;
+        $second = $this->stub()->prepareQueryFields( $fields )[ 'author' ][ Field::UNIQUE ] ;
+
+        $this->assertStringStartsWith( 'author_e' , $first ) ;
+        $this->assertNotSame( $first , $second , 'A generated name is random by design.' ) ;
+    }
+
+    public function testAPlainFieldKeepsItsOwnNameAsBefore() :void
+    {
+        // Only relations get a suffixed variable; a scalar field is named after
+        // itself, declared or not.
+        $prepared = $this->stub()->prepareQueryFields( [ 'title' => [] ] ) ;
+
+        $this->assertSame( 'title' , $prepared[ 'title' ][ Field::UNIQUE ] ) ;
+    }
+
+    /**
+     * The value lands in the query as a `LET` **identifier**, not as an attribute
+     * path — so the guard is the variable one. The distinction is not academic:
+     * `address.city` is a perfectly good attribute name and a syntax error as a
+     * variable (`LET address.city = …`), which an attribute guard would have let
+     * straight through.
+     */
+    public function testAnIllFormedDeclaredNameIsRefused() :void
+    {
+        foreach ( [ 'x = 1) RETURN 1 //' , 'address.city' , '1ref' , 'my-ref' , '' ] as $name )
+        {
+            try
+            {
+                $this->stub()->prepareQueryFields
+                ([
+                    'author' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => $name ] ,
+                ]) ;
+                $this->fail( 'The name "' . $name . '" must be refused.' ) ;
+            }
+            catch ( ValidationException $exception )
+            {
+                $this->assertStringContainsString( 'variable name' , $exception->getMessage() ) ;
+            }
+        }
+    }
+
+    public function testTwoFieldsSharingOneVariableNameAreRefused() :void
+    {
+        // Two LETs with the same name compile to a query the server accepts and
+        // answers, one relation shadowing the other — a wrong answer in 200.
+        try
+        {
+            $this->stub()->prepareQueryFields
+            ([
+                'author' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'ref' ] ,
+                'editor' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'ref' ] ,
+            ]) ;
+            $this->fail( 'A duplicate variable name must be refused.' ) ;
+        }
+        catch ( ValidationException $exception )
+        {
+            $this->assertStringContainsString( 'author' , $exception->getMessage() ) ;
+            $this->assertStringContainsString( 'editor' , $exception->getMessage() ) ;
+        }
+    }
+
+    public function testGeneratedNamesNeverCollide() :void
+    {
+        // The guard must not fire on the ordinary case: two undeclared relations
+        // get two different generated names.
+        $prepared = $this->stub()->prepareQueryFields
+        ([
+            'author' => [ Field::FILTER => Filter::EDGE ] ,
+            'editor' => [ Field::FILTER => Filter::EDGE ] ,
+        ]) ;
+
+        $this->assertNotSame( $prepared[ 'author' ][ Field::UNIQUE ] , $prepared[ 'editor' ][ Field::UNIQUE ] ) ;
     }
 }

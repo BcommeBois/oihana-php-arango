@@ -310,6 +310,8 @@
             "src/oihana/arango/db/helpers/aqlUpsertExpression.php",
             "src/oihana/arango/db/helpers/aqlValue.php",
             "src/oihana/arango/db/helpers/assertAttributeName.php",
+            "src/oihana/arango/db/helpers/assertVariableName.php",
+            "src/oihana/arango/db/helpers/isVariableName.php",
             "src/oihana/arango/db/helpers/expandArrayPath.php",
             "src/oihana/arango/db/helpers/requestAlt.php",
             "src/oihana/arango/db/helpers/trustedAlt.php",

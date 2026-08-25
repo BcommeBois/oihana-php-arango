@@ -223,7 +223,7 @@ En plus de `Field::FILTER`, chaque définition de champ accepte des options :
 | `Field::NAME` | Alias : la clé de sortie diffère de l'attribut source | `slug:doc.title` |
 | `Field::ALTERS` | Chaîne de transformation `alt` appliquée à la valeur projetée | `name:LOWER(TRIM(doc.name))` |
 | `Field::QUOTED` | Étiquette de sortie entre guillemets (clés à caractères spéciaux) | `` "my-key":doc.`my-key` `` |
-| `Field::UNIQUE` | Nom de variable unique pour l'expression AQL | — |
+| `Field::UNIQUE` | Nomme la variable `LET` à laquelle une **relation** est liée. Déclaré, il est honoré et **stable** ; absent, un nom aléatoire est engendré (`author_e1626906831`) et rien d'autre dans la requête ne peut le désigner. Deux champs ne peuvent pas partager un nom — le doublon est refusé. | `LET authorRef = ( … )` |
 | `Field::REQUIRES` | Sujet(s) de permission : le champ est retiré si l'autorisation est refusée | — |
 | `Field::SCOPE` | Source de projection dans une sous-requête d'edge : `Scope::VERTEX` (défaut) ou `Scope::EDGE` (la métadonnée de la relation) | `since:DATE_ISO8601(e.created)` |
 | `Field::WHEN` / `Field::ELSE` | Valeur conditionnelle : ne projeter le champ que si une condition tient, sinon repli. Voir [Champs conditionnels](conditional-fields.md). | `price:doc.visibility == 'public' ? doc.price : null` |
@@ -383,6 +383,38 @@ assertAttributeName( 'a || 1==1' );              // throws ValidationException
 ```
 
 Utilisé par les facettes complexes (`Facet::ARRAY_COMPLEX`, `Facet::EDGE_COMPLEX`) pour valider les **noms de sous-champs** fournis dans `?facets=` avant de les concaténer dans la requête : un sous-champ malveillant fait échouer la facette (ignorée + *warning* loggué), aucun fragment n'atteint l'AQL. Voir [Facettes](facets.md).
+
+### Garde des noms de variables — `isVariableName` / `assertVariableName`
+
+Le pendant **variable** de la paire ci-dessus, et non interchangeable avec elle.
+Un nom d'attribut peut être un *chemin* (`address.city`) ; un nom de variable,
+non — `LET address.city = …` est une erreur de syntaxe. Tout ce qui est
+interpolé comme identifiant de `LET` (le `Field::UNIQUE` d'une relation
+projetée, par exemple) passe par celle-ci.
+
+| Fonction | Signature | Rôle |
+|---|---|---|
+| `isVariableName` | `(mixed $value) : bool` | Prédicat : `true` quand la chaîne est un identifiant unique et bien formé. |
+| `assertVariableName` | `(mixed $value) : void` | Lève une `ValidationException` nommant ce qui a été écrit et ce qui est attendu. |
+
+Le motif accepté est `^[a-zA-Z_][a-zA-Z0-9_]*$` — celui des attributs **sans** la
+continuation pointée.
+
+```php
+use function oihana\arango\db\helpers\assertVariableName;
+
+assertVariableName( 'authorRef'    ) ; // ok
+assertVariableName( 'address.city' ) ; // lève — un chemin, pas un identifiant
+```
+
+> ⚠ **Deux échecs que cette garde ne peut pas voir**, parce qu'ils ne relèvent
+> pas de la forme : un **mot-clé AQL** (`LET`, `RETURN`, …) et un nom **déjà
+> lié** dans la requête (`doc` au premier chef) sont tous deux des identifiants
+> bien formés. ArangoDB les refuse bruyamment dès la première requête —
+> `syntax error … expecting identifier`, et `variable 'doc' is assigned multiple
+> times` — donc ils se voient tout de suite au lieu de corrompre un résultat.
+> Recopier ici la liste des mots-clés du serveur ne serait qu'une copie à tenir
+> à jour.
 
 ## Helpers de projection par *skin*
 
