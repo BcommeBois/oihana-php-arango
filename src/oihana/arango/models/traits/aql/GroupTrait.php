@@ -4,11 +4,17 @@ namespace oihana\arango\models\traits\aql;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
+use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\AggregatablePolicy;
 use oihana\arango\models\enums\Group;
 use oihana\arango\models\enums\facets\FacetAggregator;
 use oihana\arango\models\interfaces\AggregateExpression;
 use oihana\arango\exceptions\RequestValidationException;
+
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+use ReflectionException;
 
 use oihana\enums\Char;
 use oihana\exceptions\UnsupportedOperationException;
@@ -19,6 +25,8 @@ use function oihana\arango\db\helpers\alterExpression;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\operations\aqlAsc;
 use function oihana\arango\db\operations\aqlDesc;
+use function oihana\arango\models\helpers\edges\buildEdgeGroupExpression;
+use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\models\helpers\normalizeSortable;
@@ -486,6 +494,102 @@ trait GroupTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
+    /**
+     * Resolves a grouping dimension that reads a value on the document at the
+     * other end of a relation, or null when the permission refuses it.
+     *
+     * A grouped query never projects — `doc` is consumed by the `COLLECT`, and
+     * `returnFields()` is not called — so there is no `LET` to name, unlike the
+     * relational sort. The dimension carries its own traversal instead, written
+     * inline in the `COLLECT` by {@see buildEdgeGroupExpression()}.
+     *
+     * Three declarations cannot be honoured, and each is refused rather than
+     * dropped: a dropped dimension reads as a client typo, while these are faults
+     * in the model that only its author can fix.
+     *
+     * - the named relation is **not declared** in `AQL::EDGES`, so there is no
+     *   traversal to compile;
+     * - it is not a **singular** relation. Grouping on a plural one has no sound
+     *   answer: kept as an array the dimension groups by the *combination*, and
+     *   unwound before the `COLLECT` it counts a multi-vertex document once per
+     *   vertex, **inflating every other aggregate of the same `COLLECT`**;
+     * - no `Field::PATH` says which field of the related document labels the group.
+     *
+     * **Permission** follows the relation: an explicit `Field::REQUIRES` on the
+     * dimension wins, otherwise the subject declared on the relation field is
+     * inherited. Grouping by a field hidden from reading would return its
+     * distinct values in clear.
+     *
+     * @param string $var   The dimension key (the URL key).
+     * @param array  $entry The groupable definition (`AQL::EDGE`, `Field::PATH`, `Field::REQUIRES`).
+     * @param array  $init  The request-level init. Reads `Arango::AUTHORIZER`.
+     *
+     * @return string|null The dimension expression, or null when refused by permission.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException When the declaration cannot be honoured.
+     */
+    private function groupRelationDimension( string $var , array $entry , array $init ) :?string
+    {
+        $relation = $entry[ AQL::EDGE ] ;
+        $edges    = property_exists( $this , 'edges' ) ? $this->edges : null ;
+
+        $definition = is_array( $edges ) ? ( $edges[ $relation ] ?? null ) : null ;
+
+        if ( !is_array( $definition ) )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Cannot group through "%s": no such relation is declared in AQL::EDGES, so there is no traversal to compile.' ,
+                is_scalar( $relation ) ? $relation : get_debug_type( $relation ) ,
+            )) ;
+        }
+
+        $fields = property_exists( $this , 'fields' ) ? $this->fields : null ;
+        $field  = is_array( $fields ) ? ( $fields[ $relation ] ?? null ) : null ;
+
+        if ( !is_array( $field ) || ( $field[ Field::FILTER ] ?? null ) !== Filter::EDGE )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Cannot group through "%s": only a singular Filter::EDGE relation can be a dimension. A plural one has no scalar value to group by, and unwinding it would inflate every other aggregate of the same COLLECT.' ,
+                $relation ,
+            )) ;
+        }
+
+        $path = $entry[ Field::PATH ] ?? null ;
+
+        if ( $path === null )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Cannot group through "%s": no Field::PATH declares which field of the related document labels the group.' ,
+                $relation ,
+            )) ;
+        }
+
+        assertAttributeName( compile( $path , Char::DOT ) ) ; // a path INSIDE the related document.
+
+        $requires = $entry[ Field::REQUIRES ] ?? $field[ Field::REQUIRES ] ?? null ;
+
+        if ( $requires !== null && !isAuthorized( [ Field::REQUIRES => $requires ] , $init ) )
+        {
+            return null ;
+        }
+
+        return buildEdgeGroupExpression
+        (
+            $var ,
+            $definition ,
+            $path ,
+            AQL::DOC ,
+            property_exists( $this , 'container' ) ? $this->container : null ,
+        ) ;
+    }
+
     private function collectAssign( array $group , string $docRef , array $init = [] , ?array &$binds = null ) :array
     {
         $fields = $this->normalizeGroupFields( $group[ Group::BY ] ?? null ) ;
@@ -515,6 +619,22 @@ trait GroupTrait
                 continue ;
             }
             $field = $this->groupable[ $var ] ;
+
+            // A dimension naming a relation (`AQL::EDGE`) groups by a value living
+            // on the document at the other end of an edge — a different expression
+            // and a different permission, so it is resolved apart.
+            if ( is_array( $field ) && isset( $field[ AQL::EDGE ] ) )
+            {
+                $expression = $this->groupRelationDimension( $var , $field , $init ) ;
+
+                if ( $expression !== null )
+                {
+                    $chain          = requestAlt( is_array( $alt ) ? ( $alt[ $var ] ?? null ) : null ) ;
+                    $assign[ $var ] = alterExpression( $expression , $chain , $init ) ;
+                }
+
+                continue ;
+            }
 
             // Permission gate: grouping by a field hidden from the projection
             // (Field::REQUIRES) would leak its distinct values — the dimension is

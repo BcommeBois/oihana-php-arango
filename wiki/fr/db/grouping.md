@@ -353,6 +353,90 @@ compte par une autre clause.
 > répond pour la liste blanche, et une expression y **est** — une clé déclarée résout quel que soit
 > le code de politique.
 
+## Grouper à travers une relation
+
+**La situation.** « Combien d'articles par auteur » — où l'auteur n'est pas un
+champ de l'article, mais un document au bout d'une arête. On déclare la relation
+comme dimension, et l'étiquette du groupe est lue sur le document lié :
+
+```php
+AQL::FIELDS =>
+[
+    'author' => [ Field::FILTER => Filter::EDGE ] ,   // ⚠ relation singulière
+] ,
+
+AQL::EDGES =>
+[
+    'author' => [ AQL::MODEL => $articlesAuthors , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+] ,
+
+AQL::GROUPABLE =>
+[
+    'title' => 'title' ,
+    'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ,
+] ,
+AQL::AGGREGATABLE => [ 'amount' => 'amount' ] ,
+```
+
+```
+?group={"by":"author","agg":{"total":"sum:amount"},"count":true}
+```
+```aql
+FOR doc IN @@articles
+  COLLECT author = FIRST( FOR author_v IN OUTBOUND doc articles_authors OPTIONS { … } RETURN author_v.name )
+  AGGREGATE total = SUM( doc.amount ), count = LENGTH(1)
+  RETURN { author, total, count }
+```
+
+**Pourquoi la dimension porte sa propre traversée**, là où un
+[tri relationnel](sort.md#trier-à-travers-une-relation) se contente d'en nommer
+une : une requête groupée ne projette jamais. `doc` est consommé par le
+`COLLECT`, donc `returnFields()` n'est pas appelé et aucune relation n'est
+projetée — il n'y a aucun `LET` à atteindre. La dimension est donc une
+sous-requête écrite directement dans le `COLLECT`.
+
+> **C'est la composition que les [compteurs de facettes](facets.md#compter-des-documents-liés-facetedge--facetjoin)
+> ne savent pas donner.** Ils répondent déjà « combien par valeur liée » ; ce
+> qu'ils ne savent pas faire, c'est tenir à côté d'un `SUM` dans la même passe.
+
+- **`AQL::EDGE` nomme le champ**, dont la traversée est déclarée dans
+  `AQL::EDGES` — la même déclaration que la liste projette, lue par les mêmes
+  portes (plage de profondeur, `AQL::WHERE` / `AQL::PRUNE`, options de traversée).
+- **`Field::PATH` nomme le champ du document lié**, et accepte un chemin imbriqué.
+- **La permission** suit la relation : un `Field::REQUIRES` explicite sur la
+  dimension l'emporte, sinon le sujet de la relation est hérité. Grouper sur un
+  champ caché renverrait ses valeurs distinctes en clair.
+
+### Seulement une relation singulière, et la raison est arithmétique
+
+Une relation **plurielle** est refusée, parce qu'aucune des deux façons de
+grouper dessus n'est saine. Mesuré sur trois articles valant 10, 20 et 30 — dont
+un relié à deux auteurs :
+
+| Approche | Résultat |
+|---|---|
+| Garder la sous-requête en **tableau** | seaux `["Alice"]`, `["Alice","Zoe"]`, `["Zoe"]` — trois seaux pour deux auteurs, on groupe par la *combinaison* |
+| **Déplier** la relation avant le `COLLECT` | `Alice : 30`, `Zoe : 40` — une **somme de 70** là où la vérité est **60**, l'article à deux auteurs compté deux fois |
+
+La seconde est la dangereuse : elle gonfle en silence **tous les autres agrégats
+du même `COLLECT`**, pas seulement le compte. Une relation plurielle est donc
+refusée plutôt que devinée.
+
+> ⚠ La garde lit la **déclaration**, pas les données. Une relation déclarée
+> singulière dont les données portent plusieurs sommets est résolue par
+> `FIRST()`, qui en choisit un arbitrairement — le contrat qu'a déjà une
+> projection `Filter::EDGE` singulière.
+
+### Ce qui est refusé, et à quel volume
+
+| Situation | Réaction |
+|---|---|
+| La relation n'est pas déclarée dans `AQL::EDGES` | **refus** (`500`) — aucune traversée à compiler |
+| Elle est plurielle, ou n'est pas une relation | **refus** (`500`) — voir ci-dessus |
+| Pas de `Field::PATH` sur la dimension | **refus** (`500`) — rien n'étiquette le groupe |
+| `?group=` nomme une clé inconnue | **jetée**, en silence — contrat inchangé |
+| La permission refuse la dimension | **jetée**, en silence — pas d'oracle de groupement |
+
 ## Permission (`REQUIRES`)
 
 `?groupBy=` est **fail-closed** : sans `AQL::GROUPABLE` déclaré, **rien n'est groupable** (comme le tri). Et une dimension whitelistée sur un champ **caché à la lecture** (`Field::REQUIRES`) reste un **oracle** : `COLLECT` révèle ses valeurs distinctes et leurs comptes ; un agrégat (`MAX/MIN/AVG/SUM`) fuit une **borne**.

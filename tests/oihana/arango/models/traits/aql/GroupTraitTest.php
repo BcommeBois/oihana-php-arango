@@ -2,15 +2,23 @@
 
 namespace tests\oihana\arango\models\traits\aql;
 
+use DI\Container;
+use oihana\arango\db\enums\Traversal;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\enums\Filter;
 use oihana\arango\enums\Field;
 use oihana\arango\models\enums\AggregatablePolicy;
+use oihana\arango\models\Edges;
 use oihana\arango\models\enums\Group;
 use oihana\arango\models\traits\aql\GroupTrait;
 
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
+
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Psr\Container\ContainerInterface;
 
 use PHPUnit\Framework\TestCase;
 
@@ -22,6 +30,10 @@ class GroupTraitStub
     use GroupTrait ;
 
     public ?array $fields = null ; // projection map — powers the inherited permission gate
+
+    public ?array $edges = null ; // relation definitions — a relational dimension carries its own traversal
+
+    public ?ContainerInterface $container = null ;
 
     public function __construct()
     {
@@ -600,4 +612,185 @@ class GroupTraitTest extends TestCase
         $this->assertSame( 'COLLECT cat = doc.category' , aqlCollect( $spec ) ) ;
     }
 
+
+    // ------------------------------------------------- grouping through a relation
+
+    /**
+     * A grouped query never projects — `doc` is consumed by the `COLLECT` and
+     * `returnFields()` is not called — so a relational dimension cannot name a
+     * `LET` the way a relational sort does. It carries its own traversal, written
+     * inline in the `COLLECT`.
+     */
+    private function relationStub( array $authorField = [] , array $groupable = [] ) :GroupTraitStub
+    {
+        $container = new Container() ;
+        $container->set( LoggerInterface::class , new NullLogger() ) ;
+
+        $stub = $this->stub( $groupable + [ 'title' => 'title' , 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ] ) ;
+
+        $stub->container = $container ;
+        $stub->fields    = [ 'author' => $authorField + [ Field::FILTER => Filter::EDGE ] ] ;
+        $stub->edges     =
+        [
+            'author' =>
+            [
+                AQL::MODEL     => new Edges( $container , [ AQL::COLLECTION => 'articles_authors' ] ) ,
+                AQL::DIRECTION => Traversal::OUTBOUND ,
+            ] ,
+        ] ;
+
+        return $stub ;
+    }
+
+    public function testARelationDimensionCarriesItsOwnTraversal() :void
+    {
+        $binds = [] ;
+        $spec  = $this->relationStub()->prepareCollect( [ Arango::GROUP => [ Group::BY => 'author' , Group::COUNT => true ] ] , AQL::DOC , $binds ) ;
+
+        $this->assertSame
+        (
+            'COLLECT author = FIRST(FOR author_v IN OUTBOUND doc articles_authors OPTIONS {"order":"bfs","uniqueVertices":"global"} RETURN author_v.name) WITH COUNT INTO count' ,
+            aqlCollect( $spec ) ,
+        ) ;
+    }
+
+    public function testARelationDimensionComposesWithOtherAggregates() :void
+    {
+        // The whole point of this lot: the facet counts already answer "N per
+        // linked value" — what they cannot do is sit beside a SUM.
+        $stub = $this->relationStub() ;
+        $stub->aggregatable = [ 'amount' => 'amount' ] ;
+
+        $binds = [] ;
+        $spec  = $stub->prepareCollect
+        (
+            [ Arango::GROUP => [ Group::BY => 'author' , Group::AGG => [ 'total' => 'sum:amount' ] , Group::COUNT => true ] ] ,
+            AQL::DOC ,
+            $binds ,
+        ) ;
+
+        $this->assertStringContainsString( 'AGGREGATE total = SUM(doc.amount)' , aqlCollect( $spec ) ) ;
+        $this->assertStringContainsString( 'COLLECT author = FIRST(FOR author_v IN OUTBOUND doc articles_authors' , aqlCollect( $spec ) ) ;
+    }
+
+    public function testARelationDimensionMixesWithAStoredOne() :void
+    {
+        $binds = [] ;
+        $spec  = $this->relationStub()->prepareCollect( [ Arango::GROUP => [ Group::BY => 'title,author' ] ] , AQL::DOC , $binds ) ;
+        $collect = aqlCollect( $spec ) ;
+
+        $this->assertStringContainsString( 'title = doc.title' , $collect ) ;
+        $this->assertStringContainsString( 'author = FIRST(FOR author_v IN OUTBOUND doc' , $collect ) ;
+    }
+
+    public function testARelationDimensionReachesANestedFieldOfTheRelatedDocument() :void
+    {
+        $stub = $this->relationStub( groupable: [ 'author' => [ AQL::EDGE => 'author' , Field::PATH => [ 'address' , 'city' ] ] ] ) ;
+
+        $binds = [] ;
+        $this->assertStringContainsString
+        (
+            'RETURN author_v.address.city)' ,
+            aqlCollect( $stub->prepareCollect( [ Arango::GROUP => [ Group::BY => 'author' ] ] , AQL::DOC , $binds ) ) ,
+        ) ;
+    }
+
+    public function testARelationDimensionInheritsThePermissionOfTheRelation() :void
+    {
+        // Grouping by a field hidden from reading would return its distinct
+        // values in clear — the dimension is dropped, as any refused one is.
+        $stub = $this->relationStub( [ Field::REQUIRES => 'hr:read' ] ) ;
+
+        $binds = [] ;
+        $refused = $stub->prepareCollect
+        (
+            [ Arango::GROUP => [ Group::BY => 'author' ] , Arango::AUTHORIZER => fn() => false ] ,
+            AQL::DOC ,
+            $binds ,
+        ) ;
+
+        $this->assertArrayNotHasKey( 'author' , $refused[ AQL::ASSIGN ] ?? [] ) ;
+
+        $binds = [] ;
+        $granted = $stub->prepareCollect
+        (
+            [ Arango::GROUP => [ Group::BY => 'author' ] , Arango::AUTHORIZER => fn( string $s ) => $s === 'hr:read' ] ,
+            AQL::DOC ,
+            $binds ,
+        ) ;
+
+        $this->assertArrayHasKey( 'author' , $granted[ AQL::ASSIGN ] ?? [] ) ;
+    }
+
+    /**
+     * The declarations that cannot be honoured. The plural refusal is the one
+     * that matters most: measured over three documents worth 10, 20 and 30, a
+     * SUM beside an unwound plural relation answers 70 where the truth is 60.
+     */
+    public function testAnUnhonourableRelationDimensionIsRefused() :void
+    {
+        $cases =
+        [
+            'relation not declared' =>
+            [
+                'apply'    => fn( GroupTraitStub $s ) => $s->edges = [] ,
+                'expected' => 'no such relation is declared' ,
+            ] ,
+            'plural relation' =>
+            [
+                'apply'    => fn( GroupTraitStub $s ) => $s->fields = [ 'author' => [ Field::FILTER => Filter::EDGES ] ] ,
+                'expected' => 'singular Filter::EDGE' ,
+            ] ,
+            'not a relation at all' =>
+            [
+                'apply'    => fn( GroupTraitStub $s ) => $s->fields = [ 'author' => [ Field::FILTER => Filter::DEFAULT ] ] ,
+                'expected' => 'singular Filter::EDGE' ,
+            ] ,
+        ] ;
+
+        foreach ( $cases as $label => $case )
+        {
+            $stub = $this->relationStub() ;
+            ( $case[ 'apply' ] )( $stub ) ;
+
+            $binds = [] ;
+            try
+            {
+                $stub->prepareCollect( [ Arango::GROUP => [ Group::BY => 'author' ] ] , AQL::DOC , $binds ) ;
+                $this->fail( 'The "' . $label . '" declaration must be refused.' ) ;
+            }
+            catch ( ValidationException $exception )
+            {
+                $this->assertStringContainsString( $case[ 'expected' ] , $exception->getMessage() , $label ) ;
+            }
+        }
+    }
+
+    public function testARelationDimensionWithoutAPathIsRefused() :void
+    {
+        $stub = $this->relationStub( groupable: [ 'author' => [ AQL::EDGE => 'author' ] ] ) ;
+
+        $binds = [] ;
+        $this->expectException( ValidationException::class ) ;
+        $stub->prepareCollect( [ Arango::GROUP => [ Group::BY => 'author' ] ] , AQL::DOC , $binds ) ;
+    }
+
+    public function testADangerousRelationPathIsGuarded() :void
+    {
+        $stub = $this->relationStub( groupable: [ 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name) RETURN 1 //' ] ] ) ;
+
+        $binds = [] ;
+        $this->expectException( ValidationException::class ) ;
+        $stub->prepareCollect( [ Arango::GROUP => [ Group::BY => 'author' ] ] , AQL::DOC , $binds ) ;
+    }
+
+    public function testADimensionOutsideTheWhitelistIsStillDroppedSilently() :void
+    {
+        // Unchanged frontier: a faulty DECLARATION is loud, an unknown CLIENT key
+        // is dropped without a word.
+        $binds = [] ;
+        $spec  = $this->relationStub()->prepareCollect( [ Arango::GROUP => [ Group::BY => 'editor' ] ] , AQL::DOC , $binds ) ;
+
+        $this->assertSame( [] , $spec ) ;
+    }
 }

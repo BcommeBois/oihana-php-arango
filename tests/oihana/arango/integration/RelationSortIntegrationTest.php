@@ -2,15 +2,17 @@
 
 namespace tests\oihana\arango\integration;
 
+use ReflectionException;
+use Throwable;
+
 use DI\Container;
 use DI\DependencyException;
 use DI\NotFoundException;
+
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use ReflectionException;
-use Throwable;
 
 use Devium\Toml\TomlError;
 
@@ -25,6 +27,7 @@ use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\Documents;
 use oihana\arango\models\Edges;
+use oihana\arango\models\enums\Group as GroupSpec;
 
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
@@ -76,9 +79,9 @@ final class RelationSortIntegrationTest extends IntegrationTestCase
     {
         $articles = $db->collection( self::ARTICLES ) ;
         $articles->create() ;
-        $articles->insert( [ '_key' => 'a1' , 'title' => 'Alpha' ] ) ;
-        $articles->insert( [ '_key' => 'a2' , 'title' => 'Beta'  ] ) ;
-        $articles->insert( [ '_key' => 'a3' , 'title' => 'Gamma' ] ) ;
+        $articles->insert( [ '_key' => 'a1' , 'title' => 'Alpha' , 'amount' => 10 ] ) ;
+        $articles->insert( [ '_key' => 'a2' , 'title' => 'Beta'  , 'amount' => 20 ] ) ;
+        $articles->insert( [ '_key' => 'a3' , 'title' => 'Gamma' , 'amount' => 30 ] ) ;
 
         // ⚠ The names deliberately break the insertion order: a1 → Zoe, a2 →
         // Alice, a3 → Mia. Sorting on the author therefore cannot coincide with
@@ -174,6 +177,9 @@ final class RelationSortIntegrationTest extends IntegrationTestCase
             ] ,
 
             AQL::SORTABLE => $sortable ?? [ 'title' , 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ] ,
+
+            AQL::GROUPABLE    => [ 'title' => 'title' , 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ] ,
+            AQL::AGGREGATABLE => [ 'amount' => 'amount' ] ,
         ]) ;
     }
 
@@ -279,6 +285,61 @@ final class RelationSortIntegrationTest extends IntegrationTestCase
 
         $this->assertSame( 'Beta' , (string) $first[ 'title' ] ) ;
         $this->assertSame( 'Alice' , (string) ( (array) $first[ 'author' ] )[ 'name' ] , 'The ordered-on relation is also returned.' ) ;
+    }
+
+    /**
+     * 🔑 Grouping through the same relation, which is a different mechanism
+     * entirely: a grouped query never projects, so there is no `LET` to name and
+     * the dimension carries its own traversal inline in the `COLLECT`.
+     *
+     * The `SUM` beside it is the point of the whole lot — the facet counts
+     * already answer "how many per linked value", and what they cannot do is sit
+     * next to another aggregate. It is also the measurement that justifies
+     * refusing a plural relation: unwinding one before the `COLLECT` would count
+     * a multi-vertex document once per vertex and inflate this very sum.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testGroupingThroughTheRelationComposesWithAnAggregate() :void
+    {
+        $rows = $this->model()->list
+        ([
+            Arango::GROUP =>
+            [
+                GroupSpec::BY    => 'author' ,
+                GroupSpec::AGG   => [ 'total' => 'sum:amount' ] ,
+                GroupSpec::COUNT => true ,
+            ] ,
+        ]) ;
+
+        $groups = [] ;
+        foreach ( $rows as $row )
+        {
+            $row = (array) ( is_array( $row ) ? $row : json_decode( json_encode( $row ) , true ) ) ;
+            $groups[ (string) $row[ 'author' ] ] = [ (int) $row[ 'total' ] , (int) $row[ 'count' ] ] ;
+        }
+        ksort( $groups ) ;
+
+        // Alice holds a2 (20), Mia holds a3 (30), Zoe holds a1 (10).
+        $this->assertSame
+        (
+            [ 'Alice' => [ 20 , 1 ] , 'Mia' => [ 30 , 1 ] , 'Zoe' => [ 10 , 1 ] ] ,
+            $groups ,
+        ) ;
+
+        // And the sums add up to the real total: no document counted twice.
+        $this->assertSame( 60 , array_sum( array_column( $groups , 0 ) ) ) ;
     }
 
     /**

@@ -351,6 +351,89 @@ which is the same count by another clause.
 > essay. The `OPEN`/`DROP`/`STRICT` policy does not move: it answers for the whitelist, and an
 > expression **is** on it — a declared key resolves whatever the policy code says.
 
+## Grouping through a relation
+
+**The situation.** "How many articles per author" — where the author is not a
+field of the article, but a document at the end of an edge. Declare the relation
+as a dimension, and the group label is read from the linked document:
+
+```php
+AQL::FIELDS =>
+[
+    'author' => [ Field::FILTER => Filter::EDGE ] ,   // ⚠ singular relation
+] ,
+
+AQL::EDGES =>
+[
+    'author' => [ AQL::MODEL => $articlesAuthors , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+] ,
+
+AQL::GROUPABLE =>
+[
+    'title' => 'title' ,
+    'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ,
+] ,
+AQL::AGGREGATABLE => [ 'amount' => 'amount' ] ,
+```
+
+```
+?group={"by":"author","agg":{"total":"sum:amount"},"count":true}
+```
+```aql
+FOR doc IN @@articles
+  COLLECT author = FIRST( FOR author_v IN OUTBOUND doc articles_authors OPTIONS { … } RETURN author_v.name )
+  AGGREGATE total = SUM( doc.amount ), count = LENGTH(1)
+  RETURN { author, total, count }
+```
+
+**Why the dimension carries its own traversal**, where a
+[relational sort](sort.md#sorting-through-a-relation) merely names one: a grouped
+query never projects. `doc` is consumed by the `COLLECT`, so `returnFields()` is
+not called and no relation is projected — there is no `LET` to reach for. The
+dimension is therefore a sub-query written inline in the `COLLECT`.
+
+> **This is the composition the [facet counts](facets.md#counting-linked-documents-facetedge--facetjoin)
+> cannot give you.** They already answer "how many per linked value"; what they
+> cannot do is sit next to a `SUM` in the same pass.
+
+- **`AQL::EDGE` names the field**, whose traversal is declared in `AQL::EDGES` —
+  the same declaration the list projects, read through the same doors (depth
+  range, `AQL::WHERE` / `AQL::PRUNE`, traversal options).
+- **`Field::PATH` names the field of the related document**, and may be nested.
+- **Permission** follows the relation: an explicit `Field::REQUIRES` on the
+  dimension wins, otherwise the relation's subject is inherited. Grouping by a
+  hidden field would return its distinct values in clear.
+
+### Only a singular relation, and the reason is arithmetic
+
+A **plural** relation is refused, because neither way of grouping on one is
+sound. Measured over three articles worth 10, 20 and 30 — one of them linked to
+two authors:
+
+| Approach | Result |
+|---|---|
+| Keep the sub-query as an **array** | buckets `["Alice"]`, `["Alice","Zoe"]`, `["Zoe"]` — three buckets for two authors, grouping by the *combination* |
+| **Unwind** the relation before the `COLLECT` | `Alice: 30`, `Zoe: 40` — a **sum of 70** where the truth is **60**, the two-author article counted twice |
+
+The second is the dangerous one: it silently inflates **every other aggregate of
+the same `COLLECT`**, not just the count. So a plural relation is refused rather
+than guessed at.
+
+> ⚠ The guard reads the **declaration**, not the data. A relation declared
+> singular whose data holds several vertices is resolved by `FIRST()`, which
+> picks one arbitrarily — the same contract a singular `Filter::EDGE` projection
+> already has.
+
+### What is refused, and how loudly
+
+| Situation | Reaction |
+|---|---|
+| The relation is not declared in `AQL::EDGES` | **refused** (`500`) — no traversal to compile |
+| It is plural, or not a relation at all | **refused** (`500`) — see above |
+| No `Field::PATH` on the dimension | **refused** (`500`) — nothing labels the group |
+| `?group=` names an unknown key | **dropped**, silently — unchanged contract |
+| The permission refuses the dimension | **dropped**, silently — no grouping oracle |
+
 ## Permission (`REQUIRES`)
 
 `?groupBy=` is **fail-closed**: without a declared `AQL::GROUPABLE`, **nothing is groupable** (like sorting). And a whitelisted dimension on a field **hidden from reading** (`Field::REQUIRES`) is still an **oracle**: `COLLECT` reveals its distinct values and their counts; an aggregate (`MAX/MIN/AVG/SUM`) leaks a **bound**.

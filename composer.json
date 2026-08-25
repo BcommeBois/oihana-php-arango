@@ -441,6 +441,7 @@
             "src/oihana/arango/models/helpers/resolveJoinAnchor.php",
             "src/oihana/arango/models/helpers/edges/assertEdges.php",
             "src/oihana/arango/models/helpers/edges/buildEdgeCountVariable.php",
+            "src/oihana/arango/models/helpers/edges/buildEdgeGroupExpression.php",
             "src/oihana/arango/models/helpers/edges/buildEdgeSubquery.php",
             "src/oihana/arango/models/helpers/edges/buildEdgeVariable.php",
             "src/oihana/arango/models/helpers/edges/buildEdgeVariables.php",
