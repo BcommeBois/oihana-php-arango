@@ -692,6 +692,12 @@ LET author   = (FOR doc IN @@articles FILTER <same filters>
   **another** collection, so a linked dimension is gated by the `Field::REQUIRES`
   declared **on the facet itself** — exactly as on the filtering side. See
   [Permission](#permission-requires).
+- **Works under a [View search](search/overview.md)**: when `?search=` is active the
+  counting sub-query iterates the View and the traversal starts from the View row
+  (`doc._key` is available, so `Facet::DISTINCT` works there too) — measured live.
+  ⚠ On a **cluster**, a traversal inside a sub-query needs a `WITH` naming the
+  vertex collections, which the query does not emit; the library targets a single
+  server (the same already applies to an `EDGE` facet used as a filter).
 
 ### Counting distinct documents per bucket (`Facet::DISTINCT`)
 

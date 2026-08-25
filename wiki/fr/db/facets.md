@@ -648,6 +648,13 @@ LET author   = (FOR doc IN @@articles FILTER <mêmes filtres>
   **autre** collection, donc une dimension liée est gardée par le
   `Field::REQUIRES` déclaré **sur la facette elle-même** — exactement comme du
   côté filtrant. Voir [Permission](#permission-requires).
+- **Fonctionne sous une [recherche View](search/overview.md)** : quand `?search=`
+  est actif, la sous-requête de comptage itère la View et la traversée part de la
+  ligne de View (`doc._key` y est disponible, donc `Facet::DISTINCT` marche aussi)
+  — mesuré en live. ⚠ En **cluster**, une traversée dans une sous-requête réclame
+  un `WITH` nommant les collections de sommets, que la requête n'émet pas ; la
+  librairie vise le serveur unique (c'est déjà le cas d'une facette `EDGE`
+  employée comme filtre).
 
 ### Compter des documents distincts par bucket (`Facet::DISTINCT`)
 
