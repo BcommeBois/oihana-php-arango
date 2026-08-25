@@ -5,9 +5,14 @@ namespace tests\oihana\arango\models\traits\aql;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
+use oihana\arango\enums\Filter;
 use oihana\arango\models\traits\aql\SortTrait;
 
+use oihana\exceptions\ValidationException;
+
 use PHPUnit\Framework\TestCase;
+
+use function oihana\arango\models\helpers\normalizeSortable;
 
 /**
  * Bare host exposing {@see SortTrait} for isolated testing. It carries a `$fields`
@@ -324,5 +329,171 @@ class SortTraitTest extends TestCase
 
         $init = [ 'sort' => 'salary' , Arango::AUTHORIZER => fn() => false ] ;
         $this->assertSame( 'doc.address.salary ASC' , $stub->prepareSort( $init ) ) ;
+    }
+
+    // ------------------------------------------------- sorting through a relation
+
+    /**
+     * Builds a host whose `author` relation is projected and pinned, which is
+     * what a relational sort requires: the projection emits the LET, the pinned
+     * name makes it designatable.
+     */
+    private function relationStub( array $authorField = [] , array $sortable = [] ) :SortTraitStub
+    {
+        $stub = $this->stub( normalizeSortable( $sortable + [ 'title' , 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ] ) ) ;
+
+        $stub->fields =
+        [
+            'title'  => [] ,
+            'author' => $authorField + [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'authorRef' ] ,
+        ] ;
+
+        return $stub ;
+    }
+
+    public function testSortThroughARelationNamesTheProjectedVariable() :void
+    {
+        // The projection already emits `LET authorRef = ( … )`, and the compiled
+        // query places every LET before the SORT — so ordering on the related
+        // document is a matter of naming that variable, not of traversing again.
+        $this->assertSame
+        (
+            'FIRST(authorRef).name ASC' ,
+            $this->relationStub()->prepareSort( [ Arango::SORT => 'author' ] ) ,
+        ) ;
+    }
+
+    public function testRelationSortHonoursTheDescendingPrefix() :void
+    {
+        $this->assertSame
+        (
+            'FIRST(authorRef).name DESC' ,
+            $this->relationStub()->prepareSort( [ Arango::SORT => '-author' ] ) ,
+        ) ;
+    }
+
+    public function testRelationAndStoredCriteriaMixInOneClause() :void
+    {
+        $this->assertSame
+        (
+            'doc.title ASC, FIRST(authorRef).name DESC' ,
+            $this->relationStub()->prepareSort( [ Arango::SORT => 'title,-author' ] ) ,
+        ) ;
+    }
+
+    public function testRelationSortReachesANestedFieldOfTheRelatedDocument() :void
+    {
+        $stub = $this->relationStub( sortable: [ 'author' => [ AQL::EDGE => 'author' , Field::PATH => [ 'address' , 'city' ] ] ] ) ;
+
+        $this->assertSame
+        (
+            'FIRST(authorRef).address.city ASC' ,
+            $stub->prepareSort( [ Arango::SORT => 'author' ] ) ,
+        ) ;
+    }
+
+    public function testRelationSortInheritsThePermissionOfTheProjectedRelation() :void
+    {
+        // What you cannot read, you cannot order by — otherwise the order betrays it.
+        $stub = $this->relationStub( [ Field::REQUIRES => 'hr:read' ] ) ;
+
+        $this->assertSame
+        (
+            '' ,
+            $stub->prepareSort( [ Arango::SORT => 'author' , Arango::AUTHORIZER => fn() => false ] ) ,
+            'A refused relation drops its criterion.' ,
+        ) ;
+
+        $this->assertSame
+        (
+            'FIRST(authorRef).name ASC' ,
+            $stub->prepareSort( [ Arango::SORT => 'author' , Arango::AUTHORIZER => fn( string $s ) => $s === 'hr:read' ] ) ,
+        ) ;
+    }
+
+    public function testAnExplicitSubjectOnTheEntryWinsOverTheInheritedOne() :void
+    {
+        $stub = $this->relationStub
+        (
+            [ Field::REQUIRES => 'hr:read' ] ,
+            [ 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' , Field::REQUIRES => 'editor:read' ] ] ,
+        ) ;
+
+        $this->assertSame
+        (
+            'FIRST(authorRef).name ASC' ,
+            $stub->prepareSort( [ Arango::SORT => 'author' , Arango::AUTHORIZER => fn( string $s ) => $s === 'editor:read' ] ) ,
+        ) ;
+    }
+
+    /**
+     * The declarations that cannot be honoured. Each is refused rather than
+     * dropped: a dropped criterion reads as a client typo, while these are faults
+     * in the model that only its author can fix.
+     */
+    public function testAnUnhonourableRelationSortIsRefused() :void
+    {
+        $cases =
+        [
+            'not projected' =>
+            [
+                'fields'   => [ 'title' => [] ] ,
+                'expected' => 'no such field is projected' ,
+            ] ,
+            'plural relation' =>
+            [
+                'fields'   => [ 'author' => [ Field::FILTER => Filter::EDGES , Field::UNIQUE => 'authorRef' ] ] ,
+                'expected' => 'singular Filter::EDGE' ,
+            ] ,
+            'not a relation at all' =>
+            [
+                'fields'   => [ 'author' => [ Field::FILTER => Filter::DEFAULT ] ] ,
+                'expected' => 'singular Filter::EDGE' ,
+            ] ,
+            'no pinned variable' =>
+            [
+                'fields'   => [ 'author' => [ Field::FILTER => Filter::EDGE ] ] ,
+                'expected' => 'no Field::UNIQUE' ,
+            ] ,
+        ] ;
+
+        foreach ( $cases as $label => $case )
+        {
+            $stub = $this->stub( normalizeSortable( [ 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ] ) ) ;
+            $stub->fields = $case[ 'fields' ] ;
+
+            try
+            {
+                $stub->prepareSort( [ Arango::SORT => 'author' ] ) ;
+                $this->fail( 'The "' . $label . '" declaration must be refused.' ) ;
+            }
+            catch ( ValidationException $exception )
+            {
+                $this->assertStringContainsString( $case[ 'expected' ] , $exception->getMessage() , $label ) ;
+            }
+        }
+    }
+
+    public function testARelationSortWithoutAPathIsRefused() :void
+    {
+        $stub = $this->relationStub( sortable: [ 'author' => [ AQL::EDGE => 'author' ] ] ) ;
+
+        $this->expectException( ValidationException::class ) ;
+        $stub->prepareSort( [ Arango::SORT => 'author' ] ) ;
+    }
+
+    public function testADangerousPathIsGuarded() :void
+    {
+        $stub = $this->relationStub( sortable: [ 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name) RETURN 1 //' ] ] ) ;
+
+        $this->expectException( ValidationException::class ) ;
+        $stub->prepareSort( [ Arango::SORT => 'author' ] ) ;
+    }
+
+    public function testAKeyOutsideTheWhitelistIsStillDroppedSilently() :void
+    {
+        // The frontier this lot keeps: a faulty DECLARATION is loud, an unknown
+        // CLIENT key stays a silent drop — the documented contract, unchanged.
+        $this->assertSame( '' , $this->relationStub()->prepareSort( [ Arango::SORT => 'editor' ] ) ) ;
     }
 }

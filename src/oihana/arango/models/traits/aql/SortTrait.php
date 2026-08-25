@@ -5,17 +5,21 @@ namespace oihana\arango\models\traits\aql;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
+use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\Search;
 use oihana\enums\Char;
 use oihana\enums\Order;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 use oihana\traits\SortDefaultTrait;
 
 use org\schema\constants\Schema;
 
+use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\geo\distance;
 use function oihana\arango\db\functions\search\bm25;
+use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\resolveGeoPoint;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isPathAuthorized;
@@ -137,14 +141,15 @@ trait SortTrait
      * `distance` key ({@see Schema::DISTANCE}) is resolved from `Arango::NEAR` and only
      * honored when `$binds` is provided (so the reference point can be bound).
      *
-     * @param array      $init     Per-call parameters. Reads `Arango::SORT` (grammar) and `Arango::NEAR` (geo anchor).
+     * @param array $init Per-call parameters. Reads `Arango::SORT` (grammar) and `Arango::NEAR` (geo anchor).
      * @param array|null $sortable URL-key → field-path whitelist. Defaults to `$this->sortable`.
-     * @param string     $docRef   The document variable the fields hang off (default `doc`).
-     * @param array|null $binds    Bind variables, populated by reference. Required to enable `distance`/`?near=` sorting.
+     * @param string $docRef The document variable the fields hang off (default `doc`).
+     * @param array|null $binds Bind variables, populated by reference. Required to enable `distance`/`?near=` sorting.
      *
      * @return string|null The `SORT` body (without the `SORT` keyword), or an empty string when nothing sorts.
      *
      * @throws BindException When a bound coordinate cannot be registered.
+     * @throws ValidationException
      *
      * @example Plain field sort
      * ```php
@@ -284,6 +289,107 @@ trait SortTrait
     }
 
     /**
+     * Resolves a sortable entry that orders on a field of a **related** document,
+     * reached through a relation this model already projects.
+     *
+     * The projection of a `Filter::EDGE` field emits a `LET`, and the compiled
+     * query places every `LET` **before** the `SORT` — so ordering on the related
+     * document is a matter of naming that variable, not of traversing again:
+     *
+     * ```aql
+     * LET authorRef = ( FOR v IN OUTBOUND doc articles_authors RETURN … )
+     * SORT FIRST( authorRef ).name ASC
+     * ```
+     *
+     * Which is why the entry names the **projected field** (`AQL::EDGE => 'author'`,
+     * a key of `$this->fields`) rather than an edge collection: the sort reuses
+     * the traversal the projection already performs. One traversal serves both.
+     *
+     * Three declarations cannot be honoured, and each is refused rather than
+     * dropped — a dropped criterion looks like a client typo, while these are
+     * faults in the model that only its author can fix:
+     *
+     * - the named field is **not projected**, so there is no `LET` to name;
+     * - it is not a **singular** relation — ordering on a plural one asks which
+     *   of the related documents decides, a question the declaration does not
+     *   answer;
+     * - it carries no declared `Field::UNIQUE`, so its variable is the generated
+     *   random name and cannot be designated.
+     *
+     * **Permission** follows the projected field: an explicit `Field::REQUIRES`
+     * on the sortable entry wins, otherwise the subject of the relation field is
+     * reused. What you cannot read, you cannot order by — otherwise the order
+     * betrays it.
+     *
+     * @param array $entry The sortable definition (`AQL::EDGE`, `Field::PATH`, `Field::REQUIRES`).
+     * @param array $init  The request-level init. Reads `Arango::AUTHORIZER`.
+     *
+     * @return string|null The `FIRST( <variable> ).<path>` expression, or null when refused by permission.
+     *
+     * @throws ValidationException When the declaration cannot be honoured.
+     */
+    private function authorizeRelationSortKey( array $entry , array $init ) : ?string
+    {
+        $field  = $entry[ AQL::EDGE ] ;
+        $fields = property_exists( $this , 'fields' ) ? $this->fields : null ;
+
+        $definition = is_array( $fields ) ? ( $fields[ $field ] ?? null ) : null ;
+
+        if ( !is_array( $definition ) )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Cannot sort through "%s": no such field is projected. A relational sort orders on the LET the projection emits, so the relation must be declared in the model fields.' ,
+                is_scalar( $field ) ? $field : get_debug_type( $field ) ,
+            )) ;
+        }
+
+        if ( ( $definition[ Field::FILTER ] ?? null ) !== Filter::EDGE )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Cannot sort through "%s": only a singular Filter::EDGE relation can order a list. A plural relation leaves open which of the related documents decides the order.' ,
+                $field ,
+            )) ;
+        }
+
+        $variable = $definition[ Field::UNIQUE ] ?? null ;
+
+        if ( $variable === null )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Cannot sort through "%s": the relation declares no Field::UNIQUE, so its LET variable is generated at random and cannot be named. Declare one to make it designatable.' ,
+                $field ,
+            )) ;
+        }
+
+        $path = $entry[ Field::PATH ] ?? null ;
+
+        if ( $path === null )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Cannot sort through "%s": no Field::PATH declares which field of the related document orders the list.' ,
+                $field ,
+            )) ;
+        }
+
+        assertAttributeName( compile( $path , Char::DOT ) ) ; // a path INSIDE the related document.
+
+        // Explicit subject first, then the one carried by the projected relation:
+        // the same two steps the stored-path branch follows.
+        $requires = $entry[ Field::REQUIRES ] ?? $definition[ Field::REQUIRES ] ?? null ;
+
+        if ( $requires !== null && !isAuthorized( [ Field::REQUIRES => $requires ] , $init ) )
+        {
+            return null ;
+        }
+
+        return key( compile( $path , Char::DOT ) , first( $variable ) ) ;
+    }
+
+    /**
      * Resolve a whitelisted sort entry to its AQL field expression, gated by permission.
      *
      * The entry (the `$sortable[$key]` value) is either a plain field path — a string
@@ -299,15 +405,25 @@ trait SortTrait
      * stays untriable (no sort oracle). No subject, or no authorizer injected, sorts
      * freely (fail-open — exactly the field-level semantics).
      *
-     * @param string $key    The public URL key (already resolved against the whitelist).
-     * @param mixed  $entry  The `$sortable[$key]` value (path or explicit definition).
-     * @param array  $init   The request-level init. Reads `Arango::AUTHORIZER`.
+     * @param string $key The public URL key (already resolved against the whitelist).
+     * @param mixed $entry The `$sortable[$key]` value (path or explicit definition).
+     * @param array $init The request-level init. Reads `Arango::AUTHORIZER`.
      * @param string $docRef The document variable the field hangs off.
      *
      * @return string|null The `doc.<field>` expression, or `null` when the sort is refused.
+     *
+     * @throws ValidationException
      */
     private function authorizeSortKey( string $key , mixed $entry , array $init , string $docRef ) : ?string
     {
+        // A sortable entry naming a relation (`AQL::EDGE`) orders on a field of the RELATED document,
+        // not of this one — a different expression, and a different permission to inherit.
+        // Handled apart; everything else is the stored path this trait has always compiled.
+        if ( is_array( $entry ) && !array_is_list( $entry ) && isset( $entry[ AQL::EDGE ] ) )
+        {
+            return $this->authorizeRelationSortKey( $entry , $init ) ;
+        }
+
         [ $path , $requires ] = $this->resolveSortEntry( $key , $entry ) ;
 
         if( !$this->isSortAuthorized( $path , $requires , $init ) )

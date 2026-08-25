@@ -55,6 +55,94 @@ AQL::SORTABLE     => [ Prop::CREATED , Prop::NAME ] ,
 AQL::SORT_DEFAULT => descKey( Prop::CREATED ) ,        // '-created' — la clé est whitelistée : OK
 ```
 
+## Trier à travers une relation
+
+**La situation.** L'auteur d'un article n'est pas un de ses champs : il vit dans
+un autre document, au bout d'une arête. `?sort=author` était impossible — le
+compilateur de tri ne connaissait qu'une seule forme, `doc.<chemin>`, un chemin
+**stocké** et rien d'autre.
+
+C'est possible dès lors que la relation est **projetée**, et la raison vaut d'être
+connue : projeter un champ `Filter::EDGE` émet un `LET`, et la requête compilée
+place tous les `LET` **avant** le `SORT`. Ordonner sur le document lié revient
+donc à *nommer cette variable*, pas à traverser une seconde fois. Une seule
+traversée sert à la fois la projection et l'ordre.
+
+Trois déclarations travaillent ensemble :
+
+```php
+AQL::FIELDS =>
+[
+    'title'  => [] ,
+    'author' =>
+    [
+        Field::FILTER => Filter::EDGE ,   // ① relation singulière
+        Field::UNIQUE => 'authorRef' ,    // ② épingler la variable du LET
+    ] ,
+] ,
+
+AQL::EDGES =>
+[
+    'author' =>
+    [
+        AQL::MODEL     => $articlesAuthors ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::FIELDS    => [ '_key' => [] , 'name' => [] ] ,
+    ] ,
+] ,
+
+AQL::SORTABLE =>
+[
+    'title' ,
+    'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ,  // ③
+] ,
+```
+
+```
+?sort=title,-author
+```
+```aql
+FOR doc IN @@articles
+  LET authorRef = ( FOR v IN OUTBOUND doc articles_authors RETURN … )
+  SORT doc.title ASC, FIRST(authorRef).name DESC
+  RETURN { title: doc.title, author: … }
+```
+
+- **`AQL::EDGE` nomme le champ projeté**, pas la collection d'arêtes. C'est ce qui
+  permet au tri de retrouver la variable que la projection a déjà créée.
+- **`Field::PATH` nomme le champ du document lié**, et accepte un chemin imbriqué
+  (`[ 'address', 'city' ]` → `FIRST(authorRef).address.city`).
+- **La relation doit être projetée** : la bibliothèque ne fabrique jamais une
+  traversée juste pour ordonner. Si on trie dessus, on le renvoie.
+- **`Field::UNIQUE` est obligatoire.** Sans lui, la variable du `LET` porte un nom
+  aléatoire engendré (`author_e1626906831`), qu'aucune déclaration ne peut
+  désigner.
+
+### Ce qui est refusé, et à quel volume
+
+La frontière est celle que toute la bibliothèque trace : une **déclaration** que
+seul l'auteur du modèle peut corriger est refusée bruyamment ; une **clé client**
+est jetée en silence.
+
+| Situation | Réaction |
+|---|---|
+| Le champ nommé n'est pas projeté | **refus** (`500`) — aucun `LET` à nommer |
+| La relation est plurielle (`Filter::EDGES`) | **refus** (`500`) — lequel des documents liés déciderait ? |
+| Pas de `Field::UNIQUE` sur la relation | **refus** (`500`) — la variable est indésignable |
+| Pas de `Field::PATH` sur l'entrée | **refus** (`500`) — rien ne dit ce qui ordonne |
+| `?sort=` nomme une clé inconnue | **jetée**, en silence — contrat inchangé |
+| La permission refuse la clé | **jetée**, en silence — pas d'oracle de tri |
+
+**La permission** fonctionne comme partout ailleurs : un `Field::REQUIRES`
+explicite sur l'entrée `SORTABLE` l'emporte, sinon le sujet de la **relation
+projetée** est hérité. Ce qu'on ne peut pas lire, on ne peut pas s'en servir pour
+ordonner — sinon l'ordre le trahit.
+
+> **Avec `?group=`**, un critère relationnel est inerte : après un `COLLECT` les
+> variables du document n'existent plus, et le tri groupé n'accepte que les
+> variables que le `COLLECT` émet. La clé est jetée comme n'importe quelle autre
+> clé non groupée.
+
 ## Permission de tri
 
 Whitelister ne suffit pas toujours. Un champ peut être **caché à la lecture** par une permission (`Field::REQUIRES` dans la projection) : s'il reste triable, l'ordre des résultats trahit sa valeur. C'est l'**oracle de tri** — trier sur `salary` sans le droit de le lire, et deviner qui gagne le plus rien qu'en regardant l'ordre.
@@ -151,7 +239,15 @@ Combinaison typique — les 10 lieux **les plus proches**, musées, dans 5 km :
 - **`SORTABLE` absent = rien ne trie.** Un modèle qui comptait sur l'ancien « mode ouvert » (trier sans déclarer `SORTABLE`) doit désormais déclarer ses clés. Sinon `?sort=` et `SORT_DEFAULT` ne produisent plus rien.
 - **`SORT_DEFAULT` doit nommer des clés whitelistées.** Le tri par défaut passe par le même videur que le client.
 - **La clé géo de `?near=` doit être dans `SORTABLE`.** Un modèle exposant `?near=` déclare son champ géo (`'geo'`, ou une définition `Field::REQUIRES` pour le protéger). Sans ça, le tri par distance s'arrête.
-- **Clé invalide = ignorée, jamais d'exception.** Une clé de tri (ou une clé géo) hors *whitelist* ou dangereuse est simplement droppée — pas d'injection possible, pas de plantage.
+- **Une clé client invalide est ignorée, jamais une exception.** Une clé de tri (ou une clé géo) hors *whitelist*, ou refusée par la permission, est simplement droppée — pas d'injection possible, pas de plantage. Une **déclaration** fautive est l'autre côté de cette frontière : une entrée relationnelle qui ne peut pas être honorée lève, parce que seul l'auteur du modèle peut la corriger.
+- ⚠ **`Arango::SORT` accepte aussi un tableau, et cette forme saute les deux portiers.** Une chaîne est ce qu'un client envoie (`?sort=name`), et elle passe par la *whitelist* `SORTABLE` et par la garde de permission. Un **tableau** est recopié tel quel dans la clause `SORT` :
+
+  ```php
+  $model->list( [ Arango::SORT => 'salary' ] ) ;              // whitelist + permission
+  $model->list( [ Arango::SORT => [ 'doc.salary DESC' ] ] ) ; // ni l'une ni l'autre
+  ```
+
+  Aucune URL ne peut produire un tableau — les paramètres de requête sont toujours des chaînes — donc c'est une **facilité côté serveur**, pas une faille exposée. Mais c'est le seul chemin où un critère de tri atteint la requête sans garde : ne jamais construire ce tableau à partir de données de requête, sinon les deux gardes tombent d'un coup. Pour une relation, utiliser plutôt la déclaration ci-dessus.
 
 ## Voir aussi
 

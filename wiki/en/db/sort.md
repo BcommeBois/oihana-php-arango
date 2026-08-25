@@ -55,6 +55,91 @@ AQL::SORTABLE     => [ Prop::CREATED , Prop::NAME ] ,
 AQL::SORT_DEFAULT => descKey( Prop::CREATED ) ,        // '-created' — the key is whitelisted: OK
 ```
 
+## Sorting through a relation
+
+**The situation.** An article's author is not one of its fields: it lives in
+another document, at the end of an edge. `?sort=author` used to be impossible —
+the sort compiler knew a single shape, `doc.<path>`, a **stored** path and
+nothing else.
+
+It is possible when the relation is **projected**, and the reason is worth
+knowing: projecting a `Filter::EDGE` field emits a `LET`, and the compiled query
+places every `LET` **before** the `SORT`. Ordering on the related document is
+therefore a matter of *naming that variable*, not of traversing a second time.
+One traversal serves both the projection and the order.
+
+Three declarations work together:
+
+```php
+AQL::FIELDS =>
+[
+    'title'  => [] ,
+    'author' =>
+    [
+        Field::FILTER => Filter::EDGE ,   // ① singular relation
+        Field::UNIQUE => 'authorRef' ,    // ② pin the LET variable
+    ] ,
+] ,
+
+AQL::EDGES =>
+[
+    'author' =>
+    [
+        AQL::MODEL     => $articlesAuthors ,
+        AQL::DIRECTION => Traversal::OUTBOUND ,
+        AQL::FIELDS    => [ '_key' => [] , 'name' => [] ] ,
+    ] ,
+] ,
+
+AQL::SORTABLE =>
+[
+    'title' ,
+    'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' ] ,  // ③
+] ,
+```
+
+```
+?sort=title,-author
+```
+```aql
+FOR doc IN @@articles
+  LET authorRef = ( FOR v IN OUTBOUND doc articles_authors RETURN … )
+  SORT doc.title ASC, FIRST(authorRef).name DESC
+  RETURN { title: doc.title, author: … }
+```
+
+- **`AQL::EDGE` names the projected field**, not the edge collection. That is
+  what lets the sort find the variable the projection already created.
+- **`Field::PATH` names the field of the related document**, and may be a nested
+  path (`[ 'address', 'city' ]` → `FIRST(authorRef).address.city`).
+- **The relation must be projected**: the library never builds a traversal just
+  to order. If you sort on it, you return it.
+- **`Field::UNIQUE` is required.** Without it the `LET` variable is a generated
+  random name (`author_e1626906831`), which no declaration can designate.
+
+### What is refused, and how loudly
+
+The frontier is the one the whole library draws: a **declaration** the model's
+author must fix is refused loudly; a **client key** is dropped in silence.
+
+| Situation | Reaction |
+|---|---|
+| The named field is not projected | **refused** (`500`) — there is no `LET` to name |
+| The relation is plural (`Filter::EDGES`) | **refused** (`500`) — which of the related documents would decide? |
+| No `Field::UNIQUE` on the relation | **refused** (`500`) — the variable cannot be designated |
+| No `Field::PATH` on the entry | **refused** (`500`) — nothing says what orders the list |
+| `?sort=` names an unknown key | **dropped**, silently — unchanged contract |
+| The permission refuses the key | **dropped**, silently — no sort oracle |
+
+**Permission** works as everywhere else: an explicit `Field::REQUIRES` on the
+`SORTABLE` entry wins, otherwise the subject of the **projected relation** is
+inherited. What you cannot read, you cannot order by — otherwise the order
+betrays it.
+
+> **With `?group=`**, a relational criterion is inert: after a `COLLECT` the
+> document variables no longer exist, and the grouped sort only accepts the
+> variables the `COLLECT` emits. The key is dropped like any other non-group key.
+
 ## Sort permission
 
 Whitelisting is not always enough. A field may be **hidden from reading** by a permission (`Field::REQUIRES` in the projection): if it stays sortable, the order of the results betrays its value. That is the **sort oracle** — sorting on `salary` without the right to read it, and guessing who earns the most just by looking at the order.
@@ -151,7 +236,15 @@ Typical combination — the 10 **nearest** museums within 5 km:
 - **No `SORTABLE` = nothing sorts.** A model that relied on the old "open mode" (sorting without declaring `SORTABLE`) must now declare its keys. Otherwise `?sort=` and `SORT_DEFAULT` produce nothing.
 - **`SORT_DEFAULT` must name whitelisted keys.** The default sort goes through the same doorkeeper as the client.
 - **The `?near=` geo key must be in `SORTABLE`.** A model exposing `?near=` declares its geo field (`'geo'`, or a `Field::REQUIRES` definition to gate it). Without it, distance sorting stops.
-- **Invalid key = dropped, never an exception.** A sort key (or a geo key) outside the whitelist or unsafe is simply dropped — no injection possible, no crash.
+- **An invalid client key is dropped, never an exception.** A sort key (or a geo key) outside the whitelist, or refused by permission, is simply dropped — no injection possible, no crash. A faulty **declaration** is the other side of that frontier: a relational entry that cannot be honoured throws, because only the model's author can fix it.
+- ⚠ **`Arango::SORT` also accepts an array, and that form skips both doorkeepers.** A string is what a client sends (`?sort=name`) and it goes through the `SORTABLE` whitelist and the permission gate. An **array** is copied verbatim into the `SORT` clause:
+
+  ```php
+  $model->list( [ Arango::SORT => 'salary' ] ) ;              // whitelist + permission
+  $model->list( [ Arango::SORT => [ 'doc.salary DESC' ] ] ) ; // neither
+  ```
+
+  No URL can produce an array — query parameters are always strings — so this is a **server-side facility**, not an exposed hole. But it is the one path where a sort criterion reaches the query ungated: never build that array from request data, or both guards fall at once. For a relation, use the declaration above instead.
 
 ## See also
 
