@@ -111,7 +111,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {category}' ,
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {category}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' ] , $binds ) ,
         ) ;
         $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
@@ -122,7 +122,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LET status = (FOR doc IN @@collection COLLECT value = doc.state WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {status}' ,
+            'LET status = (FOR doc IN @@collection COLLECT value = doc.state WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {status}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'status' ] , $binds ) ,
         ) ;
     }
@@ -132,7 +132,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LET keywords = (FOR doc IN @@collection FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {keywords}' ,
+            'LET keywords = (FOR doc IN @@collection FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {keywords}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'keywords' ] , $binds ) ,
         ) ;
     }
@@ -142,8 +142,8 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
-            . 'LET keywords = (FOR doc IN @@collection FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) '
+            . 'LET keywords = (FOR doc IN @@collection FOR item IN doc.keywords COLLECT value = item WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) '
             . 'RETURN {category, keywords}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category,ranking,keywords' ] , $binds ) ,
         ) ;
@@ -157,7 +157,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LET category = (FOR doc IN @@collection FILTER doc.active==1 COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {category}' ,
+            'LET category = (FOR doc IN @@collection FILTER doc.active==1 COLLECT value = doc.category WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {category}' ,
             $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' ] , $binds ) ,
         ) ;
     }
@@ -167,7 +167,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LET currency = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {currency}' ,
+            'LET currency = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {currency}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currency' ] , $binds ) ,
         ) ;
         $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
@@ -179,7 +179,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // Declared FIELD, but the `[*]` marker forces the unwind (D1).
         $this->assertSame
         (
-            'LET currencyField = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {currencyField}' ,
+            'LET currencyField = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {currencyField}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currencyField' ] , $binds ) ,
         ) ;
     }
@@ -190,7 +190,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // `tags[*]` (no sub-field) projects the element itself (D4).
         $this->assertSame
         (
-            'LET tags = (FOR doc IN @@collection FOR item IN doc.tags COLLECT value = item WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {tags}' ,
+            'LET tags = (FOR doc IN @@collection FOR item IN doc.tags COLLECT value = item WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {tags}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'tags' ] , $binds ) ,
         ) ;
     }
@@ -203,7 +203,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertSame
         (
-            'LET currency = (FOR doc IN @@collection FILTER doc.active==1 FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {currency}' ,
+            'LET currency = (FOR doc IN @@collection FILTER doc.active==1 FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {currency}' ,
             $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currency' ] , $binds ) ,
         ) ;
     }
@@ -214,7 +214,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // `a[*].b[*].c` is a two-hop expansion → one FOR per hop, counted per leaf.
         $this->assertSame
         (
-            'LET deep = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b COLLECT value = item2.c WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {deep}' ,
+            'LET deep = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b COLLECT value = item2.c WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {deep}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deep' ] , $binds ) ,
         ) ;
     }
@@ -225,7 +225,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // `a[*].b.c[*].d` → the path between two hops descends within the element.
         $this->assertSame
         (
-            'LET deepMid = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b.c COLLECT value = item2.d WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {deepMid}' ,
+            'LET deepMid = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b.c COLLECT value = item2.d WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {deepMid}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deepMid' ] , $binds ) ,
         ) ;
     }
@@ -246,7 +246,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // the same priceCurrency across several offers is counted once.
         $this->assertSame
         (
-            'LET currencyDistinct = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {currencyDistinct}' ,
+            'LET currencyDistinct = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC, value ASC RETURN {value, count}) RETURN {currencyDistinct}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currencyDistinct' ] , $binds ) ,
         ) ;
         $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
@@ -259,7 +259,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // flag applies there as well.
         $this->assertSame
         (
-            'LET keywordsDistinct = (FOR doc IN @@collection FOR item IN doc.keywordsDistinct COLLECT value = item AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {keywordsDistinct}' ,
+            'LET keywordsDistinct = (FOR doc IN @@collection FOR item IN doc.keywordsDistinct COLLECT value = item AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC, value ASC RETURN {value, count}) RETURN {keywordsDistinct}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'keywordsDistinct' ] , $binds ) ,
         ) ;
     }
@@ -271,7 +271,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // document key (doc._key), never the intermediate item references.
         $this->assertSame
         (
-            'LET deepDistinct = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b COLLECT value = item2.c AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {deepDistinct}' ,
+            'LET deepDistinct = (FOR doc IN @@collection FOR item IN doc.a FOR item2 IN item.b COLLECT value = item2.c AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC, value ASC RETURN {value, count}) RETURN {deepDistinct}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'deepDistinct' ] , $binds ) ,
         ) ;
     }
@@ -283,7 +283,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // over-count: the flag is ignored and the default WITH COUNT tail stays.
         $this->assertSame
         (
-            'LET categoryDistinct = (FOR doc IN @@collection COLLECT value = doc.categoryDistinct WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {categoryDistinct}' ,
+            'LET categoryDistinct = (FOR doc IN @@collection COLLECT value = doc.categoryDistinct WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {categoryDistinct}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryDistinct' ] , $binds ) ,
         ) ;
     }
@@ -297,7 +297,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // The distinct sub-query shares the same conjunctive filter as the list.
         $this->assertSame
         (
-            'LET currencyDistinct = (FOR doc IN @@collection FILTER doc.active==1 FOR item IN doc.offers COLLECT value = item.priceCurrency AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {currencyDistinct}' ,
+            'LET currencyDistinct = (FOR doc IN @@collection FILTER doc.active==1 FOR item IN doc.offers COLLECT value = item.priceCurrency AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC, value ASC RETURN {value, count}) RETURN {currencyDistinct}' ,
             $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'currencyDistinct' ] , $binds ) ,
         ) ;
     }
@@ -309,7 +309,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // the traversal is the source, and the bucket defaults to the vertex _key.
         $this->assertSame
         (
-            'LET location = (FOR doc IN @@collection FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {location}' ,
+            'LET location = (FOR doc IN @@collection FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {location}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'location' ] , $binds ) ,
         ) ;
         $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
@@ -322,7 +322,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // self-sufficient (a label, not a key the UI must resolve again).
         $this->assertSame
         (
-            'LET locationName = (FOR doc IN @@collection FOR doc_locationName IN INBOUND doc organizations_places COLLECT value = doc_locationName.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {locationName}' ,
+            'LET locationName = (FOR doc IN @@collection FOR doc_locationName IN INBOUND doc organizations_places COLLECT value = doc_locationName.name WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {locationName}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationName' ] , $binds ) ,
         ) ;
     }
@@ -337,7 +337,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // over exactly the displayed set.
         $this->assertSame
         (
-            'LET location = (FOR doc IN @@collection FILTER doc.active==1 FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {location}' ,
+            'LET location = (FOR doc IN @@collection FILTER doc.active==1 FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {location}' ,
             $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'location' ] , $binds ) ,
         ) ;
     }
@@ -349,7 +349,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // traversal over-counts exactly like an array — DISTINCT applies.
         $this->assertSame
         (
-            'LET locationDistinct = (FOR doc IN @@collection FOR doc_locationDistinct IN INBOUND doc organizations_places COLLECT value = doc_locationDistinct.name AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {locationDistinct}' ,
+            'LET locationDistinct = (FOR doc IN @@collection FOR doc_locationDistinct IN INBOUND doc organizations_places COLLECT value = doc_locationDistinct.name AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC, value ASC RETURN {value, count}) RETURN {locationDistinct}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationDistinct' ] , $binds ) ,
         ) ;
     }
@@ -361,7 +361,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // predicate — the same anchor the filtering facet uses.
         $this->assertSame
         (
-            'LET author = (FOR doc IN @@collection FOR doc_author IN authors FILTER doc_author._key == doc.authorId COLLECT value = doc_author.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {author}' ,
+            'LET author = (FOR doc IN @@collection FOR doc_author IN authors FILTER doc_author._key == doc.authorId COLLECT value = doc_author.name WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {author}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'author' ] , $binds ) ,
         ) ;
         $this->assertSame( [ '@collection' => 'articles' ] , $binds ) ;
@@ -373,7 +373,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // No Facet::VALUE: the bucket is the joined document's _key.
         $this->assertSame
         (
-            'LET authorKey = (FOR doc IN @@collection FOR doc_authorKey IN authors FILTER doc_authorKey._key == doc.authorId COLLECT value = doc_authorKey._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {authorKey}' ,
+            'LET authorKey = (FOR doc IN @@collection FOR doc_authorKey IN authors FILTER doc_authorKey._key == doc.authorId COLLECT value = doc_authorKey._key WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {authorKey}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'authorKey' ] , $binds ) ,
         ) ;
     }
@@ -385,7 +385,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // becomes a membership test — inherited from resolveFacetJoin().
         $this->assertSame
         (
-            'LET tagsJoin = (FOR doc IN @@collection FOR doc_tagsJoin IN tags FILTER doc_tagsJoin._key IN doc.tagIds COLLECT value = doc_tagsJoin.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {tagsJoin}' ,
+            'LET tagsJoin = (FOR doc IN @@collection FOR doc_tagsJoin IN tags FILTER doc_tagsJoin._key IN doc.tagIds COLLECT value = doc_tagsJoin.name WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {tagsJoin}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'tagsJoin' ] , $binds ) ,
         ) ;
     }
@@ -397,7 +397,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // referencing this one are counted, bucketed on one of their fields.
         $this->assertSame
         (
-            'LET comments = (FOR doc IN @@collection FOR doc_comments IN comments FILTER doc_comments.articleId == doc._key COLLECT value = doc_comments.lang WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {comments}' ,
+            'LET comments = (FOR doc IN @@collection FOR doc_comments IN comments FILTER doc_comments.articleId == doc._key COLLECT value = doc_comments.lang WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {comments}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'comments' ] , $binds ) ,
         ) ;
     }
@@ -409,7 +409,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // same way an unwound array does.
         $this->assertSame
         (
-            'LET authorDistinct = (FOR doc IN @@collection FOR doc_authorDistinct IN authors FILTER doc_authorDistinct._key == doc.authorId COLLECT value = doc_authorDistinct.name AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC RETURN {value, count}) RETURN {authorDistinct}' ,
+            'LET authorDistinct = (FOR doc IN @@collection FOR doc_authorDistinct IN authors FILTER doc_authorDistinct._key == doc.authorId COLLECT value = doc_authorDistinct.name AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC, value ASC RETURN {value, count}) RETURN {authorDistinct}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'authorDistinct' ] , $binds ) ,
         ) ;
     }
@@ -421,9 +421,9 @@ class FacetCountsQueryTraitTest extends TestCase
         // a traversal and a join sit side by side in the same query.
         $this->assertSame
         (
-            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
-            . 'LET location = (FOR doc IN @@collection FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
-            . 'LET author = (FOR doc IN @@collection FOR doc_author IN authors FILTER doc_author._key == doc.authorId COLLECT value = doc_author.name WITH COUNT INTO count SORT count DESC RETURN {value, count}) '
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) '
+            . 'LET location = (FOR doc IN @@collection FOR doc_location IN INBOUND doc organizations_places COLLECT value = doc_location._key WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) '
+            . 'LET author = (FOR doc IN @@collection FOR doc_author IN authors FILTER doc_author._key == doc.authorId COLLECT value = doc_author.name WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) '
             . 'RETURN {category, location, author}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category,location,author' ] , $binds ) ,
         ) ;
@@ -461,7 +461,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // biggest buckets — not an arbitrary n of them.
         $this->assertSame
         (
-            'LET categoryTop = (FOR doc IN @@collection COLLECT value = doc.categoryTop WITH COUNT INTO count SORT count DESC LIMIT 10 RETURN {value, count}) RETURN {categoryTop}' ,
+            'LET categoryTop = (FOR doc IN @@collection COLLECT value = doc.categoryTop WITH COUNT INTO count SORT count DESC, value ASC LIMIT 10 RETURN {value, count}) RETURN {categoryTop}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' ] , $binds ) ,
         ) ;
         $this->assertSame( [ '@collection' => 'articles' ] , $binds , 'The limit is written in clear, not bound: the dimensions share one bind map.' ) ;
@@ -473,10 +473,10 @@ class FacetCountsQueryTraitTest extends TestCase
         // traversal and the key-join all honour the same declaration.
         foreach (
         [
-            'keywordsTop' => 'LET keywordsTop = (FOR doc IN @@collection FOR item IN doc.keywordsTop COLLECT value = item WITH COUNT INTO count SORT count DESC LIMIT 5 RETURN {value, count}) RETURN {keywordsTop}' ,
-            'currencyTop' => 'LET currencyTop = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC LIMIT 3 RETURN {value, count}) RETURN {currencyTop}' ,
-            'locationTop' => 'LET locationTop = (FOR doc IN @@collection FOR doc_locationTop IN INBOUND doc organizations_places COLLECT value = doc_locationTop.name WITH COUNT INTO count SORT count DESC LIMIT 2 RETURN {value, count}) RETURN {locationTop}' ,
-            'authorTop'   => 'LET authorTop = (FOR doc IN @@collection FOR doc_authorTop IN authors FILTER doc_authorTop._key == doc.authorId COLLECT value = doc_authorTop.name WITH COUNT INTO count SORT count DESC LIMIT 4 RETURN {value, count}) RETURN {authorTop}' ,
+            'keywordsTop' => 'LET keywordsTop = (FOR doc IN @@collection FOR item IN doc.keywordsTop COLLECT value = item WITH COUNT INTO count SORT count DESC, value ASC LIMIT 5 RETURN {value, count}) RETURN {keywordsTop}' ,
+            'currencyTop' => 'LET currencyTop = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.priceCurrency WITH COUNT INTO count SORT count DESC, value ASC LIMIT 3 RETURN {value, count}) RETURN {currencyTop}' ,
+            'locationTop' => 'LET locationTop = (FOR doc IN @@collection FOR doc_locationTop IN INBOUND doc organizations_places COLLECT value = doc_locationTop.name WITH COUNT INTO count SORT count DESC, value ASC LIMIT 2 RETURN {value, count}) RETURN {locationTop}' ,
+            'authorTop'   => 'LET authorTop = (FOR doc IN @@collection FOR doc_authorTop IN authors FILTER doc_authorTop._key == doc.authorId COLLECT value = doc_authorTop.name WITH COUNT INTO count SORT count DESC, value ASC LIMIT 4 RETURN {value, count}) RETURN {authorTop}' ,
         ] as $dimension => $expected )
         {
             $binds = [] ;
@@ -491,7 +491,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // LIMIT still keeps the biggest of those per-document buckets.
         $this->assertSame
         (
-            'LET sellerTop = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.sellerId AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC LIMIT 7 RETURN {value, count}) RETURN {sellerTop}' ,
+            'LET sellerTop = (FOR doc IN @@collection FOR item IN doc.offers COLLECT value = item.sellerId AGGREGATE count = COUNT_DISTINCT(doc._key) SORT count DESC, value ASC LIMIT 7 RETURN {value, count}) RETURN {sellerTop}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'sellerTop' ] , $binds ) ,
         ) ;
     }
@@ -529,13 +529,45 @@ class FacetCountsQueryTraitTest extends TestCase
         }
     }
 
+    /**
+     * The tie-breaker is not decoration, so it is measured on its own rather
+     * than only ridden along in the other assertions: every family ends on a
+     * two-criterion sort, and the value — the COLLECT key, unique per bucket —
+     * is what makes the order total.
+     */
+    public function testEveryDimensionIsSortedOnATotalOrder() :void
+    {
+        $binds = [] ;
+        $query = $this->stub()->buildFacetCountsQuery
+        (
+            [ Arango::FACET_COUNTS => 'category,keywords,currency,location,author,currencyDistinct' ] ,
+            $binds ,
+        ) ;
+
+        $this->assertSame( 6 , substr_count( $query , 'SORT count DESC, value ASC' ) , 'Every dimension sorts on both criteria.' ) ;
+        $this->assertSame( 6 , substr_count( $query , 'SORT ' ) , 'And none sorts on the count alone.' ) ;
+    }
+
+    public function testTheTieBreakerPrecedesTheLimit() :void
+    {
+        $binds = [] ;
+        // Order matters: a LIMIT applied before the tie-breaker would cut an
+        // arbitrary subset of the equal-count buckets, which is the very thing
+        // the second criterion exists to prevent.
+        $this->assertStringContainsString
+        (
+            'SORT count DESC, value ASC LIMIT 10 RETURN' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' ] , $binds ) ,
+        ) ;
+    }
+
     public function testRequestLimitAppliesWhenNothingIsDeclared() :void
     {
         $binds = [] ;
         // A dimension that declares no limit takes the one the request carries.
         $this->assertSame
         (
-            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC LIMIT 3 RETURN {value, count}) RETURN {category}' ,
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC, value ASC LIMIT 3 RETURN {value, count}) RETURN {category}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' , Arango::FACET_COUNTS_LIMIT => 3 ] , $binds ) ,
         ) ;
     }
@@ -546,7 +578,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertStringContainsString
         (
-            'SORT count DESC LIMIT 2 RETURN' ,
+            'SORT count DESC, value ASC LIMIT 2 RETURN' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => 2 ] , $binds ) , // declared 10
         ) ;
 
@@ -554,7 +586,7 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->assertStringContainsString
         (
-            'SORT count DESC LIMIT 50 RETURN' ,
+            'SORT count DESC, value ASC LIMIT 50 RETURN' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => 50 ] , $binds ) ,
         ) ;
     }
@@ -578,7 +610,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // every bucket, whatever the declaration says.
         $this->assertSame
         (
-            'LET categoryTop = (FOR doc IN @@collection COLLECT value = doc.categoryTop WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {categoryTop}' ,
+            'LET categoryTop = (FOR doc IN @@collection COLLECT value = doc.categoryTop WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {categoryTop}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => false ] , $binds ) ,
         ) ;
     }
@@ -589,7 +621,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // Cancelling a limit nobody declared is a no-op, not an error.
         $this->assertSame
         (
-            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {category}' ,
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {category}' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' , Arango::FACET_COUNTS_LIMIT => false ] , $binds ) ,
         ) ;
     }
@@ -600,7 +632,7 @@ class FacetCountsQueryTraitTest extends TestCase
         // null is not "no limit": it means the declaration decides.
         $this->assertStringContainsString
         (
-            'SORT count DESC LIMIT 10 RETURN' ,
+            'SORT count DESC, value ASC LIMIT 10 RETURN' ,
             $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => null ] , $binds ) ,
         ) ;
     }

@@ -195,6 +195,7 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
 
             // Top-N buckets: the sidebar shows one place, not all of them.
             'placeTop'      => [ Facet::TYPE => Facet::EDGE , AQL::EDGE => 'orgs_places' , Facet::VALUE => 'name' , Facet::LIMIT => 1 ] ,
+            'authorTop'     => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'authors' , Facet::PROPERTY => 'authorId' , Facet::VALUE => 'name' , Facet::LIMIT => 1 ] , // ⚠ Alice and Bob are TIED
             'langTop'       => [ Facet::TYPE => Facet::JOIN , AQL::COLLECTION => 'notes' , AQL::KEY => 'orgId' , Facet::PROPERTY => '_key' , Facet::VALUE => 'lang' , Facet::LIMIT => 1 ] ,
         ] ;
     }
@@ -216,6 +217,18 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
         }
         ksort( $buckets ) ;
         return $buckets ;
+    }
+
+    /**
+     * The bucket values of one dimension, **in the order the server returned
+     * them** — unlike {@see buckets()}, which re-keys and sorts, hiding exactly
+     * what the tie-breaker is there to fix.
+     *
+     * @return array<int,string>
+     */
+    private function orderedValues( array $counts , string $dimension ) :array
+    {
+        return array_map( fn( $bucket ) => (string) ( (array) $bucket )[ 'value' ] , (array) ( $counts[ $dimension ] ?? [] ) ) ;
     }
 
     /**
@@ -624,6 +637,80 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
 
         $this->assertSame( [ 'Paris' => 4 ] , $this->buckets( $top , 'placeTop' ) , 'The kept bucket must be the biggest, not the first met.' ) ;
         $this->assertSame( [ 'fr' => 3 ]    , $this->buckets( $top , 'langTop'  ) ) ;
+    }
+
+    /**
+     * 🔑 Equal-count buckets come back in a **stable, reproducible** order, and
+     * a `LIMIT` cutting through them keeps the same subset every time.
+     *
+     * Two dimensions of the seed are genuinely tied — Alice and Bob hold two
+     * organizations each, PHP and Database two each — which is what makes this
+     * measurable at all: sorted on the count alone, either value could lead, and
+     * `authorTop` (`LIMIT 1`) would answer Alice or Bob depending on the plan.
+     * The query is run several times, because a single green run proves nothing
+     * about an order that is merely *usually* the same.
+     *
+     * ⚠ This case was **checked against the code it guards**: with the second
+     * sort criterion removed, the server answers `Bob, Alice` here — the reverse
+     * — so the assertion fails as it should. A tie order that happened to be
+     * alphabetical anyway would have made a green run meaningless.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testTiedBucketsKeepAStableOrderLive() :void
+    {
+        $model = $this->model() ;
+
+        for ( $run = 0 ; $run < 5 ; $run++ )
+        {
+            $counts = $model->facetCounts( [ Arango::FACET_COUNTS => 'author,tag,authorTop' ] ) ;
+
+            $this->assertSame( [ 'Alice' , 'Bob' ] , $this->orderedValues( $counts , 'author' ) , 'Tied buckets are ordered by value (run ' . $run . ').' ) ;
+            $this->assertSame( [ 'Database' , 'PHP' ] , $this->orderedValues( $counts , 'tag' ) ) ;
+
+            // The whole point: a LIMIT cutting through a run of equal counts
+            // keeps the same bucket every time, not an arbitrary one.
+            $this->assertSame( [ 'Alice' ] , $this->orderedValues( $counts , 'authorTop' ) ) ;
+        }
+    }
+
+    /**
+     * The count still leads the order: a bigger bucket precedes a smaller one
+     * whatever their values, so the tie-breaker never becomes the main sort.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testTheCountStillLeadsTheOrder() :void
+    {
+        $counts = $this->model()->facetCounts( [ Arango::FACET_COUNTS => 'place,lang' ] ) ;
+
+        // Paris (4) before Lyon (2), though "Lyon" sorts first alphabetically.
+        $this->assertSame( [ 'Paris' , 'Lyon' ] , $this->orderedValues( $counts , 'place' ) ) ;
+
+        // fr (3) before en (1), though "en" sorts first alphabetically.
+        $this->assertSame( [ 'fr' , 'en' ] , $this->orderedValues( $counts , 'lang' ) ) ;
     }
 
     /**

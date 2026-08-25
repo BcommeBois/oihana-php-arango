@@ -779,10 +779,12 @@ GET /articles?facetCounts=keywords&facetCountsLimit=all // tous les buckets
   `?facetCountsLimit=0` (ou `-5`, ou `2.5`, ou n'importe quoi d'illisible) est
   refusé par un **`400`** qui dit quoi écrire — là où une *déclaration* fautive
   vaut un `500`, puisque l'appelant ne peut pas la corriger.
-- ⚠ **Les ex æquo sont tranchés arbitrairement.** Les buckets sont ordonnés par
-  le seul compte : quand le n-ième et le (n+1)-ième partagent le même compte,
-  lequel survit n'est pas déterministe. Un top-N stable demanderait un critère de
-  départage que le tri ne porte pas aujourd'hui.
+- **Les ex æquo sont tranchés de façon reproductible.** Les buckets sont ordonnés
+  `count DESC, value ASC` : quand le n-ième et le (n+1)-ième partagent le même
+  compte, c'est la valeur du bucket qui décide — et la même requête garde le même
+  sous-ensemble à chaque fois. Sans ce second critère, l'ordre des ex æquo est
+  celui que le serveur a produit (AQL ne garantit aucun tri stable), et un top-N
+  varierait en silence entre deux requêtes identiques.
 - Le **total** n'est pas affecté : il vient d'un `count()` dédié, pas de la somme
   des buckets — qu'une dimension limitée ne peut de toute façon plus fournir.
 

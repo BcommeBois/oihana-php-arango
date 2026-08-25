@@ -1343,7 +1343,7 @@ class ViewSearchTest extends TestCase
 
         $this->assertSame
         (
-            'LET kind = (FOR doc IN @@collection COLLECT value = doc.kind WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {kind}' ,
+            'LET kind = (FOR doc IN @@collection COLLECT value = doc.kind WITH COUNT INTO count SORT count DESC, value ASC RETURN {value, count}) RETURN {kind}' ,
             $query
         ) ;
         $this->assertArrayNotHasKey( '@view' , $this->binds ) ;

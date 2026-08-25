@@ -56,8 +56,8 @@ use function oihana\core\strings\key;
  * the buckets reflect the currently filtered set:
  *
  * ```aql
- * LET category = (FOR doc IN @@coll FILTER <same filters> COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN { value, count })
- * LET status   = (FOR doc IN @@coll FILTER <same filters> COLLECT value = doc.status   WITH COUNT INTO count SORT count DESC RETURN { value, count })
+ * LET category = (FOR doc IN @@coll FILTER <same filters> COLLECT value = doc.category WITH COUNT INTO count SORT count DESC, value ASC RETURN { value, count })
+ * LET status   = (FOR doc IN @@coll FILTER <same filters> COLLECT value = doc.status   WITH COUNT INTO count SORT count DESC, value ASC RETURN { value, count })
  * RETURN { category, status }
  * ```
  *
@@ -74,7 +74,7 @@ use function oihana\core\strings\key;
  * a field of the *related* document named by `Facet::VALUE` (default `_key`):
  *
  * ```aql
- * LET location = (FOR doc IN @@coll FILTER <same filters> FOR doc_location IN INBOUND doc places_edges COLLECT value = doc_location.name WITH COUNT INTO count SORT count DESC RETURN { value, count })
+ * LET location = (FOR doc IN @@coll FILTER <same filters> FOR doc_location IN INBOUND doc places_edges COLLECT value = doc_location.name WITH COUNT INTO count SORT count DESC, value ASC RETURN { value, count })
  * ```
  *
  * The unwinding facet types (the `[*]` expansion, the {@see Facet::IN} family
@@ -89,10 +89,18 @@ use function oihana\core\strings\key;
  *
  * **Top-N buckets.** Every dimension returns *all* its values by default, which
  * a sidebar showing ten entries does not need. `Facet::LIMIT => n` closes the
- * shared tail with a `LIMIT n` placed **after** the `SORT count DESC`, so what
- * survives is the n **biggest** buckets. It is read once for every type — the
- * scalar field, the unwound array, the `[*]` sub-field and the linked
- * relations — because they all end on the same tail.
+ * shared tail with a `LIMIT n` placed **after** the sort, so what survives is
+ * the n **biggest** buckets. It is read once for every type — the scalar field,
+ * the unwound array, the `[*]` sub-field and the linked relations — because they
+ * all end on the same tail. `Arango::FACET_COUNTS_LIMIT` overrides it per
+ * request, so the declaration is a default rather than a ceiling.
+ *
+ * **A total order.** Buckets are sorted `count DESC, value ASC`. The second
+ * criterion is what makes a top-N mean something: ordering by the count alone
+ * leaves equal-count buckets in whatever order the server produced, and AQL
+ * guarantees no stable sort — so a `LIMIT n` falling inside a run of equal
+ * counts could keep a different subset from one request to the next. The bucket
+ * value is unique per bucket (it *is* the `COLLECT` key), so the order is total.
  *
  * **Permission.** The dimension gate runs before the type is dispatched, so it
  * covers the linked types unchanged — but the two guards do not weigh the same
@@ -252,7 +260,19 @@ trait FacetCountsQueryTrait
         $type     = $facet[ Facet::TYPE     ] ?? Facet::FIELD ;
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
 
-        $sort = aqlSort( compile( [ Group::COUNT_NAME , Order::DESC ] ) ) ;
+        // `SORT count DESC, value ASC`. The second criterion is not decoration:
+        // ordering by the count alone leaves buckets of equal count in whatever
+        // order the server happens to produce, and AQL guarantees no stable sort.
+        // Two requests could then answer the same buckets in a different order,
+        // and — far worse — a `LIMIT n` falling inside a run of equal counts
+        // would keep a different subset each time. The bucket value breaks the
+        // tie: it is unique per bucket (it *is* the COLLECT key), so the order is
+        // total, and reproducible.
+        $sort = aqlSort
+        ([
+            compile( [ Group::COUNT_NAME        , Order::DESC ] ) ,
+            compile( [ self::FACET_COUNT_VALUE  , Order::ASC  ] ) ,
+        ]) ;
 
         // Opt-in `Facet::DISTINCT => true`: count DISTINCT root documents per
         // bucket instead of the unwound array elements. Only the two unwinding
@@ -342,7 +362,7 @@ trait FacetCountsQueryTrait
     }
 
     /**
-     * The shared `COLLECT value = <expr> … SORT count DESC RETURN { value, count }` tail.
+     * The shared `COLLECT value = <expr> … SORT count DESC, value ASC RETURN { value, count }` tail.
      *
      * By default the bucket count is the number of unwound rows
      * (`WITH COUNT INTO count`). When `$distinctKey` is provided (opt-in
@@ -352,14 +372,14 @@ trait FacetCountsQueryTrait
      * array repeats the same sub-field value is counted once — matching the
      * `?filter=` existence semantics. The aggregate is deliberately named
      * {@see Group::COUNT_NAME} (`count`) so the derived `RETURN { value, count }`
-     * and the `SORT count DESC` clause stay identical in both modes.
+     * and the `SORT count DESC, value ASC` clause stay identical in both modes.
      *
      * When `$limit` is provided (opt-in `Facet::LIMIT => n`), a `LIMIT n` closes
      * the tail **after** the sort, so what survives is the *n biggest* buckets
      * rather than an arbitrary n of them.
      *
      * @param string $expression The value expression to group on.
-     * @param string $sort The pre-built `SORT count DESC` clause.
+     * @param string $sort The pre-built `SORT count DESC, value ASC` clause.
      * @param string|null $distinctKey The root document key expression to count
      *                                 distinctly (e.g. `doc._key`), or null for
      *                                 the default per-element count.

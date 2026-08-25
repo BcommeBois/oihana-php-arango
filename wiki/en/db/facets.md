@@ -817,9 +817,12 @@ GET /articles?facetCounts=keywords&facetCountsLimit=all // every bucket
   (or `-5`, or `2.5`, or anything unreadable) is refused with a **`400`** naming
   what to write — where a faulty *declaration* earns a `500`, since the caller
   cannot fix it.
-- ⚠ **Ties are cut arbitrarily.** Buckets are ordered by count alone, so when the
-  n-th and the (n+1)-th share a count, which one survives is not deterministic.
-  A stable top-N would need a tie-breaker the sort does not carry today.
+- **Ties are cut reproducibly.** Buckets are ordered `count DESC, value ASC`, so
+  when the n-th and the (n+1)-th share a count, the bucket value decides — and
+  the same request keeps the same subset every time. Without that second
+  criterion the order of equal-count buckets is whatever the server produced
+  (AQL guarantees no stable sort), and a top-N would quietly vary between two
+  identical requests.
 - The **total** is unaffected: it comes from a dedicated `count()`, not from the
   sum of the buckets — which a limited dimension can no longer provide anyway.
 
