@@ -788,6 +788,35 @@ LET category = (FOR doc IN @@articles FILTER <same filters>
 - ⚠ **A non-positive or non-integer limit is refused**, not ignored. `LIMIT 0`
   would emit **no `LIMIT` clause at all** and silently return *everything* — the
   opposite of what the declaration asks. Omit the option for all the buckets.
+
+#### Overriding it per request (`?facetCountsLimit=`)
+
+The declaration is a **default**, not a ceiling: one request can raise it, lower
+it, or cancel it. The sidebar takes the declared ten; the "all filters" panel
+asks for everything.
+
+```
+GET /articles?facetCounts=keywords                      // the declaration decides
+GET /articles?facetCounts=keywords&facetCountsLimit=25  // the 25 biggest buckets
+GET /articles?facetCounts=keywords&facetCountsLimit=all // every bucket
+```
+
+- **Three distinct states**, and the middle one matters: *absent* hands the
+  decision to the declaration, an *integer* overrides it, and `all` cancels it.
+  Absent is therefore **not** the same as `all` — one obeys the model, the other
+  overrules it.
+- **One value for the whole query**: it applies to every dimension of the same
+  `?facetCounts=`. A per-dimension limit would need a different syntax and is not
+  supported.
+- **No ceiling to enforce**, and that follows from how counts are built: the
+  `COLLECT` computes every bucket whatever the limit, which only trims what
+  travels. A request asking for more buckets than exist receives the ones that
+  exist — exactly what it would get with no limit at all.
+- ⚠ **`all` is a word, never `0`.** Same rule everywhere: a limit is a positive
+  integer, and "every bucket" is said with the keyword. `?facetCountsLimit=0`
+  (or `-5`, or `2.5`, or anything unreadable) is refused with a **`400`** naming
+  what to write — where a faulty *declaration* earns a `500`, since the caller
+  cannot fix it.
 - ⚠ **Ties are cut arbitrarily.** Buckets are ordered by count alone, so when the
   n-th and the (n+1)-th share a count, which one survives is not deterministic.
   A stable top-N would need a tie-breaker the sort does not carry today.

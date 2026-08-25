@@ -146,6 +146,23 @@ class Arango extends AQL
     public const string FACET_COUNTS = 'facetCounts' ;
 
     /**
+     * The 'facetCountsLimit' parameter — the per-request number of buckets each
+     * requested dimension keeps, overriding the `Facet::LIMIT` declared on the
+     * facet (which is a **default**, not a ceiling).
+     *
+     * Three states, deliberately distinct:
+     * - **absent** → the declaration decides (all the buckets when it declares nothing);
+     * - a **positive integer** → keep that many, whether it raises or lowers the declared value;
+     * - **`false`** → explicitly unlimited, cancelling a declared limit. This is what
+     *   {@see \oihana\arango\controllers\traits\PrepareFacetCountsLimitTrait::prepareFacetCountsLimit()}
+     *   translates the `?facetCountsLimit=all` keyword into.
+     *
+     * `0` is refused rather than read as "unlimited": it would say the opposite
+     * of what it means — see {@see FacetCountsQueryTrait}.
+     */
+    public const string FACET_COUNTS_LIMIT = 'facetCountsLimit' ;
+
+    /**
      * The 'facetsOnly' flag — when truthy (and `Arango::FACET_COUNTS` is
      * requested), the document-fetch query is skipped: the list returns an empty
      * result set while the per-value facet counts (and an exact `total` computed

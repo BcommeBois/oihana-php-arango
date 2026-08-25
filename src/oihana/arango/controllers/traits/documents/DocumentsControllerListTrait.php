@@ -10,6 +10,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\controllers\traits\PrepareBoundsTrait;
+use oihana\arango\controllers\traits\PrepareFacetCountsLimitTrait;
 use oihana\arango\controllers\traits\PrepareFacetCountsTrait;
 use oihana\arango\controllers\traits\PrepareFacetsOnlyTrait;
 use oihana\arango\controllers\traits\PrepareGroupTrait;
@@ -34,6 +35,7 @@ trait DocumentsControllerListTrait
         ModelTrait ,
         OutputDocumentsTrait ,
         PrepareBoundsTrait ,
+        PrepareFacetCountsLimitTrait ,
         PrepareFacetCountsTrait ,
         PrepareFacetsOnlyTrait ,
         PrepareGroupTrait ,
@@ -92,7 +94,8 @@ trait DocumentsControllerListTrait
             // deprecated truthy alias.
             $metaOnly    = $this->prepareMetaOnly   ( $request , $init , $params )
                         || $this->prepareFacetsOnly ( $request , $init , $params ) ;
-            $facetCounts = $this->prepareFacetCounts( $request , $init , $params ) ;
+            $facetCounts = $this->prepareFacetCounts     ( $request , $init , $params ) ;
+            $facetLimit  = $this->prepareFacetCountsLimit( $request , $init , $params ) ;
             $bounds      = $this->prepareBounds     ( $request , $init , $params ) ;
 
             $isDocuments = $this->model instanceof Documents && !$this->model->mock ;
@@ -130,7 +133,12 @@ trait DocumentsControllerListTrait
             // Per-value facet counts alongside the list (faceted-search sidebar).
             if( !empty( $facetCounts ) && $isDocuments )
             {
-                $options[ Arango::FACETS ] = $this->model->facetCounts( [ ...$modelInit , Arango::FACET_COUNTS => $facetCounts ] ) ;
+                $options[ Arango::FACETS ] = $this->model->facetCounts
+                ([
+                    ...$modelInit ,
+                    Arango::FACET_COUNTS       => $facetCounts ,
+                    Arango::FACET_COUNTS_LIMIT => $facetLimit ,
+                ]) ;
             }
 
             // Numeric { min, max } bounds alongside the list (range controls).

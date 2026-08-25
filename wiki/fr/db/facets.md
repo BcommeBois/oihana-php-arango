@@ -750,6 +750,35 @@ LET category = (FOR doc IN @@articles FILTER <mêmes filtres>
   `LIMIT 0` n'émettrait **aucune clause `LIMIT`** et renverrait donc *tout* en
   silence — l'exact contraire de ce que la déclaration demande. Pour tous les
   buckets, on omet l'option.
+
+#### La changer par requête (`?facetCountsLimit=`)
+
+La déclaration est un **défaut**, pas un plafond : une requête peut la relever,
+l'abaisser ou l'annuler. La barre latérale prend les dix déclarés ; le panneau
+« tous les filtres » demande tout.
+
+```
+GET /articles?facetCounts=keywords                      // la déclaration décide
+GET /articles?facetCounts=keywords&facetCountsLimit=25  // les 25 plus gros
+GET /articles?facetCounts=keywords&facetCountsLimit=all // tous les buckets
+```
+
+- **Trois états distincts**, et celui du milieu compte : *absent* rend la main à
+  la déclaration, un *entier* la remplace, et `all` l'annule. Absent n'est donc
+  **pas** la même chose que `all` — l'un obéit au modèle, l'autre passe outre.
+- **Une seule valeur pour toute la requête** : elle s'applique à chaque dimension
+  du même `?facetCounts=`. Une limite par dimension demanderait une autre
+  syntaxe, non supportée.
+- **Aucun plafond à faire respecter**, et ça découle de la façon dont les
+  compteurs sont construits : le `COLLECT` calcule tous les buckets quelle que
+  soit la limite, qui n'élague que ce qui voyage. Une requête demandant plus de
+  buckets qu'il n'en existe reçoit ceux qui existent — exactement ce qu'elle
+  obtiendrait sans limite.
+- ⚠ **`all` est un mot, jamais `0`.** Même règle partout : une limite est un
+  entier positif, et « tous les buckets » se dit avec le mot-clé.
+  `?facetCountsLimit=0` (ou `-5`, ou `2.5`, ou n'importe quoi d'illisible) est
+  refusé par un **`400`** qui dit quoi écrire — là où une *déclaration* fautive
+  vaut un `500`, puisque l'appelant ne peut pas la corriger.
 - ⚠ **Les ex æquo sont tranchés arbitrairement.** Les buckets sont ordonnés par
   le seul compte : quand le n-ième et le (n+1)-ième partagent le même compte,
   lequel survit n'est pas déterministe. Un top-N stable demanderait un critère de

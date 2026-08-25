@@ -121,6 +121,32 @@ trait FacetCountsQueryTrait
     private const string FACET_COUNT_ITEM = 'item' ;
 
     /**
+     * Guards a bucket limit, wherever it came from: a positive integer passes,
+     * anything else is refused naming its origin.
+     *
+     * @param mixed  $limit  The candidate limit.
+     * @param string $origin What is being blamed, as the message reads it.
+     *
+     * @return int The validated limit.
+     *
+     * @throws ValidationException When the limit is not a positive integer.
+     */
+    private function assertPositiveLimit( mixed $limit , string $origin ) :int
+    {
+        if ( !is_int( $limit ) || $limit < 1 )
+        {
+            throw new ValidationException( sprintf
+            (
+                'Invalid bucket limit (%s): %s. A limit is a positive integer — the number of buckets to keep; omit it for all of them.' ,
+                $origin ,
+                is_scalar( $limit ) ? var_export( $limit , true ) : get_debug_type( $limit ) ,
+            )) ;
+        }
+
+        return $limit ;
+    }
+
+    /**
      * Builds the multi-`LET` facet-counts query, or an empty string when nothing
      * is countable.
      *
@@ -157,6 +183,10 @@ trait FacetCountsQueryTrait
         // reflects exactly the displayed set. Shared by every list-family query.
         [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars ) ;
 
+        // The per-request bucket limit is global to the query, so it is read
+        // once here rather than per dimension — see facetCountLimit().
+        $limitOverride = $init[ Arango::FACET_COUNTS_LIMIT ] ?? null ;
+
         $lets  = [] ;
         $names = [] ;
         foreach ( $dimensions as $dimension )
@@ -177,7 +207,7 @@ trait FacetCountsQueryTrait
                 continue ;
             }
 
-            $subquery = $this->buildFacetCountSubquery( $facet , $dimension , $for , $filter , $docRef ) ;
+            $subquery = $this->buildFacetCountSubquery( $facet , $dimension , $for , $filter , $docRef , $limitOverride ) ;
             if ( $subquery === null )
             {
                 continue ; // unsupported facet type (v1)
@@ -205,6 +235,10 @@ trait FacetCountsQueryTrait
      *                         segment when the View search is active.
      * @param string|null $filter The shared `FILTER` clause.
      * @param string $docRef The document reference.
+     * @param int|false|null $limitOverride The request-level bucket limit
+     *                         (`Arango::FACET_COUNTS_LIMIT`): an integer overriding
+     *                         the declaration, `false` for explicitly unlimited, or
+     *                         null when the declaration decides.
      *
      * @return string|null
      *
@@ -213,7 +247,7 @@ trait FacetCountsQueryTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function buildFacetCountSubquery( array $facet , string $key , string $for , ?string $filter , string $docRef ) :?string
+    private function buildFacetCountSubquery( array $facet , string $key , string $for , ?string $filter , string $docRef , int|false|null $limitOverride = null ) :?string
     {
         $type     = $facet[ Facet::TYPE     ] ?? Facet::FIELD ;
         $property = $facet[ Facet::PROPERTY ] ?? $key ;
@@ -231,9 +265,10 @@ trait FacetCountsQueryTrait
         // ROOT document key (whatever the `[*]` hop depth) — see facetCountCollect().
         $distinctKey = !empty( $facet[ Facet::DISTINCT ] ) ? key( Schema::_KEY , $docRef ) : null ;
 
-        // Opt-in `Facet::LIMIT => n`: keep only the n biggest buckets. Resolved
-        // here so every branch below shares it — see facetCountLimit().
-        $limit = $this->facetCountLimit( $facet , $key ) ;
+        // How many buckets survive: the declared `Facet::LIMIT => n` default, or
+        // the request-level override that has the last word. Resolved here so
+        // every branch below shares it — see facetCountLimit().
+        $limit = $this->facetCountLimit( $facet , $key , $limitOverride ) ;
 
         // A linked facet counts the RELATED documents — those reached through an
         // edge traversal (EDGE) or a key-join (JOIN) — so its bucket value is a
@@ -359,43 +394,50 @@ trait FacetCountsQueryTrait
     }
 
     /**
-     * Resolves the opt-in `Facet::LIMIT => n` of a facet declaration: the number
-     * of buckets to keep, or null when the dimension is unlimited (the default).
+     * Resolves how many buckets a dimension keeps: the number of the `LIMIT`, or
+     * null when it is unlimited (the default).
      *
-     * A **non-positive or non-integer** limit is refused rather than ignored,
-     * and the reason is the helper it would reach: {@see aqlLimit()} answers an
-     * empty string to `0` or less, which emits **no `LIMIT` clause at all** —
-     * so a declaration asking for nothing would silently return *everything*,
-     * the exact opposite of what it says. A limit that cannot be honoured is a
-     * mis-declaration, and it shows.
+     * Two voices can speak, and the request has the last word. `Facet::LIMIT`
+     * declares the dimension's **default** — the sane cap a sidebar wants on a
+     * large vocabulary — and `Arango::FACET_COUNTS_LIMIT` overrides it for one
+     * request, raising it as well as lowering it. The override has three states,
+     * which is why it is not merely an integer:
      *
-     * @param array  $facet The facet definition.
-     * @param string $key   The facet key, named in the refusal message.
+     * - **null** (absent) → the declaration decides;
+     * - a **positive integer** → that many buckets, whatever was declared;
+     * - **`false`** → explicitly unlimited, cancelling a declared limit. It is
+     *   what the controller translates `?facetCountsLimit=all` into — the model
+     *   never sees the HTTP word.
+     *
+     * A **non-positive or non-integer** limit is refused rather than ignored, on
+     * either side, and the reason is the helper it would reach: {@see aqlLimit()}
+     * answers an empty string to `0` or less, which emits **no `LIMIT` clause at
+     * all** — so a limit asking for nothing would silently return *everything*,
+     * the exact opposite of what it says. A limit that cannot be honoured shows.
+     *
+     * @param array          $facet    The facet definition.
+     * @param string         $key      The facet key, named in the refusal message.
+     * @param int|false|null $override The request-level override, or null for none.
      *
      * @return int|null The number of buckets to keep, or null when unlimited.
      *
-     * @throws ValidationException When the declared limit is not a positive integer.
+     * @throws ValidationException When the declared limit, or the override, is not a positive integer.
      */
-    private function facetCountLimit( array $facet , string $key ) :?int
+    private function facetCountLimit( array $facet , string $key , int|false|null $override = null ) :?int
     {
+        if ( $override === false )
+        {
+            return null ; // explicitly unlimited: the request cancels the declaration.
+        }
+
+        if ( $override !== null )
+        {
+            return $this->assertPositiveLimit( $override , sprintf( 'the "%s" parameter' , Arango::FACET_COUNTS_LIMIT ) ) ;
+        }
+
         $limit = $facet[ Facet::LIMIT ] ?? null ;
 
-        if ( $limit === null )
-        {
-            return null ;
-        }
-
-        if ( !is_int( $limit ) || $limit < 1 )
-        {
-            throw new ValidationException( sprintf
-            (
-                'Invalid facet limit on "%s": %s. Facet::LIMIT expects a positive integer (the number of buckets to keep); omit it for all of them.' ,
-                $key ,
-                is_scalar( $limit ) ? var_export( $limit , true ) : get_debug_type( $limit ) ,
-            )) ;
-        }
-
-        return $limit ;
+        return $limit === null ? null : $this->assertPositiveLimit( $limit , sprintf( 'Facet::LIMIT on "%s"' , $key ) ) ;
     }
 
     /**

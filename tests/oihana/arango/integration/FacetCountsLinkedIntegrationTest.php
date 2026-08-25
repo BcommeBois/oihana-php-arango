@@ -627,6 +627,45 @@ final class FacetCountsLinkedIntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * The request has the last word over the declaration: `?facetCountsLimit=`
+     * lowers it, raises it, and `all` cancels it — measured against a real
+     * server, on a dimension that declares `Facet::LIMIT => 1`.
+     *
+     * @throws ArangoException
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws Throwable
+     * @throws TomlError
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testRequestLimitOverridesTheDeclarationLive() :void
+    {
+        $model = $this->model() ;
+
+        // Declared: 1 bucket. The request raises it to 2 — both places come back.
+        $raised = $model->facetCounts([ Arango::FACET_COUNTS => 'placeTop' , Arango::FACET_COUNTS_LIMIT => 2 ]) ;
+        $this->assertSame( [ 'Lyon' => 2 , 'Paris' => 4 ] , $this->buckets( $raised , 'placeTop' ) ) ;
+
+        // `all` (which the controller sends as false) cancels the declaration.
+        $all = $model->facetCounts([ Arango::FACET_COUNTS => 'placeTop' , Arango::FACET_COUNTS_LIMIT => false ]) ;
+        $this->assertSame( [ 'Lyon' => 2 , 'Paris' => 4 ] , $this->buckets( $all , 'placeTop' ) ) ;
+
+        // And the request lowers an undeclared dimension just as well.
+        $lowered = $model->facetCounts([ Arango::FACET_COUNTS => 'place' , Arango::FACET_COUNTS_LIMIT => 1 ]) ;
+        $this->assertSame( [ 'Paris' => 4 ] , $this->buckets( $lowered , 'place' ) , 'The biggest bucket survives.' ) ;
+
+        // Asking for more buckets than exist returns the ones that exist.
+        $excess = $model->facetCounts([ Arango::FACET_COUNTS => 'place' , Arango::FACET_COUNTS_LIMIT => 10_000 ]) ;
+        $this->assertSame( [ 'Lyon' => 2 , 'Paris' => 4 ] , $this->buckets( $excess , 'place' ) ) ;
+    }
+
+    /**
      * `?metaOnly=` comes for free with the linked dimensions: the sidebar gets
      * its buckets and the exact total, without a single document.
      *

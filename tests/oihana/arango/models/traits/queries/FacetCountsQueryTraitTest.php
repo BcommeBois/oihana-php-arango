@@ -529,6 +529,104 @@ class FacetCountsQueryTraitTest extends TestCase
         }
     }
 
+    public function testRequestLimitAppliesWhenNothingIsDeclared() :void
+    {
+        $binds = [] ;
+        // A dimension that declares no limit takes the one the request carries.
+        $this->assertSame
+        (
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC LIMIT 3 RETURN {value, count}) RETURN {category}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' , Arango::FACET_COUNTS_LIMIT => 3 ] , $binds ) ,
+        ) ;
+    }
+
+    public function testRequestLimitOverridesTheDeclarationBothWays() :void
+    {
+        // The declaration is a default, not a ceiling: the request lowers it…
+        $binds = [] ;
+        $this->assertStringContainsString
+        (
+            'SORT count DESC LIMIT 2 RETURN' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => 2 ] , $binds ) , // declared 10
+        ) ;
+
+        // … and raises it just as well.
+        $binds = [] ;
+        $this->assertStringContainsString
+        (
+            'SORT count DESC LIMIT 50 RETURN' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => 50 ] , $binds ) ,
+        ) ;
+    }
+
+    public function testRequestLimitAppliesToEveryRequestedDimension() :void
+    {
+        $binds = [] ;
+        // One value for the whole query: the declared limits of both dimensions
+        // (10 and 5) give way to the requested one.
+        $query = $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop,keywordsTop' , Arango::FACET_COUNTS_LIMIT => 4 ] , $binds ) ;
+
+        $this->assertSame( 2 , substr_count( $query , 'LIMIT 4' ) ) ;
+        $this->assertStringNotContainsString( 'LIMIT 10' , $query ) ;
+        $this->assertStringNotContainsString( 'LIMIT 5'  , $query ) ;
+    }
+
+    public function testFalseCancelsADeclaredLimit() :void
+    {
+        $binds = [] ;
+        // `false` is what the controller translates `?facetCountsLimit=all` into:
+        // every bucket, whatever the declaration says.
+        $this->assertSame
+        (
+            'LET categoryTop = (FOR doc IN @@collection COLLECT value = doc.categoryTop WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {categoryTop}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => false ] , $binds ) ,
+        ) ;
+    }
+
+    public function testFalseOnAnUnlimitedDimensionChangesNothing() :void
+    {
+        $binds = [] ;
+        // Cancelling a limit nobody declared is a no-op, not an error.
+        $this->assertSame
+        (
+            'LET category = (FOR doc IN @@collection COLLECT value = doc.category WITH COUNT INTO count SORT count DESC RETURN {value, count}) RETURN {category}' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' , Arango::FACET_COUNTS_LIMIT => false ] , $binds ) ,
+        ) ;
+    }
+
+    public function testAbsentRequestLimitLeavesTheDeclarationInCharge() :void
+    {
+        $binds = [] ;
+        // null is not "no limit": it means the declaration decides.
+        $this->assertStringContainsString
+        (
+            'SORT count DESC LIMIT 10 RETURN' ,
+            $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'categoryTop' , Arango::FACET_COUNTS_LIMIT => null ] , $binds ) ,
+        ) ;
+    }
+
+    /**
+     * The override obeys the same rule as the declaration — a limit is a
+     * positive integer — and the refusal names the parameter rather than the
+     * facet, since that is what has to be fixed.
+     */
+    public function testUnhonourableRequestLimitIsRefused() :void
+    {
+        foreach ( [ 0 , -5 ] as $limit )
+        {
+            $binds = [] ;
+            try
+            {
+                $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' , Arango::FACET_COUNTS_LIMIT => $limit ] , $binds ) ;
+                $this->fail( 'A request limit of ' . $limit . ' must be refused, not ignored.' ) ;
+            }
+            catch ( ValidationException $exception )
+            {
+                $this->assertStringContainsString( Arango::FACET_COUNTS_LIMIT , $exception->getMessage() ) ;
+            }
+        }
+    }
+
     public function testLinkedFacetNeverUnwindsTheMainDocument() :void
     {
         // On a linked facet, Facet::PROPERTY is the join's main side, not a path
