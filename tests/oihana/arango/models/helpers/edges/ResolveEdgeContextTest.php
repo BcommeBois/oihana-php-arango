@@ -4,6 +4,8 @@ namespace tests\oihana\arango\models\helpers\edges;
 
 use UnexpectedValueException;
 
+use oihana\reflect\exceptions\ConstantException;
+
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
 use oihana\arango\models\Edges;
@@ -46,6 +48,17 @@ final class ResolveEdgeContextTest extends TestCase
         ) ;
 
         $this->assertSame( Traversal::INBOUND , $direction ) ;
+    }
+
+    /**
+     * An unrecognised direction used to be folded back on `OUTBOUND` in silence,
+     * so a typo on an inbound relation projected nothing at all, in `200`.
+     */
+    public function testThrowsWhenDirectionIsUnknown() :void
+    {
+        $this->expectException( ConstantException::class ) ;
+
+        resolveEdgeContext( [ AQL::MODEL => new MockEdges( 'user_has_roles' ) , AQL::DIRECTION => 'OUTBOUD' ] ) ;
     }
 
     public function testThrowsWhenModelIsNotEdges() :void

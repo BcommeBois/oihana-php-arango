@@ -99,6 +99,8 @@ use function oihana\core\strings\randomKey;
  * @throws NotFoundExceptionInterface    If the Edges model cannot be resolved from the container.
  * @throws ReflectionException
  * @throws UnexpectedValueException      If $name is empty, the model is invalid, the collection is not set,
+ *                                       or `AQL::DIRECTION => Traversal::ANY` is declared on a relation whose
+ *                                       two ends are different collections (no single model to project),
  *                                       or `AQL::PRUNE => true` has no `AQL::WHERE` condition to negate.
  * @throws UnsupportedOperationException If an `AQL::WHERE` / `AQL::PRUNE` condition descriptor is malformed.
  * @throws ValidationException           If an `AQL::WHERE` / `AQL::PRUNE` condition attribute name is unsafe.
@@ -121,7 +123,7 @@ function buildEdgeSubquery
 
     [ $model , $edgeCollection , $direction ] = resolveEdgeContext( $definition , $container ) ;
 
-    $documents = $direction == Traversal::INBOUND ? $model->from : $model->to ;
+    $documents = resolveEdgeTarget( $model , $direction ) ;
 
     $edgeRef   = randomKey( AQL::EDGE   );
     $vertexRef = randomKey( AQL::VERTEX );

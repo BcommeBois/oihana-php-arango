@@ -3,13 +3,18 @@
 namespace oihana\arango\models\helpers;
 
 use Exception;
+use UnexpectedValueException;
 use oihana\arango\db\enums\AQL;
-use oihana\arango\db\enums\Traversal;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
 
 use Psr\Container\NotFoundExceptionInterface;
+
+use oihana\reflect\exceptions\ConstantException;
+
 use function oihana\arango\models\helpers\edges\getEdges;
+use function oihana\arango\models\helpers\edges\resolveEdgeDirection;
+use function oihana\arango\models\helpers\edges\resolveEdgeTarget;
 
 /**
  * Extract nested edges and joins from a relation configuration or resolved model.
@@ -45,8 +50,10 @@ use function oihana\arango\models\helpers\edges\getEdges;
  *
  * @return array{edges: array, joins: array} Associative array with 'edges' and 'joins' keys.
  *
+ * @throws ConstantException If a relation declares a traversal direction that is not a `Traversal` keyword.
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
+ * @throws UnexpectedValueException If a relation declares `Traversal::ANY` over two different vertex collections.
  */
 function extractNestedRelations
 (
@@ -76,8 +83,8 @@ function extractNestedRelations
 
             if ( $edgeModel )
             {
-                $direction      = $config[ AQL::DIRECTION ] ?? Traversal::OUTBOUND ;
-                $resolvedTarget = $direction === Traversal::INBOUND ? $edgeModel->from : $edgeModel->to ;
+                $direction      = resolveEdgeDirection( $config ) ;
+                $resolvedTarget = resolveEdgeTarget( $edgeModel , $direction ) ;
 
                 if ( $resolvedTarget )
                 {
@@ -103,7 +110,7 @@ function extractNestedRelations
                         $joins = $resolvedTarget->joins ?? [] ;
                     }
                 }
-                catch ( Exception $e )
+                catch ( Exception )
                 {
                     // Model not found, continue with empty relations
                 }

@@ -17,7 +17,6 @@ use oihana\arango\models\enums\filters\FilterType;
 use oihana\arango\models\utils\FilterPath;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
-use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\Edges;
@@ -42,6 +41,8 @@ use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlTraversal;
 use function oihana\arango\db\helpers\resolveTraversalQuantifier;
 use function oihana\arango\models\helpers\edges\getEdges;
+use function oihana\arango\models\helpers\edges\resolveEdgeDirection;
+use function oihana\arango\models\helpers\edges\resolveEdgeTarget;
 use function oihana\arango\models\helpers\extractNestedRelations;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isPathAuthorized;
@@ -449,11 +450,11 @@ trait HasHierarchicalFilter
         }
 
         $edgeCollection = $edges->collection;
-        $direction      = $edgeConfig[ AQL::DIRECTION ] ?? Traversal::OUTBOUND ;
+        $direction      = resolveEdgeDirection( $edgeConfig ) ;
         $vertexID       = uniqid( 'v_' ) ;
 
         // Get the target model to extract its edges/joins for next level
-        $targetModel = $direction === Traversal::INBOUND ? $edges->from : $edges->to ;
+        $targetModel = resolveEdgeTarget( $edges , $direction ) ;
         $nextLevel   = extractNestedRelations
         (
             config      : $edgeConfig   ,

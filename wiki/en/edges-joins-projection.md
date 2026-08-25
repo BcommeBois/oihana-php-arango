@@ -140,6 +140,29 @@ The depth applies to whichever `AQL::DIRECTION` you declare:
 - `Traversal::OUTBOUND` — descend the hierarchy (a node → its descendants).
 - `Traversal::INBOUND` — ascend the hierarchy (a node → its ancestors, the chain to the root).
 
+The same key is read identically by **every** edge surface — the projection, the
+count, the `?group=` dimension, the hierarchical filters and the nested relation
+walker:
+
+- **The default is `Traversal::OUTBOUND`**: an edge leaves the document that declares it.
+- ⚠ **An unknown keyword is refused**, never quietly replaced by the default. It used
+  to be folded back, so a mistyped `AQL::DIRECTION => 'OUTBOUD'` compiled to `OUTBOUND`
+  without a word — and on a relation actually reached `INBOUND`, that silence is an
+  **empty projection in `200`**, indistinguishable from "this relation has no
+  vertices". A malformed *declaration* is server-side, so it throws; an unknown key
+  coming from the *request* keeps being dropped in silence, the frontier drawn
+  everywhere else.
+- **`Traversal::ANY` needs both ends on the same collection.** `ANY` walks the edge
+  in both directions, so on a **self-referential** relation (a thesaurus,
+  `user_follows`) it is exactly right and projects as before. On a relation whose
+  two ends are **different** collections it is **refused**: a projection reaches one
+  vertex model, and the far side's vertices used to come back projected with the
+  near side's fields — and gated by the near side's `Field::REQUIRES`. Declare
+  `INBOUND` or `OUTBOUND` instead, or two relations.
+  > This restriction is specific to a **projected** relation, which has a model to
+  > resolve. A linked **facet** declares an edge *collection*, not a model, so `ANY`
+  > stays unrestricted there — see [Traversal direction](db/facets.md#traversal-direction-aqldirection).
+
 ### Rules and defaults
 
 - **No depth declared → unchanged.** Without `AQL::MIN_DEPTH` / `AQL::MAX_DEPTH`, the traversal stays at depth 1 and the generated AQL is **strictly identical** to before — fully backward-compatible.

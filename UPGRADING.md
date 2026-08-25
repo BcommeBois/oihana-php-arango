@@ -9,6 +9,53 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
+Two breaking changes, both on the same key — `AQL::DIRECTION`, read by the edge surfaces. Both
+refuse a **declaration** that could not be honoured and was being half-honoured in silence. Neither
+changes a signature, and a correct declaration compiles byte for byte as before.
+
+### 🚨 Breaking
+
+#### 1. A traversal direction that is not a `Traversal` keyword is refused
+
+**Before.** The edge surfaces read the direction through `Traversal::get()`, whose contract is to
+fall back on its default when it does not recognise a value. So `AQL::DIRECTION => 'OUTBOUD'`
+compiled to `OUTBOUND`, silently. On a relation actually reached `INBOUND` that is an empty
+projection in `200` — indistinguishable from "this relation has no vertices".
+
+**Now.** An unrecognised keyword throws a `ConstantException`, the same way a linked facet already
+refused one.
+
+**What to do.**
+
+1. **Grep your model declarations** for `AQL::DIRECTION` and check every value against
+   `Traversal::INBOUND` / `OUTBOUND` / `ANY`. The keywords are **upper-case**: `'outbound'` is
+   refused too.
+2. A declaration that says nothing, or says `null`, still means `OUTBOUND` — nothing to do.
+3. Nothing changes for a request: an unknown key coming from the URL keeps being dropped in silence.
+
+#### 2. `Traversal::ANY` is refused on a projected relation whose two ends differ
+
+**Before.** `ANY` walks the edge both ways, but the three places resolving the reached vertex model
+picked it with a binary ternary — so `ANY` landed on the `_to` end. On a relation whose ends are two
+different collections, the far side's vertices came back projected with the near side's fields, and
+gated by the near side's `Field::REQUIRES`.
+
+**Now.** When `ANY` cannot designate a single reached model, the projection throws an
+`UnexpectedValueException` naming the edge collection.
+
+**What to do.**
+
+1. **Grep for `AQL::DIRECTION => Traversal::ANY`** in your `AQL::EDGES` definitions, in the nested
+   ones, and in the edge configs your hierarchical filters walk.
+2. On a **self-referential** relation — both ends on the same collection, a thesaurus,
+   `user_follows` — there is nothing to do: it still resolves, on the same end as before.
+3. Everywhere else, replace it with `Traversal::INBOUND` or `Traversal::OUTBOUND` — or declare two
+   relations, one per direction, each projecting its own model.
+4. ⚠ An edge model wiring **one** end only is refused with `ANY` as well: nothing declares what
+   comes back from the other side. Wire both ends, or declare an oriented direction.
+5. **Linked facets are not concerned.** A facet declares an edge *collection*, not a model, so it
+   has nothing to resolve — `Traversal::ANY` stays unrestricted there.
+
 ---
 
 ## 1.5.0 → 1.6.0 - 2026-08-24

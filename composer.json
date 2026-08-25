@@ -450,6 +450,8 @@
             "src/oihana/arango/models/helpers/edges/getEdges.php",
             "src/oihana/arango/models/helpers/edges/resolveEdgeContext.php",
             "src/oihana/arango/models/helpers/edges/resolveEdgeDepthRange.php",
+            "src/oihana/arango/models/helpers/edges/resolveEdgeDirection.php",
+            "src/oihana/arango/models/helpers/edges/resolveEdgeTarget.php",
             "src/oihana/arango/models/helpers/edges/resolveEdgeVertexScope.php",
             "src/oihana/arango/models/helpers/edges/resolveEdges.php",
             "src/oihana/arango/models/helpers/edges/sortEdgeVariable.php",

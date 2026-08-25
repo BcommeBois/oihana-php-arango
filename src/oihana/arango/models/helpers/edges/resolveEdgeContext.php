@@ -12,6 +12,8 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
 use oihana\arango\models\Edges;
 
+use oihana\reflect\exceptions\ConstantException;
+
 /**
  * Resolves the common edge-traversal context shared by the edge variable builders.
  *
@@ -23,10 +25,13 @@ use oihana\arango\models\Edges;
  * @param array                   $definition The relation definition. Expected keys:
  *  - `AQL::MODEL`     : the Edges model (instance, array or container id).
  *  - `AQL::DIRECTION` : the traversal direction (defaults to {@see Traversal::OUTBOUND}).
+ *                       Resolved through {@see resolveEdgeDirection()}, so an unknown
+ *                       keyword is refused rather than folded back on the default.
  * @param ContainerInterface|null $container  Optional DI container used to resolve the model.
  *
  * @return array{0: Edges, 1: string, 2: string} A triplet `[ $model , $edgeCollection , $direction ]`.
  *
+ * @throws ConstantException        If the declared traversal direction is not a `Traversal` keyword.
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
  * @throws UnexpectedValueException If the model is not an {@see Edges} instance or its collection is empty.
@@ -45,7 +50,7 @@ function resolveEdgeContext( array $definition = [] , ?ContainerInterface $conta
         throw new UnexpectedValueException( __FUNCTION__ . ' failed, the edge collection not must be null or empty.' ) ;
     }
 
-    $direction = Traversal::get( $definition[ AQL::DIRECTION ] ?? null , Traversal::OUTBOUND ) ;
+    $direction = resolveEdgeDirection( $definition ) ;
 
     return [ $model , $edgeCollection , $direction ] ;
 }

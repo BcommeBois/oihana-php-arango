@@ -140,6 +140,29 @@ La profondeur s'applique au sens déclaré dans `AQL::DIRECTION` :
 - `Traversal::OUTBOUND` — descendre la hiérarchie (un nœud → ses descendants).
 - `Traversal::INBOUND` — remonter la hiérarchie (un nœud → ses ancêtres, la chaîne jusqu'à la racine).
 
+La même clé est lue à l'identique par **toutes** les surfaces d'arêtes — la
+projection, le comptage, la dimension `?group=`, les filtres hiérarchiques et le
+promeneur de relations imbriquées :
+
+- **Le défaut est `Traversal::OUTBOUND`** : une arête part du document qui la déclare.
+- ⚠ **Un mot-clé inconnu est refusé**, jamais remplacé en silence par le défaut. Il était
+  auparavant replié : un `AQL::DIRECTION => 'OUTBOUD'` mal orthographié compilait en
+  `OUTBOUND` sans un mot — et sur une relation réellement atteinte en `INBOUND`, ce
+  silence est une **projection vide en `200`**, indiscernable de « cette relation n'a
+  aucun sommet ». Une *déclaration* fautive est côté serveur, donc elle lève ; une clé
+  inconnue venant de la *requête* continue d'être jetée en silence, la frontière tracée
+  partout ailleurs.
+- **`Traversal::ANY` exige les deux extrémités sur la même collection.** `ANY` parcourt
+  l'arête dans les deux sens : sur une relation **auto-référentielle** (un thésaurus,
+  `user_follows`) c'est exactement le bon sens, et la projection est inchangée. Sur une
+  relation dont les deux extrémités sont des collections **différentes**, il est
+  **refusé** : une projection atteint un seul modèle de sommet, et les sommets de l'autre
+  côté revenaient projetés avec les champs du côté proche — et filtrés par le
+  `Field::REQUIRES` du côté proche. Déclarer `INBOUND` ou `OUTBOUND`, ou deux relations.
+  > Cette restriction ne concerne qu'une relation **projetée**, qui a un modèle à
+  > résoudre. Une **facette** liée déclare une *collection* d'arêtes, pas un modèle :
+  > `ANY` y reste sans restriction — voir [Sens de traversée](db/facets.md#traversal-direction-aqldirection).
+
 ### Règles et valeurs par défaut
 
 - **Aucune profondeur déclarée → inchangé.** Sans `AQL::MIN_DEPTH` / `AQL::MAX_DEPTH`, la traversée reste à la profondeur 1 et l'AQL généré est **strictement identique** à avant — totalement rétro-compatible.

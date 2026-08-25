@@ -667,6 +667,61 @@ final class BuildEdgeVariableTest extends TestCase
     }
 
     /**
+     * `Traversal::ANY` reaches both ends of the edge, so on a relation whose ends
+     * are two different collections there is no single model to project with —
+     * and the binary ternary this replaced picked `to` in silence, projecting the
+     * far side's vertices with the near side's fields and, worse, gating them
+     * with the near side's `Field::REQUIRES`.
+     */
+    public function testAnyOverTwoDifferentCollectionsIsRefused() :void
+    {
+        $edges = $this->wiredEdges() ;             // user_has_roles, `to` = roles
+        $from  = new MockDocuments( 'users' ) ;
+        $from->initializeDeleteSignals() ;
+        $edges->from = $from ;
+
+        $this->expectException( UnexpectedValueException::class ) ;
+
+        buildEdgeVariable( 'roles' ,
+        [
+            AQL::MODEL     => $edges ,
+            AQL::DIRECTION => Traversal::ANY ,
+            AQL::FIELDS    => [ 'name' => [] ] ,
+        ] ) ;
+    }
+
+    /**
+     * The case `ANY` exists for — a self-referential relation — keeps projecting,
+     * byte for byte: both ends designate the same collection, so the reached model
+     * is unambiguous.
+     */
+    public function testAnyOnASelfReferentialRelationStillProjects() :void
+    {
+        $edges = new MockEdges( 'user_follows' ) ;
+
+        foreach ( [ 'from' , 'to' ] as $end )
+        {
+            $vertex = new MockDocuments( 'users' ) ;
+            $vertex->initializeDeleteSignals() ;
+            $edges->$end = $vertex ;
+        }
+
+        $result = $this->normalize( buildEdgeVariable( 'follows' ,
+        [
+            AQL::MODEL     => $edges ,
+            AQL::DIRECTION => Traversal::ANY ,
+            AQL::FIELDS    => [ 'name' => [] ] ,
+        ] ) ) ;
+
+        $this->assertSame
+        (
+            'LET follows = (FOR vertex, edge IN ANY doc user_follows ' .
+            'OPTIONS {"order":"bfs","uniqueVertices":"global"} SORT edge.created DESC RETURN {name:vertex.name})' ,
+            $result
+        ) ;
+    }
+
+    /**
      * A {@see MockEdges} with a wired `to` vertex model whose delete signals
      * are initialized (otherwise the Edges destructor disconnects a null signal).
      *
