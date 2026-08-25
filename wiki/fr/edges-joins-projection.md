@@ -162,6 +162,15 @@ promeneur de relations imbriquées :
   > Cette restriction ne concerne qu'une relation **projetée**, qui a un modèle à
   > résoudre. Une **facette** liée déclare une *collection* d'arêtes, pas un modèle :
   > `ANY` y reste sans restriction — voir [Sens de traversée](db/facets.md#traversal-direction-aqldirection).
+- **Un `ANY` projeté ne double pas, une facette liée si.** Un sommet lié au document
+  dans les **deux** sens est atteint par deux arêtes, donc `ANY` y marche deux fois —
+  mais le constructeur d'arêtes émet toujours `uniqueVertices: "global"`, qui
+  dédoublonne la traversée. Mesuré sur `a → b`, `a ⇄ c`, `d → a` : `OUTBOUND` rend
+  `[b, c]`, `INBOUND` rend `[c, d]`, et `ANY` rend `[b, c, d]` — trois sommets, `c`
+  une seule fois. Retirez l'option et la même requête en rend **quatre**. Une facette
+  liée ne porte pas cette option, d'où l'avertissement inverse dans sa propre
+  documentation et le renvoi vers `Facet::DISTINCT` : le même mot-clé, deux
+  comportements, et c'est la projection qui est protégée.
 
 ### Règles et valeurs par défaut
 

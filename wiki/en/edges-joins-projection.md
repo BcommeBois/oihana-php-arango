@@ -162,6 +162,15 @@ walker:
   > This restriction is specific to a **projected** relation, which has a model to
   > resolve. A linked **facet** declares an edge *collection*, not a model, so `ANY`
   > stays unrestricted there — see [Traversal direction](db/facets.md#traversal-direction-aqldirection).
+- **A projected `ANY` does not double, and a linked facet does.** A vertex linked to
+  the document in **both** directions is reached by two edges, so `ANY` walks to it
+  twice — but the edge builder always emits `uniqueVertices: "global"`, which
+  deduplicates the walk. Measured on `a → b`, `a ⇄ c`, `d → a`: `OUTBOUND` answers
+  `[b, c]`, `INBOUND` answers `[c, d]`, and `ANY` answers `[b, c, d]` — three
+  vertices, with `c` once. Drop the option and the same query answers **four**. A
+  linked facet carries no such option, which is why its own documentation warns the
+  opposite way and points at `Facet::DISTINCT`: the same keyword, two behaviours, and
+  the projection is the protected one.
 
 ### Rules and defaults
 
