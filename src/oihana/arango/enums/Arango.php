@@ -103,6 +103,15 @@ class Arango extends AQL
     public const string DATE_FIELD = 'dateField' ;
 
     /**
+     * The 'defaultLang' parameter — the fallback language of multilingual expressions.
+     *
+     * ⚠ Distinct from {@see Arango::LANG}, the language *requested* by the current call:
+     * `LANG` is an instruction and wins over everything, `DEFAULT_LANG` is a default and
+     * never overrides an explicit declaration.
+     */
+    public const string DEFAULT_LANG = 'defaultLang' ;
+
+    /**
      * The 'documents' parameter.
      */
     public const string DOCUMENTS = 'documents' ;

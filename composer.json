@@ -339,6 +339,8 @@
             "src/oihana/arango/db/helpers/isAQLFunction.php",
             "src/oihana/arango/db/helpers/isAQLId.php",
             "src/oihana/arango/db/helpers/isAttributeName.php",
+            "src/oihana/arango/db/helpers/isLanguageCode.php",
+            "src/oihana/arango/db/helpers/assertLanguageCode.php",
             "src/oihana/arango/db/helpers/matchesSkin.php",
             "src/oihana/arango/db/helpers/resolveSkinFields.php",
             "src/oihana/arango/db/helpers/resolveUpsertReturn.php",

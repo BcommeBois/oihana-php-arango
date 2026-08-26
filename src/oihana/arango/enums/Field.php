@@ -26,6 +26,13 @@ class Field
     public const null DEFAULT = null ;
 
     /**
+     * Fallback language of a multilingual entry — the locale used when the requested one
+     * is absent. Overrides the model's and the host's own default (a default never
+     * overrides an explicit declaration).
+     */
+    public const string DEFAULT_LANG = 'defaultLang' ;
+
+    /**
      * Sub-edges map declared on a structural field (`Filter::WRAP` / `Filter::DOCUMENT`).
      */
     public const string EDGES = 'edges' ;
