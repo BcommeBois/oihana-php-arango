@@ -59,13 +59,25 @@ trait HasHierarchicalFilter
         LoggerAwareTrait ;
 
     /**
-     * Prepare hierarchical filter from declarative configuration
+     * Prepare a hierarchical filter from the declarative `AQL::FILTERS` configuration.
      *
-     * @param array $init
-     * @param array $binds
-     * @param string $docRef
+     * Entry point of the dotted-key grammar: the caller's `key` is split on `.` and each
+     * segment is walked against the configuration of the level it belongs to, crossing
+     * nested objects, array expansions, edges and joins until a leaf is reached.
      *
-     * @return string|null
+     * ```php
+     * // ?filter={ "key":"address.city" , "val":"Paris" }
+     * // -> doc.address.city == @value
+     * ```
+     *
+     * @param array  $init   The filter parameters (`key`, `val`, `op`, `alt`, `quant`, …).
+     * @param array  &$binds The bind variables, populated by reference.
+     * @param string $docRef The document reference the condition is written against.
+     * @param array  $auth   The caller's permission context, consulted by the leaf gate so a
+     *                       locked field is neutralised to `false` rather than dropped.
+     *
+     * @return string|null The AQL condition, or `null` when the key is empty or the path is
+     *                     not declared filterable.
      *
      * @throws BindException
      * @throws ConstantException
@@ -74,6 +86,10 @@ trait HasHierarchicalFilter
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws RequestValidationException When the request itself is refused (unknown operator,
+     *                                    unusable quantifier).
+     * @throws RuntimeException When the configuration names a relation or a model that cannot
+     *                          be resolved.
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
@@ -110,16 +126,27 @@ trait HasHierarchicalFilter
     /**
      * Build filter condition recursively through path segments.
      *
-     * @param array $segments Remaining segments to process.
-     * @param array $filters Current level filter configuration.
-     * @param array $init Original filter parameters.
-     * @param array   &$binds Bind variables array.
-     * @param string $docRef Current document reference.
-     * @param array $parentPath Accumulated path from parent segments.
-     * @param array $currentEdges The current edges definitions.
-     * @param array $currentJoins The current joins definitions.
+     * @param array      $segments      Remaining segments to process; the first is consumed here.
+     * @param array      $filters       The `AQL::FILTERS` configuration of the current level.
+     * @param array      $init          The original filter parameters.
+     * @param array      &$binds        The bind variables, populated by reference.
+     * @param string     $docRef        The document reference of the current level.
+     * @param array      $parentPath    The accumulated path from parent segments, used for
+     *                                  error reporting and for the full leaf key.
+     * @param array      $currentEdges  The edges definitions in scope, empty to fall back to
+     *                                  the model's own.
+     * @param array      $currentJoins  The joins definitions in scope, empty to fall back to
+     *                                  the model's own.
+     * @param array      $auth          The caller's permission context.
+     * @param array|null $currentFields The projection of the model being walked — it follows the
+     *                                  relations, so a leaf is always gated against the fields
+     *                                  of the model that actually holds it. `null` when the
+     *                                  model declares no projection.
+     * @param array      $fieldPath     The path relative to `$currentFields`, extended by each
+     *                                  nested object and reset whenever a relation is crossed.
      *
-     * @return string|null
+     * @return string|null The AQL condition, or `null` when the segment is not declared
+     *                     filterable or no handler could be found for the leaf.
      *
      * @throws BindException
      * @throws ConstantException
@@ -128,6 +155,8 @@ trait HasHierarchicalFilter
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws RequestValidationException When the request itself is refused.
+     * @throws RuntimeException When a relation reference cannot be resolved.
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
@@ -240,40 +269,49 @@ trait HasHierarchicalFilter
             ),
             Filter::EDGE, Filter::EDGES => $this->buildEdgeTraversal
             (
-                remainingSegments : $segments    ,
-                segmentInfo       : $segmentInfo ,
-                init              : $init        ,
-                binds           : $binds    ,
-                docRef            : $docRef      ,
-                availableEdges    : $availableEdges  ,
-                auth              : $auth       ,
+                remainingSegments : $segments       ,
+                segmentInfo       : $segmentInfo    ,
+                init              : $init           ,
+                binds             : $binds          ,
+                docRef            : $docRef         ,
+                availableEdges    : $availableEdges ,
+                auth              : $auth           ,
             ),
             Filter::JOIN, Filter::JOINS => $this->buildJoinTraversal
             (
-                remainingSegments : $segments    ,
-                segmentInfo       : $segmentInfo ,
-                init              : $init        ,
-                binds           : $binds    ,
-                docRef            : $docRef      ,
-                availableJoins    : $availableJoins  ,
-                auth              : $auth       ,
+                remainingSegments : $segments       ,
+                segmentInfo       : $segmentInfo    ,
+                init              : $init           ,
+                binds             : $binds          ,
+                docRef            : $docRef         ,
+                availableJoins    : $availableJoins ,
+                auth              : $auth           ,
             ),
             default => null
         };
     }
 
     /**
-     * Build array expansion traversal.
+     * Build an array expansion traversal (`contactPoint[*].email`).
      *
-     * @param array $remainingSegments
-     * @param FilterPath $segmentInfo
-     * @param array $init
-     * @param array $binds
-     * @param string $docRef
+     * The remaining segments are folded back into a single flat key so the array filter
+     * can emit the inline expansion in one predicate.
      *
-     * @return string|null
+     * @param array      $remainingSegments The segments below the array, addressing the element
+     *                                      sub-field.
+     * @param FilterPath $segmentInfo       The parsed array segment.
+     * @param array      $init              The original filter parameters.
+     * @param array      &$binds            The bind variables, populated by reference.
+     * @param string     $docRef            The document reference holding the array.
+     * @param array      $auth              The caller's permission context.
+     * @param array|null $currentFields     The projection of the model holding the array.
+     * @param array      $fieldPath         The path relative to `$currentFields`.
+     *
+     * @return string|null The AQL condition, or `false` when the sub-field is refused by the
+     *                     permission gate.
      *
      * @throws BindException
+     * @throws RequestValidationException When the request itself is refused.
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
@@ -330,15 +368,23 @@ trait HasHierarchicalFilter
     }
 
     /**
-     * Build document traversal (nested object)
+     * Build a nested object traversal (`address.city`).
      *
-     * @param array $remainingSegments
-     * @param FilterPath $segmentInfo
-     * @param array $init
-     * @param array $binds
-     * @param string $docRef
+     * A nested document stays inside the SAME model, so the projection is carried over
+     * unchanged and only the relative field path is extended.
      *
-     * @return string|null
+     * @param array      $remainingSegments The segments below the object.
+     * @param FilterPath $segmentInfo       The parsed object segment.
+     * @param array      $init              The original filter parameters.
+     * @param array      &$binds            The bind variables, populated by reference.
+     * @param string     $docRef            The document reference holding the object.
+     * @param array      $auth              The caller's permission context.
+     * @param array|null $currentFields     The projection of the model holding the object.
+     * @param array      $fieldPath         The path relative to `$currentFields`, extended with
+     *                                      this object's key before recursing.
+     *
+     * @return string|null The AQL condition built from the segments below, or `null` when none
+     *                     could be resolved.
      *
      * @throws BindException
      * @throws ConstantException
@@ -347,6 +393,8 @@ trait HasHierarchicalFilter
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws RequestValidationException When the request itself is refused.
+     * @throws RuntimeException When a relation reference below cannot be resolved.
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
@@ -393,8 +441,12 @@ trait HasHierarchicalFilter
      * @param array $init The original filter parameters.
      * @param array $binds The bind variables array.
      * @param string $docRef The current document reference.
-     * @param array $availableEdges
-     * @return string|null The AQL condition for edge traversal, or null on failure.
+     * @param array $availableEdges The edges definitions in scope at this level.
+     * @param array $auth The caller's permission context. The relation itself is gated here;
+     *                    the target model's own projection then gates the leaf below.
+     *
+     * @return string|null The AQL condition for the edge traversal, `false` when the relation is
+     *                     refused, or `null` when the inner condition could not be resolved.
      *
      * @throws BindException
      * @throws ConstantException
@@ -403,6 +455,9 @@ trait HasHierarchicalFilter
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException If edge configuration is invalid or not found.
+     * @throws RequestValidationException When the request itself is refused — an unusable
+     *                                    `quant`, or an operator this leaf cannot honour.
+     * @throws RuntimeException When the edge or its model cannot be resolved.
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
@@ -556,8 +611,12 @@ trait HasHierarchicalFilter
      * @param array $init The original filter parameters.
      * @param array $binds The bind variables array.
      * @param string $docRef The current document reference.
-     * @param array $availableJoins
-     * @return string|null The AQL condition for join traversal, or null on failure.
+     * @param array $availableJoins The joins definitions in scope at this level.
+     * @param array $auth The caller's permission context. The relation itself is gated here;
+     *                    the target model's own projection then gates the leaf below.
+     *
+     * @return string|null The AQL condition for the join traversal, `false` when the relation is
+     *                     refused, or `null` when the inner condition could not be resolved.
      *
      * @throws BindException
      * @throws ConstantException
@@ -566,6 +625,9 @@ trait HasHierarchicalFilter
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws RequestValidationException When the request itself is refused — an unusable
+     *                                    `quant`, or an operator this leaf cannot honour.
+     * @throws RuntimeException When the join, its model or its collection cannot be resolved.
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
@@ -712,14 +774,23 @@ trait HasHierarchicalFilter
     }
 
     /**
-     * Build leaf condition by delegating to existing filter logic
+     * Build the leaf condition by delegating to the flat filter helpers.
      *
-     * @param FilterPath $segmentInfo The segment information with type and path.
-     * @param array      $init        The original filter parameters.
-     * @param array      $binds       The bind variables array.
-     * @param string     $docRef      The current document reference.
+     * The last segment of the path names an actual field: its declared type selects the
+     * helper that knows how to compare it, and a custom callable is honoured as-is.
      *
-     * @return string|null The AQL condition string, or null on failure.
+     * @param FilterPath $segmentInfo   The parsed leaf segment, carrying its declared type and
+     *                                  its full path.
+     * @param array      $init          The original filter parameters.
+     * @param array      &$binds        The bind variables, populated by reference.
+     * @param string     $docRef        The document reference the leaf belongs to.
+     * @param array|null $currentFields The projection of the model holding the leaf.
+     * @param array      $fieldPath     The path relative to `$currentFields`, completed here
+     *                                  with the leaf key to form the gated path.
+     * @param array      $auth          The caller's permission context.
+     *
+     * @return string|null The AQL condition, `false` when the field is refused by the permission
+     *                     gate, or `null` when no handler matches the declared type.
      */
     private function buildLeafCondition
     (
