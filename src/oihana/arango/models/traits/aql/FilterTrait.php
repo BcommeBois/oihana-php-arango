@@ -511,10 +511,17 @@ trait FilterTrait
             // `company` join) carries no leaf field: it is a pure existence /
             // absence / cardinality check on the relation itself. Route it to the
             // hierarchical builder, which owns the traversal logic and `quant`.
+            //
+            // An OBJECT named on its own (`resolution`, a Filter::DOCUMENT) is the
+            // same sentence about a plain sub-document: nothing is being looked for
+            // inside it, its presence is the question. It used to fall through to the
+            // lookup below, where its array definition is neither a FilterType nor a
+            // callable — so the key was logged as "not a valid filterable attribute"
+            // and the filter dropped, answering the whole collection in `200`.
             $relationKey = str_replace( Operator::ARRAY_EXPANSION , '' , $key ) ;
             $relationDef = $this->filters[ $relationKey ] ?? null ;
 
-            if ( is_array( $relationDef ) && in_array( $relationDef[ AQL::TYPE ] ?? null , [ Filter::EDGE , Filter::EDGES , Filter::JOIN , Filter::JOINS ] , true ) )
+            if ( is_array( $relationDef ) && in_array( $relationDef[ AQL::TYPE ] ?? null , [ Filter::DOCUMENT , Filter::EDGE , Filter::EDGES , Filter::JOIN , Filter::JOINS ] , true ) )
             {
                 return $this->prepareHierarchicalFilter( $init , $binds , $docRef , $auth ) ;
             }

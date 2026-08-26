@@ -739,6 +739,51 @@ AQL::EDGES =>
 
 > **Strict rule.** The presence of `[*]` must match the plural type (`EDGES`, `JOINS`, array expansion). A mismatch — `employee.name` for an `EDGES`, or `company[*].name` for a `JOIN` — causes the filter to be **silently ignored** (consistent with the rest of the API: no 400 error).
 
+### Naming an object last: testing whether it is there
+
+**The situation.** A `tickets` record keeps its resolution in an optional sub-object: `resolution: { closedAt, by }`. Filtering **inside** it always worked — `resolution.closedAt` names a field. But "which tickets have **no** resolution yet?" named no field at all, and so had no writable form.
+
+An object **named last**, with no sub-field behind it, now tests the presence of the location itself:
+
+```jsonc
+{"key":"resolution","val":null}              // tickets with no resolution
+// doc.resolution == @value
+
+{"key":"resolution","val":null,"op":"ne"}    // tickets that have one
+// doc.resolution != @value
+```
+
+It is the same sentence relations already say with [`quant`](#quantifiers-on-edgesjoins--the-quant-key) — "is there anything at the other end?" — applied to a plain sub-document.
+
+**What "present" means exactly.** AQL reads a missing attribute as `null`, so both shapes of absence answer together, and an **empty** object counts as present:
+
+| Stored document | `resolution == null` | `resolution != null` |
+|---|---|---|
+| `{ resolution: { closedAt: … } }` | ✗ | ✓ |
+| `{ }` — attribute absent | ✓ | ✗ |
+| `{ resolution: null }` — explicit null | ✓ | ✗ |
+| `{ resolution: {} }` — **empty object** | ✗ | ✓ |
+
+> The last row is the one that matters: the test bears on the **location**, not on its contents. A `{}` is there, so it is present — even though it says nothing.
+
+**What does not change.** Filtering inside the object goes on exactly as before: the fix touches the terminal case only. Both usages live on the same declaration.
+
+```jsonc
+{"key":"resolution.closedAt","op":"ge","val":"2026-01-01"}   // unchanged
+{"key":"resolution.audit.by","val":"grace"}                  // unchanged, at any depth
+```
+
+**Operators.** The twelve infix comparators apply (`eq`, `ne`, `in`, `nin`, …). The function forms mean nothing on an object and are **refused with a `400`**, as everywhere else:
+
+```jsonc
+{"key":"resolution","val":null,"op":"ne"}   // ✅ accepted
+{"key":"resolution","val":"x","op":"sw"}    // ⛔ 400 — "starts with" means nothing here
+```
+
+**`quant` is inert here.** An object has no elements to quantify; the key is ignored and the comparison stays the same — the behaviour it already has on a scalar key.
+
+> ⚠ **An array named last is not supported yet.** `attachments[*]` with no sub-field is still ignored: "the slot is absent" and "the list is empty" are two different questions, both legitimate, and the `[*]` notation — mandatory on an `ARRAY_EXPANSION` — reads poorly when the subject is the whole list rather than its elements. That will get its own batch.
+
 ### Multi-level
 
 The **relation maps** of target models are resolved automatically: if the target model declares its own `AQL::EDGES` / `AQL::JOINS`, you can chain traversals (`employee[*].department.name`). You only need to declare the **`AQL::FILTERS` tree** at each traversed level — the deeper `AQL::EDGES`/`AQL::JOINS` maps are inherited from the target model and **need not be re-declared**.

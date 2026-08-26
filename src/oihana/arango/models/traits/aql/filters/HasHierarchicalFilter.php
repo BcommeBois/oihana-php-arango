@@ -836,6 +836,37 @@ trait HasHierarchicalFilter
 
         try
         {
+            // Case 0: an OBJECT named last has no terminal field.
+            //
+            // The walk below looks for a field *inside* the segment, finds none and
+            // used to log "no handler" and drop the filter — so `?filter={"key":
+            // "resolution","val":null}` answered the whole collection, in `200`.
+            // "Which tickets have no resolution yet?" had no writable form at all.
+            //
+            // There is nothing to look for inside: the comparison bears on the
+            // location itself, `doc.resolution`, which is byte for byte what the same
+            // key would produce if it held a scalar. AQL reads a missing attribute as
+            // `null`, so `== null` answers absent-or-null and `!= null` answers
+            // present — the presence test the relations already answer through their
+            // quantifier, and the one an object could not express.
+            //
+            // The operator is resolved by the shared comparator, so a form this
+            // comparison cannot honour (`sw`, `between`, …) is refused with a `400`
+            // rather than quietly mistranslated — no whitelist to keep in step here.
+            //
+            // ⚠ Reached only AFTER the permission gate above, deliberately: a presence
+            // test is an answer about a locked field like any other, and a refused
+            // path must keep neutralising to `false`.
+            if ( $segmentInfo->type === Filter::DOCUMENT )
+            {
+                return predicate
+                (
+                    $this->prepareFilterKey        ( $fieldInit , $docRef , $binds ) ,
+                    $this->prepareFilterComparator ( $fieldInit ) ,
+                    $this->prepareFilterValue      ( $fieldInit , $binds )
+                ) ;
+            }
+
             // Case 1: Simple FilterType (string, number, date, bool, array)
             if ( is_string( $segmentInfo->type ) && FilterType::includes( $segmentInfo->type ) )
             {

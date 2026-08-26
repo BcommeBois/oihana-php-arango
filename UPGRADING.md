@@ -9,11 +9,13 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Four breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Five breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
-refused everywhere else. None changes a signature.
+refused everywhere else. The fifth refuses nothing at all: a filter that was being dropped now
+applies, so a listing that answered everything starts answering the question. None changes a
+signature.
 
 ### 🚨 Breaking
 
@@ -122,6 +124,46 @@ into a dropped filter.
 **What does not move.** A consumer's own custom leaf callable that throws is still caught, logged
 and resolved to `null` — that is a server-side fault, not something a caller can fix, and refusing
 the whole request over it would take a surface down. Only refusals built for the caller are relayed.
+
+#### 5. Naming an object in a filter key now filters instead of being ignored
+
+**Before.** A filter key ending on a `Filter::DOCUMENT` named no field, so the library looked for
+one inside the object, found none and **dropped the filter**. The query ran without it:
+
+```
+?filter={"key":"resolution","val":null}   → every ticket, in 200
+```
+
+**Now.** The comparison bears on the location itself, and the same call answers only the tickets
+whose `resolution` is absent or `null`:
+
+```
+?filter={"key":"resolution","val":null}   → doc.resolution == @value
+```
+
+**What to do.**
+
+1. **Grep your front-end for a filter key that names a declared `Filter::DOCUMENT` with nothing
+   after it** — `{"key":"<object>"}` rather than `{"key":"<object>.<field>"}`. Those calls used to
+   return the whole collection and now return a subset. The result changes for the better, but it
+   changes: a page that looked complete was complete because the filter was being ignored.
+2. **Nothing to declare.** The behaviour comes from the `Filter::DOCUMENT` you already declare; no
+   new key, no opt-in.
+3. **Nothing else moves.** Filtering *inside* the object is untouched at any depth
+   (`resolution.closedAt`, `resolution.audit.by`), and a scalar, an edge or a join named last keep
+   exactly the behaviour they had.
+
+**What "present" means.** AQL reads a missing attribute as `null`, so `== null` selects both the
+document with no attribute at all and the one storing an explicit `null`. An **empty object** `{}`
+counts as *present* — the test bears on the location, not on its contents.
+
+**Two things that are deliberately refused.** A function-form operator on an object (`sw`, `ew`,
+`contains`, `regex`, `between`) answers `400` rather than being folded into equality — it means
+nothing there. And `quant` is inert on an object, as it already is on a scalar key.
+
+**Still ignored, on purpose: an array named last.** `attachments[*]` with no sub-field keeps being
+dropped. "The slot is absent" and "the list is empty" are two different questions and both deserve
+an answer; that is a separate change, not this one.
 
 ---
 

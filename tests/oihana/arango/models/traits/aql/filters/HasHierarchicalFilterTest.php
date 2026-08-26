@@ -18,11 +18,14 @@ use ReflectionException;
 use RuntimeException;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\enums\Arango;
+use oihana\arango\enums\Field;
 use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Filter;
 use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\filters\FilterType;
+use oihana\enums\Boolean;
 
 use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
 
@@ -934,6 +937,259 @@ class HasHierarchicalFilterTest extends TestCase
         $init = [ 'key' => 'address.weird' , 'val' => 'x' ] ;
 
         $this->assertNull( $model->prepareFilter( $init , $this->binds ) ) ;
+    }
+
+    // ========================================
+    // AN OBJECT NAMED LAST — PRESENCE
+    // ========================================
+
+    /**
+     * The model used by the presence cases: `resolution` is a plain sub-document,
+     * `audit` a sub-document one level deeper.
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    private function tickets( array $fields = [] ): Documents
+    {
+        return new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'tickets' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'title'      => FilterType::STRING ,
+                'resolution' =>
+                [
+                    AQL::TYPE    => Filter::DOCUMENT ,
+                    AQL::FILTERS =>
+                    [
+                        'closedAt' => FilterType::DATE ,
+                        'audit'    =>
+                        [
+                            AQL::TYPE    => Filter::DOCUMENT ,
+                            AQL::FILTERS => [ 'by' => FilterType::STRING ] ,
+                        ] ,
+                    ]
+                ]
+            ] ,
+            ...( $fields === [] ? [] : [ AQL::FIELDS => $fields ] ) ,
+        ]);
+    }
+
+    /**
+     * An object named last has no terminal field, so the comparison bears on the
+     * location itself — `doc.resolution`, byte for byte what the same key produces
+     * when it holds a scalar. AQL reads a missing attribute as `null`, so this is
+     * the "no resolution yet" question, which had no writable form at all.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testObjectNamedLastComparesTheLocationItself(): void
+    {
+        $result = $this->tickets()->prepareFilter( [ 'key' => 'resolution' , 'val' => null ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^doc\.resolution == @\w+$/' , $result ) ;
+        $this->assertContains( null , $this->binds ) ;
+    }
+
+    /**
+     * The mirror question — "which tickets DO have a resolution" — is the same
+     * comparison negated.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testObjectNamedLastHonoursNotEquals(): void
+    {
+        $result = $this->tickets()->prepareFilter( [ 'key' => 'resolution' , 'val' => null , 'op' => 'ne' ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^doc\.resolution != @\w+$/' , $result ) ;
+    }
+
+    /**
+     * The same sentence one level down. This is a **second seat**, reached by another
+     * road: a dotted key goes through the hierarchical walk, where the object is the
+     * last segment, while `resolution` alone never enters that walk at all.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNestedObjectNamedLastComparesTheLocationItself(): void
+    {
+        $result = $this->tickets()->prepareFilter( [ 'key' => 'resolution.audit' , 'val' => null ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^doc\.resolution\.audit == @\w+$/' , $result ) ;
+    }
+
+    /**
+     * 🚨 A refused object is neutralised to `false`, never dropped to `null`.
+     *
+     * That distinction is the whole point of the fix: `false` says "you may not",
+     * `null` said "I did not understand" and quietly widened the query to the entire
+     * collection. Answering the presence question on a locked field would be an
+     * oracle, so the gate keeps its say — and it keeps it by refusing, not by
+     * forgetting.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testRefusedObjectNamedLastIsNeutralisedToFalse(): void
+    {
+        $model = $this->tickets( [ 'resolution' => [ Field::REQUIRES => 'ticket:resolve' ] ] ) ;
+
+        $result = $model->prepareFilter
+        (
+            [ Arango::FILTER => [ 'key' => 'resolution' , 'val' => null ] , Arango::AUTHORIZER => fn() => false ] ,
+            $this->binds
+        ) ;
+
+        $this->assertSame( Boolean::FALSE , $result ) ;
+        $this->assertNotSame( null , $result ) ;
+    }
+
+    /**
+     * The same refusal on the deeper seat, where the gate is the path-aware one.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testRefusedNestedObjectNamedLastIsNeutralisedToFalse(): void
+    {
+        $model = $this->tickets
+        ([
+            'resolution' =>
+            [
+                Field::FIELDS => [ 'audit' => [ Field::REQUIRES => 'ticket:audit' ] ] ,
+            ]
+        ]) ;
+
+        $result = $model->prepareFilter
+        (
+            [ Arango::FILTER => [ 'key' => 'resolution.audit' , 'val' => null ] , Arango::AUTHORIZER => fn() => false ] ,
+            $this->binds
+        ) ;
+
+        $this->assertSame( Boolean::FALSE , $result ) ;
+        $this->assertNotSame( null , $result ) ;
+    }
+
+    /**
+     * The fix touches the terminal case only: an object followed by other segments
+     * keeps traversing exactly as before, and so does its nested array.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testObjectFollowedBySegmentsStillTraverses(): void
+    {
+        $model = $this->tickets() ;
+
+        $this->assertStringContainsString
+        (
+            'doc.resolution.closedAt' ,
+            $model->prepareFilter( [ 'key' => 'resolution.closedAt' , 'val' => '2026-01-01' ] , $this->binds )
+        ) ;
+
+        $binds = [] ;
+
+        $this->assertStringContainsString
+        (
+            'doc.resolution.audit.by' ,
+            $model->prepareFilter( [ 'key' => 'resolution.audit.by' , 'val' => 'someone' ] , $binds )
+        ) ;
+    }
+
+    /**
+     * Routing to the shared comparator brings its refusal along: a form this
+     * comparison cannot honour is answered with a `400` rather than quietly
+     * mistranslated into equality. Nothing to keep in step — no whitelist of
+     * operators is maintained here.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testObjectNamedLastRefusesAnOperatorItCannotHonour(): void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionCode( 400 ) ;
+
+        $this->tickets()->prepareFilter( [ 'key' => 'resolution' , 'val' => 'x' , 'op' => 'sw' ] , $this->binds ) ;
+    }
+
+    /**
+     * `quant` quantifies elements, and an object has none — it is inert here, exactly
+     * as it is on a scalar key, rather than fabricating a lopsided clause.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testQuantIsInertOnAnObjectNamedLast(): void
+    {
+        $result = $this->tickets()->prepareFilter
+        (
+            [ 'key' => 'resolution' , 'val' => null , 'quant' => 'none' ] ,
+            $this->binds
+        ) ;
+
+        $this->assertMatchesRegularExpression( '/^doc\.resolution == @\w+$/' , $result ) ;
     }
 
     // ========================================

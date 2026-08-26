@@ -739,6 +739,51 @@ AQL::EDGES =>
 
 > **Règle stricte.** La présence du `[*]` doit correspondre au type pluriel (`EDGES`, `JOINS`, expansion de tableau). Un décalage — `employee.name` pour un `EDGES`, ou `company[*].name` pour un `JOIN` — fait **silencieusement ignorer** le filtre (cohérent avec le reste de l'API : aucune erreur 400).
 
+### Nommer un objet en dernier : tester sa présence
+
+**La situation.** Une fiche `tickets` garde sa résolution dans un sous-objet facultatif : `resolution: { closedAt, by }`. Filtrer **à l'intérieur** a toujours marché — `resolution.closedAt` désigne un champ. Mais « quels billets n'ont **pas encore** de résolution ? » ne désignait aucun champ, et n'avait donc aucune écriture possible.
+
+Un objet **nommé en dernier**, sans sous-champ derrière, teste désormais la présence de l'emplacement lui-même :
+
+```jsonc
+{"key":"resolution","val":null}              // les billets sans résolution
+// doc.resolution == @value
+
+{"key":"resolution","val":null,"op":"ne"}    // les billets qui en ont une
+// doc.resolution != @value
+```
+
+C'est la même phrase que les relations savent déjà dire avec [`quant`](#quantificateurs-sur-edgesjoins--clé-quant) — « y a-t-il quelque chose au bout ? » — appliquée à un simple sous-document.
+
+**Ce que « présent » veut dire exactement.** AQL lit un attribut absent comme `null`, donc les deux formes de l'absence répondent ensemble, et un objet **vide** compte comme présent :
+
+| Document stocké | `resolution == null` | `resolution != null` |
+|---|---|---|
+| `{ resolution: { closedAt: … } }` | ✗ | ✓ |
+| `{ }` — attribut absent | ✓ | ✗ |
+| `{ resolution: null }` — null explicite | ✓ | ✗ |
+| `{ resolution: {} }` — **objet vide** | ✗ | ✓ |
+
+> La dernière ligne est celle qui compte : le test porte sur **l'emplacement**, pas sur son contenu. Un `{}` est là, donc il est présent — même s'il ne dit rien.
+
+**Ce qui ne change pas.** Filtrer à l'intérieur de l'objet continue exactement comme avant : le correctif ne touche que le cas terminal. Les deux usages cohabitent sur la même déclaration.
+
+```jsonc
+{"key":"resolution.closedAt","op":"ge","val":"2026-01-01"}   // inchangé
+{"key":"resolution.audit.by","val":"grace"}                  // inchangé, à toute profondeur
+```
+
+**Les opérateurs.** Les douze comparateurs infixes s'appliquent (`eq`, `ne`, `in`, `nin`, …). Les formes fonctionnelles n'ont pas de sens sur un objet et sont **refusées avec un `400`**, comme partout ailleurs :
+
+```jsonc
+{"key":"resolution","val":null,"op":"ne"}   // ✅ accordé
+{"key":"resolution","val":"x","op":"sw"}    // ⛔ 400 — « starts with » ne veut rien dire ici
+```
+
+**`quant` est inerte ici.** Un objet n'a pas d'éléments à quantifier ; la clé est ignorée et la comparaison reste la même — le comportement qu'elle a déjà sur une clé scalaire.
+
+> ⚠ **Un tableau nommé en dernier n'est pas encore supporté.** `attachments[*]` sans sous-champ reste ignoré : « la case est absente » et « la liste est vide » sont deux questions différentes, toutes deux légitimes, et la notation `[*]` — obligatoire sur un `ARRAY_EXPANSION` — se lit mal quand on parle de la liste entière plutôt que de ses éléments. Le sujet aura son propre lot.
+
 ### Multi-niveaux
 
 Les **cartes de relations** des modèles d'arrivée sont résolues automatiquement : si le modèle cible déclare lui-même ses `AQL::EDGES` / `AQL::JOINS`, on peut enchaîner les traversées (`employee[*].department.name`). Il suffit de déclarer l'**arbre des `AQL::FILTERS`** à chaque niveau traversé — les cartes `AQL::EDGES`/`AQL::JOINS` profondes, elles, sont héritées du modèle cible et **n'ont pas à être redéclarées**.
