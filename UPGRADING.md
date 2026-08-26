@@ -9,10 +9,11 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Three breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Four breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
-starts meaning something better. None changes a signature.
+starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
+refused everywhere else. None changes a signature.
 
 ### 🚨 Breaking
 
@@ -86,6 +87,41 @@ library reads the `Filter::TRANSLATE` that was already in `AQL::FIELDS`.
 4. There is deliberately **no opt-out**. Ordering a listing by the shape of a translations object is
    not a behaviour worth preserving a switch for; if you truly need the old order, sort on another
    field.
+
+#### 4. A malformed request is refused on a nested key too, not only at the root
+
+**Before.** 1.6.0 stopped folding an unusable operator back onto equality and started answering
+`400` (see *1.5.0 → 1.6.0*, breaking change 3). On a **dotted** key that refusal never arrived: the
+hierarchical walk caught it with everything else and dropped the filter, so the query ran without
+it and answered the whole collection.
+
+```
+?filter={"key":"name","op":"zzz"}          → 400, naming the accepted codes
+?filter={"key":"address.city","op":"zzz"}  → every customer, in 200
+```
+
+**Now.** Both answer `400`. The refusal is relayed out of the nested walk instead of being turned
+into a dropped filter.
+
+**What to do.**
+
+1. **Nothing, if you already did the 1.6.0 pass.** The accepted operators are unchanged and the
+   rules are the same at every depth — this only makes the depths agree. If your front-end sends
+   only valid operators, no request moves.
+2. **If you skipped that pass**, do it now over your *nested* keys as well: the function forms
+   (`sw`, `nsw`, `ew`, `new`, `contains`, `ncontains`, `regex`, `nregex`) apply to `string` filters
+   only, `between` to `string`, `number` and `date`, `distance` to `geo`. Everything else was
+   already refused on a flat key, so a nested key is the only place a bad operator can still be
+   hiding in your logs as a `200`.
+3. **Watch for a request you did not know was malformed.** This is the uncomfortable half: a call
+   that has been answering `200` for a while may have been answering it *because* its filter was
+   being dropped. It now answers `400` — the surface did not break, the request was always wrong.
+   The same applies to the other refusals reachable through a nested path: an unusable `quant`, an
+   `atLeast.<op>` of the wrong shape, and `quant: all` with no condition to satisfy.
+
+**What does not move.** A consumer's own custom leaf callable that throws is still caught, logged
+and resolved to `null` — that is a server-side fault, not something a caller can fix, and refusing
+the whole request over it would take a surface down. Only refusals built for the caller are relayed.
 
 ---
 

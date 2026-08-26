@@ -791,6 +791,10 @@ trait HasHierarchicalFilter
      *
      * @return string|null The AQL condition, `false` when the field is refused by the permission
      *                     gate, or `null` when no handler matches the declared type.
+     *
+     * @throws RequestValidationException When the caller's own request is refused — the refusal
+     *                                    is relayed to them, never swallowed into a dropped
+     *                                    filter.
      */
     private function buildLeafCondition
     (
@@ -865,6 +869,24 @@ trait HasHierarchicalFilter
             ));
 
             return null ;
+        }
+        catch ( RequestValidationException $e )
+        {
+            // 🚨 A refusal addressed to the CALLER, not a failure to build.
+            //
+            // The catch below turns anything escaping a leaf into `null`, and a `null`
+            // leaf drops the whole filter: the query leaves without it and the surface
+            // answers the entire collection, in `200`. That is the right treatment for
+            // a consumer's broken callable — no URL will ever fix it — and the exact
+            // wrong one for a mistyped operator, which answered `400 Bad Request` at
+            // the root and vanished in depth:
+            //
+            //   {"key":"name",         "op":"zzz"}  ->  400, naming the accepted codes
+            //   {"key":"address.city", "op":"zzz"}  ->  the whole collection
+            //
+            // Same mistake, opposite answers, told apart by nothing but a dot. The
+            // refusal is relayed so both depths answer alike.
+            throw $e ;
         }
         catch ( Exception $e )
         {

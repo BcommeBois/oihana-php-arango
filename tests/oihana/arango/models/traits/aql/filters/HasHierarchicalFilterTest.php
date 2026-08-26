@@ -20,6 +20,7 @@ use RuntimeException;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Filter;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\filters\FilterType;
 
@@ -762,6 +763,97 @@ class HasHierarchicalFilterTest extends TestCase
         $result = $model->prepareFilter( $init , $this->binds ) ;
 
         $this->assertSame( "LOWER(doc.address.score) == 'hi'" , $result ) ;
+    }
+
+    /**
+     * A mistyped operator is refused the same way at every depth.
+     *
+     * The refusal is built for whoever has to fix the URL, and it used to reach them
+     * only at the root: in depth the broad catch turned it into a dropped filter, so
+     * the very same mistake answered `400` on `title` and the whole collection on
+     * `address.city`. Both now refuse.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNestedLeafRefusesAnUnknownOperatorLikeTheRootDoes(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'customers' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'name'    => FilterType::STRING ,
+                'address' =>
+                [
+                    AQL::TYPE    => Filter::DOCUMENT ,
+                    AQL::FILTERS => [ 'city' => FilterType::STRING ] ,
+                ]
+            ]
+        ]);
+
+        $rootRefusal = null ;
+
+        try
+        {
+            $binds = [] ;
+            $model->prepareFilter( [ 'key' => 'name' , 'val' => 'x' , 'op' => 'zzz' ] , $binds ) ;
+        }
+        catch ( RequestValidationException $exception )
+        {
+            $rootRefusal = $exception ;
+        }
+
+        $this->assertInstanceOf( RequestValidationException::class , $rootRefusal ) ;
+
+        $this->expectException( RequestValidationException::class ) ;
+
+        $model->prepareFilter( [ 'key' => 'address.city' , 'val' => 'x' , 'op' => 'zzz' ] , $this->binds ) ;
+    }
+
+    /**
+     * The refusal also covers an operator that exists but not for the field at hand:
+     * `sw` asks for a number *starting with* 12 and used to answer numbers *equal to*
+     * 12 — a plausible page nobody asked for.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNestedLeafRefusesAFunctionFormOperatorOnANumber(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'customers' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'address' =>
+                [
+                    AQL::TYPE    => Filter::DOCUMENT ,
+                    AQL::FILTERS => [ 'floor' => FilterType::NUMBER ] ,
+                ]
+            ]
+        ]);
+
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionCode( 400 ) ;
+
+        $model->prepareFilter( [ 'key' => 'address.floor' , 'val' => 12 , 'op' => 'sw' ] , $this->binds ) ;
     }
 
     /**
