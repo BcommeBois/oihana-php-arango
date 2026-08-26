@@ -14,6 +14,8 @@ use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+use function oihana\arango\models\helpers\normalizeSortable;
+
 /**
  * Bare host exposing {@see SortTrait} with a projection map, so the multilingual
  * detection can inherit a field declared `Filter::TRANSLATE`.
@@ -388,6 +390,44 @@ final class MultilingualSortTest extends TestCase
         $stub->sortDefault = 'label' ;
 
         $this->assertSame( 'NOT_NULL(doc.alternateName["fr"],doc.name) ASC' , $stub->prepareSort() ) ;
+    }
+
+    // =========================================================================
+    // 🚨 The behaviour that moves without a declaration changing
+    // =========================================================================
+
+    /**
+     * The indexed shorthand over a field the projection already declares
+     * `Filter::TRANSLATE` is detected on its own — no `Field::PATH`, no
+     * `Field::FILTER`, nothing added to the model. It used to order on the whole
+     * translations object; under a language it orders on that locale.
+     *
+     * Both halves are pinned here because the frontier between them is what
+     * `UPGRADING.md` tells consumers to grep for: with no language in play, the
+     * expression is the stored path byte for byte.
+     */
+    #[Test]
+    public function theIndexedShorthandOnATranslatedFieldFollowsTheLanguage() : void
+    {
+        $stub = $this->stub
+        (
+            normalizeSortable( [ 'alternateName' ] ) ,
+            [ 'alternateName' => Filter::TRANSLATE ] ,
+        ) ;
+
+        $this->assertSame
+        (
+            'doc.alternateName ASC' ,
+            $stub->prepareSort( [ Arango::SORT => 'alternateName' ] ) ,
+            'No language anywhere: unchanged.' ,
+        ) ;
+
+        $this->assertSame
+        (
+            'doc.alternateName["fr"] ASC' ,
+            $stub->prepareSort( [ Arango::SORT => 'alternateName' , Arango::LANG => 'fr' ] ) ,
+            'A requested language moves it — the breaking change.' ,
+        ) ;
     }
 
     #[Test]

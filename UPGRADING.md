@@ -9,9 +9,10 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Two breaking changes, both on the same key — `AQL::DIRECTION`, read by the edge surfaces. Both
-refuse a **declaration** that could not be honoured and was being half-honoured in silence. Neither
-changes a signature, and a correct declaration compiles byte for byte as before.
+Three breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
+in silence. The third is of another kind: no declaration is refused, but one that was already there
+starts meaning something better. None changes a signature.
 
 ### 🚨 Breaking
 
@@ -55,6 +56,36 @@ gated by the near side's `Field::REQUIRES`.
    comes back from the other side. Wire both ends, or declare an oriented direction.
 5. **Linked facets are not concerned.** A facet declares an edge *collection*, not a model, so it
    has nothing to resolve — `Traversal::ANY` stays unrestricted there.
+
+#### 3. Sorting on a translated field now follows `?lang=`
+
+**Before.** A sortable entry aiming at a **root** field declared `Filter::TRANSLATE` compiled to
+`SORT doc.alternateName` — the whole translations object. ArangoDB does order objects (by attribute
+count, then keys and values), so the listing was stable and reproducible; it simply had no relation
+to the text on screen. A document holding one translation came before a document holding two,
+whatever either of them said.
+
+**Now.** As soon as a language is in play — `?lang=` on the request, or a fallback declared through
+`Arango::DEFAULT_LANG` — the same entry orders on that locale:
+`SORT NOT_NULL(doc.alternateName["fr"], …)`. Nothing else about the declaration changed; the
+library reads the `Filter::TRANSLATE` that was already in `AQL::FIELDS`.
+
+**What to do.**
+
+1. **Grep your `AQL::SORTABLE` declarations** for entries whose resolved path is a **root** field
+   also declared `Filter::TRANSLATE` in `AQL::FIELDS` — typically the indexed shorthand
+   `AQL::SORTABLE => [ 'alternateName' ]`. Those are the ones that move. An entry aiming at
+   `'alternateName.fr'` — a locale written into the path — is **not** detected as multilingual and
+   is untouched.
+2. **In almost every case this is the order you wanted**, and there is nothing to do beyond
+   declaring `Field::ELSE`: without it, a document carrying no translation at all orders on `null`,
+   which puts it at the **front** of the listing. See `wiki/en/db/sort.md`, "Sorting a multilingual
+   label".
+3. **Without `?lang=` and with no fallback declared anywhere, nothing moves** — the expression is
+   the stored path, byte for byte as before. A project that never sends `?lang=` is not concerned.
+4. There is deliberately **no opt-out**. Ordering a listing by the shape of a translations object is
+   not a behaviour worth preserving a switch for; if you truly need the old order, sort on another
+   field.
 
 ---
 
