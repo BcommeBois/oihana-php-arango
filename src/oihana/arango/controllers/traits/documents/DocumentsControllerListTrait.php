@@ -76,6 +76,9 @@ trait DocumentsControllerListTrait
                 Arango::ARGS       => $args ,
                 Arango::BINDS      => $init[ Arango::BINDS      ] ?? null ,
                 Arango::CONDITIONS => $init[ Arango::CONDITIONS ] ?? null ,
+                // The site-wide fallback locale of multilingual sort criteria. A
+                // default, not an instruction: a model declaring its own outranks it.
+                Arango::DEFAULT_LANG => $this->defaultLang ,
                 Arango::FACETS     => $this->prepareFacets( $request , $init , $params ) ,
                 Arango::FILTER     => $this->prepareFilter( $request , $init , $params ) ,
                 Arango::GROUP      => $this->prepareGroup ( $request , $init , $params ) ,

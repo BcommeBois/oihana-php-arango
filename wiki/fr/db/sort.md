@@ -143,6 +143,113 @@ ordonner — sinon l'ordre le trahit.
 > variables que le `COLLECT` émet. La clé est jetée comme n'importe quelle autre
 > clé non groupée.
 
+## Trier un libellé multilingue
+
+**La situation.** Un catalogue range ses libellés par langue :
+`{ "name": "Zinc-3000", "alternateName": { "fr": "Aspirateur", "en": "Hoover" } }`.
+Déclarer `'label' => 'alternateName.fr'` trie bien les documents traduits — et
+range **en tête, dans un ordre arbitraire**, tous ceux qui n'ont pas de français :
+ils trient sur `null`. La requête réussit, la page s'affiche, la liste est fausse.
+
+Une entrée peut donc viser une langue **puis se replier** :
+
+```php
+AQL::FIELDS =>
+[
+    'name'          => [] ,
+    'alternateName' => Filter::TRANSLATE ,   // ① l'objet de traductions
+] ,
+
+AQL::SORTABLE =>
+[
+    'name' ,
+    'label' =>
+    [
+        Field::PATH         => 'alternateName' , // ② le chemin de l'objet
+        Field::ELSE         => 'name' ,          // ③ le dernier recours (facultatif)
+        Field::DEFAULT_LANG => 'fr' ,            // ④ la langue de repli (facultative)
+    ] ,
+] ,
+```
+
+`?sort=label&lang=en` compile alors :
+
+```aql
+SORT NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"], doc.name) ASC
+```
+
+**Ce qui marque l'entrée comme multilingue** suit les deux temps que la permission
+suit déjà — hérité d'abord, explicite ensuite :
+
+| Forme | Quand |
+|---|---|
+| **héritée** — ① le champ visé est déclaré `Filter::TRANSLATE` dans `AQL::FIELDS` | le cas courant : le champ est projeté |
+| **explicite** — `Field::FILTER => Filter::TRANSLATE` sur l'entrée elle-même | le champ est triable mais **non projeté** |
+
+⚠ L'héritage lit un champ **racine**. Un champ traduit niché dans un sous-document
+n'est pas parcouru : déclarez `Field::FILTER` sur l'entrée. Un raté n'est pas un
+trou — l'entrée retombe sur le chemin stocké, ce qu'elle a toujours fait.
+
+### La langue de repli, et qui la déclare
+
+Trois endroits, du plus local au plus général ; **le premier qui répond gagne** :
+
+| # | Où | Clé |
+|---|---|---|
+| 1 | l'entrée de tri | `Field::DEFAULT_LANG` |
+| 2 | le modèle | `Arango::DEFAULT_LANG` à la construction (ou l'entrée `defaultLang` du container) |
+| 3 | l'hôte, poussé par appel | `Arango::DEFAULT_LANG` dans l'init |
+
+⚠ **Le modèle l'emporte sur l'hôte, et c'est voulu.** Ce que l'hôte pousse est un
+*défaut*, et un défaut n'écrase jamais une déclaration explicite — sinon un modèle
+changerait de comportement selon le site qui l'héberge, sans qu'une de ses lignes
+ait bougé.
+
+⚠ À ne pas confondre avec `Arango::LANG` (`?lang=`), la langue **demandée** : celle-là
+est une *instruction*, et elle prime sur les trois. Les deux voyagent dans le même init.
+
+### Ce que ça donne, cas par cas
+
+Site en français (`defaultLang` = `fr`) :
+
+| Requête | Expression émise |
+|---|---|
+| `?sort=label&lang=en` | `NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"], doc.name)` |
+| `?sort=label&lang=fr` | `NOT_NULL(doc.alternateName["fr"], doc.name)` — **dédoublonné** |
+| `?sort=label` | idem : la langue demandée manque, le repli répond |
+| `?sort=label&lang=all` | idem : `all` élargit le contenu rendu, il ne débranche pas le tri |
+| `?sort=label&lang=zz` | idem : la langue est filtrée en amont par la liste blanche du contrôleur |
+| sans `Field::ELSE` | `NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"])` |
+| aucune langue, aucun repli, aucun `ELSE` | `doc.alternateName` — le chemin stocké, comme une entrée ordinaire |
+
+`Field::ELSE` est **facultatif** : sans lui, un document sans aucune traduction trie
+sur `null`, exactement là où il triait avant. Et une déclaration vide de tout maillon
+ne fait jamais disparaître le critère en silence : elle retombe sur le chemin stocké.
+
+### Les gardes
+
+Une langue nomme un **attribut** de l'objet de traductions, et un nom d'attribut ne
+peut pas être un paramètre lié : il est écrit tel quel dans la requête. Il est donc
+validé, et le blâme suit la provenance — la frontière que `assertAttributeName()`
+trace déjà :
+
+| Ce qui est fautif | Réponse |
+|---|---|
+| `?lang=` illisible (hors du contrôleur, qui filtre déjà) | `400` — l'appelant a écrit quelque chose d'illisible |
+| `Field::DEFAULT_LANG => 'fr_FR'` (déclaré) | `500` — aucun appelant ne peut le corriger |
+| `Field::ELSE => 'name || 1==1'` | `500` — même raison |
+| `Field::ELSE` pointant un champ interdit | maillon **retiré** de la chaîne (pas d'oracle) |
+
+⚠ L'accès à la langue est **entre crochets**, uniformément (`doc.alternateName["fr"]`)
+et non en notation pointée. Un code à tiret (`pt-BR`) se lit comme une soustraction en
+notation pointée : une seule forme pour toutes les langues vaut mieux qu'une forme qui
+dépend de la langue.
+
+⚠ **Aucun index n'est utilisable** sur cette expression : ArangoDB trie en mémoire le
+jeu filtré. Indolore sur quelques milliers de documents ; sur une grosse collection
+paginée, la parade est un attribut calculé à l'écriture (*computed value*), donc
+indexable.
+
 ## Permission de tri
 
 Whitelister ne suffit pas toujours. Un champ peut être **caché à la lecture** par une permission (`Field::REQUIRES` dans la projection) : s'il reste triable, l'ordre des résultats trahit sa valeur. C'est l'**oracle de tri** — trier sur `salary` sans le droit de le lire, et deviner qui gagne le plus rien qu'en regardant l'ordre.

@@ -8,10 +8,14 @@ use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\Search;
+use oihana\arango\traits\DefaultLangTrait;
+
 use oihana\enums\Char;
 use oihana\enums\Order;
+
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
+
 use oihana\traits\SortDefaultTrait;
 
 use org\schema\constants\Schema;
@@ -19,11 +23,14 @@ use org\schema\constants\Schema;
 use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\geo\distance;
 use function oihana\arango\db\functions\search\bm25;
+use function oihana\arango\db\functions\notNull;
 use function oihana\arango\db\helpers\assertAttributeName;
+use function oihana\arango\db\helpers\assertLanguageCode;
 use function oihana\arango\db\helpers\resolveGeoPoint;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\arango\models\helpers\normalizeSortable;
+use function oihana\core\strings\betweenDoubleQuotes;
 use function oihana\core\strings\compile;
 use function oihana\core\strings\key;
 
@@ -75,6 +82,19 @@ use function oihana\core\strings\key;
  * AQL::SORTABLE => [ Prop::CREATED => Prop::CREATED , Prop::NAME => Prop::GIVEN_NAME ]
  * ```
  *
+ * ### Multilingual ordering
+ * An entry may aim at one **locale** of a translations object and fall back:
+ * ```php
+ * AQL::FIELDS   => [ 'alternateName' => Filter::TRANSLATE , 'name' => [] ] ,
+ * AQL::SORTABLE => [ 'label' => [ Field::PATH => 'alternateName' , Field::ELSE => 'name' ] ] ,
+ * // ?sort=label&lang=en →
+ * // NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"], doc.name) ASC
+ * ```
+ * The chain is the requested locale (`Arango::LANG`), then the fallback one, then
+ * `Field::ELSE`; equal links are emitted once, and a chain left empty degrades to
+ * the stored path. The fallback is resolved by {@see resolveSortFallbackLang()},
+ * the expression built by {@see translatedSortExpression()}.
+ *
  * ### Distance ordering (`?near=`)
  * `?near={ "key":"geo", "latitude":48.85, "longitude":2.35 }` provides a
  * reference point and exposes the synthetic sort key **`distance`**
@@ -106,6 +126,7 @@ use function oihana\core\strings\key;
 trait SortTrait
 {
     use BindTrait ,
+        DefaultLangTrait ,
         SortDefaultTrait ;
 
     /**
@@ -431,7 +452,199 @@ trait SortTrait
             return null ;
         }
 
-        return key( compile( $path , Char::DOT ) , $docRef ) ;
+        $path = compile( $path , Char::DOT ) ;
+
+        // A multilingual entry does not order on the stored path itself — that path
+        // holds the translations object — but on one of its locales, with a fallback.
+        if ( $this->isTranslatedSortEntry( $entry , $path ) )
+        {
+            return $this->translatedSortExpression( $entry , $path , $init , $docRef ) ;
+        }
+
+        return key( $path , $docRef ) ;
+    }
+
+    /**
+     * Decides whether a sortable entry orders on a **multilingual** field — one whose
+     * stored value is a translations object (`{ fr: "…", en: "…" }`) rather than the
+     * text to compare.
+     *
+     * Two declarations say so, and they follow the two steps `Field::REQUIRES` already
+     * follows — inherited first, explicit second:
+     * - **inherited** — the resolved path names a field declared `Filter::TRANSLATE` in
+     *   `$this->fields`, the very declaration that makes the projection translate it;
+     * - **explicit** — the entry carries `Field::FILTER => Filter::TRANSLATE` itself,
+     *   for a field that is sortable but **not** projected (nothing to inherit from).
+     *
+     * ⚠ The inherited form reads a **root** field (a path of a single segment). A
+     * translated field nested inside a structural one is not walked into: declare
+     * `Field::FILTER` on the entry instead. A miss is not a hole — the entry then
+     * behaves as the stored path it has always been.
+     *
+     * @param mixed  $entry The `$sortable[$key]` value (path or explicit definition).
+     * @param string $path  The resolved (dotted) field path.
+     *
+     * @return bool `true` when the entry orders on a translations object.
+     */
+    private function isTranslatedSortEntry( mixed $entry , string $path ) : bool
+    {
+        // Explicit (on the entry itself).
+        if ( is_array( $entry ) && !array_is_list( $entry ) && ( $entry[ Field::FILTER ] ?? null ) === Filter::TRANSLATE )
+        {
+            return true ;
+        }
+
+        // Inherited (from the projection of the same field).
+        $fields = property_exists( $this , 'fields' ) ? $this->fields : null ;
+
+        if ( !is_array( $fields ) || str_contains( $path , Char::DOT ) )
+        {
+            return false ;
+        }
+
+        $definition = $fields[ $path ] ?? null ;
+
+        if ( is_array( $definition ) )
+        {
+            return ( $definition[ Field::FILTER ] ?? null ) === Filter::TRANSLATE ;
+        }
+
+        return $definition === Filter::TRANSLATE ;
+    }
+
+    /**
+     * Resolve the **fallback** language of a multilingual sort entry — the locale used
+     * when the requested one is absent from a document, or when the call requests none.
+     *
+     * Three declaration sites, from the most local to the most general; the first that
+     * answers wins:
+     * 1. the sortable entry (`Field::DEFAULT_LANG`),
+     * 2. the model (`$this->defaultLang`, see {@see DefaultLangTrait}),
+     * 3. the host, pushed per call (`$init[ Arango::DEFAULT_LANG ]`).
+     *
+     * ⚠ **The model outranks the host on purpose.** What the host pushes is a *default*,
+     * and a default must never override an explicit declaration — otherwise a model would
+     * change behaviour depending on which site loads it, without a line of it moving.
+     * `Arango::LANG` (the *requested* language) is the opposite case: an instruction, and
+     * it wins over all three.
+     *
+     * @param mixed $entry The `$sortable[$key]` value.
+     * @param array $init  The request-level init. Reads `Arango::DEFAULT_LANG`.
+     *
+     * @return string|null The lowercased fallback tag, or `null` when none is declared.
+     *
+     * @throws ValidationException When a declared tag is not a valid language code.
+     */
+    private function resolveSortFallbackLang( mixed $entry , array $init ) : ?string
+    {
+        $declared = is_array( $entry ) && !array_is_list( $entry ) ? ( $entry[ Field::DEFAULT_LANG ] ?? null ) : null ;
+
+        $lang = $declared ?? $this->defaultLang ?? $init[ Arango::DEFAULT_LANG ] ?? null ;
+
+        if ( $lang === null )
+        {
+            return null ;
+        }
+
+        if ( is_string( $lang ) )
+        {
+            $lang = strtolower( $lang ) ;
+        }
+
+        assertLanguageCode( $lang ) ; // declared in code — nothing a request can fix.
+
+        return $lang ;
+    }
+
+    /**
+     * Build the ordering expression of a multilingual entry: the requested locale, then
+     * the fallback one, then the field named by `Field::ELSE`.
+     *
+     * ```aql
+     * SORT NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"], doc.name) ASC
+     * ```
+     *
+     * The locale is a **bracket** accessor rather than a dotted one, uniformly: a tag
+     * carrying a dash reads as a subtraction in dot notation (`doc.alternateName.pt-BR`),
+     * and one shape for every tag beats a shape that depends on the tag. The tag is
+     * written verbatim — an attribute name can never be bound — hence the guards.
+     *
+     * Links are dropped rather than duplicated: a requested locale equal to the fallback
+     * yields two terms, not three. `Field::ELSE` is optional; without it a document that
+     * has no translation at all orders on `null`, which is where it ordered before.
+     *
+     * ⚠ `Field::ELSE` names another field, so it passes the same permission gate as any
+     * sort key — an unreadable one is dropped from the chain instead of leaking its
+     * values through the order.
+     *
+     * ⚠ When nothing answers — no requested locale, no fallback, no `Field::ELSE` — the
+     * expression is the stored path itself, exactly what an ordinary entry would emit.
+     * An incomplete declaration degrades to today's behaviour; it never drops the
+     * criterion in silence.
+     *
+     * @param mixed  $entry  The `$sortable[$key]` value.
+     * @param string $path   The resolved (dotted) path of the translations object.
+     * @param array  $init   The request-level init. Reads `Arango::LANG` and `Arango::DEFAULT_LANG`.
+     * @param string $docRef The document variable the fields hang off.
+     *
+     * @return string The ordering expression.
+     *
+     * @throws ValidationException When a language tag or the `Field::ELSE` path is invalid.
+     */
+    private function translatedSortExpression( mixed $entry , string $path , array $init , string $docRef ) : string
+    {
+        $source = key( $path , $docRef ) ;
+
+        $languages = [] ;
+
+        $requested = $init[ Arango::LANG ] ?? null ;
+
+        if ( $requested !== null )
+        {
+            if ( is_string( $requested ) )
+            {
+                $requested = strtolower( $requested ) ;
+            }
+
+            assertLanguageCode( $requested , fromRequest: true ) ; // came from the wire.
+
+            $languages[] = $requested ;
+        }
+
+        $fallback = $this->resolveSortFallbackLang( $entry , $init ) ;
+
+        if ( $fallback !== null && !in_array( $fallback , $languages , true ) )
+        {
+            $languages[] = $fallback ;
+        }
+
+        $sources = [] ;
+
+        foreach ( $languages as $language )
+        {
+            $sources[] = $source . Char::LEFT_BRACKET . betweenDoubleQuotes( $language ) . Char::RIGHT_BRACKET ;
+        }
+
+        $else = is_array( $entry ) && !array_is_list( $entry ) ? ( $entry[ Field::ELSE ] ?? null ) : null ;
+
+        if ( $else !== null )
+        {
+            $else = compile( $else , Char::DOT ) ;
+
+            assertAttributeName( $else ) ;
+
+            if ( $this->isSortAuthorized( $else , null , $init ) )
+            {
+                $sources[] = key( $else , $docRef ) ;
+            }
+        }
+
+        return match( count( $sources ) )
+        {
+            0       => $source ,
+            1       => $sources[ 0 ] ,
+            default => notNull( ...$sources ) ,
+        } ;
     }
 
     /**

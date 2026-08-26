@@ -15,6 +15,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 use oihana\arango\controllers\traits\AuthorizationContextTrait;
+use oihana\arango\traits\DefaultLangTrait;
 use oihana\arango\controllers\traits\MetaOnlyTrait;
 use oihana\arango\controllers\traits\PayloadsTrait;
 use oihana\arango\controllers\traits\documents\DocumentsControllerCountTrait;
@@ -70,6 +71,7 @@ class DocumentsController extends Controller
         parent::__construct( $container , $init ) ;
 
         $this->initializeModel               ( $init )
+             ->initializeDefaultLang         ( $init , $container )
              ->initializeLanguages           ( $init , $container )
              ->initializeLimit               ( $init )
              ->initializeMetaOnly            ( $init )
@@ -81,6 +83,7 @@ class DocumentsController extends Controller
     }
 
     use AuthorizationContextTrait            ,
+        DefaultLangTrait                     ,
         DocumentsControllerCapabilitiesTrait ,
         DocumentsControllerCountTrait        ,
         DocumentsControllerDeleteTrait       ,

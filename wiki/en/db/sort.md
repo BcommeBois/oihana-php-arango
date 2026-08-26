@@ -140,6 +140,111 @@ betrays it.
 > document variables no longer exist, and the grouped sort only accepts the
 > variables the `COLLECT` emits. The key is dropped like any other non-group key.
 
+## Sorting a multilingual label
+
+**The situation.** A catalogue keeps its labels per locale:
+`{ "name": "Zinc-3000", "alternateName": { "fr": "Aspirateur", "en": "Hoover" } }`.
+Declaring `'label' => 'alternateName.fr'` orders the translated documents nicely —
+and piles up **in front, in an arbitrary order**, every document with no French:
+they order on `null`. The query succeeds, the page renders, the list is wrong.
+
+An entry may therefore aim at a locale and **fall back**:
+
+```php
+AQL::FIELDS =>
+[
+    'name'          => [] ,
+    'alternateName' => Filter::TRANSLATE ,   // ① the translations object
+] ,
+
+AQL::SORTABLE =>
+[
+    'name' ,
+    'label' =>
+    [
+        Field::PATH         => 'alternateName' , // ② the path of the object
+        Field::ELSE         => 'name' ,          // ③ the last resort (optional)
+        Field::DEFAULT_LANG => 'fr' ,            // ④ the fallback locale (optional)
+    ] ,
+] ,
+```
+
+`?sort=label&lang=en` then compiles to:
+
+```aql
+SORT NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"], doc.name) ASC
+```
+
+**What marks the entry as multilingual** follows the two steps permission already
+follows — inherited first, explicit second:
+
+| Form | When |
+|---|---|
+| **inherited** — ① the field is declared `Filter::TRANSLATE` in `AQL::FIELDS` | the common case: the field is projected |
+| **explicit** — `Field::FILTER => Filter::TRANSLATE` on the entry itself | the field is sortable but **not** projected |
+
+⚠ Inheritance reads a **root** field. A translated field nested inside a structural
+one is not walked into: declare `Field::FILTER` on the entry. A miss is not a hole —
+the entry falls back to the stored path, which is what it always was.
+
+### The fallback locale, and who declares it
+
+Three places, from the most local to the most general; **the first that answers wins**:
+
+| # | Where | Key |
+|---|---|---|
+| 1 | the sort entry | `Field::DEFAULT_LANG` |
+| 2 | the model | `Arango::DEFAULT_LANG` at construction (or the container's `defaultLang` entry) |
+| 3 | the host, pushed per call | `Arango::DEFAULT_LANG` in the init |
+
+⚠ **The model outranks the host, on purpose.** What the host pushes is a *default*,
+and a default must never override an explicit declaration — otherwise a model would
+change behaviour depending on which site loads it, without a line of it moving.
+
+⚠ Not to be confused with `Arango::LANG` (`?lang=`), the **requested** locale: that
+one is an *instruction*, and it wins over all three. Both travel in the same init.
+
+### Case by case
+
+A French site (`defaultLang` = `fr`):
+
+| Request | Emitted expression |
+|---|---|
+| `?sort=label&lang=en` | `NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"], doc.name)` |
+| `?sort=label&lang=fr` | `NOT_NULL(doc.alternateName["fr"], doc.name)` — **deduplicated** |
+| `?sort=label` | same: no requested locale, the fallback answers |
+| `?sort=label&lang=all` | same: `all` widens what is returned, it does not unplug the sort |
+| `?sort=label&lang=zz` | same: the locale is filtered upstream by the controller whitelist |
+| without `Field::ELSE` | `NOT_NULL(doc.alternateName["en"], doc.alternateName["fr"])` |
+| no locale, no fallback, no `ELSE` | `doc.alternateName` — the stored path, like any ordinary entry |
+
+`Field::ELSE` is **optional**: without it, a document with no translation at all
+orders on `null`, exactly where it ordered before. And a declaration left without a
+single link never drops the criterion in silence: it degrades to the stored path.
+
+### The guards
+
+A locale names an **attribute** of the translations object, and an attribute name
+cannot be a bind parameter: it is written verbatim into the query. It is therefore
+validated, and the blame follows where it came from — the frontier
+`assertAttributeName()` already draws:
+
+| What is wrong | Answer |
+|---|---|
+| an unreadable `?lang=` (outside the controller, which already filters) | `400` — the caller wrote something unreadable |
+| `Field::DEFAULT_LANG => 'fr_FR'` (declared) | `500` — no caller can fix it |
+| `Field::ELSE => 'name || 1==1'` | `500` — same reason |
+| `Field::ELSE` naming a forbidden field | link **dropped** from the chain (no oracle) |
+
+⚠ The locale is reached through a **bracket** accessor, uniformly
+(`doc.alternateName["fr"]`) rather than a dotted one. A dashed tag (`pt-BR`) reads as
+a subtraction in dot notation: one shape for every locale beats a shape that depends
+on the locale.
+
+⚠ **No index can serve this expression**: ArangoDB sorts the filtered set in memory.
+Painless over a few thousand documents; on a large paginated collection, the remedy is
+an attribute computed at write time (a *computed value*), which is indexable.
+
 ## Sort permission
 
 Whitelisting is not always enough. A field may be **hidden from reading** by a permission (`Field::REQUIRES` in the projection): if it stays sortable, the order of the results betrays its value. That is the **sort oracle** — sorting on `salary` without the right to read it, and guessing who earns the most just by looking at the order.

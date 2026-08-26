@@ -143,6 +143,7 @@ class Documents implements ArangoDocumentsModel
              ->initializeConfig           ( $init , $container )
              ->initializeConditions       ( $init )
              ->initializeDebug            ( $init )
+             ->initializeDefaultLang      ( $init , $container )
              ->initializeEdges            ( $init )
              ->initializeFacets           ( $init )
              ->initializeFillable         ( $init )
