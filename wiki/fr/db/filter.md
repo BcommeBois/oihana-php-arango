@@ -782,7 +782,47 @@ C'est la même phrase que les relations savent déjà dire avec [`quant`](#quant
 
 **`quant` est inerte ici.** Un objet n'a pas d'éléments à quantifier ; la clé est ignorée et la comparaison reste la même — le comportement qu'elle a déjà sur une clé scalaire.
 
-> ⚠ **Un tableau nommé en dernier n'est pas encore supporté.** `attachments[*]` sans sous-champ reste ignoré : « la case est absente » et « la liste est vide » sont deux questions différentes, toutes deux légitimes, et la notation `[*]` — obligatoire sur un `ARRAY_EXPANSION` — se lit mal quand on parle de la liste entière plutôt que de ses éléments. Le sujet aura son propre lot.
+> Le pendant pour une **liste** d'objets se trouve juste en dessous.
+
+### Nommer une liste en dernier : compter ses éléments
+
+**La situation.** Une fiche `tickets` garde ses pièces jointes dans une liste d'objets : `attachments: [{name:"a.pdf"}, …]`. Filtrer **les éléments** a toujours marché — `attachments[*].name` désigne un champ dans chacun d'eux. Mais « quels billets n'ont **aucune** pièce jointe ? » ne parle d'aucun élément en particulier : elle parle de leur **nombre**.
+
+Une liste **nommée en dernier**, sans sous-champ derrière, répond désormais à cette question — avec la clé [`quant`](#quantificateurs-sur-edgesjoins--clé-quant), **le vocabulaire que les relations utilisent déjà** :
+
+```jsonc
+{"key":"attachments[*]"}                  // au moins une   -> LENGTH(doc.attachments[*]) > 0
+{"key":"attachments[*]","quant":"none"}   // aucune         -> LENGTH(doc.attachments[*]) == 0
+{"key":"attachments[*]","quant":3}        // au moins trois -> LENGTH(doc.attachments[*]) >= 3
+{"key":"attachments[*]","quant":"all"}    // ⛔ 400 — rien à satisfaire
+```
+
+Ni `val`, ni `op` : une cardinalité ne se compare pas à une valeur envoyée. C'est exactement la forme qu'une relation nommée en dernier emploie déjà (`{"key":"members[*]","quant":"none"}`), sur une liste rangée dans le document au lieu d'être au bout d'une arête.
+
+**« Aucune » veut dire aucune, quelle que soit la façon dont c'est stocké.** C'est le point : l'appelant pose une question, il n'a jamais à savoir laquelle des quatre formes ci-dessous se trouve dans la fiche.
+
+| Document stocké | `quant:"none"` | par défaut |
+|---|---|---|
+| `attachments: [{…},{…}]` | ✗ | ✓ |
+| `attachments: []` — **liste vide** | ✓ | ✗ |
+| attribut **absent** | ✓ | ✗ |
+| `attachments: null` | ✓ | ✗ |
+| `attachments: "oops"` — **pas une liste** | ✓ | ✗ |
+
+> ⚠ **La dernière ligne n'est pas un détail.** Le compte est pris sur l'**expansion**, `doc.attachments[*]`, jamais sur l'attribut nu. `LENGTH()` d'une chaîne, c'est son nombre de **caractères** : une fiche stockant `"oops"` répondrait `4` à `LENGTH(doc.attachments)` et serait retenue par « au moins 3 éléments ». À travers `[*]`, une non-liste vaut une liste vide et compte `0` — la réponse honnête. Mesuré sur serveur, dans les deux sens.
+
+**Ce qui ne change pas.** Filtrer les éléments continue exactement comme avant, à toute profondeur :
+
+```jsonc
+{"key":"attachments[*].name","val":"a.pdf"}          // inchangé
+{"key":"resolution.steps[*].dueAt","op":"lt","val":"2026-01-01"}  // inchangé
+```
+
+**⚠ Deux écritures restent volontairement en dehors.**
+
+- **Sans le `[*]`** — `{"key":"attachments"}` — le filtre est toujours **ignoré**. C'est la [règle stricte de notation](#cardinalité--notation-) qui l'attrape, et c'est elle qui rattrape l'appelant ayant simplement oublié le marqueur. Lui donner un sens propre transformerait une faute de frappe rattrapée en page plausible répondant à autre chose.
+- **Avec un `match`** — `{"key":"attachments[*]","match":{…}}` — ce n'est pas une question de nombre mais un test **multi-champs sur les éléments** ; il garde son comportement et ses gardes de permission par sous-champ.
+
 
 ### Multi-niveaux
 

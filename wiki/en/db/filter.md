@@ -782,7 +782,47 @@ It is the same sentence relations already say with [`quant`](#quantifiers-on-edg
 
 **`quant` is inert here.** An object has no elements to quantify; the key is ignored and the comparison stays the same — the behaviour it already has on a scalar key.
 
-> ⚠ **An array named last is not supported yet.** `attachments[*]` with no sub-field is still ignored: "the slot is absent" and "the list is empty" are two different questions, both legitimate, and the `[*]` notation — mandatory on an `ARRAY_EXPANSION` — reads poorly when the subject is the whole list rather than its elements. That will get its own batch.
+> The counterpart for a **list** of objects is just below.
+
+### Naming a list last: counting its elements
+
+**The situation.** A `tickets` record keeps its attachments in a list of objects: `attachments: [{name:"a.pdf"}, …]`. Filtering **the elements** always worked — `attachments[*].name` names a field inside each of them. But "which tickets have **no** attachment?" is about no element in particular: it is about their **number**.
+
+A list **named last**, with no sub-field behind it, now answers that question — through [`quant`](#quantifiers-on-edgesjoins--the-quant-key), **the vocabulary relations already use**:
+
+```jsonc
+{"key":"attachments[*]"}                  // at least one  -> LENGTH(doc.attachments[*]) > 0
+{"key":"attachments[*]","quant":"none"}   // none          -> LENGTH(doc.attachments[*]) == 0
+{"key":"attachments[*]","quant":3}        // at least three-> LENGTH(doc.attachments[*]) >= 3
+{"key":"attachments[*]","quant":"all"}    // ⛔ 400 — nothing to satisfy
+```
+
+No `val`, no `op`: a cardinality is not compared to a payload. It is exactly the form a relation named last already uses (`{"key":"members[*]","quant":"none"}`), on a list stored in the document instead of one reached across an edge.
+
+**"None" means none, however it happens to be stored.** That is the point: the caller asks one question and never has to know which of the four shapes below the record holds.
+
+| Stored document | `quant:"none"` | default |
+|---|---|---|
+| `attachments: [{…},{…}]` | ✗ | ✓ |
+| `attachments: []` — **empty list** | ✓ | ✗ |
+| attribute **absent** | ✓ | ✗ |
+| `attachments: null` | ✓ | ✗ |
+| `attachments: "oops"` — **not a list** | ✓ | ✗ |
+
+> ⚠ **That last row is not a detail.** The count is taken on the **expansion**, `doc.attachments[*]`, never on the bare attribute. `LENGTH()` of a string is its **character** count: a record storing `"oops"` would answer `4` to `LENGTH(doc.attachments)` and be selected by "at least 3 elements". Through `[*]` a non-list is an empty list and counts `0` — the honest answer. Measured on a server, both ways.
+
+**What does not change.** Filtering the elements goes on exactly as before, at any depth:
+
+```jsonc
+{"key":"attachments[*].name","val":"a.pdf"}                       // unchanged
+{"key":"resolution.steps[*].dueAt","op":"lt","val":"2026-01-01"}  // unchanged
+```
+
+**⚠ Two spellings are deliberately left out.**
+
+- **Without the `[*]`** — `{"key":"attachments"}` — the filter is still **ignored**. That is the [strict notation rule](#cardinality--the--notation) catching it, and it is what catches the caller who simply forgot the marker. Giving that spelling a meaning of its own would turn a caught typo into a plausible page answering something else.
+- **With a `match`** — `{"key":"attachments[*]","match":{…}}` — this is not a question about number but a **multi-field test on the elements**; it keeps its behaviour and its per-sub-field permission gates.
+
 
 ### Multi-level
 

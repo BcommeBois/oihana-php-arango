@@ -1193,6 +1193,306 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     // ========================================
+    // A LIST OF OBJECTS NAMED LAST — CARDINALITY
+    // ========================================
+
+    /**
+     * The model used by the cardinality cases: `attachments` is a list of objects at
+     * the root, `resolution.steps` one nested under an object.
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    private function ticketsWithLists( array $fields = [] ): Documents
+    {
+        return new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'tickets' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'attachments' =>
+                [
+                    AQL::TYPE    => Filter::ARRAY_EXPANSION ,
+                    AQL::FILTERS => [ 'name' => FilterType::STRING ] ,
+                ] ,
+                'resolution' =>
+                [
+                    AQL::TYPE    => Filter::DOCUMENT ,
+                    AQL::FILTERS =>
+                    [
+                        'steps' =>
+                        [
+                            AQL::TYPE    => Filter::ARRAY_EXPANSION ,
+                            AQL::FILTERS => [ 'dueAt' => FilterType::STRING ] ,
+                        ] ,
+                    ] ,
+                ] ,
+            ] ,
+            ...( $fields === [] ? [] : [ AQL::FIELDS => $fields ] ) ,
+        ]);
+    }
+
+    /**
+     * A list named last, with nothing after it, counts its elements. With no `quant`
+     * the question is « at least one », the same default a relation carries.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testListNamedLastIsExistentialByDefault(): void
+    {
+        $result = $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments[*]' ] , $this->binds ) ;
+
+        $this->assertSame( 'LENGTH(doc.attachments[*]) > 0' , $result ) ;
+    }
+
+    /**
+     * « Which tickets have no attachment at all? » — the question that had no writable
+     * form, in the vocabulary the relations already use.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testListNamedLastAnswersNone(): void
+    {
+        $result = $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments[*]' , 'quant' => 'none' ] , $this->binds ) ;
+
+        $this->assertSame( 'LENGTH(doc.attachments[*]) == 0' , $result ) ;
+    }
+
+    /**
+     * An integer quantifier means « at least n », as it does on a relation.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testListNamedLastAnswersAtLeastN(): void
+    {
+        $result = $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments[*]' , 'quant' => 3 ] , $this->binds ) ;
+
+        $this->assertSame( 'LENGTH(doc.attachments[*]) >= 3' , $result ) ;
+    }
+
+    /**
+     * 🚨 The count is taken on the EXPANSION, never on the bare attribute.
+     *
+     * `LENGTH()` of a string is its character count, so a document storing `"oops"`
+     * under a list-declared key answers 4 to `LENGTH(doc.attachments)` and would be
+     * selected by « at least 3 elements ». Through `[*]` a non-array yields an empty
+     * list and counts 0. This pins the shape that makes the difference.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testTheCountIsTakenOnTheExpansionNotTheBareAttribute(): void
+    {
+        $result = $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments[*]' , 'quant' => 3 ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'LENGTH(doc.attachments[*])' , $result ) ;
+        $this->assertStringNotContainsString( 'LENGTH(doc.attachments)' , $result ) ;
+    }
+
+    /**
+     * The deeper seat, reached by the other road: a dotted key goes through the
+     * hierarchical walk, where the list is the last segment.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testNestedListNamedLastCountsItsElements(): void
+    {
+        $model = $this->ticketsWithLists() ;
+
+        $this->assertSame
+        (
+            'LENGTH(doc.resolution.steps[*]) > 0' ,
+            $model->prepareFilter( [ 'key' => 'resolution.steps[*]' ] , $this->binds )
+        ) ;
+
+        $binds = [] ;
+
+        $this->assertSame
+        (
+            'LENGTH(doc.resolution.steps[*]) == 0' ,
+            $model->prepareFilter( [ 'key' => 'resolution.steps[*]' , 'quant' => 'none' ] , $binds )
+        ) ;
+    }
+
+    /**
+     * `all` means « every element satisfies the condition », and there is no condition
+     * here to satisfy — refused, exactly as it is on a relation named last.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testListNamedLastRefusesAllWithoutACondition(): void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionCode( 400 ) ;
+
+        $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments[*]' , 'quant' => 'all' ] , $this->binds ) ;
+    }
+
+    /**
+     * 🚨 A refused list is neutralised to `false`, never dropped to `null` — a count is
+     * an answer about a locked field like any other.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testRefusedListNamedLastIsNeutralisedToFalse(): void
+    {
+        $model = $this->ticketsWithLists( [ 'attachments' => [ Field::REQUIRES => 'ticket:files' ] ] ) ;
+
+        $result = $model->prepareFilter
+        (
+            [ Arango::FILTER => [ 'key' => 'attachments[*]' , 'quant' => 'none' ] , Arango::AUTHORIZER => fn() => false ] ,
+            $this->binds
+        ) ;
+
+        $this->assertSame( Boolean::FALSE , $result ) ;
+        $this->assertNotSame( null , $result ) ;
+    }
+
+    /**
+     * The fix touches the terminal case only: filtering the elements of the list keeps
+     * its existing existential form, at the root and in depth.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testFilteringTheElementsOfTheListIsUnchanged(): void
+    {
+        $model = $this->ticketsWithLists() ;
+
+        $this->assertStringContainsString
+        (
+            'doc.attachments[* FILTER CURRENT.name' ,
+            $model->prepareFilter( [ 'key' => 'attachments[*].name' , 'val' => 'a.pdf' ] , $this->binds )
+        ) ;
+
+        $binds = [] ;
+
+        $this->assertStringContainsString
+        (
+            'doc.resolution.steps[* FILTER CURRENT.dueAt' ,
+            $model->prepareFilter( [ 'key' => 'resolution.steps[*].dueAt' , 'val' => '2026-01-01' ] , $binds )
+        ) ;
+    }
+
+    /**
+     * ⚠ The strict notation rule is deliberately left standing: a list named WITHOUT
+     * its `[*]` keeps being dropped.
+     *
+     * It is what catches the caller who means `attachments[*]` and forgets the marker.
+     * Giving that spelling a meaning of its own would turn a caught typo into a
+     * plausible page answering another question — the failure mode this whole batch
+     * exists to close.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAListNamedWithoutItsMarkerIsStillDropped(): void
+    {
+        $this->assertNull( $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments' ] , $this->binds ) ) ;
+    }
+
+    /**
+     * ⚠ A list carrying a `match` is NOT the cardinality question.
+     *
+     * `match` is a multi-field test on the ELEMENTS, owned by the array filter — which
+     * also gates every sub-field it names. Routing it to the terminal branch would
+     * answer a bare count instead: a plausible page for a different question, with the
+     * sub-field permission gates dropped along the way. This pins the frontier, which
+     * the routing has to step around explicitly.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAListCarryingAMatchIsNotACountingQuestion(): void
+    {
+        $result = $this->ticketsWithLists()->prepareFilter
+        (
+            [ 'key' => 'attachments[*]' , 'match' => [ 'name' => 'a.pdf' ] ] ,
+            $this->binds
+        ) ;
+
+        $this->assertStringContainsString( 'CURRENT.name' , $result ) ;
+        $this->assertStringNotContainsString( 'LENGTH(doc.attachments[*])' , $result ) ;
+    }
+
+    // ========================================
     // JOIN TRAVERSAL
     // ========================================
 

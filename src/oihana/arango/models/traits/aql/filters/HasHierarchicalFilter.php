@@ -867,6 +867,46 @@ trait HasHierarchicalFilter
                 ) ;
             }
 
+            // Case 0b: an ARRAY named last has no terminal field either — the
+            // question is how many elements it holds.
+            //
+            // This is the sentence relations already say through `quant`, on a list
+            // stored in the document instead of one reached across an edge, so it
+            // borrows their vocabulary unchanged: nothing means « at least one »,
+            // `none` means « not one », an integer means « at least n ». There is no
+            // `val` and no `op` — a cardinality is not compared to a payload.
+            //
+            // ⚠ The count is taken on the EXPANSION, `doc.tags[*]`, never on the bare
+            // attribute. `LENGTH()` of a string is its character count, so a document
+            // storing `"oops"` under a list-declared key answers 4 to `LENGTH(doc.x)`
+            // and is selected by « at least 3 elements ». Through the expansion a
+            // non-array yields an empty list and counts 0, which is the honest
+            // answer. Measured on a server, both ways.
+            //
+            // `all` is refused, as it is on a relation: it means « every element
+            // satisfies the condition » and there is no condition here to satisfy.
+            if ( $segmentInfo->type === Filter::ARRAY_EXPANSION )
+            {
+                $quantifier = resolveTraversalQuantifier( $init[ FilterParam::QUANT ] ?? null ) ;
+
+                if ( $quantifier->negate )
+                {
+                    throw new RequestValidationException( sprintf
+                    (
+                        "The 'all' quantifier requires a condition to satisfy at path: %s. " .
+                        "Use 'none' to match documents holding no element." ,
+                        implode( Char::DOT , $segmentInfo->path )
+                    ) ) ;
+                }
+
+                return predicate
+                (
+                    leftOperand  : length( key( $fieldKey , $docRef ) . Operator::ARRAY_EXPANSION ) ,
+                    operator     : $quantifier->comparator ,
+                    rightOperand : (string) $quantifier->threshold ,
+                ) ;
+            }
+
             // Case 1: Simple FilterType (string, number, date, bool, array)
             if ( is_string( $segmentInfo->type ) && FilterType::includes( $segmentInfo->type ) )
             {

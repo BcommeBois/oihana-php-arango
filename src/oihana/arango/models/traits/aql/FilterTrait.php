@@ -518,10 +518,24 @@ trait FilterTrait
             // lookup below, where its array definition is neither a FilterType nor a
             // callable — so the key was logged as "not a valid filterable attribute"
             // and the filter dropped, answering the whole collection in `200`.
-            $relationKey = str_replace( Operator::ARRAY_EXPANSION , '' , $key ) ;
-            $relationDef = $this->filters[ $relationKey ] ?? null ;
+            //
+            // A LIST OF OBJECTS named on its own (`attachments[*]`, a
+            // Filter::ARRAY_EXPANSION) is that sentence about cardinality, and it
+            // reads its count through the same `quant` the relations use. It fell
+            // through the same way — worse, the lookup below is keyed on the raw
+            // `attachments[*]`, which no declaration ever carries.
+            $relationKey  = str_replace( Operator::ARRAY_EXPANSION , '' , $key ) ;
+            $relationDef  = $this->filters[ $relationKey ] ?? null ;
+            $relationType = is_array( $relationDef ) ? ( $relationDef[ AQL::TYPE ] ?? null ) : null ;
 
-            if ( is_array( $relationDef ) && in_array( $relationDef[ AQL::TYPE ] ?? null , [ Filter::DOCUMENT , Filter::EDGE , Filter::EDGES , Filter::JOIN , Filter::JOINS ] , true ) )
+            // ⚠ A list of objects carrying a `match` is NOT the cardinality question:
+            // it is a multi-field test on the elements, owned by the array filter
+            // further down (which also gates every sub-field it names). Routing it here
+            // would answer a bare count instead — a plausible page for another
+            // question, and one of the sub-field permission gates along with it.
+            $isElementMatch = $relationType === Filter::ARRAY_EXPANSION && isset( $init[ FilterParam::MATCH ] ) ;
+
+            if ( !$isElementMatch && in_array( $relationType , [ Filter::ARRAY_EXPANSION , Filter::DOCUMENT , Filter::EDGE , Filter::EDGES , Filter::JOIN , Filter::JOINS ] , true ) )
             {
                 return $this->prepareHierarchicalFilter( $init , $binds , $docRef , $auth ) ;
             }

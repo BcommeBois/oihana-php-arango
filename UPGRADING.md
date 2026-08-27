@@ -13,7 +13,7 @@ Five breaking changes. The first two are on the same key — `AQL::DIRECTION`, r
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
-refused everywhere else. The fifth refuses nothing at all: a filter that was being dropped now
+refused everywhere else. The fifth and sixth refuse nothing at all: a filter that was being dropped now
 applies, so a listing that answered everything starts answering the question. None changes a
 signature.
 
@@ -164,6 +164,50 @@ nothing there. And `quant` is inert on an object, as it already is on a scalar k
 **Still ignored, on purpose: an array named last.** `attachments[*]` with no sub-field keeps being
 dropped. "The slot is absent" and "the list is empty" are two different questions and both deserve
 an answer; that is a separate change, not this one.
+
+#### 6. Naming a list of objects in a filter key now counts it instead of being ignored
+
+**Before.** A filter key ending on a `Filter::ARRAY_EXPANSION` — the list named with its `[*]` and
+nothing after it — named no field, so the filter was **dropped** and the query ran without it:
+
+```
+?filter={"key":"attachments[*]"}                  → every ticket, in 200
+?filter={"key":"attachments[*]","quant":"none"}   → every ticket, in 200
+```
+
+**Now.** The list is counted, through the same `quant` key the relations use:
+
+```
+{"key":"attachments[*]"}                  → LENGTH(doc.attachments[*]) > 0    at least one
+{"key":"attachments[*]","quant":"none"}   → LENGTH(doc.attachments[*]) == 0   none
+{"key":"attachments[*]","quant":3}        → LENGTH(doc.attachments[*]) >= 3   at least three
+{"key":"attachments[*]","quant":"all"}    → 400 — nothing to satisfy
+```
+
+**What to do.**
+
+1. **Grep your front-end for a filter key naming a declared `Filter::ARRAY_EXPANSION` with nothing
+   after the `[*]`.** Those calls used to return the whole collection and now return a subset. The
+   result changes for the better, but it changes: a page that looked complete was complete because
+   the filter was being ignored.
+2. **Nothing to declare.** The behaviour comes from the `Filter::ARRAY_EXPANSION` you already
+   declare; no new key, no opt-in.
+3. **If you were sending `quant: "all"` on such a key**, it now answers `400`. It always meant
+   "every element satisfies the condition", and with no condition there was nothing for it to mean.
+
+**What "none" selects.** Every shape of emptiness at once: the empty list, the absent attribute, an
+explicit `null`, and a value that is not a list. The caller asks one question and never has to know
+which of those the record holds.
+
+**What does not move.**
+
+- **Filtering the elements** — `attachments[*].name`, `resolution.steps[*].dueAt` — is untouched at
+  any depth.
+- **A `match` on the list** — `{"key":"attachments[*]","match":{…}}` — keeps its behaviour and its
+  per-sub-field permission gates. It is a multi-field test on the elements, not a count.
+- **The list named without its `[*]`** — `{"key":"attachments"}` — keeps being dropped by the strict
+  notation rule. That rule is what catches the caller who forgot the marker, and it is deliberately
+  left standing rather than given a second meaning.
 
 ---
 
