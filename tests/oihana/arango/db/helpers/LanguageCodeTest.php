@@ -10,19 +10,22 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-use stdClass;
-
 use function oihana\arango\db\helpers\assertLanguageCode;
-use function oihana\arango\db\helpers\isLanguageCode;
 
 /**
- * Test suite for the isLanguageCode() / assertLanguageCode() helpers.
+ * Test suite for the assertLanguageCode() helper.
  *
  * A language tag names an attribute of the stored translations object, so it is
- * written verbatim into the query and can never be bound — these helpers are
- * what makes that interpolation safe.
+ * written verbatim into the query and can never be bound. **What** makes a tag
+ * safe is decided by `oihana\controllers\helpers\isLanguageCode()`, and covered
+ * by that package; what is covered here is the only part that is an ArangoDB
+ * concern — **who gets blamed** when a tag is refused.
+ *
+ * The distinction is not cosmetic. A tag typed into a `?lang=` is the caller's
+ * mistake and answers `400` with a message written for them; a tag declared in a
+ * model or a configuration is the consumer's own code, no request will ever fix
+ * it, and it answers `500`.
  */
-#[CoversFunction('oihana\arango\db\helpers\isLanguageCode')]
 #[CoversFunction('oihana\arango\db\helpers\assertLanguageCode')]
 final class LanguageCodeTest extends TestCase
 {
@@ -30,65 +33,12 @@ final class LanguageCodeTest extends TestCase
     {
         return
         [
-            'two letters'    => [ 'fr'         ] ,
-            'three letters'  => [ 'ast'        ] ,
-            'region'         => [ 'pt-BR'      ] ,
+            'two letters'       => [ 'fr'         ] ,
+            'three letters'     => [ 'ast'        ] ,
+            'region'            => [ 'pt-BR'      ] ,
             'script and region' => [ 'zh-Hant-TW' ] ,
-            'numeric region' => [ 'es-419'     ] ,
+            'numeric region'    => [ 'es-419'     ] ,
         ] ;
-    }
-
-    public static function provideInvalidCodes() : array
-    {
-        return
-        [
-            'empty'            => [ ''            ] ,
-            'single letter'    => [ 'f'           ] ,
-            'four letters'     => [ 'fran'        ] ,
-            'uppercase'        => [ 'FR'          ] ,
-            'space'            => [ 'fr fr'       ] ,
-            'quote'            => [ 'fr"'         ] ,
-            'injection'        => [ 'fr" || 1==1' ] ,
-            'dot path'         => [ 'fr.name'     ] ,
-            'trailing dash'    => [ 'fr-'         ] ,
-            'leading dash'     => [ '-fr'         ] ,
-            'underscore'       => [ 'fr_FR'       ] ,
-            'digits'           => [ '42'          ] ,
-        ] ;
-    }
-
-    public static function provideInvalidTypes() : array
-    {
-        return
-        [
-            'null'   => [ null          ] ,
-            'int'    => [ 42            ] ,
-            'float'  => [ 1.5           ] ,
-            'bool'   => [ true          ] ,
-            'array'  => [ [ 'fr' ]      ] ,
-            'object' => [ new stdClass() ] ,
-        ] ;
-    }
-
-    #[Test]
-    #[DataProvider('provideValidCodes')]
-    public function isLanguageCodeAcceptsValidTags( string $value ) : void
-    {
-        $this->assertTrue( isLanguageCode( $value ) ) ;
-    }
-
-    #[Test]
-    #[DataProvider('provideInvalidCodes')]
-    public function isLanguageCodeRejectsUnsafeTags( string $value ) : void
-    {
-        $this->assertFalse( isLanguageCode( $value ) ) ;
-    }
-
-    #[Test]
-    #[DataProvider('provideInvalidTypes')]
-    public function isLanguageCodeRejectsNonStrings( mixed $value ) : void
-    {
-        $this->assertFalse( isLanguageCode( $value ) ) ;
     }
 
     #[Test]
@@ -124,5 +74,18 @@ final class LanguageCodeTest extends TestCase
         $this->expectExceptionMessage( 'Invalid language code: "int"' ) ;
 
         assertLanguageCode( 42 ) ;
+    }
+
+    /**
+     * The refusal a request gets is still a refusal the code path recognises —
+     * `RequestValidationException` extends `ValidationException`, so a consumer
+     * catching the general type keeps catching both.
+     */
+    #[Test]
+    public function theRequestRefusalIsStillAValidationException() : void
+    {
+        $this->expectException( ValidationException::class ) ;
+
+        assertLanguageCode( 'fr_FR' , fromRequest: true ) ;
     }
 }

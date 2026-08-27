@@ -8,7 +8,7 @@ use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\Search;
-use oihana\arango\traits\DefaultLangTrait;
+use oihana\controllers\traits\DefaultLangTrait;
 
 use oihana\enums\Char;
 use oihana\enums\Order;

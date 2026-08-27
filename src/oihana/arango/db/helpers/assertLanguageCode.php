@@ -5,12 +5,19 @@ namespace oihana\arango\db\helpers;
 use oihana\arango\exceptions\RequestValidationException;
 use oihana\exceptions\ValidationException;
 
+use function oihana\controllers\helpers\isLanguageCode;
+
 /**
  * Asserts that a value is a language code safe to interpolate into a query,
  * throwing when it is not. The language counterpart of
  * {@see assertAttributeName()}, and it exists for the same reason: a language
  * tag names an attribute of the translations object, so it is written verbatim
  * into the query string and can never be bound.
+ *
+ * The predicate itself lives in `oihana/php-controllers`
+ * ({@see \oihana\controllers\helpers\isLanguageCode()}) — a language tag is not
+ * an ArangoDB notion. What stays here is the part that *is* one: deciding who to
+ * blame, below.
  *
  * Who is blamed depends on where the tag came from, exactly as for an attribute
  * name. A **declared** default language (`Arango::DEFAULT_LANG`, the site or

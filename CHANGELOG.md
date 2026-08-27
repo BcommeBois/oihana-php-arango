@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The frontier is unchanged**: a malformed *declaration* is server-side, so it throws; an unknown key coming from the *request* keeps being dropped in silence.
   - **No live case, and that is not an omission**: the refusal happens before a query is built, so there is nothing for a server to confirm. 5 unit cases on the helper (the default, the three keywords, the unknown value, a lowercased one, the explicit `null`) and one on `resolveEdgeContext()` itself.
 
+### Changed
+
+- **`DefaultLangTrait` and `isLanguageCode()` moved to `oihana/php-controllers`.** Neither is an ArangoDB notion. `defaultLang` names the locale answered when a request asked for none, which is the third side of a sentence the other package already speaks: `LanguagesTrait` holds the set a request may ask for, `PrepareLang` resolves what it did ask. The three belong together, and a consumer wiring a fallback locale should not have to depend on a database driver to get one. `isLanguageCode()` travelled with it, being the predicate it validates through.
+  - **One `use` to change on each, and nothing else** — same trait, same helper, same behaviour, same `'defaultLang'` key, so no configuration moves a character. `oihana/php-arango` already required `oihana/php-controllers`, so there is no dependency to add either.
+  - **`assertLanguageCode()` stays here**, because what it does *is* an ArangoDB concern: deciding who to blame when a tag is refused — a `400` for one typed into a `?lang=`, a `500` for one declared in code — and the `400` is this package's own exception type. It reads the predicate from `php-controllers` now, so there is one regex and not two, rather than a copy on each side free to drift.
+  - **⚠ Reading the key through the trait is a fatal error since PHP 8.4.** `DefaultLangTrait::DEFAULT_LANG` was already one here; it stays one there. Read it through the class that uses the trait, or write the literal `'defaultLang'` — which is what a configuration file carries anyway.
+  - **Tests followed the code.** The trait's 15 cases and the predicate's 23 moved with them; `LanguageCodeTest` keeps only what is still decided here, the blame, and gains one case pinning that a request refusal is still catchable as a plain `ValidationException`.
+
 ### Added
 
 - **A list could not be ordered by a multilingual label — `?sort=` now aims at a locale and falls back.** A catalogue keeps its labels per locale (`alternateName: { fr: …, en: … }`), and the sort compiler knew a single shape: `doc.<path>`, one stored path. Declaring `'label' => 'alternateName.fr'` therefore ordered the translated documents nicely and piled up **in front, in an arbitrary order**, every document with no French — they order on `null`. The query succeeds, the page renders, the list is wrong, and nothing says so.

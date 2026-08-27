@@ -9,13 +9,14 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Five breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Seven breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
-refused everywhere else. The fifth and sixth refuse nothing at all: a filter that was being dropped now
-applies, so a listing that answered everything starts answering the question. None changes a
-signature.
+refused everywhere else. The fifth and sixth refuse nothing at all: a filter that was being dropped
+now applies, so a listing that answered everything starts answering the question. The seventh is not
+about behaviour at all — two names move to another package, and nothing they do changes. None
+changes a signature.
 
 ### 🚨 Breaking
 
@@ -208,6 +209,42 @@ which of those the record holds.
 - **The list named without its `[*]`** — `{"key":"attachments"}` — keeps being dropped by the strict
   notation rule. That rule is what catches the caller who forgot the marker, and it is deliberately
   left standing rather than given a second meaning.
+
+#### 7. `DefaultLangTrait` and `isLanguageCode()` moved to `oihana/php-controllers`
+
+**Before.** Both lived here:
+
+```php
+use oihana\arango\traits\DefaultLangTrait;
+use function oihana\arango\db\helpers\isLanguageCode;
+```
+
+**Now.** Both live in `oihana/php-controllers`:
+
+```php
+use oihana\controllers\traits\DefaultLangTrait;
+use function oihana\controllers\helpers\isLanguageCode;
+```
+
+**Why.** Neither is an ArangoDB notion. `defaultLang` is the locale answered when a request asked
+for none, and it belongs beside the two things that already frame it in that package —
+`LanguagesTrait`, the set a request may ask for, and `PrepareLang`, what it did ask. A consumer
+wiring a fallback locale should not have to depend on a database driver to get one.
+
+**What to do.**
+
+1. **Change the two `use` statements**, nothing else. Same trait, same helper, same behaviour, same
+   `'defaultLang'` key — a configuration file does not move a character.
+2. **No dependency to add.** `oihana/php-arango` already required `oihana/php-controllers`, so the
+   classes are on your autoloader already. Run `composer update oihana/php-controllers`.
+3. **⚠ If you read the key as `DefaultLangTrait::DEFAULT_LANG`**, that is a **fatal error** since
+   PHP 8.4 — a trait constant cannot be accessed directly, and it was one here too. Read it through
+   the class that uses the trait (`MyModel::DEFAULT_LANG`) or write the literal `'defaultLang'`.
+
+**What stays here.** `assertLanguageCode()` does not move. Its job is the part that *is* an ArangoDB
+concern: deciding who to blame — a `400` for a tag typed into a `?lang=`, a `500` for one declared
+in code — and the `400` it raises is this package's own exception type. It now reads the predicate
+from `php-controllers`, so there is one regex and not two.
 
 ---
 
