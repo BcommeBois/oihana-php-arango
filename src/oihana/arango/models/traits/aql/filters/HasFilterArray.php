@@ -233,7 +233,7 @@ trait HasFilterArray
 
         return predicate
         (
-            $this->prepareFilterArrayKey( $init , $docRef ) ,
+            $this->prepareFilterArrayKey( $init , $docRef , $binds ) ,
             $this->prepareFilterArrayComparator( $init ) ,
             $this->prepareFilterValue( $init , $binds ) ,
         ) ;
@@ -270,7 +270,8 @@ trait HasFilterArray
     protected function prepareFilterArrayKey
     (
         string|array|null $init   = [] ,
-        string            $docRef = AQL::DOC
+        string            $docRef = AQL::DOC ,
+        ?array            &$binds = null
     )
     :string
     {
@@ -320,7 +321,7 @@ trait HasFilterArray
 
         return predicate
         (
-            $this->prepareFilterArrayKey( $init , $docRef ) ,
+            $this->prepareFilterArrayKey( $init , $docRef , $binds ) ,
             $comparator ,
             $this->prepareFilterValue( $init , $binds )
         ) ;
@@ -358,7 +359,7 @@ trait HasFilterArray
 
         return predicate
         (
-            $this->prepareFilterArrayKey( $init , $docRef ) ,
+            $this->prepareFilterArrayKey( $init , $docRef , $binds ) ,
             $quantifier . ' ' . $comparator ,
             $this->prepareFilterValue( $init , $binds ) ,
         ) ;

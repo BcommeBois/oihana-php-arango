@@ -33,6 +33,7 @@ use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
+use oihana\arango\db\helpers\AltChain;
 use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
 
@@ -658,6 +659,32 @@ trait FilterTrait
         // wire unless the caller signed it with trustedAlt(). The binder travels with
         // it so its parameters are bound rather than pasted into the query.
         [ $keyChain ] = resolveAltSides( requestAlt( $init[ FilterParam::ALT ] ?? null ) ) ;
+
+        // 🚨 A binder is not the same thing as somewhere to bind.
+        //
+        // `alterExpression()` refuses a request-supplied chain that arrives with no
+        // binder — "a reading point that forgot to supply the binder would otherwise
+        // reopen the hole in silence". That check asks whether a binder is *present*,
+        // and one always is by the line below. It cannot ask whether it leads
+        // anywhere, and a binder built over a `null` does not: `binder()` initialises
+        // it in place, so the values land in a local the caller never sees. The query
+        // then declares a parameter nothing fills and the server refuses it whole —
+        // a `500` for a caller who did nothing wrong, invisible to every assertion
+        // made on the emitted AQL, which is exactly the fault `binder()` warns about.
+        //
+        // So the missing half of the guard is here: a chain that came from a request
+        // needs a binds map to write into, and a reading point that did not thread
+        // one is a wiring mistake, not a request the caller can fix.
+        if ( $binds === null && $keyChain instanceof AltChain && !$keyChain->trusted )
+        {
+            throw new ValidationException
+            (
+                'A request-supplied alt chain reached the engine with a binder over no ' .
+                'binds map: its parameters would be silently dropped. The reading point ' .
+                'must pass its $binds by reference.'
+            ) ;
+        }
+
         $init[ Arango::BINDER ] = $this->binder( $binds ) ;
         return alterExpression( $key , $keyChain , $init ) ;
     }

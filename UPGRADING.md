@@ -9,14 +9,14 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Seven breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Eight breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
 refused everywhere else. The fifth and sixth refuse nothing at all: a filter that was being dropped
 now applies, so a listing that answered everything starts answering the question. The seventh is not
-about behaviour at all — two names move to another package, and nothing they do changes. None
-changes a signature.
+about behaviour at all — two names move to another package, and nothing they do changes. The eighth
+refuses a call that could only ever have produced an unusable query. None changes a signature.
 
 ### 🚨 Breaking
 
@@ -245,6 +245,31 @@ wiring a fallback locale should not have to depend on a database driver to get o
 concern: deciding who to blame — a `400` for a tag typed into a `?lang=`, a `500` for one declared
 in code — and the `400` it raises is this package's own exception type. It now reads the predicate
 from `php-controllers`, so there is one regex and not two.
+
+#### 8. Calling `prepareFilter()` with an `alt` and no binds map is refused
+
+**Before.** `prepareFilter( $init )` — with the `$binds` argument omitted — accepted an `alt` chain
+and returned an AQL string. The chain's parameters were bound into a map the caller never received,
+so the string declared placeholders nothing could fill. Handed to a server, it was refused whole.
+
+**Now.** That call throws a `ValidationException` naming the wiring mistake, rather than returning a
+query that cannot run.
+
+**What to do.**
+
+1. **Pass your binds by reference**, as every documented example already does:
+   `$model->prepareFilter( $init , $binds )`. That is the only change, and if you were already
+   doing it — which you were, or your queries would not have been running — nothing moves.
+2. **A filter with no `alt` is unaffected.** The refusal is specific to a chain that has parameters
+   to bind and nowhere to put them.
+3. **A chain your own code declares through `trustedAlt()` is unaffected too.** It interpolates its
+   parameters rather than binding them, so it needs no map.
+
+**Why it is worth a refusal rather than a fix in silence.** This is the missing half of a guard that
+already existed: `alterExpression()` refuses a request-supplied chain that arrives with no binder,
+so that a reading point forgetting to supply one cannot reopen the hole quietly. It could not catch
+the case where a binder *is* supplied but writes into nothing. Adding this half turned up a second
+occurrence in the date filter within seconds of being written.
 
 ---
 
