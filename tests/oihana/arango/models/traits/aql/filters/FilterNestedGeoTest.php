@@ -220,21 +220,23 @@ class FilterNestedGeoTest extends TestCase
     }
 
     /**
-     * ⚠ The frontier: a valid point with **no radius** still answers the empty string,
-     * at both depths, because it comes from `buildBetweenClauses()` — shared with the
-     * `between` operator, and therefore one arbitration for two callers. Left to be
-     * decided once, with both in view.
+     * A valid point with **no radius** yields no clause, at both depths.
+     *
+     * ⚠ This case came from `buildBetweenClauses()`, shared with `between`, and was
+     * pinned as an empty string while that arbitration was still open. It has since
+     * been settled the same way as the two local returns: no bound expressed is no
+     * constraint, so no clause.
      *
      * @throws BindException
      * @throws ReflectionException
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testAMissingRadiusStillYieldsTheSharedEmptyString(): void
+    public function testAMissingRadiusYieldsNoClauseAtBothDepths(): void
     {
         foreach ( [ 'geo' , 'address.geo' ] as $key )
         {
-            $this->assertSame( '' , $this->compile( [ 'key' => $key , 'op' => 'distance' , 'val' => self::POINT ] ) , $key ) ;
+            $this->assertNull( $this->compile( [ 'key' => $key , 'op' => 'distance' , 'val' => self::POINT ] ) , $key ) ;
         }
     }
 }

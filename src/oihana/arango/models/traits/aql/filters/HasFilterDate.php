@@ -106,7 +106,7 @@ trait HasFilterDate
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    protected function prepareFilterDate( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
+    protected function prepareFilterDate( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):?string
     {
         if ( ( $init[ FilterParam::OP ] ?? null ) === FilterComparator::BETWEEN )
         {

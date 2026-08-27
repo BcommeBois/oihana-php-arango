@@ -206,13 +206,16 @@ trait HasFacetField
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    private function prepareFacetFieldBetween( string $key , array $value , array &$binds , array $facet , string $doc , mixed $alt ) :string
+    private function prepareFacetFieldBetween( string $key , array $value , array &$binds , array $facet , string $doc , mixed $alt ) :?string
     {
         [ $keyChain ] = resolveAltSides( $alt ) ;
         $left = alterExpression( key( $facet[ Facet::PROPERTY ] ?? $key , $doc ) , $keyChain ) ;
 
-        $min = array_key_exists( FilterParam::MIN , $value ) ? $this->bind( $value[ FilterParam::MIN ] , $binds , $key . Char::UNDERLINE . FilterParam::MIN ) : null ;
-        $max = array_key_exists( FilterParam::MAX , $value ) ? $this->bind( $value[ FilterParam::MAX ] , $binds , $key . Char::UNDERLINE . FilterParam::MAX ) : null ;
+        // A bound is a VALUE, not a key: `{"min":null}` is an unfilled widget, not a
+        // bound, and counting it compiled a comparison against null — which selects the
+        // documents holding no value at all. See prepareFilterBetween().
+        $min = ( $value[ FilterParam::MIN ] ?? null ) !== null ? $this->bind( $value[ FilterParam::MIN ] , $binds , $key . Char::UNDERLINE . FilterParam::MIN ) : null ;
+        $max = ( $value[ FilterParam::MAX ] ?? null ) !== null ? $this->bind( $value[ FilterParam::MAX ] , $binds , $key . Char::UNDERLINE . FilterParam::MAX ) : null ;
 
         return buildBetweenClauses( $left , $min , $max ) ;
     }

@@ -740,17 +740,39 @@ trait FilterTrait
      * @param callable $resolve fn(mixed $value, ?array &$binds): string — resolves a bound to AQL.
      * @param bool $defaultBounds Whether an omitted bound still emits a clause (dates) or is dropped.
      *
-     * @return string
+     * @return string|null The range clause, or `null` when no bound was given — no
+     *                     constraint expressed is no clause, never an empty one.
      *
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    protected function prepareFilterBetween( array $init , ?array &$binds , string $docRef , callable $resolve , bool $defaultBounds ) :string
+    protected function prepareFilterBetween( array $init , ?array &$binds , string $docRef , callable $resolve , bool $defaultBounds ) :?string
     {
+        // 🚨 A bound is a VALUE, not a key.
+        //
+        // This used to ask `array_key_exists()`, so `{"min":null,"max":null}` — which is
+        // what an unfilled range widget serialises — counted as two bounds and compiled
+        // `doc.price >= @v && doc.price <= @v` with both binds null. Measured: that
+        // selects the records having **no price at all**. "Prices between nothing and
+        // nothing" answered "records without a price", plausibly, in `200`.
+        $hasMin = ( $init[ FilterParam::MIN ] ?? null ) !== null ;
+        $hasMax = ( $init[ FilterParam::MAX ] ?? null ) !== null ;
+
+        // ⚠ The date default (`$defaultBounds`) fills the missing side with "now", which
+        // is what makes `min` alone mean "from X until now". It only applies when at
+        // least one REAL bound was given: with neither, it used to compile
+        // `>= NOW && <= NOW` — a clause that can never match anything.
+        $defaultBounds = $defaultBounds && ( $hasMin || $hasMax ) ;
+
+        if ( !$hasMin && !$hasMax && !$defaultBounds )
+        {
+            return null ; // no bound expressed is no constraint, not an empty condition.
+        }
+
         $left = $this->prepareFilterKey( $init , $docRef , $binds ) ;
 
-        $min = ( array_key_exists( FilterParam::MIN , $init ) || $defaultBounds ) ? $resolve( $init[ FilterParam::MIN ] ?? null , $binds ) : null ;
-        $max = ( array_key_exists( FilterParam::MAX , $init ) || $defaultBounds ) ? $resolve( $init[ FilterParam::MAX ] ?? null , $binds ) : null ;
+        $min = ( $hasMin || $defaultBounds ) ? $resolve( $init[ FilterParam::MIN ] ?? null , $binds ) : null ;
+        $max = ( $hasMax || $defaultBounds ) ? $resolve( $init[ FilterParam::MAX ] ?? null , $binds ) : null ;
 
         return buildBetweenClauses( $left , $min , $max ) ;
     }

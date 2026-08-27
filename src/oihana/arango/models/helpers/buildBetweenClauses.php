@@ -37,7 +37,7 @@ use function oihana\core\strings\predicates;
  * @since   1.0.0
  * @author  Marc Alcaraz
  */
-function buildBetweenClauses( string $left , ?string $min , ?string $max ) : string
+function buildBetweenClauses( string $left , ?string $min , ?string $max ) : ?string
 {
     $clauses = [] ;
 
@@ -51,9 +51,16 @@ function buildBetweenClauses( string $left , ?string $min , ?string $max ) : str
         $clauses[] = predicate( $left , Comparator::LESS_THAN_OR_EQUAL , $max ) ;
     }
 
+    // 🚨 `null`, not an empty string.
+    //
+    // Both mean "no clause", and only one behaves like it: `null` is dropped by the
+    // composition layer, while `''` travels on as though it were a condition and
+    // reaches the server as `FILTER  RETURN` — a syntax error on its own or inside an
+    // `OR`. Inside an `AND` it was already dropped, and that half was always right;
+    // this makes the other two agree with it.
     if ( empty( $clauses ) )
     {
-        return Char::EMPTY ;
+        return null ;
     }
 
     return count( $clauses ) > 1

@@ -124,7 +124,7 @@ trait HasFilterString
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    protected function prepareFilterString( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
+    protected function prepareFilterString( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):?string
     {
         return match ( $init[ FilterParam::OP ] ?? null )
         {

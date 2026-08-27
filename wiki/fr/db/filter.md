@@ -151,6 +151,17 @@ Exemples :
 // FILTER (doc.created >= DATE_LOCALTOUTC(@min,@tz) && doc.created <= DATE_LOCALTOUTC(@max,@tz))
 ```
 
+**Aucune borne — aucune contrainte.** Un widget de plage laissé vide n'exprime rien, donc `between` n'émet **aucune clause** et le filtre est simplement retiré :
+
+```jsonc
+{"key":"price","op":"between"}                     // aucune clause
+{"key":"price","op":"between","min":null,"max":null} // aucune clause — identique
+```
+
+> ⚠ **Une borne est une VALEUR, pas une clé.** Les deux écritures ci-dessus veulent dire la même chose : ne rien remplir. `{"min":null}` n'est pas une borne, et une borne `null` à côté d'une vraie n'en ajoute pas une seconde — `{"min":10,"max":null}` reste une comparaison unilatérale.
+>
+> Sur une **date**, le défaut « jusqu'à maintenant » ne s'applique que si **au moins une** vraie borne est donnée : sans aucune, il n'y a rien à compléter.
+
 Le champ comparé reste compatible `alt` (ex. `"alt":"abs"` → `(ABS(doc.price) >= @min && …)`).
 
 ### Opérateur `distance` (géolocalisation)
@@ -168,7 +179,7 @@ Réservé au type [`FilterType::GEO`](#types-de-filtres). Il filtre les document
 // FILTER (DISTANCE(...) >= @min && DISTANCE(...) <= @max)
 ```
 
-`op` peut être omis (le type `geo` implique `distance`). **Un rayon est requis** : sans `min` ni `max`, aucune clause n'est émise. Les sous-attributs lus sont `<key>.latitude` / `<key>.longitude` (Schema.org) ; `DISTANCE` opère sur deux scalaires, donc le prédicat est **index-accéléré** dès qu'un [`GeoIndex`](../clients/indexes.md) à deux champs couvre ces attributs. Voir le catalogue des [fonctions géospatiales](../aql/aql-functions-geo.md).
+`op` peut être omis (le type `geo` implique `distance`). **Un rayon est requis** : sans `min` ni `max` — ou avec des bornes nulles — aucune clause n'est émise, et le filtre est retiré comme un `between` vide. Les sous-attributs lus sont `<key>.latitude` / `<key>.longitude` (Schema.org) ; `DISTANCE` opère sur deux scalaires, donc le prédicat est **index-accéléré** dès qu'un [`GeoIndex`](../clients/indexes.md) à deux champs couvre ces attributs. Voir le catalogue des [fonctions géospatiales](../aql/aql-functions-geo.md).
 
 **À toute profondeur.** Un `geo` déclaré dans une sous-fiche se filtre avec la clé pointée, et compile la même chose sur la référence atteinte :
 

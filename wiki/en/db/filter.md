@@ -150,6 +150,17 @@ Examples:
 // FILTER (doc.created >= DATE_LOCALTOUTC(@min,@tz) && doc.created <= DATE_LOCALTOUTC(@max,@tz))
 ```
 
+**No bound — no constraint.** An unfilled range widget expresses nothing, so `between` emits **no clause** and the filter is simply dropped:
+
+```jsonc
+{"key":"price","op":"between"}                       // no clause
+{"key":"price","op":"between","min":null,"max":null} // no clause — the same thing
+```
+
+> ⚠ **A bound is a VALUE, not a key.** Both spellings above mean the same: nothing filled in. `{"min":null}` is not a bound, and a null bound beside a real one does not add a second — `{"min":10,"max":null}` stays a one-sided comparison.
+>
+> On a **date**, the "until now" default only applies when **at least one** real bound is given: with none, there is nothing for it to complete.
+
 The compared field stays `alt`-aware (e.g. `"alt":"abs"` → `(ABS(doc.price) >= @min && …)`).
 
 ### `distance` operator (geolocation)
@@ -167,7 +178,7 @@ Reserved for the [`FilterType::GEO`](#filter-types) type. It filters documents b
 // FILTER (DISTANCE(...) >= @min && DISTANCE(...) <= @max)
 ```
 
-`op` may be omitted (the `geo` type implies `distance`). **A radius is required**: with neither `min` nor `max`, no clause is emitted. The sub-attributes read are `<key>.latitude` / `<key>.longitude` (Schema.org); `DISTANCE` operates on two scalars, so the predicate is **index-accelerated** as soon as a two-field [`GeoIndex`](../clients/indexes.md) covers them. See the [geospatial functions](../aql/aql-functions-geo.md) catalog.
+`op` may be omitted (the `geo` type implies `distance`). **A radius is required**: with neither `min` nor `max` — or with null bounds — no clause is emitted, and the filter is dropped like an empty `between`. The sub-attributes read are `<key>.latitude` / `<key>.longitude` (Schema.org); `DISTANCE` operates on two scalars, so the predicate is **index-accelerated** as soon as a two-field [`GeoIndex`](../clients/indexes.md) covers them. See the [geospatial functions](../aql/aql-functions-geo.md) catalog.
 
 **At any depth.** A `geo` declared inside a sub-record is filtered with the dotted key, and compiles the same thing against the reference reached:
 

@@ -100,8 +100,9 @@ trait HasFilterGeo
             $this->bind( $longitude , $binds )
         ) ;
 
-        $min = array_key_exists( FilterParam::MIN , $init ) ? $this->bind( $init[ FilterParam::MIN ] , $binds ) : null ;
-        $max = array_key_exists( FilterParam::MAX , $init ) ? $this->bind( $init[ FilterParam::MAX ] , $binds ) : null ;
+        // A radius is a VALUE, not a key — `{"max":null}` is an unfilled widget.
+        $min = ( $init[ FilterParam::MIN ] ?? null ) !== null ? $this->bind( $init[ FilterParam::MIN ] , $binds ) : null ;
+        $max = ( $init[ FilterParam::MAX ] ?? null ) !== null ? $this->bind( $init[ FilterParam::MAX ] , $binds ) : null ;
 
         return buildBetweenClauses( $expression , $min , $max ) ;
     }

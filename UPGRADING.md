@@ -9,7 +9,7 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Twelve breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Thirteen breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
@@ -18,8 +18,9 @@ now applies, so a listing that answered everything starts answering the question
 about behaviour at all — two names move to another package, and nothing they do changes. The eighth
 refuses a call that could only ever have produced an unusable query, the ninth stops a count
 from answering on records it should never have counted, the tenth makes "at least n" mean it, the
-eleventh makes a nested `match` test what it says, and the twelfth lets a nested `geo` filter at
-all. None changes a signature.
+eleventh makes a nested `match` test what it says, the twelfth lets a nested `geo` filter at
+all, and the thirteenth makes an unfilled range mean "no constraint". Only the last changes a
+signature, and only for direct callers of the filter builders.
 
 ### 🚨 Breaking
 
@@ -395,6 +396,42 @@ as though it were a condition and reaches the server as `FILTER  RETURN`.
   `prepareFilter()` — which already returned `?string` — nothing changes for you.
 - **A valid point with no radius still yields the empty string**, because that one comes from the
   builder shared with `between`. It is being decided separately.
+
+#### 13. An unfilled range expresses no constraint, and emits no clause
+
+**Before.** A "from … to …" widget left blank produced one of three wrong answers, depending on how
+the front-end serialised the empty fields:
+
+```
+{"key":"price","op":"between"}                        → ''  → FILTER  RETURN → 500
+{"key":"price","op":"between","min":null,"max":null}  → the products with NO price, in 200
+{"key":"created","op":"between"}                      → >= NOW && <= NOW → never any rows
+```
+
+**Now.** All three emit **no clause**: the filter is dropped, which is what the `AND` context has
+always done with it.
+
+**What to do.**
+
+1. **Nothing, if your front-end omits empty bounds** — that case simply stops failing.
+2. **⚠ Check any listing that sends `min`/`max` as `null`.** It was answering with the records that
+   have no value in that field, and will now be unfiltered on that criterion. The page changes, and
+   the old one was not answering the question asked.
+3. **Nothing to declare, no opt-in.**
+
+**Signatures.** `buildBetweenClauses()`, `prepareFilterBetween()`, `prepareFilterString()`,
+`prepareFilterNumber()` and `prepareFilterDate()` now return `?string` instead of `string`. If you
+call any of them **directly**, widen the type you receive. Through `prepareFilter()` — which already
+returned `?string` — nothing changes.
+
+**What does not move.**
+
+- **A filled range still constrains**, at both ends or at one: `{"min":10}` stays
+  `doc.price >= @min`, and `{"min":10,"max":null}` stays the same one-sided comparison.
+- **The date "until now" default is kept** where it means something. `{"min":"2024-01-01"}` still
+  compiles `>= @min && <= DATE_ISO8601(DATE_NOW())`. It only stops applying when there is no real
+  bound at all.
+- **The `AND` composition is unchanged** — it was the reference the rest was aligned on.
 
 ---
 

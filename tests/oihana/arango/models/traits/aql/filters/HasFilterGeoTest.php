@@ -194,19 +194,15 @@ class HasFilterGeoTest extends TestCase
     }
 
     /**
-     * ⚠ The frontier, pinned deliberately.
+     * A valid point with **no radius** yields no clause either.
      *
-     * A valid point with **no radius** still yields the empty string, because it comes
-     * from somewhere else: `buildBetweenClauses()`, shared with the `between` operator,
-     * which answers `''` when neither bound is given. That is one arbitration for two
-     * callers — "no bound at all" is a plausible thing for an unfilled range widget to
-     * send, where a geo operator that does not exist is plainly a mistake — so it is
-     * left to be decided once, with both cases in view, rather than half-decided here.
-     *
-     * This assertion is what says the frontier held: two local returns changed, the
-     * shared one did not.
+     * ⚠ This one arrives from `buildBetweenClauses()`, shared with the `between`
+     * operator, and it was deliberately left as an empty string when the two local
+     * returns above became `null` — one arbitration for two callers, decided once with
+     * both in view. It has since been decided the same way: an unfilled range widget
+     * expresses no constraint, and no constraint is `null`.
      */
-    public function testMissingRadiusStillComesFromTheSharedBetweenBuilder(): void
+    public function testMissingRadiusYieldsNoClause(): void
     {
         $init =
         [
@@ -217,6 +213,6 @@ class HasFilterGeoTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertSame( '' , $result ) ;
+        $this->assertNull( $result ) ;
     }
 }

@@ -79,9 +79,15 @@ class FilterBetweenTest extends TestCase
         $this->assertSame( 'doc.price <= @max' , buildBetweenClauses( 'doc.price' , null , '@max' ) ) ;
     }
 
-    public function testHelperNoBoundsIsEmpty(): void
+    /**
+     * No bound is `null`, the shape the composition layer drops — not the empty string,
+     * which travels on as though it were a condition and reaches the server as
+     * `FILTER  RETURN`.
+     */
+    public function testHelperNoBoundsYieldsNoClause(): void
     {
-        $this->assertSame( '' , buildBetweenClauses( 'doc.price' , null , null ) ) ;
+        $this->assertNull( buildBetweenClauses( 'doc.price' , null , null ) ) ;
+        $this->assertNotSame( '' , buildBetweenClauses( 'doc.price' , null , null ) ) ;
     }
 
     // ========================================

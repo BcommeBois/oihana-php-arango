@@ -47,7 +47,7 @@ trait HasFilterNumber
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    protected function prepareFilterNumber( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):string
+    protected function prepareFilterNumber( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ):?string
     {
         if ( ( $init[ FilterParam::OP ] ?? null ) === FilterComparator::BETWEEN )
         {
