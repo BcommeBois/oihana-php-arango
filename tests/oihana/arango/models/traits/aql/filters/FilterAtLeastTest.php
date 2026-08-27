@@ -88,6 +88,6 @@ class FilterAtLeastTest extends TestCase
     {
         $result = $this->model->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.ge' , 2 ] , 'val' => 80 , 'alt' => 'sorted' ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^SORTED\(doc\.scores\) AT LEAST \(2\) >= @\S+$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^SORTED\(\(IS_ARRAY\(doc\.scores\)\s\?\sdoc\.scores\s:\s\[]\)\) AT LEAST \(2\) >= @\S+$/' , $result ) ;
     }
 }

@@ -953,6 +953,33 @@ AQL::EDGES =>
 
 // Documents whose score sum exceeds 100
 {"key":"scores","val":100,"op":"gt","alt":"sum"}
+
+// Documents with NO tag at all
+{"key":"tags","val":0,"op":"eq","alt":"count"}
+```
+
+**An `alt` chain on a key declared as a list reads that key as a list.** It compiles against a *list-or-nothing* form, not against the bare attribute:
+
+```
+{"key":"tags","val":3,"op":"ge","alt":"count"}
+  ->  COUNT((IS_ARRAY(doc.tags) ? doc.tags : [])) >= @value
+```
+
+> ⚠ **This is not cosmetic.** `COUNT()` and `LENGTH()` are the only two catalogue functions also defined **on strings** — every other one (`first`, `sum`, `min`, `unique`…) answers `null` on a value that is not a list, which is the honest answer. Those two answer the **character count** instead: a record storing `"backend"` under `tags` reported **seven tags**. Through `[*]`, a non-list is an empty list and counts `0`.
+>
+> The case that matters is not "at least 3" but **"none"**: `{"val":0,"op":"eq","alt":"count"}` used to **leave out** the malformed records, which are exactly the ones the question is looking for.
+>
+> **Nothing moves for well-formed data**: a real list passes through the guard untouched, so every function answers exactly what it answered before.
+
+**Two spellings are deliberately left out:**
+
+- **The `at` index** — `{"key":"tags","at":0,"alt":"upper"}` still compiles `UPPER(doc.tags[0])`. It already carries a bracket, and it answers `null` on a string anyway.
+- **The comparison itself** — only the key the chain wraps is guarded. `{"key":"tags","val":["a","b"]}` and the [quantifiers](#array-quantifiers--the-quant-key) still compare `doc.tags`.
+
+**On a key declared as a string, `count` still counts characters** — which is what it means there:
+
+```
+{"key":"name","val":4,"op":"ge","alt":"count"}   ->  COUNT(doc.name) >= @value
 ```
 
 ### Array quantifiers — the `quant` key

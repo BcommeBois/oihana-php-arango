@@ -329,7 +329,7 @@ class PrepareFilterTest extends TestCase
         $result = $this->model->prepareFilter($init, $this->binds);
 
         // ✅ CORRECTION : 'count' génère COUNT() pas LENGTH()
-        $this->assertStringContainsString('COUNT(doc.tags)', $result);
+        $this->assertStringContainsString('COUNT((IS_ARRAY(doc.tags) ? doc.tags : []))', $result);
         $this->assertStringContainsString('>=', $result);
     }
 
@@ -347,7 +347,7 @@ class PrepareFilterTest extends TestCase
 
         $result = $this->model->prepareFilter($init, $this->binds);
 
-        $this->assertStringContainsString('LENGTH(doc.tags)', $result);
+        $this->assertStringContainsString('LENGTH((IS_ARRAY(doc.tags) ? doc.tags : []))', $result);
         $this->assertStringContainsString('>=', $result);
     }
 
@@ -365,7 +365,7 @@ class PrepareFilterTest extends TestCase
 
         $result = $this->model->prepareFilter($init, $this->binds);
 
-        $this->assertStringContainsString('AVERAGE(doc.tags)', $result);
+        $this->assertStringContainsString('AVERAGE((IS_ARRAY(doc.tags) ? doc.tags : []))', $result);
     }
 
     /**

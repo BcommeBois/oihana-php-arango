@@ -9,14 +9,15 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Eight breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Nine breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
 refused everywhere else. The fifth and sixth refuse nothing at all: a filter that was being dropped
 now applies, so a listing that answered everything starts answering the question. The seventh is not
 about behaviour at all — two names move to another package, and nothing they do changes. The eighth
-refuses a call that could only ever have produced an unusable query. None changes a signature.
+refuses a call that could only ever have produced an unusable query, and the ninth stops a count
+from answering on records it should never have counted. None changes a signature.
 
 ### 🚨 Breaking
 
@@ -270,6 +271,39 @@ already existed: `alterExpression()` refuses a request-supplied chain that arriv
 so that a reading point forgetting to supply one cannot reopen the hole quietly. It could not catch
 the case where a binder *is* supplied but writes into nothing. Adding this half turned up a second
 occurrence in the date filter within seconds of being written.
+
+#### 9. An `alt` chain on a list-declared key is compiled against the list
+
+**Before.** `{"key":"tags","val":3,"op":"ge","alt":"count"}` compiled to `COUNT(doc.tags) >= @v`.
+`COUNT()` is defined on strings as well as arrays, so a record storing `"backend"` under a
+list-declared key answered **7** and was counted among the heavily tagged ones — while
+`{"val":0,"op":"eq","alt":"count"}`, *which records have no tags*, left that record **out**.
+
+**Now.** The chain is compiled against a list-or-nothing form,
+`COUNT((IS_ARRAY(doc.tags) ? doc.tags : [])) >= @v`. A value that is not a list becomes an empty
+list and counts `0`.
+
+**What to do.**
+
+1. **Nothing, if your data matches your declarations.** A real list passes through the guard
+   untouched, so every well-formed record answers exactly what it answered before — for every
+   function of the catalogue, not just `count`.
+2. **Expect malformed records to move**, in both directions: they drop out of "at least N" answers
+   and appear in "none" answers. That is the fix. If a listing's totals shift, it is telling you
+   which records store something other than a list under a key you declared as one.
+3. **Nothing to declare, no opt-in.** The behaviour follows the `FilterType::ARRAY` you already
+   declare.
+
+⚠ **If you match on the emitted AQL** — in a test, a log assertion or an `EXPLAIN` snapshot — the
+shape of the key changes for these filters, even though the answer does not.
+
+**What does not move.**
+
+- **The `at` index** — `{"key":"tags","at":0,"alt":"upper"}` still compiles `UPPER(doc.tags[0])`.
+- **The comparison itself** — `{"key":"tags","val":["a","b"]}`, `quant`, and the `atLeast` forms
+  still compare `doc.tags`. Only the key an `alt` chain wraps is expanded.
+- **A `count` on a key declared as a string** still counts characters, which is what it means there.
+- **An `alt` that only wraps the value** (`alt:{val:…}`) leaves the key alone.
 
 ---
 

@@ -4,7 +4,9 @@ namespace oihana\arango\models\traits\aql\filters;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
+use oihana\arango\db\enums\functions\CheckFunction;
 use oihana\arango\db\enums\Operator;
+use oihana\enums\Char;
 use oihana\arango\models\enums\filters\FilterArrayComparator;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterParam;
@@ -18,8 +20,12 @@ use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\buildCombinedInlineFilter;
 use function oihana\arango\db\helpers\buildInlineFilterCondition;
 use function oihana\arango\db\helpers\requestAlt;
+use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\db\helpers\resolveQuantifier;
+use function oihana\arango\db\operators\ternary;
 use function oihana\core\strings\betweenBrackets;
+use function oihana\core\strings\betweenParentheses;
+use function oihana\core\strings\func;
 use function oihana\core\strings\key;
 use function oihana\core\strings\predicate;
 
@@ -278,9 +284,55 @@ trait HasFilterArray
         $keyStr = key( $init[ FilterParam::KEY ] ?? null , $docRef ) ;
 
         $at = $init[ FilterParam::AT ] ?? null ;
+
         if ( is_int( $at ) )
         {
             $keyStr .= betweenBrackets( (string) $at ) ;
+        }
+        else
+        {
+            // A key declared as a list is read as a list.
+            //
+            // `LENGTH()` and `COUNT()` are the only two catalogue functions defined on
+            // strings as well as arrays, so they are the only two that *answer* when a
+            // document stores something that is not a list under a list-declared key —
+            // every other one already says `null`. They answer with the character
+            // count: `"backend"` reports 7 tags, and `alt:"count"` with `== 0` — "which
+            // records have no tags" — leaves out exactly the malformed records the
+            // question is looking for.
+            //
+            // Handing the chain the list-or-nothing form settles it without a list of
+            // function names to keep in step: a non-array becomes the empty list, so the
+            // count is 0. And it changes nothing anywhere else, because a real array
+            // passes through untouched — measured, function by function.
+            //
+            // ⚠ The obvious spelling, `doc.tags[*]`, does NOT work, and the reason is
+            // worth keeping: a bracket expression after `[*]` binds to every ELEMENT
+            // rather than to the list. `pluck` compiles to an inline projection, so
+            // `AVERAGE(doc.items[*][* RETURN CURRENT.price])` reads "the price of each
+            // field of each item" and answers `null` where the plain form answers 100.
+            // The ternary carries no bracket, so anything may be wrapped around it.
+            //
+            // ⚠ Two frontiers, both measured rather than assumed:
+            //
+            // - **the `at` index stays out** (the branch above). It carries a bracket of
+            //   its own and would meet the same fate, and it needs no help anyway —
+            //   `doc.tags[0]` already answers `null` on a string.
+            // - **the comparison stays out**. Only the key the chain wraps is guarded.
+            //   Widening it would turn `doc.tags == []` from "the stored list is empty"
+            //   into "there is no list here either", and carry `ALL` and `AT LEAST` with
+            //   it — another change entirely, and not this one.
+            [ $keyChain ] = resolveAltSides( requestAlt( $init[ FilterParam::ALT ] ?? null ) ) ;
+
+            if ( $keyChain !== null )
+            {
+                $keyStr = betweenParentheses( ternary
+                (
+                    func( CheckFunction::IS_ARRAY , [ $keyStr ] ) ,
+                    $keyStr ,
+                    Char::LEFT_BRACKET . Char::RIGHT_BRACKET
+                ) ) ;
+            }
         }
 
         return $this->alterFilterKey( $keyStr , $init , $binds ) ;

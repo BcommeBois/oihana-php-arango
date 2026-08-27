@@ -161,6 +161,11 @@ class HasFilterArrayTest extends TestCase
     // ========================================
 
     /**
+     * ⚠ The `[*]` is not decoration: `COUNT()` and `LENGTH()` are the only catalogue
+     * functions defined on strings as well as arrays, so on the bare attribute they
+     * answer the CHARACTER count for a document storing something that is not a list.
+     * See {@see \tests\oihana\arango\models\traits\aql\filters\FilterArrayCountTest}.
+     *
      * @throws UnsupportedOperationException
      * @throws ConstantException
      * @throws NotFoundExceptionInterface
@@ -174,11 +179,16 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'COUNT(doc.tags)' , $result ) ;
+        $this->assertStringContainsString( 'COUNT((IS_ARRAY(doc.tags) ? doc.tags : []))' , $result ) ;
         $this->assertStringContainsString( '>=' , $result ) ;
     }
 
     /**
+     * ⚠ The `[*]` is not decoration: `COUNT()` and `LENGTH()` are the only catalogue
+     * functions defined on strings as well as arrays, so on the bare attribute they
+     * answer the CHARACTER count for a document storing something that is not a list.
+     * See {@see \tests\oihana\arango\models\traits\aql\filters\FilterArrayCountTest}.
+     *
      * @throws UnsupportedOperationException
      * @throws ConstantException
      * @throws NotFoundExceptionInterface
@@ -192,7 +202,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'LENGTH(doc.tags)' , $result ) ;
+        $this->assertStringContainsString( 'LENGTH((IS_ARRAY(doc.tags) ? doc.tags : []))' , $result ) ;
         $this->assertStringContainsString( '>' , $result ) ;
     }
 
@@ -210,7 +220,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'AVERAGE(doc.values)' , $result ) ;
+        $this->assertStringContainsString( 'AVERAGE((IS_ARRAY(doc.values) ? doc.values : []))' , $result ) ;
     }
 
     /**
@@ -227,7 +237,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'SUM(doc.values)' , $result ) ;
+        $this->assertStringContainsString( 'SUM((IS_ARRAY(doc.values) ? doc.values : []))' , $result ) ;
     }
 
     /**
@@ -244,7 +254,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'MIN(doc.values)' , $result ) ;
+        $this->assertStringContainsString( 'MIN((IS_ARRAY(doc.values) ? doc.values : []))' , $result ) ;
     }
 
     /**
@@ -261,7 +271,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'MAX(doc.values)' , $result ) ;
+        $this->assertStringContainsString( 'MAX((IS_ARRAY(doc.values) ? doc.values : []))' , $result ) ;
     }
 
     /**
@@ -278,7 +288,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'MEDIAN(doc.values)' , $result ) ;
+        $this->assertStringContainsString( 'MEDIAN((IS_ARRAY(doc.values) ? doc.values : []))' , $result ) ;
     }
 
     /**
@@ -295,7 +305,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'PRODUCT(doc.values)' , $result ) ;
+        $this->assertStringContainsString( 'PRODUCT((IS_ARRAY(doc.values) ? doc.values : []))' , $result ) ;
     }
 
     // ========================================
@@ -316,7 +326,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'FIRST(doc.tags)' , $result ) ;
+        $this->assertStringContainsString( 'FIRST((IS_ARRAY(doc.tags) ? doc.tags : []))' , $result ) ;
     }
 
     /**
@@ -333,7 +343,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'LAST(doc.tags)' , $result ) ;
+        $this->assertStringContainsString( 'LAST((IS_ARRAY(doc.tags) ? doc.tags : []))' , $result ) ;
     }
 
     /**
@@ -350,7 +360,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/NTH\(doc\.tags,\s*2\)/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/NTH\(\(IS_ARRAY\(doc\.tags\) \? doc\.tags : \[]\),\s*2\)/' , $result ) ;
     }
 
     // ========================================
@@ -564,7 +574,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds , 'vertex' ) ;
 
-        $this->assertStringContainsString( 'LENGTH(vertex.tags)' , $result ) ;
+        $this->assertStringContainsString( 'LENGTH((IS_ARRAY(vertex.tags) ? vertex.tags : []))' , $result ) ;
         $this->assertStringNotContainsString( 'doc.tags' , $result ) ;
     }
 
@@ -586,7 +596,7 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'LENGTH(doc.tags)' , $result ) ;
+        $this->assertStringContainsString( 'LENGTH((IS_ARRAY(doc.tags) ? doc.tags : []))' , $result ) ;
         $this->assertContains( 0 , $this->binds ) ;
     }
 
@@ -630,8 +640,8 @@ class HasFilterArrayTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'LENGTH(doc.tags)' , $result ) ;
-        $this->assertStringContainsString( 'MIN(doc.values)' , $result ) ;
+        $this->assertStringContainsString( 'LENGTH((IS_ARRAY(doc.tags) ? doc.tags : []))' , $result ) ;
+        $this->assertStringContainsString( 'MIN((IS_ARRAY(doc.values) ? doc.values : []))' , $result ) ;
         $this->assertStringContainsString( '&&' , $result ) ;
     }
 }

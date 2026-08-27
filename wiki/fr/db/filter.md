@@ -953,6 +953,33 @@ Les transformations [`alt`](#transformations-alt) s'appliquent normalement à la
 
 // Documents dont la somme des scores dépasse 100
 {"key":"scores","val":100,"op":"gt","alt":"sum"}
+
+// Documents SANS aucune étiquette
+{"key":"tags","val":0,"op":"eq","alt":"count"}
+```
+
+**Une chaîne `alt` sur une clé déclarée liste lit cette clé comme une liste.** Elle est compilée sur une forme *liste-ou-rien*, pas sur l'attribut nu :
+
+```
+{"key":"tags","val":3,"op":"ge","alt":"count"}
+  ->  COUNT((IS_ARRAY(doc.tags) ? doc.tags : [])) >= @value
+```
+
+> ⚠ **Ce n'est pas cosmétique.** `COUNT()` et `LENGTH()` sont les deux seules fonctions du catalogue définies **aussi sur les chaînes** — toutes les autres (`first`, `sum`, `min`, `unique`…) rendent `null` sur une valeur qui n'est pas une liste, la réponse honnête. Ces deux-là répondent le **nombre de caractères** : une fiche stockant `"backend"` sous `tags` annonçait **7 étiquettes**. À travers `[*]`, une non-liste vaut une liste vide et compte `0`.
+>
+> Le cas qui compte n'est pas « au moins 3 » mais **« aucune »** : `{"val":0,"op":"eq","alt":"count"}` **excluait** les fiches mal formées, précisément celles que la question cherche.
+>
+> **Rien ne bouge sur une donnée bien formée** : une vraie liste traverse la garde inchangée, donc chaque fonction répond exactement ce qu'elle répondait.
+
+**Deux écritures restent volontairement en dehors :**
+
+- **L'index `at`** — `{"key":"tags","at":0,"alt":"upper"}` compile toujours `UPPER(doc.tags[0])`. Il porte déjà un crochet, et l'index répond de toute façon `null` sur une chaîne.
+- **La comparaison elle-même** — seule la clé que la chaîne enveloppe est gardée. `{"key":"tags","val":["a","b"]}` et les [quantificateurs](#quantificateurs-sur-tableaux--clé-quant) comparent toujours `doc.tags`.
+
+**Sur une clé déclarée chaîne, `count` compte toujours des caractères** — c'est ce qu'il y veut dire :
+
+```
+{"key":"name","val":4,"op":"ge","alt":"count"}   ->  COUNT(doc.name) >= @value
 ```
 
 ### Quantificateurs sur tableaux — clé `quant`
