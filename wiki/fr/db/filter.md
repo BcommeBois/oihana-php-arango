@@ -993,18 +993,19 @@ Sur un champ tableau, deux axes **orthogonaux** se combinent :
 
 Le comparateur reste dans `op` ; `quant` dit **combien d'éléments** du tableau doivent le satisfaire. La même clé `quant` couvre les **deux familles** de tableaux :
 
-- **tableaux de scalaires** (nombres, chaînes) → opérateur AQL de **comparaison de tableau** (`doc.scores ALL >= @v`) ;
-- **tableaux d'objets** (`reviews[*].rating`, `contactPoint[*]` + `match`) → opérateur AQL **« question-mark »** (`doc.reviews[? ALL FILTER CURRENT.rating >= @v]`).
+- **tableaux de scalaires** (nombres, chaînes) → `doc.scores[? ALL FILTER CURRENT >= @v]` ;
+- **tableaux d'objets** (`reviews[*].rating`, `contactPoint[*]` + `match`) → `doc.reviews[? ALL FILTER CURRENT.rating >= @v]`.
 
 | `quant` | Sens | Scalaire (AQL) | Objet (AQL) |
 |---|---|---|---|
-| `"any"` *(défaut)* | au moins **1** | `… ANY <cmp> @v` | `…[? ANY FILTER …]` |
-| `"all"` | **tous** | `… ALL <cmp> @v` | `…[? ALL FILTER …]` |
-| `"none"` | **aucun** | `… NONE <cmp> @v` | `…[? NONE FILTER …]` |
-| `n` *(entier)* | **au moins n** | `… AT LEAST (n) <cmp> @v` | `…[? AT LEAST (n) FILTER …]` |
+| `"any"` *(défaut)* | au moins **1** | `…[? ANY FILTER CURRENT <cmp> @v]` | `…[? ANY FILTER …]` |
+| `"all"` | **tous** | `…[? ALL FILTER CURRENT <cmp> @v]` | `…[? ALL FILTER …]` |
+| `"none"` | **aucun** | `…[? NONE FILTER CURRENT <cmp> @v]` | `…[? NONE FILTER …]` |
+| `n` *(entier)* | **au moins n** | `…[? AT LEAST (n) FILTER CURRENT <cmp> @v]` | `…[? AT LEAST (n) FILTER …]` |
 
-> **Scalaires vs objets — deux opérateurs AQL, un seul vocabulaire.**
-> Sur un tableau de **scalaires**, `quant` produit l'opérateur de **comparaison de tableau** (`doc.scores AT LEAST (2) >= @v`). Sur un tableau d'**objets**, il produit l'opérateur **« question-mark »** (`doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]`), qui exige un `FILTER`/`CURRENT`. Tu écris le même `quant` ; le framework choisit la bonne forme selon la clé.
+> **Un seul vocabulaire, et désormais un seul opérateur.** Les deux familles émettent l'opérateur **« question-mark »** ; seule la condition change (`CURRENT` pour un scalaire, `CURRENT.<champ>` pour un objet).
+>
+> ⚠ **Les scalaires utilisaient auparavant l'opérateur de comparaison de tableau** (`doc.scores AT LEAST (2) >= @v`). Il se lit bien et il compte faux : ArangoDB répond `true` à `AT LEAST (n)` **dès que la liste compte moins de `n` éléments**, quels qu'ils soient. « Au moins 3 notes ≥ 4 » gardait donc tous les produits ayant **moins de 3 notes**. `any`, `all` et `none` étaient corrects dans les deux écritures — mesuré ligne à ligne — mais les quatre ont été alignés pour ne pas laisser deux formes dans la même clé.
 
 #### Exemple complet — des produits avec leurs notes clients (tableau scalaire)
 
@@ -1019,7 +1020,7 @@ Besoin : « les produits qui ont **au moins 3 notes de 4 étoiles ou plus** ».
 
 ```jsonc
 ?filter={"key":"ratings","op":"ge","val":4,"quant":3}
-// FILTER doc.ratings AT LEAST (3) >= @value   (@value = 4)
+// FILTER doc.ratings[? AT LEAST (3) FILTER CURRENT >= @value]   (@value = 4)
 ```
 
 | Produit | ratings | notes ≥ 4 | gardé ? |
@@ -1034,16 +1035,16 @@ Le même filtre avec les autres quantificateurs montre l'intérêt du quantifica
 
 | `quant` | Sens | AQL | Résultat |
 |---|---|---|---|
-| `"any"` | au moins **1** note ≥ 4 | `doc.ratings ANY >= 4` | A, B, C |
-| `"all"` | **toutes** les notes ≥ 4 | `doc.ratings ALL >= 4` | C |
-| `3` | **au moins 3** notes ≥ 4 | `doc.ratings AT LEAST (3) >= 4` | **A** |
+| `"any"` | au moins **1** note ≥ 4 | `doc.ratings[? ANY FILTER CURRENT >= 4]` | A, B, C |
+| `"all"` | **toutes** les notes ≥ 4 | `doc.ratings[? ALL FILTER CURRENT >= 4]` | C |
+| `3` | **au moins 3** notes ≥ 4 | `doc.ratings[? AT LEAST (3) FILTER CURRENT >= 4]` | **A** |
 
 `ANY` est trop large, `ALL` trop strict : `n` (au moins n) exprime exactement « assez d'éléments qualifiants ».
 
 ```jsonc
 // au moins 3 valeurs parmi celles fournies
 {"key":"scores","op":"in","val":[1,2,3],"quant":3}
-// FILTER doc.scores AT LEAST (3) IN @value
+// FILTER doc.scores[? AT LEAST (3) FILTER CURRENT IN @value]
 ```
 
 #### Tableaux d'objets — `quant` + opérateur « question-mark »

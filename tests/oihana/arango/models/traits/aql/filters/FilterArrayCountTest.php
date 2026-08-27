@@ -192,9 +192,12 @@ class FilterArrayCountTest extends TestCase
 
         $this->binds = [] ;
 
+        // The quantified form moved to the question-mark operator in its own batch, but
+        // the point here is unchanged: the key it reads is the bare attribute, not the
+        // list-or-nothing guard, because no `alt` chain wraps it.
         $this->assertStringStartsWith
         (
-            'doc.tags ALL' ,
+            'doc.tags[? ALL FILTER CURRENT' ,
             $this->compile( [ 'key' => 'tags' , 'val' => 'x' , 'quant' => 'all' ] )
         ) ;
     }

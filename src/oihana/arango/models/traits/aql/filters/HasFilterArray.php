@@ -5,6 +5,7 @@ namespace oihana\arango\models\traits\aql\filters;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\functions\CheckFunction;
+use oihana\arango\db\enums\Clause;
 use oihana\arango\db\enums\Operator;
 use oihana\enums\Char;
 use oihana\arango\models\enums\filters\FilterArrayComparator;
@@ -369,14 +370,9 @@ trait HasFilterArray
         $code  = substr( (string) $op[ 0 ] , strlen( FilterArrayComparator::AT_LEAST ) + 1 ) ; // "ge"
 
         // Same guard as the plain comparator: `at_least.zzz` used to become `at_least (n) ==`.
-        $comparator = Operator::AT_LEAST . ' (' . $count . ') ' . $this->resolveFilterComparator( $code ) ;
+        $comparator = $this->resolveFilterComparator( $code ) ;
 
-        return predicate
-        (
-            $this->prepareFilterArrayKey( $init , $docRef , $binds ) ,
-            $comparator ,
-            $this->prepareFilterValue( $init , $binds )
-        ) ;
+        return $this->quantifiedArrayCondition( $init , $binds , $docRef , resolveQuantifier( $count ) , $comparator ) ;
     }
 
     /**
@@ -409,11 +405,52 @@ trait HasFilterArray
         $quantifier = resolveQuantifier( $init[ FilterParam::QUANT ] ) ;
         $comparator = $this->prepareFilterComparator( $init ) ;
 
-        return predicate
-        (
-            $this->prepareFilterArrayKey( $init , $docRef , $binds ) ,
-            $quantifier . ' ' . $comparator ,
-            $this->prepareFilterValue( $init , $binds ) ,
-        ) ;
+        return $this->quantifiedArrayCondition( $init , $binds , $docRef , $quantifier , $comparator ) ;
+    }
+
+    /**
+     * Builds a quantified condition over a scalar array, in the one shape that counts
+     * correctly: `array[? <quantifier> FILTER CURRENT <cmp> @value]`.
+     *
+     * 🚨 **Not the infix array comparison operator.** `doc.tags AT LEAST (3) == @v`
+     * reads naturally and is wrong: ArangoDB answers `true` whenever the array holds
+     * **fewer than n elements**, whatever they are — `[] AT LEAST (99) == "x"` is
+     * `true`. So "records with at least three matching tags" answered "records with
+     * fewer than three tags", the opposite of the question, in `200`.
+     *
+     * The question-mark operator counts the elements that actually match, and it is
+     * what the object-array branch of this same filter has always used. `ANY`, `ALL`
+     * and `NONE` were correct in either spelling — measured, row for row — so all four
+     * go through here rather than leaving two shapes in one method depending on what
+     * `quant` happens to hold.
+     *
+     * @param array       $init       The filter init.
+     * @param array|null  &$binds     The bind variables, populated by reference.
+     * @param string      $docRef     The document reference.
+     * @param string      $quantifier The resolved AQL quantifier (`ANY`, `ALL`, `NONE`, `AT LEAST (n)`).
+     * @param string      $comparator The resolved AQL comparator applied to each element.
+     *
+     * @return string
+     *
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    private function quantifiedArrayCondition
+    (
+        array   $init       ,
+        ?array  &$binds     ,
+        string  $docRef     ,
+        string  $quantifier ,
+        string  $comparator
+    )
+    :string
+    {
+        // The key is resolved first: an `alt` chain on it binds its own parameters, and
+        // they must reach the map before the compared value takes the next name.
+        $key   = $this->prepareFilterArrayKey( $init , $docRef , $binds ) ;
+        $value = $this->prepareFilterValue( $init , $binds ) ;
+
+        return arrayContains( $key , predicate( Clause::CURRENT , $comparator , $value ) , $quantifier ) ;
     }
 }

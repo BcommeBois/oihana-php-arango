@@ -993,18 +993,20 @@ On an array field, two **orthogonal** axes combine:
 
 The comparator stays in `op`; `quant` says **how many elements** of the array must satisfy it. The same `quant` key covers **both families** of arrays:
 
-- **scalar arrays** (numbers, strings) → AQL **array comparison** operator (`doc.scores ALL >= @v`);
+- **scalar arrays** (numbers, strings) → `doc.scores[? ALL FILTER CURRENT >= @v]`;
 - **object arrays** (`reviews[*].rating`, `contactPoint[*]` + `match`) → AQL **question-mark** operator (`doc.reviews[? ALL FILTER CURRENT.rating >= @v]`).
 
 | `quant` | Meaning | Scalar (AQL) | Object (AQL) |
 |---|---|---|---|
-| `"any"` *(default)* | at least **1** | `… ANY <cmp> @v` | `…[? ANY FILTER …]` |
-| `"all"` | **all** | `… ALL <cmp> @v` | `…[? ALL FILTER …]` |
-| `"none"` | **none** | `… NONE <cmp> @v` | `…[? NONE FILTER …]` |
-| `n` *(integer)* | **at least n** | `… AT LEAST (n) <cmp> @v` | `…[? AT LEAST (n) FILTER …]` |
+| `"any"` *(default)* | at least **1** | `…[? ANY FILTER CURRENT <cmp> @v]` | `…[? ANY FILTER …]` |
+| `"all"` | **all** | `…[? ALL FILTER CURRENT <cmp> @v]` | `…[? ALL FILTER …]` |
+| `"none"` | **none** | `…[? NONE FILTER CURRENT <cmp> @v]` | `…[? NONE FILTER …]` |
+| `n` *(integer)* | **at least n** | `…[? AT LEAST (n) FILTER CURRENT <cmp> @v]` | `…[? AT LEAST (n) FILTER …]` |
 
 > **Scalars vs objects — two AQL operators, one vocabulary.**
-> On a **scalar** array, `quant` produces the **array comparison** operator (`doc.scores AT LEAST (2) >= @v`). On an **object** array, it produces the **question-mark** operator (`doc.reviews[? AT LEAST (3) FILTER CURRENT.rating >= @v]`), which requires a `FILTER`/`CURRENT`. You write the same `quant`; the framework picks the right form from the key.
+> Both families emit the **question-mark** operator; only the condition differs (`CURRENT` for a scalar, `CURRENT.<field>` for an object).
+>
+> ⚠ **Scalar arrays used to use the array comparison operator** (`doc.scores AT LEAST (2) >= @v`). It reads well and it counts wrong: ArangoDB answers `true` to `AT LEAST (n)` **whenever the array holds fewer than `n` elements**, whatever they are. So "at least 3 ratings >= 4" kept every product with **fewer than 3 ratings**. `any`, `all` and `none` were correct in either spelling — measured row for row — but all four were aligned rather than leaving two shapes behind one key.
 
 #### Complete example — products with their customer ratings (scalar array)
 
@@ -1019,7 +1021,7 @@ Need: "products that have **at least 3 ratings of 4 stars or more**".
 
 ```jsonc
 ?filter={"key":"ratings","op":"ge","val":4,"quant":3}
-// FILTER doc.ratings AT LEAST (3) >= @value   (@value = 4)
+// FILTER doc.ratings[? AT LEAST (3) FILTER CURRENT >= @value]   (@value = 4)
 ```
 
 | Product | ratings | ratings ≥ 4 | kept? |
@@ -1036,14 +1038,14 @@ The same filter with the other quantifiers shows why the numeric quantifier is u
 |---|---|---|---|
 | `"any"` | at least **1** rating ≥ 4 | `doc.ratings ANY >= 4` | A, B, C |
 | `"all"` | **all** ratings ≥ 4 | `doc.ratings ALL >= 4` | C |
-| `3` | **at least 3** ratings ≥ 4 | `doc.ratings AT LEAST (3) >= 4` | **A** |
+| `3` | **at least 3** ratings ≥ 4 | `doc.ratings[? AT LEAST (3) FILTER CURRENT >= 4]` | **A** |
 
 `ANY` is too broad, `ALL` too strict: `n` (at least n) expresses exactly "enough qualifying elements".
 
 ```jsonc
 // at least 3 values among those supplied
 {"key":"scores","op":"in","val":[1,2,3],"quant":3}
-// FILTER doc.scores AT LEAST (3) IN @value
+// FILTER doc.scores[? AT LEAST (3) FILTER CURRENT IN @value]
 ```
 
 #### Object arrays — `quant` + the question-mark operator

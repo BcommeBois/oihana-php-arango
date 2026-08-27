@@ -9,15 +9,16 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Nine breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Ten breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
 refused everywhere else. The fifth and sixth refuse nothing at all: a filter that was being dropped
 now applies, so a listing that answered everything starts answering the question. The seventh is not
 about behaviour at all — two names move to another package, and nothing they do changes. The eighth
-refuses a call that could only ever have produced an unusable query, and the ninth stops a count
-from answering on records it should never have counted. None changes a signature.
+refuses a call that could only ever have produced an unusable query, the ninth stops a count
+from answering on records it should never have counted, and the tenth makes "at least n" mean it.
+None changes a signature.
 
 ### 🚨 Breaking
 
@@ -304,6 +305,35 @@ shape of the key changes for these filters, even though the answer does not.
   still compare `doc.tags`. Only the key an `alt` chain wraps is expanded.
 - **A `count` on a key declared as a string** still counts characters, which is what it means there.
 - **An `alt` that only wraps the value** (`alt:{val:…}`) leaves the key alone.
+
+#### 10. `quant: <n>` on a list of values now counts the elements that match
+
+**Before.** `{"key":"ratings","op":"ge","val":4,"quant":3}` compiled to
+`doc.ratings AT LEAST (3) >= @v`. ArangoDB answers `true` to that operator whenever the array holds
+**fewer than `n` elements**, whatever they are, so the filter returned every record with fewer than
+three ratings — the opposite of the question:
+
+```
+A: [5,4,4,2]  → 3 ratings >= 4   kept, correctly
+C: [4,4]      → 2 ratings        kept, wrongly (list shorter than 3)
+```
+
+**Now.** It compiles to `doc.ratings[? AT LEAST (3) FILTER CURRENT >= @v]`, the same operator arrays
+of objects have always used, which counts the elements that actually match.
+
+**What to do.**
+
+1. **Expect "at least n" listings to shrink**, and to become right. Anything that looked plausible
+   before was including records too short to qualify.
+2. **Nothing to declare, no opt-in**, and no change to how you write the filter.
+3. **The legacy alias `op: ["atLeast.<cmp>", n]` moves with it** — same fix, same shape.
+
+**What does not move.** `any`, `all` and `none` return exactly the same rows as before; they were
+correct in either spelling and were aligned only so that one key does not produce two shapes. The
+`at` index form is unchanged, and an `alt` chain in front of a quantifier still compiles.
+
+⚠ **If you match on the emitted AQL** — a test, a log assertion, an `EXPLAIN` snapshot — the shape
+changes for scalar arrays, including for the three quantifiers whose answers do not.
 
 ---
 

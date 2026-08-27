@@ -51,7 +51,7 @@ class FilterAtLeastTest extends TestCase
     {
         $result = $this->model->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.ge' , 2 ] , 'val' => 80 ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^doc\.scores AT LEAST \(2\) >= @\S+$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^doc\.scores\[\? AT LEAST \(2\) FILTER CURRENT >= @\S+]$/' , $result ) ;
         $this->assertContains( 80 , $this->binds ) ;
     }
 
@@ -59,21 +59,21 @@ class FilterAtLeastTest extends TestCase
     {
         $result = $this->model->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.eq' , 3 ] , 'val' => 100 ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^doc\.scores AT LEAST \(3\) == @\S+$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^doc\.scores\[\? AT LEAST \(3\) FILTER CURRENT == @\S+]$/' , $result ) ;
     }
 
     public function testAtLeastInTakesAListValue(): void
     {
         $result = $this->model->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.in' , 2 ] , 'val' => [ 1 , 2 , 3 ] ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^doc\.scores AT LEAST \(2\) IN @\S+$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^doc\.scores\[\? AT LEAST \(2\) FILTER CURRENT IN @\S+]$/' , $result ) ;
     }
 
     public function testAtLeastCountDefaultsToOne(): void
     {
         $result = $this->model->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.ge' ] , 'val' => 80 ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^doc\.scores AT LEAST \(1\) >= @\S+$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^doc\.scores\[\? AT LEAST \(1\) FILTER CURRENT >= @\S+]$/' , $result ) ;
     }
 
     public function testAtLeastCountIsCoercedToInt(): void
@@ -81,13 +81,13 @@ class FilterAtLeastTest extends TestCase
         // a non-integer threshold from the URL is cast to int (injection-safe).
         $result = $this->model->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.ge' , '2) || REMOVE' ] , 'val' => 80 ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^doc\.scores AT LEAST \(2\) >= @\S+$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^doc\.scores\[\? AT LEAST \(2\) FILTER CURRENT >= @\S+]$/' , $result ) ;
     }
 
     public function testAtLeastKeepsTheKeyAltAware(): void
     {
         $result = $this->model->prepareFilter( [ 'key' => 'scores' , 'op' => [ 'atLeast.ge' , 2 ] , 'val' => 80 , 'alt' => 'sorted' ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^SORTED\(\(IS_ARRAY\(doc\.scores\)\s\?\sdoc\.scores\s:\s\[]\)\) AT LEAST \(2\) >= @\S+$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^SORTED\(\(IS_ARRAY\(doc\.scores\)\s\?\sdoc\.scores\s:\s\[]\)\)\[\? AT LEAST \(2\) FILTER CURRENT >= @\S+]$/' , $result ) ;
     }
 }

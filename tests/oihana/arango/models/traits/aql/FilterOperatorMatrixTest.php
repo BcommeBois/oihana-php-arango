@@ -346,7 +346,7 @@ class FilterOperatorMatrixTest extends TestCase
         $binds = [] ;
         $out   = (string) $this->model->prepareFilter( [ 'key' => 'tags' , 'op' => [ 'atLeast.ge' , 2 ] , 'val' => 'AC' ] , $binds ) ;
 
-        $this->assertStringContainsString( 'AT LEAST (2) >=' , $out ) ;
+        $this->assertStringContainsString( '[? AT LEAST (2) FILTER CURRENT >=' , $out ) ;
     }
 
     /**
@@ -354,7 +354,7 @@ class FilterOperatorMatrixTest extends TestCase
      */
     public function testAQuantifiedFilterKeepsTheOperatorsItUnderstands() :void
     {
-        $this->assertSame( 'doc.tags ANY >= @v0' , $this->compile( 'tags' , 'ge' , 'AC' , [ 'quant' => 'any' ] ) ) ;
+        $this->assertSame( 'doc.tags[? ANY FILTER CURRENT >= @v0]' , $this->compile( 'tags' , 'ge' , 'AC' , [ 'quant' => 'any' ] ) ) ;
     }
 
     // ---------------------------------------------------------------- harness
