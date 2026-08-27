@@ -169,6 +169,13 @@ Reserved for the [`FilterType::GEO`](#filter-types) type. It filters documents b
 
 `op` may be omitted (the `geo` type implies `distance`). **A radius is required**: with neither `min` nor `max`, no clause is emitted. The sub-attributes read are `<key>.latitude` / `<key>.longitude` (Schema.org); `DISTANCE` operates on two scalars, so the predicate is **index-accelerated** as soon as a two-field [`GeoIndex`](../clients/indexes.md) covers them. See the [geospatial functions](../aql/aql-functions-geo.md) catalog.
 
+**At any depth.** A `geo` declared inside a sub-record is filtered with the dotted key, and compiles the same thing against the reference reached:
+
+```jsonc
+{"key":"address.geo","op":"distance","val":{"latitude":48.8566,"longitude":2.3522},"max":5000}
+// FILTER DISTANCE(doc.address.geo.latitude, doc.address.geo.longitude, @lat, @lng) <= @max
+```
+
 > **Filtering ≠ sorting.** `distance` **bounds** (radius) but does not **order**. To rank from nearest to farthest, use the dedicated [`?near=`](sort.md#distance-sorting-near) parameter — composable with this filter.
 
 ## Filter types

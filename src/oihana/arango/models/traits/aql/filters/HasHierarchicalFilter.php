@@ -968,6 +968,7 @@ trait HasHierarchicalFilter
                     FilterType::ARRAY  => $this->prepareFilterArray   ( $fieldInit , $binds , $docRef ) ,
                     FilterType::BOOL   => $this->prepareFilterBoolean ( $fieldInit , $binds , $docRef ) ,
                     FilterType::DATE   => $this->prepareFilterDate    ( $fieldInit , $binds , $docRef ) ,
+                    FilterType::GEO    => $this->prepareFilterGeo     ( $fieldInit , $binds , $docRef ) ,
                     FilterType::NUMBER => $this->prepareFilterNumber  ( $fieldInit , $binds , $docRef ) ,
                     FilterType::STRING => $this->prepareFilterString  ( $fieldInit , $binds , $docRef ) ,
                     default            => null

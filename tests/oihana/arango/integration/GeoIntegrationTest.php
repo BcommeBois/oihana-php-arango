@@ -10,6 +10,7 @@ use oihana\arango\clients\Database ;
 use oihana\arango\clients\collection\indexes\GeoIndex ;
 use oihana\arango\db\enums\AQL ;
 use oihana\arango\enums\Arango ;
+use oihana\arango\enums\Filter ;
 use oihana\arango\models\Documents ;
 use oihana\arango\models\enums\filters\FilterParam ;
 use oihana\arango\models\enums\filters\FilterType ;
@@ -42,11 +43,33 @@ class GeoIntegrationTest extends IntegrationTestCase
 
         // Real WGS84 coordinates. Great-circle distances from Paris (km, approx):
         // paris 0 < lille 203 < lyon 391 < bordeaux 498 < marseille 659.
-        $places->insert( [ '_key' => 'paris'     , 'name' => 'Paris'     , 'type' => 'capital' , 'geo' => [ 'latitude' => 48.8566 , 'longitude' =>  2.3522 ] ] ) ;
-        $places->insert( [ '_key' => 'lille'     , 'name' => 'Lille'     , 'type' => 'city'    , 'geo' => [ 'latitude' => 50.6292 , 'longitude' =>  3.0573 ] ] ) ;
-        $places->insert( [ '_key' => 'lyon'      , 'name' => 'Lyon'      , 'type' => 'city'    , 'geo' => [ 'latitude' => 45.7640 , 'longitude' =>  4.8357 ] ] ) ;
-        $places->insert( [ '_key' => 'bordeaux'  , 'name' => 'Bordeaux'  , 'type' => 'city'    , 'geo' => [ 'latitude' => 44.8378 , 'longitude' => -0.5792 ] ] ) ; // negative longitude
-        $places->insert( [ '_key' => 'marseille' , 'name' => 'Marseille' , 'type' => 'city'    , 'geo' => [ 'latitude' => 43.2965 , 'longitude' =>  5.3698 ] ] ) ;
+        //
+        // Every place carries the SAME point twice: once at the root, once inside an
+        // `address` sub-record. That is what lets a case ask the identical question at
+        // both depths and compare the answers — a nested `geo` used to be dropped
+        // entirely, so "within 50 km" answered every city in the collection.
+        $points =
+        [
+            'paris'     => [ 'Paris'     , 'capital' , 48.8566 ,  2.3522 ] ,
+            'lille'     => [ 'Lille'     , 'city'    , 50.6292 ,  3.0573 ] ,
+            'lyon'      => [ 'Lyon'      , 'city'    , 45.7640 ,  4.8357 ] ,
+            'bordeaux'  => [ 'Bordeaux'  , 'city'    , 44.8378 , -0.5792 ] , // negative longitude
+            'marseille' => [ 'Marseille' , 'city'    , 43.2965 ,  5.3698 ] ,
+        ];
+
+        foreach ( $points as $key => [ $name , $type , $latitude , $longitude ] )
+        {
+            $point = [ 'latitude' => $latitude , 'longitude' => $longitude ] ;
+
+            $places->insert
+            ([
+                '_key'    => $key   ,
+                'name'    => $name  ,
+                'type'    => $type  ,
+                'geo'     => $point ,
+                'address' => [ 'geo' => $point ] ,
+            ]) ;
+        }
     }
 
     // ---- Helpers
@@ -61,17 +84,22 @@ class GeoIntegrationTest extends IntegrationTestCase
             AQL::LAZY       => false ,
             AQL::FILTERS    =>
             [
-                'geo'  => FilterType::GEO ,
-                'type' => FilterType::STRING ,
+                'geo'     => FilterType::GEO ,
+                'type'    => FilterType::STRING ,
+                'address' =>
+                [
+                    AQL::TYPE    => Filter::DOCUMENT ,
+                    AQL::FILTERS => [ 'geo' => FilterType::GEO ] ,
+                ] ,
             ] ,
             // 'geo' is whitelisted so the ?near= distance dimension is allowed (fail-closed gate).
             AQL::SORTABLE   => [ 'name' , 'geo' ] ,
         ]);
     }
 
-    private static function point( float $latitude , float $longitude ) :array
+    private static function point( float $latitude , float $longitude , string $key = 'geo' ) :array
     {
-        return [ FilterParam::KEY => 'geo' , 'latitude' => $latitude , 'longitude' => $longitude ] ;
+        return [ FilterParam::KEY => $key , 'latitude' => $latitude , 'longitude' => $longitude ] ;
     }
 
     /**
@@ -119,6 +147,42 @@ class GeoIntegrationTest extends IntegrationTestCase
         // ring 250 km..450 km from Paris → only Lyon (391). Lille (203) and Bordeaux (498) excluded.
         $keys = $this->filteredKeys( [ 'key' => 'geo' , 'op' => 'distance' , 'val' => self::point( 48.8566 , 2.3522 ) , 'min' => 250_000 , 'max' => 450_000 ] ) ;
         $this->assertSame( [ 'lyon' ] , $keys ) ;
+    }
+
+    /**
+     * The same three questions, asked of a `geo` kept inside an `address` sub-record.
+     *
+     * Every place carries the identical point at both depths, so any difference in the
+     * answers is the grammar's and not the data's. Before the hierarchical walk learned
+     * `geo`, the nested spelling was dropped: the first case below answered all five
+     * cities instead of Paris alone, in `200`.
+     *
+     * @throws ArangoException
+     */
+    public function testANestedGeoAnswersExactlyLikeTheRootOne() :void
+    {
+        $paris = fn( string $key ) => self::point( 48.8566 , 2.3522 , $key ) ;
+
+        // within 50 km
+        $this->assertSame
+        (
+            $this->filteredKeys( [ 'key' => 'geo'         , 'op' => 'distance' , 'val' => $paris( 'geo' )         , 'max' => 50_000 ] ) ,
+            $this->filteredKeys( [ 'key' => 'address.geo' , 'op' => 'distance' , 'val' => $paris( 'address.geo' ) , 'max' => 50_000 ] )
+        ) ;
+
+        // within 300 km
+        $this->assertSame
+        (
+            [ 'lille' , 'paris' ] ,
+            $this->filteredKeys( [ 'key' => 'address.geo' , 'op' => 'distance' , 'val' => $paris( 'address.geo' ) , 'max' => 300_000 ] )
+        ) ;
+
+        // the annulus, 250 km .. 450 km
+        $this->assertSame
+        (
+            [ 'lyon' ] ,
+            $this->filteredKeys( [ 'key' => 'address.geo' , 'op' => 'distance' , 'val' => $paris( 'address.geo' ) , 'min' => 250_000 , 'max' => 450_000 ] )
+        ) ;
     }
 
     public function testDistanceHandlesNegativeLongitude() :void

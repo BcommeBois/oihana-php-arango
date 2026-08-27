@@ -59,11 +59,13 @@ trait HasFilterGeo
      * @param array|null $binds
      * @param string $doc
      *
-     * @return string
+     * @return string|null The AQL condition, or `null` when the request names an operator this
+     *                     filter cannot honour, or a value that is not a point. `null` is what
+     *                     the composition layer knows how to drop; an empty string is not.
      *
      * @throws BindException
      */
-    protected function prepareFilterGeo( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ): string
+    protected function prepareFilterGeo( array $init = [] , ?array &$binds = null , string $doc = AQL::DOC ): ?string
     {
         // The key is guaranteed by the dispatch (a declared FilterType::GEO attribute).
         $key = (string) ( $init[ FilterParam::KEY ] ?? Char::EMPTY ) ;
@@ -72,15 +74,22 @@ trait HasFilterGeo
 
         if ( $operator !== FilterComparator::DISTANCE )
         {
+            // 🚨 `null`, not an empty string.
+            //
+            // Both mean "no clause", and only one of them behaves like it: `null` is
+            // dropped by the composition layer, while `''` travels on as if it were a
+            // condition and reaches the server as `FILTER  RETURN` — a syntax error on
+            // its own or inside an `OR`, and a silent disappearance inside an `AND`.
+            // This filter was the only one in the library returning the empty string.
             $this->logger?->warning( __METHOD__ . ' failed, unsupported geo operator: "' . $operator . '"' ) ;
-            return Char::EMPTY ;
+            return null ;
         }
 
         [ $latitude , $longitude ] = resolveGeoPoint( $init[ FilterParam::VAL ] ?? null ) ;
 
         if ( $latitude === null || $longitude === null )
         {
-            return Char::EMPTY ;
+            return null ; // as above: a droppable "no clause", not an empty condition.
         }
 
         $expression = distance

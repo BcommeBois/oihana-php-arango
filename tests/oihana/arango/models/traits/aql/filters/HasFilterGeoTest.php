@@ -153,6 +153,15 @@ class HasFilterGeoTest extends TestCase
         $this->assertStringNotContainsString( 'doc.geo.latitude' , $result ) ;
     }
 
+    /**
+     * "No clause" is `null`, which the composition layer drops — not an empty string,
+     * which travels on as though it were a condition and reaches the server as
+     * `FILTER  RETURN`.
+     *
+     * ⚠ These two cases asserted `''` from the day they were written, and their names
+     * said `YieldsNoClause` all along: the intent was always `null`. This filter was
+     * the only one in the library returning the empty string.
+     */
     public function testUnsupportedOperatorYieldsNoClause(): void
     {
         $init =
@@ -165,7 +174,8 @@ class HasFilterGeoTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertSame( '' , $result ) ;
+        $this->assertNull( $result ) ;
+        $this->assertNotSame( '' , $result ) ;
     }
 
     public function testMissingValueYieldsNoClause(): void
@@ -179,10 +189,24 @@ class HasFilterGeoTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertSame( '' , $result ) ;
+        $this->assertNull( $result ) ;
+        $this->assertNotSame( '' , $result ) ;
     }
 
-    public function testMissingRadiusYieldsNoClause(): void
+    /**
+     * ⚠ The frontier, pinned deliberately.
+     *
+     * A valid point with **no radius** still yields the empty string, because it comes
+     * from somewhere else: `buildBetweenClauses()`, shared with the `between` operator,
+     * which answers `''` when neither bound is given. That is one arbitration for two
+     * callers — "no bound at all" is a plausible thing for an unfilled range widget to
+     * send, where a geo operator that does not exist is plainly a mistake — so it is
+     * left to be decided once, with both cases in view, rather than half-decided here.
+     *
+     * This assertion is what says the frontier held: two local returns changed, the
+     * shared one did not.
+     */
+    public function testMissingRadiusStillComesFromTheSharedBetweenBuilder(): void
     {
         $init =
         [

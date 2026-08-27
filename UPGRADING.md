@@ -9,7 +9,7 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Eleven breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Twelve breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
@@ -17,8 +17,9 @@ refused everywhere else. The fifth and sixth refuse nothing at all: a filter tha
 now applies, so a listing that answered everything starts answering the question. The seventh is not
 about behaviour at all — two names move to another package, and nothing they do changes. The eighth
 refuses a call that could only ever have produced an unusable query, the ninth stops a count
-from answering on records it should never have counted, the tenth makes "at least n" mean it, and the
-eleventh makes a nested `match` test what it says. None changes a signature.
+from answering on records it should never have counted, the tenth makes "at least n" mean it, the
+eleventh makes a nested `match` test what it says, and the twelfth lets a nested `geo` filter at
+all. None changes a signature.
 
 ### 🚨 Breaking
 
@@ -362,6 +363,38 @@ that matters here, and the same one that put breaking changes 5 and 6 on this li
 **What does not move.** `quant` **without** a `match` keeps the cardinality it was given one release
 ago; a terminal sub-field (`resolution.steps[*].label`) always compiled correctly and is untouched;
 and the root spelling is unchanged in every respect.
+
+#### 12. A `geo` field inside a sub-record can now be filtered by distance
+
+**Before.** `{"key":"address.geo","op":"distance","val":{…},"max":5000}` was dropped — the query
+ran without the clause, so the listing came back unfiltered. Only the root spelling,
+`{"key":"geo",…}`, ever worked.
+
+**Now.** It compiles the same condition against the reference the object traversal reached:
+
+```
+FILTER DISTANCE(doc.address.geo.latitude, doc.address.geo.longitude, @lat, @lng) <= @max
+```
+
+**What to do.**
+
+1. **Expect those listings to shrink**, and to become right. A nested `geo` filter was returning
+   everything.
+2. **Nothing to declare, no opt-in.** The behaviour comes from the `FilterType::GEO` you already
+   declare, at whatever depth you declare it.
+3. **Permissions are unchanged.** A locked `geo` neutralised to `false` at both depths before this
+   change and still does — the gate runs before the handler lookup, so the defect only ever touched
+   the authorised case.
+
+**A second, smaller change in the same filter.** `prepareFilterGeo()` returned an **empty string**
+for an operator it cannot honour and for a value that is not a point. It now returns `null`. Both
+mean "no clause", and only `null` behaves like one: an empty string travels through the composition
+as though it were a condition and reaches the server as `FILTER  RETURN`.
+
+- **If you call `prepareFilterGeo()` directly**, its return type is now `?string`. Through
+  `prepareFilter()` — which already returned `?string` — nothing changes for you.
+- **A valid point with no radius still yields the empty string**, because that one comes from the
+  builder shared with `between`. It is being decided separately.
 
 ---
 
