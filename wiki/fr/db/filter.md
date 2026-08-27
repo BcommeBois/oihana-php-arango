@@ -821,7 +821,7 @@ Ni `val`, ni `op` : une cardinalité ne se compare pas à une valeur envoyée. C
 **⚠ Deux écritures restent volontairement en dehors.**
 
 - **Sans le `[*]`** — `{"key":"attachments"}` — le filtre est toujours **ignoré**. C'est la [règle stricte de notation](#cardinalité--notation-) qui l'attrape, et c'est elle qui rattrape l'appelant ayant simplement oublié le marqueur. Lui donner un sens propre transformerait une faute de frappe rattrapée en page plausible répondant à autre chose.
-- **Avec un `match`** — `{"key":"attachments[*]","match":{…}}` — ce n'est pas une question de nombre mais un test **multi-champs sur les éléments** ; il garde son comportement et ses gardes de permission par sous-champ.
+- **Avec un `match`** — `{"key":"attachments[*]","match":{…}}` — ce n'est pas une question de nombre mais un test **multi-champs sur les éléments** ; il garde son comportement et ses gardes de permission par sous-champ. **À toute profondeur** : `{"key":"resolution.steps[*]","match":{…}}` compile la même chose, sur la référence que la traversée d'objet a atteinte.
 
 
 ### Multi-niveaux

@@ -173,20 +173,7 @@ trait HasFilterArray
                         $allowedFields = $filterConfig[ AQL::FILTERS ] ;
                     }
 
-                    $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields , $alt ) ;
-
-                    // `quant` present → question-mark operator (ANY/ALL/NONE/AT LEAST n).
-                    if ( $quant !== null )
-                    {
-                        return arrayContains( $baseKey , $inlineCondition , resolveQuantifier( $quant ) ) ;
-                    }
-
-                    return predicate
-                    (
-                        leftOperand  : length( arrayFilter( $baseKey , $inlineCondition ) ) ,
-                        operator     : Comparator::GREATER_THAN ,
-                        rightOperand : '0' ,
-                    ) ;
+                    return $this->buildMatchCondition( $match , $binds , $baseKey , $allowedFields , $alt , $quant ) ;
                 }
             }
 
@@ -406,6 +393,62 @@ trait HasFilterArray
         $comparator = $this->prepareFilterComparator( $init ) ;
 
         return $this->quantifiedArrayCondition( $init , $binds , $docRef , $quantifier , $comparator ) ;
+    }
+
+    /**
+     * Builds a `match` condition over an array of objects — a multi-field test on the
+     * ELEMENTS, not a question about how many there are.
+     *
+     * 🔑 **Shared by both depths on purpose.** The flat lookup reaches it for a key
+     * written at the root (`attachments[*]`), the hierarchical walk for one written
+     * behind an object (`resolution.steps[*]`). They used to build it separately, and
+     * only one of them built it at all: the walk answered a bare cardinality instead,
+     * silently replacing the caller's question with another one. One builder is the
+     * point of this method — the two callers now differ only in what they hand it.
+     *
+     * @param array      $match         The match payload (sub-field => value, …).
+     * @param array|null &$binds        The bind variables, populated by reference.
+     * @param string     $baseKey       The fully qualified AQL key of the array
+     *                                  (`doc.attachments`, `doc.resolution.steps`).
+     * @param array      $allowedFields The declared sub-fields. **Empty means no
+     *                                  validation**, so a caller that cannot resolve
+     *                                  them must say so rather than pass `[]`.
+     * @param mixed      $alt           The resolved `alt` chain, applied inside the
+     *                                  inline condition.
+     * @param mixed      $quant         The element-axis quantifier, or null for the
+     *                                  existential form.
+     *
+     * @return string
+     *
+     * @throws BindException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    protected function buildMatchCondition
+    (
+        array   $match         ,
+        ?array  &$binds        ,
+        string  $baseKey       ,
+        array   $allowedFields ,
+        mixed   $alt           ,
+        mixed   $quant
+    )
+    :string
+    {
+        $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields , $alt ) ;
+
+        // `quant` present → question-mark operator (ANY/ALL/NONE/AT LEAST n).
+        if ( $quant !== null )
+        {
+            return arrayContains( $baseKey , $inlineCondition , resolveQuantifier( $quant ) ) ;
+        }
+
+        return predicate
+        (
+            leftOperand  : length( arrayFilter( $baseKey , $inlineCondition ) ) ,
+            operator     : Comparator::GREATER_THAN ,
+            rightOperand : '0' ,
+        ) ;
     }
 
     /**

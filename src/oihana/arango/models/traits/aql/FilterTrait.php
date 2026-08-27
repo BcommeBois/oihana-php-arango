@@ -556,15 +556,10 @@ trait FilterTrait
                     // the projection. A refused one neutralises the whole predicate to
                     // `false` — never dropped, which would loosen a `none` match into
                     // an existence oracle.
-                    if ( property_exists( $this , 'fields' ) && is_array( $init[ FilterParam::MATCH ] ) )
+                    if ( is_array( $init[ FilterParam::MATCH ] )
+                      && !$this->matchFieldsAuthorized( $init[ FilterParam::MATCH ] , $baseKey , $this->fields ?? null , $auth ) )
                     {
-                        foreach ( $this->collectMatchFields( $init[ FilterParam::MATCH ] ) as $matchField )
-                        {
-                            if ( !isPathAuthorized( $baseKey . Char::DOT . $matchField , $this->fields , $auth ) )
-                            {
-                                return Boolean::FALSE ;
-                            }
-                        }
+                        return Boolean::FALSE ;
                     }
 
                     return $this->prepareFilterArray( $init , $binds , $docRef ) ;
@@ -615,6 +610,43 @@ trait FilterTrait
      *
      * @return array<int,string> The referenced sub-field names (possibly empty).
      */
+    /**
+     * Decides whether every sub-field a `match` names may be read by this caller.
+     *
+     * 🔑 **Shared by both depths.** A `match` gates each sub-field it references on the
+     * `Field::REQUIRES` of that exact sub-field, and a refused one must neutralise the
+     * whole predicate to `false` — **never** drop it, which would loosen a `none` match
+     * into an existence oracle. The flat lookup gates against the model's own
+     * projection; the hierarchical walk gates against the projection of the level it
+     * has reached, with the path it has accumulated. Same rule, two inputs.
+     *
+     * @param array      $match        The match payload.
+     * @param string     $relativeBase The array's path relative to `$fields`
+     *                                 (`attachments`, `resolution.steps`).
+     * @param array|null $fields       The projection to gate against, or null when the
+     *                                 model declares none (nothing to inherit).
+     * @param array      $auth         The caller's permission context.
+     *
+     * @return bool False as soon as one named sub-field is refused.
+     */
+    protected function matchFieldsAuthorized( array $match , string $relativeBase , ?array $fields , array $auth ) :bool
+    {
+        if ( !is_array( $fields ) )
+        {
+            return true ;
+        }
+
+        foreach ( $this->collectMatchFields( $match ) as $matchField )
+        {
+            if ( !isPathAuthorized( $relativeBase . Char::DOT . $matchField , $fields , $auth ) )
+            {
+                return false ;
+            }
+        }
+
+        return true ;
+    }
+
     private function collectMatchFields( array $match ) : array
     {
         foreach ( [ FilterMatch::ALL , FilterMatch::ANY , FilterMatch::NONE ] as $logic )

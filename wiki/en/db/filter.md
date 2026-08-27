@@ -821,7 +821,7 @@ No `val`, no `op`: a cardinality is not compared to a payload. It is exactly the
 **⚠ Two spellings are deliberately left out.**
 
 - **Without the `[*]`** — `{"key":"attachments"}` — the filter is still **ignored**. That is the [strict notation rule](#cardinality--the--notation) catching it, and it is what catches the caller who simply forgot the marker. Giving that spelling a meaning of its own would turn a caught typo into a plausible page answering something else.
-- **With a `match`** — `{"key":"attachments[*]","match":{…}}` — this is not a question about number but a **multi-field test on the elements**; it keeps its behaviour and its per-sub-field permission gates.
+- **With a `match`** — `{"key":"attachments[*]","match":{…}}` — this is not a question about number but a **multi-field test on the elements**; it keeps its behaviour and its per-sub-field permission gates. **At any depth**: `{"key":"resolution.steps[*]","match":{…}}` compiles the same thing, against the reference the object traversal reached.
 
 
 ### Multi-level

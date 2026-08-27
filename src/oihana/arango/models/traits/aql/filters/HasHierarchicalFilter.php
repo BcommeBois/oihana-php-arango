@@ -39,6 +39,7 @@ use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLimit;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlTraversal;
+use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\db\helpers\resolveTraversalQuantifier;
 use function oihana\arango\models\helpers\edges\getEdges;
 use function oihana\arango\models\helpers\edges\resolveEdgeDirection;
@@ -834,6 +835,98 @@ trait HasHierarchicalFilter
             FilterParam::KEY => $fieldKey ,
         ];
 
+        // ⚠ Deliberately ABOVE the try below.
+        //
+        // That catch exists for a consumer's own leaf callable: a fault no URL will
+        // ever fix, logged and dropped so the surface keeps answering. Nothing here is
+        // a consumer callable. A `match` naming a sub-field the model never declared is
+        // the CALLER's mistake, refused by name at the root — and swallowing it here
+        // would drop the filter instead, which is the very shape this block was added
+        // to close.
+        // Case 0b: an ARRAY named last has no terminal field either — the
+        // question is how many elements it holds.
+        //
+        // This is the sentence relations already say through `quant`, on a list
+        // stored in the document instead of one reached across an edge, so it
+        // borrows their vocabulary unchanged: nothing means « at least one »,
+        // `none` means « not one », an integer means « at least n ». There is no
+        // `val` and no `op` — a cardinality is not compared to a payload.
+        //
+        // ⚠ The count is taken on the EXPANSION, `doc.tags[*]`, never on the bare
+        // attribute. `LENGTH()` of a string is its character count, so a document
+        // storing `"oops"` under a list-declared key answers 4 to `LENGTH(doc.x)`
+        // and is selected by « at least 3 elements ». Through the expansion a
+        // non-array yields an empty list and counts 0, which is the honest
+        // answer. Measured on a server, both ways.
+        //
+        // `all` is refused, as it is on a relation: it means « every element
+        // satisfies the condition » and there is no condition here to satisfy.
+        if ( $segmentInfo->type === Filter::ARRAY_EXPANSION )
+        {
+            $match = $init[ FilterParam::MATCH ] ?? null ;
+
+            // ⚠ A `match` is NOT the cardinality question.
+            //
+            // It is a multi-field test on the ELEMENTS, and the flat lookup has
+            // stepped around this block for it since the cardinality shipped —
+            // "routing it here would answer a bare count instead, a plausible page
+            // for another question, and one of the sub-field permission gates along
+            // with it". That guard was written at one seat only. Here, a `match`
+            // behind an object was replaced by `LENGTH(doc.a.b[*]) > 0`: not
+            // refused, answered — with someone else's question.
+            //
+            // The sub-field gate comes first, and neutralises rather than drops: a
+            // `match` dropped under `quant: none` turns into an existence oracle on
+            // a locked path. `$relativePath` is the one the leaf gate above already
+            // built — reset at each relation crossed, which is exactly what the
+            // sub-fields must be resolved against.
+            if ( is_array( $match ) )
+            {
+                if ( !$this->matchFieldsAuthorized( $match , $relativePath , $currentFields , $auth ) )
+                {
+                    return Boolean::FALSE ;
+                }
+
+                // `$docRef` is NOT `doc` here: the object traversal has already moved
+                // it, so `resolution.steps[*]` arrives as key `steps` over
+                // `doc.resolution`. Naming the array from `$fieldKey` alone would aim
+                // at `doc.steps`, which exists nowhere and answers zero rows quietly.
+                //
+                // The declared sub-fields travel too. They are what refuses a `match`
+                // naming a field the model never declared, and the array filter cannot
+                // find them from here: it looks them up under a flat key, which only
+                // resolves at the root.
+                return $this->buildMatchCondition
+                (
+                    $match ,
+                    $binds ,
+                    key( $fieldKey , $docRef ) ,
+                    $segmentInfo->nestedFilters ?? [] ,
+                    requestAlt( $init[ FilterParam::ALT ] ?? null ) ,
+                    $init[ FilterParam::QUANT ] ?? null ,
+                ) ;
+            }
+
+            $quantifier = resolveTraversalQuantifier( $init[ FilterParam::QUANT ] ?? null ) ;
+
+            if ( $quantifier->negate )
+            {
+                throw new RequestValidationException( sprintf
+                (
+                    "The 'all' quantifier requires a condition to satisfy at path: %s. " .
+                    "Use 'none' to match documents holding no element." ,
+                    implode( Char::DOT , $segmentInfo->path )
+                ) ) ;
+            }
+
+            return predicate
+            (
+                leftOperand  : length( key( $fieldKey , $docRef ) . Operator::ARRAY_EXPANSION ) ,
+                operator     : $quantifier->comparator ,
+                rightOperand : (string) $quantifier->threshold ,
+            ) ;
+        }
+
         try
         {
             // Case 0: an OBJECT named last has no terminal field.
@@ -864,46 +957,6 @@ trait HasHierarchicalFilter
                     $this->prepareFilterKey        ( $fieldInit , $docRef , $binds ) ,
                     $this->prepareFilterComparator ( $fieldInit ) ,
                     $this->prepareFilterValue      ( $fieldInit , $binds )
-                ) ;
-            }
-
-            // Case 0b: an ARRAY named last has no terminal field either — the
-            // question is how many elements it holds.
-            //
-            // This is the sentence relations already say through `quant`, on a list
-            // stored in the document instead of one reached across an edge, so it
-            // borrows their vocabulary unchanged: nothing means « at least one »,
-            // `none` means « not one », an integer means « at least n ». There is no
-            // `val` and no `op` — a cardinality is not compared to a payload.
-            //
-            // ⚠ The count is taken on the EXPANSION, `doc.tags[*]`, never on the bare
-            // attribute. `LENGTH()` of a string is its character count, so a document
-            // storing `"oops"` under a list-declared key answers 4 to `LENGTH(doc.x)`
-            // and is selected by « at least 3 elements ». Through the expansion a
-            // non-array yields an empty list and counts 0, which is the honest
-            // answer. Measured on a server, both ways.
-            //
-            // `all` is refused, as it is on a relation: it means « every element
-            // satisfies the condition » and there is no condition here to satisfy.
-            if ( $segmentInfo->type === Filter::ARRAY_EXPANSION )
-            {
-                $quantifier = resolveTraversalQuantifier( $init[ FilterParam::QUANT ] ?? null ) ;
-
-                if ( $quantifier->negate )
-                {
-                    throw new RequestValidationException( sprintf
-                    (
-                        "The 'all' quantifier requires a condition to satisfy at path: %s. " .
-                        "Use 'none' to match documents holding no element." ,
-                        implode( Char::DOT , $segmentInfo->path )
-                    ) ) ;
-                }
-
-                return predicate
-                (
-                    leftOperand  : length( key( $fieldKey , $docRef ) . Operator::ARRAY_EXPANSION ) ,
-                    operator     : $quantifier->comparator ,
-                    rightOperand : (string) $quantifier->threshold ,
                 ) ;
             }
 

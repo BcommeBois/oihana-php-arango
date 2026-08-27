@@ -9,7 +9,7 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Ten breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Eleven breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
@@ -17,8 +17,8 @@ refused everywhere else. The fifth and sixth refuse nothing at all: a filter tha
 now applies, so a listing that answered everything starts answering the question. The seventh is not
 about behaviour at all — two names move to another package, and nothing they do changes. The eighth
 refuses a call that could only ever have produced an unusable query, the ninth stops a count
-from answering on records it should never have counted, and the tenth makes "at least n" mean it.
-None changes a signature.
+from answering on records it should never have counted, the tenth makes "at least n" mean it, and the
+eleventh makes a nested `match` test what it says. None changes a signature.
 
 ### 🚨 Breaking
 
@@ -334,6 +334,34 @@ correct in either spelling and were aligned only so that one key does not produc
 
 ⚠ **If you match on the emitted AQL** — a test, a log assertion, an `EXPLAIN` snapshot — the shape
 changes for scalar arrays, including for the three quantifiers whose answers do not.
+
+#### 11. A `match` behind an object now tests the elements instead of counting them
+
+**Before.** `{"key":"resolution.steps[*]","match":{"label":"review"}}` compiled to
+`LENGTH(doc.resolution.steps[*]) > 0`. The `match` was not refused, it was **replaced**: the answer
+listed every record carrying at least one step, rather than those carrying a step that matches.
+
+**Now.** It compiles the same condition the root spelling has always compiled,
+`LENGTH(doc.resolution.steps[* FILTER CURRENT.label == @v]) > 0`, against the reference the object
+traversal reached.
+
+**What to do.**
+
+1. **Expect those listings to shrink**, and to become right. Anything nested that used a `match`
+   behind an object was answering a broader question than it asked.
+2. **Nothing to declare, no opt-in**, and no change to how the filter is written — the root
+   spelling is untouched, and the nested one now matches it.
+3. **Two refusals become reachable in depth**, both of which the root already applied: a `match`
+   naming a sub-field the caller may not read now neutralises the predicate to `false`, and one
+   naming a sub-field the model never declared is refused by name.
+
+**Why this is listed as breaking even though the old answer was nobody's question.** The caller sent
+a perfectly valid `match`. They did nothing wrong, and their page changes — which is the only test
+that matters here, and the same one that put breaking changes 5 and 6 on this list.
+
+**What does not move.** `quant` **without** a `match` keeps the cardinality it was given one release
+ago; a terminal sub-field (`resolution.steps[*].label`) always compiled correctly and is untouched;
+and the root spelling is unchanged in every respect.
 
 ---
 
