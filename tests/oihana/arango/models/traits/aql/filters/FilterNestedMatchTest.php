@@ -14,12 +14,15 @@ use ReflectionException;
 use RuntimeException;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\filters\FilterType;
 use oihana\enums\Boolean;
+
+use tests\oihana\arango\models\traits\edges\mocks\MockEdges;
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
@@ -253,6 +256,48 @@ class FilterNestedMatchTest extends TestCase
                 $this->assertStringContainsString( "Field 'zzz' is not allowed in match filter" , $exception->getMessage() ) ;
             }
         }
+    }
+
+    /**
+     * The sub-fields are gated against the projection of the model the walk REACHED —
+     * and a relation is the only road that can bring none. The root projection is
+     * typed `array` (never null) and an object walk keeps the model's own; only an
+     * edge switches to `$targetModel?->fields`, which an unresolved vertex model
+     * leaves at `null`. No projection means no `Field::REQUIRES` to inherit, so
+     * there is nothing to refuse: the guard stands aside and the `match` compiles.
+     * Answering `false` here would sink every element `match` behind every edge
+     * whose ends are undeclared.
+     *
+     * @throws BindException
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAMatchBehindAnEdgeWithNoTargetProjectionIsUngated(): void
+    {
+        $this->container->set( 'AttachmentEdge' , new MockEdges( 'attachment_edges' ) ) ;
+
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'tickets' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'files' =>
+                [
+                    AQL::TYPE    => Filter::EDGES ,
+                    AQL::FILTERS => [ 'tags' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS => [ 'label' => FilterType::STRING ] ] ] ,
+                ] ,
+            ] ,
+            AQL::EDGES => [ 'files' => [ AQL::MODEL => 'AttachmentEdge' , AQL::DIRECTION => Traversal::OUTBOUND ] ] ,
+        ]) ;
+
+        $result = $this->compile( [ 'key' => 'files[*].tags[*]' , 'match' => [ 'label' => 'x' ] ] , $model ) ;
+
+        $this->assertNotSame( Boolean::FALSE , $result ) ;
+        $this->assertStringContainsString( '[* FILTER CURRENT.label ==' , (string) $result ) ;
     }
 
     // ========================================
