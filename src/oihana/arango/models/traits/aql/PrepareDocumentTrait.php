@@ -137,6 +137,11 @@ trait PrepareDocumentTrait
      *                               If null, the null properties (object) and keys (array) are unset.
      *                               If [], the document is not compressed.
      * @param Closure|null $ensure   A callback function to ensure some attributes in the final document clause {@see ensureKeyValue()}
+     * @param bool       $touch      Whether the clause stamps the housekeeping dates (default `true`).
+     *                               When `false`, nothing is stamped : the document carries its own
+     *                               `created` / `modified` — what a replication or an import needs,
+     *                               since a record copied from another system is not *modified* by
+     *                               being copied ({@see \oihana\arango\enums\Arango::TOUCH}).
      *
      * @return string The AQL document clause as a string.
      *
@@ -152,6 +157,7 @@ trait PrepareDocumentTrait
         ?array   $removeKeys = null ,
         ?array   $conditions = null ,
         ?Closure $ensure     = null ,
+        bool     $touch      = true ,
     )
     : string
     {
@@ -159,12 +165,12 @@ trait PrepareDocumentTrait
         {
             $expressions = [ $doc ];
 
-            if ( $operation === Operation::INSERT )
+            if ( $touch && $operation === Operation::INSERT )
             {
                 $expressions[] = keyValue( Schema::CREATED , dateISO8601() ) ;
             }
 
-            if ( $operation === Operation::INSERT || $operation === Operation::REPLACE || $operation === Operation::UPDATE )
+            if ( $touch && ( $operation === Operation::INSERT || $operation === Operation::REPLACE || $operation === Operation::UPDATE ) )
             {
                 $expressions[] = keyValue( Schema::MODIFIED , dateISO8601() ) ;
             }
@@ -182,12 +188,12 @@ trait PrepareDocumentTrait
 
             $now = now() ;
 
-            if ( $operation === Operation::INSERT )
+            if ( $touch && $operation === Operation::INSERT )
             {
                 $doc[ Schema::CREATED ] = $now ;
             }
 
-            if ( $operation === Operation::INSERT || $operation === Operation::REPLACE || $operation === Operation::UPDATE )
+            if ( $touch && ( $operation === Operation::INSERT || $operation === Operation::REPLACE || $operation === Operation::UPDATE ) )
             {
                 $doc[ Schema::MODIFIED ] = $now ;
             }

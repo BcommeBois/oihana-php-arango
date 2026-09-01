@@ -115,6 +115,34 @@ $users->get( [ Arango::ID => 'abc' , Arango::SKIN => Skin::FULL ] ) ;
 $total = $users->count( [ Arango::FILTER => '{"key":"active","val":true}' ] ) ;
 ```
 
+### Les dates automatiques — et comment une écriture garde les siennes
+
+Chaque écriture tamponne `modified` avec le moment de l'écriture, et une insertion tamponne aussi
+`created`. **`Arango::TOUCH => false`** sur `upsert()` / `repsert()` désactive les deux tampons, sur
+les deux branches de l'opération : le document soumis est rangé exactement tel quel.
+
+C'est ce qu'exigent une réplication ou un import — une fiche copiée d'un autre système n'est pas
+*modifiée* par sa copie, et ses dates appartiennent à la source. Sans le drapeau, chaque passe d'une
+réplication marque tout son périmètre comme changé à la même seconde, et noie les fiches qui ont
+réellement bougé.
+
+```php
+$mirror = [ ...$record , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] ;
+
+$model->repsert
+([
+    Arango::FILTER  => [ 'identifier == @identifier' ] ,
+    Arango::BINDS   => [ 'identifier' => $record[ 'identifier' ] ] ,
+    Arango::INSERT  => $mirror ,
+    Arango::REPLACE => $mirror ,
+    Arango::TOUCH   => false ,
+]) ;
+```
+
+La même clé gouverne déjà le rafraîchissement de `modified` par les verbes de tableau (défaut
+`true`) et par `updateEdgeRelation()` (défaut `false`). `insert()` / `update()` / `replace()`
+continuent de tamponner sans condition.
+
 ## La classe `Edges`
 
 Étend `Documents` avec quatre spécificités :

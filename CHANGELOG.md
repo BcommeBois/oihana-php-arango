@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A write may carry its own dates.** `Arango::TOUCH => false` on `upsert()` / `repsert()` skips the automatic `created` / `modified` stamps on **both** branches of the operation, so the submitted document is stored exactly as it stands. That is what a replication or an import needs : a record copied from another system is not *modified* by being copied, and its dates belong to the source — stamped with the copy time, every pass of a replication marked its whole perimeter as changed at the same second, which buried the records that had actually moved.
+  - **The name already existed, and so did the concept.** `TOUCH` was consumed by the array verbs (default `true`) and by `updateEdgeRelation()` (default `false`) with exactly this meaning — whether the operation refreshes `modified`. The write path now honours the same word rather than introducing a second one ; the constant's documentation says who honours it and how.
+  - **The insert branch could already be corrected, the update/replace branch could not.** An `Arango::ENSURE` closure runs *after* the stamps on the INSERT clause and could restore a date there — but the UPDATE/REPLACE clause receives no ensure, and its stamp landed after the submitted document with nothing able to undo it. The flag closes both branches at the single seat of the stamping, `prepareDocumentClause()`, which gains a `bool $touch = true` parameter — string clause and array clause alike.
+  - **Scope is deliberate** : `insert()` / `update()` / `replace()` keep stamping unconditionally — extending the flag there is a separate decision for a caller who needs it. Absent or `true`, nothing changes anywhere, byte for byte.
+  - **Tests:** five on the clause (both branches, the ensure composition kept orthogonal), two on the upsert threading — insert and replace clauses each proven to carry the submitted dates, and the threading counter-proven by removal (two red).
+
 ### Fixed
 
 - **An unfilled range answered three different wrong things.** A "from … to …" widget left blank is not a mistake — the caller filled nothing in — and depending on how the front-end serialised that, it produced a `500`, a wrong page, or a page that could never have any rows.

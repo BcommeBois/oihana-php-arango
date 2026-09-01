@@ -115,6 +115,34 @@ $users->get( [ Arango::ID => 'abc' , Arango::SKIN => Skin::FULL ] ) ;
 $total = $users->count( [ Arango::FILTER => '{"key":"active","val":true}' ] ) ;
 ```
 
+### Automatic timestamps — and how a write keeps its own dates
+
+Every write stamps `modified` with the moment of the write, and an insert stamps `created` with it
+too. **`Arango::TOUCH => false`** on `upsert()` / `repsert()` disables both stamps, on both branches
+of the operation : the submitted document is stored exactly as it stands.
+
+That is what a replication or an import needs — a record copied from another system is not
+*modified* by being copied, and its dates belong to the source. Without the flag, every pass of a
+replication marks its whole perimeter as changed at the same second, burying the records that
+actually moved.
+
+```php
+$mirror = [ ...$record , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] ;
+
+$model->repsert
+([
+    Arango::FILTER  => [ 'identifier == @identifier' ] ,
+    Arango::BINDS   => [ 'identifier' => $record[ 'identifier' ] ] ,
+    Arango::INSERT  => $mirror ,
+    Arango::REPLACE => $mirror ,
+    Arango::TOUCH   => false ,
+]) ;
+```
+
+The same key already governs whether the array verbs refresh `modified` (default `true`) and
+whether `updateEdgeRelation()` does (default `false`). `insert()` / `update()` / `replace()` keep
+stamping unconditionally.
+
 ## The `Edges` class
 
 Extends `Documents` with four specifics:

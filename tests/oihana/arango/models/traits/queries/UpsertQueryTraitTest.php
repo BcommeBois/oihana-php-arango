@@ -96,6 +96,62 @@ class UpsertQueryTraitTest extends TestCase
      * @throws BindException
      * @throws ReflectionException
      */
+    /**
+     * 🔑 **`Arango::TOUCH => false` reaches both branches of the upsert.** A
+     * replication writes documents whose dates belong to the source system : the
+     * insert must not stamp them on the way in, and — the branch that runs on
+     * every later pass — the update/replace must not overwrite them either.
+     *
+     * @throws DateMalformedStringException
+     * @throws DateInvalidTimeZoneException
+     * @throws UnsupportedOperationException
+     * @throws BindException
+     * @throws ReflectionException
+     */
+    public function testBuildUpsertQueryWithoutTouchCarriesTheDatesItWasGiven(): void
+    {
+        $binds = [] ;
+
+        $init =
+        [
+            Arango::SEARCH => [ 'email'    => 'iona@fictional.tld' ] ,
+            Arango::INSERT => [ 'name'     => 'Iona' , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] ,
+            Arango::UPDATE => [ 'modified' => '2025-11-03' ] ,
+            Arango::TOUCH  => false ,
+        ];
+
+        $this->tester->buildUpsertQuery( AQL::UPDATE , $init , $binds ) ;
+
+        $this->assertSame( [ 'name' => 'Iona' , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] , $binds[ 'insert' ] ) ;
+        $this->assertSame( [ 'modified' => '2025-11-03' ] , $binds[ 'update' ] ) ;
+    }
+
+    /**
+     * And the repsert mode — the REPLACE clause — honours it the same way.
+     *
+     * @throws DateMalformedStringException
+     * @throws DateInvalidTimeZoneException
+     * @throws UnsupportedOperationException
+     * @throws BindException
+     * @throws ReflectionException
+     */
+    public function testBuildRepsertQueryWithoutTouchLeavesTheReplaceUntouched(): void
+    {
+        $binds = [] ;
+
+        $init =
+        [
+            Arango::SEARCH  => [ 'email' => 'iona@fictional.tld' ] ,
+            Arango::INSERT  => [ 'name'  => 'Iona' , 'created' => '2024-05-12' ] ,
+            Arango::REPLACE => [ 'name'  => 'Iona' , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] ,
+            Arango::TOUCH   => false ,
+        ];
+
+        $this->tester->buildUpsertQuery( AQL::REPLACE , $init , $binds ) ;
+
+        $this->assertSame( [ 'name' => 'Iona' , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] , $binds[ 'replace' ] ) ;
+    }
+
     public function testBuildUpsertQueryWithDebugStillReturnsQuery(): void
     {
         $binds = [] ;

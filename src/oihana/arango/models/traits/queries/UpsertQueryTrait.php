@@ -90,6 +90,11 @@ trait UpsertQueryTrait
             $insertEnsure = $this->ensureArrayDefaults( $insertEnsure ) ;
         }
 
+        // Whether this write refreshes the housekeeping dates. `false` makes it
+        // carry its own : a replication is not a modification, and its dates
+        // belong to the source system ({@see Arango::TOUCH}).
+        $touch = ( $init[ Arango::TOUCH ] ?? true ) !== false ;
+
         $insert = $this->prepareDocumentClause
         (
             $init[ Arango::INSERT ] ?? null ,
@@ -97,7 +102,8 @@ trait UpsertQueryTrait
             $bindVars ,
             $removeKeys ,
             null ,
-            $insertEnsure
+            $insertEnsure ,
+            $touch
         ) ;
 
         $operation = $mode === AQL::REPLACE ? Operation::REPLACE : Operation::UPDATE ;
@@ -109,7 +115,9 @@ trait UpsertQueryTrait
             $operation ,
             $bindVars ,
             $removeKeys ,
-            $conditions
+            $conditions ,
+            null ,
+            $touch
         );
 
         $init =

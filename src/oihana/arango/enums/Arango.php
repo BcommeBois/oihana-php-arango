@@ -392,8 +392,31 @@ class Arango extends AQL
     public const string SKIP = 'skip' ;
 
     /**
-     * The 'touch' parameter.
-     * Indicates if a document timestamp or date must be updated (modified=now())
+     * The 'touch' parameter — whether a write refreshes the housekeeping dates.
+     *
+     * Defaults to `true` : every write stamps `modified` with the moment of the
+     * write, and an insert stamps `created` with it too. Passing `false` makes the
+     * write carry **its own** dates — nothing is stamped, and the document is
+     * stored exactly as submitted. That is what a replication or an import needs :
+     * a record copied from another system is not *modified* by being copied, and
+     * its dates belong to the source.
+     *
+     * ```php
+     * $model->repsert
+     * ([
+     *     Arango::FILTER  => $filter ,
+     *     Arango::INSERT  => [ ...$document , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] ,
+     *     Arango::REPLACE => [ ...$document , 'created' => '2024-05-12' , 'modified' => '2025-11-03' ] ,
+     *     Arango::TOUCH   => false ,
+     * ]) ;
+     * ```
+     *
+     * Honoured by the upsert family (`upsert()` / `repsert()`, via
+     * {@see \oihana\arango\models\traits\queries\UpsertQueryTrait}), by the
+     * array verbs ({@see \oihana\arango\models\traits\DocumentsArrayTrait}) and
+     * by {@see \oihana\arango\models\helpers\relations\updateEdgeRelation()}
+     * (where it defaults to `false`). `insert()` / `update()` / `replace()` keep
+     * stamping unconditionally.
      */
     public const string TOUCH = 'touch' ;
 

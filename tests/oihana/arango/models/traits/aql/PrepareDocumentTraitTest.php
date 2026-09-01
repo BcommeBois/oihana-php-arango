@@ -62,10 +62,11 @@ class PrepareDocumentTraitStub
         ?array   $removeKeys = null ,
         ?array   $conditions = null ,
         ?Closure $ensure     = null ,
+        bool     $touch      = true ,
     )
     : string
     {
-        return $this->prepareDocumentClause( $doc , $operation , $binds , $removeKeys , $conditions , $ensure ) ;
+        return $this->prepareDocumentClause( $doc , $operation , $binds , $removeKeys , $conditions , $ensure , $touch ) ;
     }
 
     /**
@@ -501,6 +502,56 @@ class PrepareDocumentTraitTest extends TestCase
         $ensure = fn( array $doc ) :array => $doc + [ 'forced' => true ] ;
         $this->stub()->callPrepareDocumentClause( [ 'a' => 1 ] , Operation::SEARCH , $binds , null , null , $ensure ) ;
         $this->assertSame( [ 'a' => 1 , 'forced' => true ] , $binds[ 'search' ] ) ;
+    }
+
+    // ---------------------------------------------------------------- prepareDocumentClause : touch = false
+
+    public function testStringInsertWithoutTouchMergesNothing() :void
+    {
+        // A replication carries its own dates : nothing is appended, on the very
+        // branch whose stamp would otherwise overwrite them.
+        $binds = [] ;
+        $this->assertSame
+        (
+            'MERGE(doc)' ,
+            $this->stub()->callPrepareDocumentClause( 'doc' , Operation::INSERT , $binds , null , null , null , false ) ,
+        ) ;
+    }
+
+    public function testStringReplaceWithoutTouchMergesNothing() :void
+    {
+        $binds = [] ;
+        $this->assertSame
+        (
+            'MERGE(doc)' ,
+            $this->stub()->callPrepareDocumentClause( 'doc' , Operation::REPLACE , $binds , null , null , null , false ) ,
+        ) ;
+    }
+
+    public function testArrayInsertWithoutTouchStampsNothing() :void
+    {
+        $binds = [] ;
+        $this->stub()->callPrepareDocumentClause( [ 'a' => 1 , 'created' => '2024-05-12' ] , Operation::INSERT , $binds , null , null , null , false ) ;
+        $this->assertSame( [ 'a' => 1 , 'created' => '2024-05-12' ] , $binds[ 'insert' ] ) ;
+    }
+
+    public function testArrayReplaceWithoutTouchKeepsTheSubmittedDates() :void
+    {
+        // The branch that motivated the flag : a replacement runs on every pass of
+        // a replication, and the stamp used to land after the submitted document.
+        $binds = [] ;
+        $this->stub()->callPrepareDocumentClause( [ 'a' => 1 , 'modified' => '2025-11-03' ] , Operation::REPLACE , $binds , null , null , null , false ) ;
+        $this->assertSame( [ 'a' => 1 , 'modified' => '2025-11-03' ] , $binds[ 'replace' ] ) ;
+    }
+
+    public function testEnsureStillRunsWithoutTouch() :void
+    {
+        // The two options are orthogonal : not stamping is no reason to skip the
+        // caller's own guarantees.
+        $binds  = [] ;
+        $ensure = fn( array $doc ) :array => $doc + [ 'forced' => true ] ;
+        $this->stub()->callPrepareDocumentClause( [ 'a' => 1 ] , Operation::INSERT , $binds , null , null , $ensure , false ) ;
+        $this->assertSame( [ 'a' => 1 , 'forced' => true ] , $binds[ 'insert' ] ) ;
     }
 
     // ---------------------------------------------------------------- prepareDocumentClause : invalid input
