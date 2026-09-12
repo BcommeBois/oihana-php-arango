@@ -612,6 +612,21 @@ An entry of `Arango::AGGREGATABLE` may hold an `AggregateExpression` instead of 
 aggregate can read more than one place in the document — the sum of a slice of an array, the sum of
 a difference between two arrays. See `wiki/en/db/grouping.md`.
 
+#### A sort that resolved to nothing now falls back on the model's default
+
+**Nothing to do.** A request whose every sort criterion was dropped — an unlisted key, a key refused
+by a permission, an empty `?sort=` — used to leave the query with no `SORT` at all. It now applies
+`AQL::SORT_DEFAULT`, as though no sort had been asked for. The refused key is still never honoured,
+and a model declaring no default still answers unordered.
+
+Two things to know if you had met the old behaviour :
+
+1. **A listing that came back in an arbitrary order now comes back ordered.** That is the point : an
+   unordered answer cannot be paginated safely. If a caller worked around it by re-sorting client
+   side, that work is now redundant, not wrong.
+2. **A test asserting an empty `SORT` clause on a model that declares a default** will turn red —
+   and it is asserting the defect. See `wiki/en/db/sort.md`.
+
 ### How to check your project
 
 - [ ] `Field::ALTERS`, `Field::WHEN`, `Facet::ALT`: every function name spelled in full and present

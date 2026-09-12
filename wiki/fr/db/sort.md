@@ -55,6 +55,27 @@ AQL::SORTABLE     => [ Prop::CREATED , Prop::NAME ] ,
 AQL::SORT_DEFAULT => descKey( Prop::CREATED ) ,        // '-created' — la clé est whitelistée : OK
 ```
 
+### Un tri qui n'a rien résolu vaut un tri absent
+
+**La situation.** Un client demande `?sort=-price` sur un modèle qui ne déclare pas `price` triable — ou qui le déclare, mais derrière une permission que ce lecteur n'a pas. Le critère est écarté, comme toujours. Et s'il était le seul, il ne reste **aucun** critère.
+
+Dans ce cas le modèle **retombe sur son tri par défaut**, comme si aucun `?sort=` n'avait été envoyé.
+
+```
+?sort=-price      sur un modèle SORT_DEFAULT => 'year', price non triable
+→ SORT doc.year ASC          (et surtout pas doc.price)
+```
+
+> 🚨 **Pourquoi ce repli existe.** Sans lui la requête partait **sans aucun `SORT`** : le tri par défaut n'est lu que lorsque `?sort=` est **absent**, et une clé refusée n'est pas une absence. La réponse revenait alors dans l'ordre que le stockage avait sous la main — et comme ArangoDB ne garantit aucun ordre sans `SORT`, une pagination `LIMIT`/`OFFSET` pouvait servir deux fois le même document et n'en servir jamais un autre. En `200`, sans un mot.
+
+Trois précisions qui comptent :
+
+- **la clé refusée n'est jamais honorée** — le repli trie sur ce que le **modèle** déclare, jamais sur ce que le client a demandé ; le défaut traverse d'ailleurs le même videur ;
+- **un seul critère survivant suffit** à ce que le repli ne se déclenche pas : `?sort=-name,price` trie sur `name` et laisse tomber `price`, sans y ajouter le défaut ;
+- **sans `SORT_DEFAULT`, rien ne change** : il n'y a rien sur quoi retomber, la réponse reste sans ordre.
+
+**Et `?sort=` vide compte comme rien de demandé.** `?sort=` tout court — ce qu'un écran envoie quand son sélecteur de tri est vide — laissait lui aussi le modèle sans son défaut, parce que `''` n'est pas `null`. Il applique maintenant le défaut, comme l'absence de paramètre. La même lecture vaut pour un tableau vide passé côté serveur.
+
 ## Trier à travers une relation
 
 **La situation.** L'auteur d'un article n'est pas un de ses champs : il vit dans
@@ -311,7 +332,7 @@ Deux clés de tri ne désignent pas un champ mais un **calcul**, et sont résolu
 | `?near=…&sort=-distance` | plus loin d'abord |
 | `?near=…&sort=distance,name` | distance puis nom (tu choisis la priorité) |
 | `?near=…&sort=name` | nom seul — distance **non** ajoutée (le `?sort` explicite décide) |
-| `?sort=distance` sans `?near=` | ignoré (pas d'ancrage) |
+| `?sort=distance` sans `?near=` | ignoré (pas d'ancrage) — et comme aucun critère ne survit, le tri par défaut du modèle s'applique |
 
 ### La clé géo est une dimension de tri — donc whitelistée
 

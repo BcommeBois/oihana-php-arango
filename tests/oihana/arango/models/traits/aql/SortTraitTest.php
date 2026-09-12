@@ -496,4 +496,101 @@ class SortTraitTest extends TestCase
         // CLIENT key stays a silent drop — the documented contract, unchanged.
         $this->assertSame( '' , $this->relationStub()->prepareSort( [ Arango::SORT => 'editor' ] ) ) ;
     }
+    // ------------------------------------- a criterion list that resolved to nothing
+
+    /**
+     * 🚨 **The defect this section exists for.** `$sortDefault` is only read when the
+     * request carries no `Arango::SORT` — so a request that carries one whose every
+     * criterion is dropped used to leave the query with **no `SORT` at all**, and an
+     * unordered answer paginates badly : `LIMIT`/`OFFSET` over it can serve one document
+     * twice and another never.
+     *
+     * 🔑 **And the refused key is still refused.** The fallback sorts on what the model
+     * declares, never on what the caller asked for.
+     */
+    public function testAnUnknownKeyFallsBackOnTheDefaultSort() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' ] , sortDefault: 'name' ) ;
+
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => 'nope' ] ) ) ;
+
+        // The order is the model's, not the one asked for : `nope` reaches no field.
+        $this->assertStringNotContainsString( 'nope' , (string) $stub->prepareSort( [ 'sort' => '-nope' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **The fallback invents nothing.** With no default declared there is nothing to
+     * fall back on, and the answer stays unordered — the behaviour of every model that
+     * never asked for a default.
+     */
+    public function testAnUnknownKeyWithoutADefaultStaysUnordered() :void
+    {
+        $this->assertSame( '' , $this->stub( [ 'name' => 'name' ] )->prepareSort( [ 'sort' => 'nope' ] ) ) ;
+    }
+
+    /**
+     * 🔒 **A key refused by the permission gate falls back too** — and the refused field
+     * never appears. The caller gets a deterministic order, not an oracle : the order
+     * applied is a field the model declares for everyone.
+     */
+    public function testAKeyRefusedByThePermissionGateFallsBackOnTheDefaultSort() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'salary' => 'salary' ] , sortDefault: 'name' ) ;
+        $stub->fields = [ 'salary' => [ Field::REQUIRES => 'hr:read' ] ] ;
+
+        $sort = $stub->prepareSort( [ 'sort' => '-salary' , Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertSame( 'doc.name ASC' , $sort ) ;
+        $this->assertStringNotContainsString( 'salary' , (string) $sort ) ;
+    }
+
+    /**
+     * 🔑 **One surviving criterion is a sort.** The fallback only fires when the list
+     * resolved to nothing at all — a partially honoured request keeps exactly what it
+     * earned, and the default stays out of it.
+     */
+    public function testOneSurvivingCriterionKeepsTheDefaultOut() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'created' => 'created' ] , sortDefault: 'created' ) ;
+
+        $this->assertSame( 'doc.name DESC' , $stub->prepareSort( [ 'sort' => '-name,nope' ] ) ) ;
+    }
+
+    /**
+     * 🚨 **The fallback runs the same gates as everything else.** A default naming a key
+     * the whitelist does not carry is dropped in its turn, and the answer is unordered —
+     * fail-closed, from both directions.
+     */
+    public function testTheFallbackIsGatedLikeAnyOtherSort() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' ] , sortDefault: 'created' ) ;
+
+        $this->assertSame( '' , $stub->prepareSort( [ 'sort' => 'nope' ] ) ) ;
+    }
+
+    /**
+     * 🚨 **An empty `?sort=` cost the model its default order**, and this case is what
+     * found it. `''` is not `null`, so it reached the grammar, resolved to no criterion,
+     * and left the query unordered — while the score and the distance branches already
+     * read an empty sort as « no sort given ». It is what a front-end sends when its sort
+     * selector is blank : nothing expressed is nothing asked for, and the default applies.
+     */
+    public function testAnEmptySortStringTakesTheDefault() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' ] , sortDefault: 'name' ) ;
+
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => '' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **And the server-side escape hatch follows the same rule.** An already-built
+     * array is joined as it stands ; an **empty** one expresses no order, so the model's
+     * default applies rather than nothing.
+     */
+    public function testAnEmptyArraySortTakesTheDefault() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' ] , sortDefault: 'name' ) ;
+
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => [] ] ) ) ;
+    }
 }

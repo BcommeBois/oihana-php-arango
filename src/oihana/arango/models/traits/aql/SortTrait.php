@@ -162,6 +162,22 @@ trait SortTrait
      * `distance` key ({@see Schema::DISTANCE}) is resolved from `Arango::NEAR` and only
      * honored when `$binds` is provided (so the reference point can be bound).
      *
+     * 🔑 **A criterion list that resolved to nothing is treated as no sort at all.** The
+     * gates below drop what they refuse — an unlisted key, a key whose field the caller
+     * may not read — and a request whose every criterion was dropped used to leave the
+     * query with **no `SORT`**, because `$sortDefault` is only read when `Arango::SORT`
+     * is absent. The answer then came back in whatever order the store had at hand, and
+     * a `LIMIT`/`OFFSET` walk over it could serve one document twice and another never.
+     * Falling back on the model's own default restores a deterministic order — **without
+     * ever honoring the refused key**, since the default travels through the very same
+     * gates. A model declaring no default still answers unordered : there is nothing to
+     * fall back on.
+     *
+     * 🔑 **An empty `?sort=` counts as nothing asked for.** `''` is not `null`, so it
+     * used to reach the grammar, resolve to no criterion, and cost the model its default
+     * order — while the score and the distance branches already read it as « no sort
+     * given ». All three now agree.
+     *
      * @param array $init Per-call parameters. Reads `Arango::SORT` (grammar) and `Arango::NEAR` (geo anchor).
      * @param array|null $sortable URL-key → field-path whitelist. Defaults to `$this->sortable`.
      * @param string $docRef The document variable the fields hang off (default `doc`).
@@ -306,6 +322,28 @@ trait SortTrait
             }
         }
 
+        // 🚨 A sort WAS named and nothing survived it : the query would leave without a
+        // `SORT` of any kind, because the model's default is only read when
+        // `Arango::SORT` is **absent** — and `''` is not absent, no more than a key the
+        // whitelist refuses. Re-entering as though nothing had been named gives the
+        // default its turn — and gives a search or a `?near=` theirs, which is what an
+        // unresolved sort is worth. The refused key never comes back : it is not in the
+        // whitelist, or its field is not readable, and the second pass runs the same
+        // gates.
+        //
+        // 🔑 `''` is deliberately inside : an empty `?sort=` is what a front-end sends
+        // when its sort selector is blank, and nothing expressed is nothing asked for —
+        // the same reading the empty range bounds already follow. The two branches above
+        // treat it that way for the score and the distance ; this closes the gap for the
+        // model's own default.
+        //
+        // One re-entry at most : the second pass carries no explicit sort, so this very
+        // condition is false there.
+        if( $orders === [] && $explicit !== null )
+        {
+            return $this->prepareSort( [ ...$init , Arango::SORT => null ] , $sortable , $docRef , $binds ) ;
+        }
+
         return compile( $orders , Char::COMMA . Char::SPACE ) ;
     }
 
@@ -352,7 +390,7 @@ trait SortTrait
     private function authorizeRelationSortKey( array $entry , array $init ) : ?string
     {
         $field  = $entry[ AQL::EDGE ] ;
-        $fields = property_exists( $this , 'fields' ) ? $this->fields : null ;
+        $fields = property_exists( $this , AQL::FIELDS ) ? $this->fields : null ;
 
         $definition = is_array( $fields ) ? ( $fields[ $field ] ?? null ) : null ;
 
@@ -495,7 +533,7 @@ trait SortTrait
         }
 
         // Inherited (from the projection of the same field).
-        $fields = property_exists( $this , 'fields' ) ? $this->fields : null ;
+        $fields = property_exists( $this , AQL::FIELDS ) ? $this->fields : null ;
 
         if ( !is_array( $fields ) || str_contains( $path , Char::DOT ) )
         {
@@ -709,7 +747,7 @@ trait SortTrait
             return isAuthorized( [ Field::REQUIRES => $requires ] , $init ) ;
         }
 
-        $fields = property_exists( $this , 'fields' ) ? $this->fields : null ;
+        $fields = property_exists( $this , AQL::FIELDS ) ? $this->fields : null ;
 
         return isPathAuthorized( $path , $fields , $init ) ;
     }

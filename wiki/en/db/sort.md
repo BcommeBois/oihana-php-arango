@@ -55,6 +55,27 @@ AQL::SORTABLE     => [ Prop::CREATED , Prop::NAME ] ,
 AQL::SORT_DEFAULT => descKey( Prop::CREATED ) ,        // '-created' — the key is whitelisted: OK
 ```
 
+### A sort that resolved to nothing is worth no sort at all
+
+**The situation.** A client asks for `?sort=-price` on a model that does not declare `price` sortable — or declares it behind a permission this reader does not hold. The criterion is dropped, as always. And if it was the only one, **no** criterion is left.
+
+In that case the model **falls back on its default sort**, as though no `?sort=` had been sent at all.
+
+```
+?sort=-price      on a model with SORT_DEFAULT => 'year', price not sortable
+→ SORT doc.year ASC          (and certainly not doc.price)
+```
+
+> 🚨 **Why this fallback exists.** Without it the query left with **no `SORT` whatsoever**: the default sort is only read when `?sort=` is **absent**, and a refused key is not an absence. The answer then came back in whatever order the store had at hand — and since ArangoDB guarantees no order without a `SORT`, a `LIMIT`/`OFFSET` walk could serve one document twice and another never. In `200`, without a word.
+
+Three points that matter:
+
+- **the refused key is never honoured** — the fallback sorts on what the **model** declares, never on what the client asked for; the default goes through the same doorkeeper anyway;
+- **one surviving criterion is enough** for the fallback not to fire: `?sort=-name,price` sorts on `name` and drops `price`, without adding the default to it;
+- **with no `SORT_DEFAULT`, nothing changes**: there is nothing to fall back on, and the answer stays unordered.
+
+**And an empty `?sort=` counts as nothing asked for.** A bare `?sort=` — what a screen sends when its sort selector is blank — used to cost the model its default too, because `''` is not `null`. It now applies the default, like an absent parameter. The same reading holds for an empty array passed server-side.
+
 ## Sorting through a relation
 
 **The situation.** An article's author is not one of its fields: it lives in
@@ -306,7 +327,7 @@ Unlike the three filtering levers, which **restrict**, `?near=` **orders**: it r
 | `?near=…&sort=-distance` | farthest first |
 | `?near=…&sort=distance,name` | distance then name (you pick the priority) |
 | `?near=…&sort=name` | name only — distance **not** appended (explicit `?sort` decides) |
-| `?sort=distance` without `?near=` | dropped (no anchor) |
+| `?sort=distance` without `?near=` | dropped (no anchor) — and since no criterion survives, the model's default sort applies |
 
 ### The geo key is a sort dimension — so it is whitelisted
 
