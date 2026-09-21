@@ -21,8 +21,10 @@ use Psr\Container\NotFoundExceptionInterface;
  * - If `$definition` is a non-empty string and `$container` contains a service with that name,
  *   the corresponding service is fetched.
  * - If none of the above conditions are met, the `$default` value is returned.
+ * - Any other value — a number, a boolean, an object of another class — answers the `$default` value :
+ *   the function accepts anything, so that a caller can hand it an untyped configuration entry as is.
  *
- * @param array|string|Edges|null $definition Input definition that may represent an `Edges` instance,
+ * @param mixed                   $definition Input definition that may represent an `Edges` instance,
  *                                            an associative array containing one, or a container service name.
  * @param ContainerInterface|null $container  Optional PSR-11 container used to resolve string service names.
  * @param string                  $key        Array key to look for when `$definition` is an array
@@ -68,7 +70,7 @@ use Psr\Container\NotFoundExceptionInterface;
  */
 function getEdges
 (
-    array|string|null|Edges $definition = null ,
+    mixed                   $definition = null ,
     ?ContainerInterface     $container  = null ,
     string                  $key        = Arango::EDGES ,
     ?Edges                  $default    = null ,

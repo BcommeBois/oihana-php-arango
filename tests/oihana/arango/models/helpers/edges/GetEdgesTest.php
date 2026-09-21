@@ -5,9 +5,11 @@ namespace tests\oihana\arango\models\helpers\edges;
 use DI\Container;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Edges;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
+use stdClass;
 use function oihana\arango\models\helpers\edges\getEdges;
 
 final class GetEdgesTest extends TestCase
@@ -91,5 +93,35 @@ final class GetEdgesTest extends TestCase
     {
         $result = getEdges( 'missing.service', $this->container , default: $this->edges);
         $this->assertSame( $this->edges , $result );
+    }
+
+    /**
+     * Values of a type the function does not resolve.
+     *
+     * @return array<string, array{ 0: mixed }>
+     */
+    public static function unresolvable() :array
+    {
+        return
+        [
+            'an integer'                 => [ 42 ] ,
+            'a float'                    => [ 1.5 ] ,
+            'true'                       => [ true ] ,
+            'false'                      => [ false ] ,
+            'an object of another class' => [ new stdClass() ] ,
+        ] ;
+    }
+
+    /**
+     * An untyped configuration entry is handed as is : any value the function does not resolve answers the default.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     */
+    #[ DataProvider( 'unresolvable' ) ]
+    public function testAnyOtherValueAnswersTheDefault( mixed $definition ) :void
+    {
+        $this->assertSame( $this->edges , getEdges( $definition , $this->container , default: $this->edges ) ) ;
+        $this->assertNull( getEdges( $definition , $this->container ) ) ;
     }
 }

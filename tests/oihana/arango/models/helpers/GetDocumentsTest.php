@@ -7,12 +7,14 @@ use DI\DependencyException;
 use DI\NotFoundException;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 use oihana\arango\models\Edges;
 
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
+use stdClass;
 
 use ReflectionException;
 use function oihana\arango\models\helpers\getDocuments;
@@ -102,5 +104,35 @@ final class GetDocumentsTest extends TestCase
     {
         $result = getDocuments( 'missing.service', $this->container , default: $this->documents);
         $this->assertSame( $this->documents , $result );
+    }
+
+    /**
+     * Values of a type the function does not resolve.
+     *
+     * @return array<string, array{ 0: mixed }>
+     */
+    public static function unresolvable() :array
+    {
+        return
+        [
+            'an integer'                 => [ 42 ] ,
+            'a float'                    => [ 1.5 ] ,
+            'true'                       => [ true ] ,
+            'false'                      => [ false ] ,
+            'an object of another class' => [ new stdClass() ] ,
+        ] ;
+    }
+
+    /**
+     * An untyped configuration entry is handed as is : any value the function does not resolve answers the default.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     */
+    #[ DataProvider( 'unresolvable' ) ]
+    public function testAnyOtherValueAnswersTheDefault( mixed $definition ) :void
+    {
+        $this->assertSame( $this->documents , getDocuments( $definition , $this->container , default: $this->documents ) ) ;
+        $this->assertNull( getDocuments( $definition , $this->container ) ) ;
     }
 }

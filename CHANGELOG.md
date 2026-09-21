@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`getDocuments()` and `getEdges()` take their definition as `mixed`.** Both already sorted out any value on their own — a model passes as is, an array is read by its key, a non-empty string is asked of the container, and anything else answers `$default` — but their signature said `array|string|null|Documents` (resp. `Edges`). The natural call hands them a configuration entry straight away, `getDocuments( $init[ 'people' ] ?? null , $container )`, and such an entry is untyped : a static analyser refused the call, and the caller had to re-check the type by hand first — the very lines the helper exists to spare.
+  - **What changes at runtime** : an object of another class used to throw a `TypeError` at the call ; it now answers `$default`, like every other value the function does not resolve. A number or a boolean used to be coerced to a string and looked up in the container — `42` as the service `"42"` — and now answers `$default` directly.
+  - **Nothing changes** for a model, an array, a string or `null`.
+  - **Tests:** one data-driven case per helper — an integer, a float, `true`, `false` and an object of another class, each answering the given default, or `null` without one. The object cases fail on the previous signature.
+
 ### Fixed
 
 - **A sort that resolved to nothing left the query with no `SORT` at all — and an unordered answer paginates badly.** `?sort=-price` on a model that does not declare `price` sortable is dropped, as documented ; but when it was the **only** criterion, nothing was left and `prepareSort()` returned an empty clause. The model's own `SORT_DEFAULT` never got its turn, because it is read only when `Arango::SORT` is **absent** — and a refused key is not an absence.
