@@ -42,10 +42,10 @@ class InvitationsModelHost
      * @param string $userKey
      * @param bool   $loggable
      *
-     * @return void
+     * @return int
      */
-    public function callCancel( string $userKey , bool $loggable = true ) :void
+    public function callCancel( string $userKey , bool $loggable = true ) :int
     {
-        $this->cancelPendingInvitations( $userKey , $loggable ) ;
+        return $this->cancelPendingInvitations( $userKey , $loggable ) ;
     }
 }

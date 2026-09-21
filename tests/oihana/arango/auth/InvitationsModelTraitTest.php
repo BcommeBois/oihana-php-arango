@@ -14,6 +14,8 @@ use PHPUnit\Framework\TestCase;
 
 use Psr\Log\LoggerInterface;
 
+use RuntimeException;
+
 use tests\oihana\arango\auth\mocks\FakeDocuments;
 use tests\oihana\arango\auth\mocks\InvitationsModelHost;
 
@@ -122,5 +124,66 @@ class InvitationsModelTraitTest extends TestCase
         $host->callCancel( 'u1' , loggable: false ) ;
 
         $this->assertCount( 1 , $model->updateCalls ) ;
+    }
+
+    public function testCountsNothingWithoutModel() :void
+    {
+        $this->assertSame( 0 , new InvitationsModelHost( null )->callCancel( 'u1' ) ) ;
+    }
+
+    public function testCountsNothingWhenNoPendingInvitation() :void
+    {
+        $model = new FakeDocuments( 'invitations' ) ;
+        $model->listResult = [] ;
+
+        $this->assertSame( 0 , new InvitationsModelHost( $model )->callCancel( 'u1' ) ) ;
+    }
+
+    public function testCountsEveryCancelledInvitationButNotTheKeylessOne() :void
+    {
+        $model = new FakeDocuments( 'invitations' ) ;
+        $model->listResult =
+        [
+            (object) [ '_key' => 'inv1' ] ,
+            (object) [ '_key' => '' ] ,
+            (object) [ '_key' => 'inv2' ] ,
+        ] ;
+
+        $this->assertSame( 2 , new InvitationsModelHost( $model )->callCancel( 'u1' ) ) ;
+    }
+
+    public function testCountsWhatWasCancelledBeforeAFailure() :void
+    {
+        $model = new class( 'invitations' ) extends FakeDocuments
+        {
+            public function update( array $init = [] ) :?object
+            {
+                if( count( $this->updateCalls ) === 1 )
+                {
+                    $this->updateCalls[] = $init ;
+                    throw new RuntimeException( 'second update boom' ) ;
+                }
+
+                return parent::update( $init ) ;
+            }
+        } ;
+
+        $model->listResult =
+        [
+            (object) [ '_key' => 'inv1' ] ,
+            (object) [ '_key' => 'inv2' ] ,
+            (object) [ '_key' => 'inv3' ] ,
+        ] ;
+
+        $this->assertSame( 1 , new InvitationsModelHost( $model )->callCancel( 'u1' , loggable: false ) ) ;
+        $this->assertCount( 2 , $model->updateCalls , 'the third invitation is never reached' ) ;
+    }
+
+    public function testCountsNothingWhenTheListFails() :void
+    {
+        $model = new FakeDocuments( 'invitations' ) ;
+        $model->listThrows = new RuntimeException( 'list boom' ) ;
+
+        $this->assertSame( 0 , new InvitationsModelHost( $model )->callCancel( 'u1' , loggable: false ) ) ;
     }
 }

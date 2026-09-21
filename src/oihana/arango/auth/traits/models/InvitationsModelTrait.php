@@ -55,20 +55,28 @@ trait InvitationsModelTrait
      * Failures are logged but swallowed — a broken invitation update must
      * never prevent the core user deletion from proceeding.
      *
+     * The count it returns lets a caller act on the outcome — for instance, mark
+     * the user's own invitation status only when an invitation was actually
+     * cancelled. A failure halfway through returns the invitations cancelled
+     * before it.
+     *
      * @param string $userKey
      * @param bool   $loggable
      *
-     * @return void
+     * @return int The number of invitations flipped to `cancelled` — `0` without a model,
+     *             with nothing pending, or when the first write fails.
      *
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws Throwable
      */
-    protected function cancelPendingInvitations( string $userKey , bool $loggable = true ) :void
+    protected function cancelPendingInvitations( string $userKey , bool $loggable = true ) :int
     {
+        $cancelled = 0 ;
+
         if( !$this->invitationsModel )
         {
-            return ;
+            return $cancelled ;
         }
 
         try
@@ -86,7 +94,7 @@ trait InvitationsModelTrait
 
             if( empty( $pending ) )
             {
-                return ;
+                return $cancelled ;
             }
 
             $now = gmdate( Iso8601Format::DATE_TIME_ZULU ) ;
@@ -108,6 +116,8 @@ trait InvitationsModelTrait
                         Schema::MODIFIED      => $now ,
                     ] ,
                 ]) ;
+
+                $cancelled++ ;
             }
         }
         catch( Throwable $e )
@@ -117,6 +127,8 @@ trait InvitationsModelTrait
                 $this->logger?->warning( "Cascade cancel of pending invitations failed for user $userKey: " . $e->getMessage() ) ;
             }
         }
+
+        return $cancelled ;
     }
 
     /**

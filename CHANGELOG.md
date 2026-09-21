@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`cancelPendingInvitations()` tells how many invitations it cancelled.** The `InvitationsModelTrait` helper returned nothing, so a caller could not tell « one invitation was cancelled » from « there was nothing to cancel » — and a caller that marks the user's own invitation status afterwards must do so **only** in the first case, or it would mark as cancelled a user who had nothing pending. It now returns an `int` : the invitations flipped to `cancelled`.
+  - `0` without a model, with nothing pending, or when the listing fails. A failure halfway through returns the invitations cancelled before it — what actually happened.
+  - **Nothing breaks for existing callers** : ignoring the returned value is what they already did. Only a class overriding the method with a `void` return would need to follow — none is known.
+  - **Tests:** five cases on the count — no model, nothing pending, two cancelled out of three listed (the keyless one skipped), a failure on the second write (one counted, the third never reached), a failing listing. The test host's proxy now returns the count.
+
 - **`getDocuments()` and `getEdges()` take their definition as `mixed`.** Both already sorted out any value on their own — a model passes as is, an array is read by its key, a non-empty string is asked of the container, and anything else answers `$default` — but their signature said `array|string|null|Documents` (resp. `Edges`). The natural call hands them a configuration entry straight away, `getDocuments( $init[ 'people' ] ?? null , $container )`, and such an entry is untyped : a static analyser refused the call, and the caller had to re-check the type by hand first — the very lines the helper exists to spare.
   - **What changes at runtime** : an object of another class used to throw a `TypeError` at the call ; it now answers `$default`, like every other value the function does not resolve. A number or a boolean used to be coerced to a string and looked up in the container — `42` as the service `"42"` — and now answers `$default` directly.
   - **Nothing changes** for a model, an array, a string or `null`.
