@@ -32,11 +32,12 @@ class SortTraitStub
  */
 class SortTraitTest extends TestCase
 {
-    private function stub( ?array $sortable = null , ?string $sortDefault = null ) :SortTraitStub
+    private function stub( ?array $sortable = null , ?string $sortDefault = null , ?string $sortTiebreak = null ) :SortTraitStub
     {
         $stub = new SortTraitStub() ;
-        $stub->sortable    = $sortable ;
-        $stub->sortDefault = $sortDefault ;
+        $stub->sortable     = $sortable ;
+        $stub->sortDefault  = $sortDefault ;
+        $stub->sortTiebreak = $sortTiebreak ;
         return $stub ;
     }
 
@@ -592,5 +593,191 @@ class SortTraitTest extends TestCase
         $stub = $this->stub( [ 'name' => 'name' ] , sortDefault: 'name' ) ;
 
         $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => [] ] ) ) ;
+    }
+
+    // ------------------------------------------------------------ Total order
+
+    /**
+     * 🚨 **A named sort used to leave its ties open.** `SORT_DEFAULT` closed the order
+     * when nothing was asked for, but a `?sort=` replaces the default outright — and with
+     * it the criterion that broke its ties. Ordering on a non-unique key orders the groups
+     * and leaves their inside free, where a `LIMIT`/`OFFSET` walk serves one document twice
+     * and another never. The tiebreaker is what closes it, and it comes last so it speaks
+     * only on ties.
+     */
+    public function testANamedSortIsClosedByTheModelsTiebreaker() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] , sortTiebreak: 'id' ) ;
+
+        $this->assertSame( 'doc.name ASC, doc.id ASC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **An order that already names the tiebreaker is already total**, and naming it
+     * twice refines nothing — it would only cost a comparison, and on a key an index
+     * serves, the whole index walk.
+     */
+    public function testTheTiebreakerIsNotRepeatedWhenTheOrderAlreadyNamesIt() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] , sortTiebreak: 'id' ) ;
+
+        $this->assertSame( 'doc.id ASC'  , $stub->prepareSort( [ 'sort' => 'id'  ] ) ) ;
+        $this->assertSame( 'doc.id DESC' , $stub->prepareSort( [ 'sort' => '-id' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **The direction of the tiebreaker is the model's, not the caller's.** It is the
+     * model that knows which way its index reads ; a descending tiebreaker is declared as
+     * such and applies whatever the criteria before it ask for.
+     */
+    public function testTheTiebreakerKeepsItsOwnDirection() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] , sortTiebreak: '-id' ) ;
+
+        $this->assertSame( 'doc.name ASC, doc.id DESC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **It may name several keys**, since a single one does not always close an order —
+     * a collection keyed on a pair needs the pair.
+     */
+    public function testTheTiebreakerMayNameSeveralKeys() :void
+    {
+        $stub = $this->stub
+        (
+            [ 'name' => 'name' , 'id' => 'id' , 'additionalType' => 'additionalType' ] ,
+            sortTiebreak: 'id,additionalType'
+        ) ;
+
+        $this->assertSame
+        (
+            'doc.name ASC, doc.id ASC, doc.additionalType ASC' ,
+            $stub->prepareSort( [ 'sort' => 'name' ] ) ,
+        ) ;
+    }
+
+    /**
+     * 🔑 **A partly named pair only appends what is missing.** `id` is already in the
+     * order, so the pair is closed by its second half alone.
+     */
+    public function testAPartlyNamedTiebreakerAppendsOnlyWhatIsMissing() :void
+    {
+        $stub = $this->stub
+        (
+            [ 'id' => 'id' , 'additionalType' => 'additionalType' ] ,
+            sortTiebreak: 'id,additionalType'
+        ) ;
+
+        $this->assertSame( 'doc.id ASC, doc.additionalType ASC' , $stub->prepareSort( [ 'sort' => 'id' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **The default order is closed by it too**, which means a model may hold its
+     * tiebreaker in one place rather than spelling it at the end of every declaration.
+     */
+    public function testTheTiebreakerClosesTheDefaultOrderToo() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] , sortDefault: 'name' , sortTiebreak: 'id' ) ;
+
+        $this->assertSame( 'doc.name ASC, doc.id ASC' , $stub->prepareSort() ) ;
+    }
+
+    /**
+     * 🚨 **The order of the two mechanisms is the whole point.** A sort that resolved to
+     * nothing falls back on the model's default — and a tiebreaker appended *before* that
+     * test would have made the criteria list non-empty, costing the default its turn. The
+     * answer here must be the default **closed by** the tiebreaker, never the tiebreaker
+     * standing alone.
+     */
+    public function testARefusedSortTakesTheDefaultClosedByTheTiebreaker() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] , sortDefault: 'name' , sortTiebreak: 'id' ) ;
+
+        $this->assertSame( 'doc.name ASC, doc.id ASC' , $stub->prepareSort( [ 'sort' => 'nope' ] ) ) ;
+    }
+
+    /**
+     * 🚨 **A tiebreaker the whitelist does not carry closes nothing — in silence.** It is
+     * the one fault of the mechanism that does not show : the query looks ordinary and the
+     * order reads as settled. A model declaring a tiebreaker declares it in
+     * `AQL::SORTABLE` too.
+     */
+    public function testATiebreakerOutsideTheWhitelistClosesNothing() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' ] , sortTiebreak: 'id' ) ;
+
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    /**
+     * 🚨 **It travels the permission gate like any criterion.** A tiebreaker on a field the
+     * caller may not read would turn the order into an oracle on what the projection
+     * withholds — so it is dropped, and the order stays as open as the projection is closed.
+     */
+    public function testTheTiebreakerIsGatedLikeAnyOtherCriterion() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'rank' => 'rank' ] , sortTiebreak: 'rank' ) ;
+        $stub->fields = [ 'rank' => [ Field::REQUIRES => 'staff:read' ] ] ;
+
+        $sort = $stub->prepareSort( [ 'sort' => 'name' , Arango::AUTHORIZER => fn() => false ] ) ;
+
+        $this->assertSame( 'doc.name ASC' , $sort ) ;
+        $this->assertStringNotContainsString( 'rank' , (string) $sort ) ;
+    }
+
+    /**
+     * 🔑 **A model that declares no tiebreaker is untouched.** The mechanism is opt-in :
+     * every surface keeps the order it had until it says otherwise.
+     */
+    public function testAModelWithoutATiebreakerOrdersExactlyWhatWasNamed() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] ) ;
+
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **And an empty declaration is no declaration**, the same reading an empty `?sort=`
+     * already gets.
+     */
+    public function testAnEmptyTiebreakerClosesNothing() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] , sortTiebreak: '' ) ;
+
+        $this->assertSame( 'doc.name ASC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    /**
+     * 🔑 **A hole in the declaration is skipped, not honoured.** `'id,'` — a trailing comma
+     * left by a helper composing the tiebreaker from conditional parts — names one key and
+     * one nothing, and the nothing is stepped over. The same forgiveness the `?sort=`
+     * grammar already gives a client, on the model's own side of the wall.
+     */
+    public function testAnEmptyTokenInTheTiebreakerIsSteppedOver() :void
+    {
+        $stub = $this->stub( [ 'name' => 'name' , 'id' => 'id' ] , sortTiebreak: 'id,' ) ;
+
+        $this->assertSame( 'doc.name ASC, doc.id ASC' , $stub->prepareSort( [ 'sort' => 'name' ] ) ) ;
+    }
+
+    public function testInitializeSortTiebreakReadsTheInitKey() :void
+    {
+        $stub = new SortTraitStub() ;
+        $stub->initializeSortTiebreak( [ AQL::SORT_TIEBREAK => 'id' ] ) ;
+
+        $this->assertSame( 'id' , $stub->sortTiebreak ) ;
+    }
+
+    /**
+     * 🔑 **Initialising without the key keeps the property**, so a model may hold its
+     * tiebreaker as a class default and let an instance override it.
+     */
+    public function testInitializeSortTiebreakKeepsThePropertyWhenTheKeyIsAbsent() :void
+    {
+        $stub = new SortTraitStub() ;
+        $stub->sortTiebreak = '_key' ;
+        $stub->initializeSortTiebreak( [] ) ;
+
+        $this->assertSame( '_key' , $stub->sortTiebreak ) ;
     }
 }

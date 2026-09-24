@@ -61,6 +61,7 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::SEARCHABLE` | `array` | Fields `?search=` operates on. |
 | `AQL::SORTABLE` | `array` | Sort whitelist for `?sort=` (see [Sorting](db/sort.md)). |
 | `AQL::SORT_DEFAULT` | `string` | Default sort in grammar format ([`sortKeys`](helpers.md)). |
+| `AQL::SORT_TIEBREAK` | `string` | Criterion closing the order, appended last to every sort (see [Sorting](db/sort.md)). |
 | `AQL::EDGES` | `array` | *Edge* definitions (see [edges-joins-projection.md](edges-joins-projection.md)). |
 | `AQL::JOINS` | `array` | *Join* definitions (same page). |
 | `AQL::RESOLVE` | `array` | Internal *edges* not exposed (used for cascade). |
@@ -73,11 +74,12 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::CONDITIONS` | `array` | Server-side injected AQL conditions (see [filter-internal.md](db/filter-internal.md)). |
 | `AQL::BINDS` | `array` | Server-side injected *bind variables*. |
 
-### Sorting — `AQL::SORTABLE` / `AQL::SORT_DEFAULT`
+### Sorting — `AQL::SORTABLE` / `AQL::SORT_DEFAULT` / `AQL::SORT_TIEBREAK`
 
 Sorting (`?sort=` and `?near=`) has its own **dedicated page**: [Sorting](db/sort.md). The essentials:
 
 - **Fail-closed** — `AQL::SORTABLE` resolves each `?sort=` key to an AQL field (three mixable notations: indexed shorthand, alias, associative). A key outside the whitelist is **silently dropped**; **`null` (no whitelist) = nothing is sortable** (never "everything"). `AQL::SORT_DEFAULT` goes through the same whitelist and must therefore name declared keys.
+- **Total order** — `AQL::SORT_TIEBREAK` appends, last, the criterion that **closes** the order, to every sort including an explicit `?sort=` (unless it already names it). Without it, paginating on a non-unique key may serve one document twice and another never. `null` by default: the mechanism is opted into model by model.
 - **Permission** — a sort key may be **gated** (`Field::REQUIRES`), inherited from the homonymous projection field or declared explicitly, so a field hidden from reading is not sortable (no sort oracle).
 
 The three notations, the permission gate and distance sorting `?near=` are detailed in [Sorting](db/sort.md).

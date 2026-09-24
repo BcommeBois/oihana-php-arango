@@ -76,6 +76,74 @@ Three points that matter:
 
 **And an empty `?sort=` counts as nothing asked for.** A bare `?sort=` — what a screen sends when its sort selector is blank — used to cost the model its default too, because `''` is not `null`. It now applies the default, like an absent parameter. The same reading holds for an empty array passed server-side.
 
+## Total order — `AQL::SORT_TIEBREAK`
+
+`limit` and `offset` ask for "the first fifty", then "the next fifty". The word **first** only means something under a **total** order: one that leaves no pair of documents undecided.
+
+`SORT_DEFAULT` answers when nobody asks for anything. `SORT_TIEBREAK` answers when somebody does.
+
+> **The situation.** A model sorts by `-year` by default, and a client asks for `?sort=name`. The `?sort=` **replaces** the default — a `??`, not a merge — so it takes away the criterion that broke its ties as well. What is left is `SORT doc.name ASC`: namesakes are level, the store is free to order them among themselves, and a `LIMIT`/`OFFSET` walk may serve one document twice and another never. In `200`, with nothing in the log.
+
+```php
+AQL::SORTABLE      => [ Prop::ID , Prop::NAME , Prop::YEAR ] ,
+AQL::SORT_DEFAULT  => descKey( Prop::YEAR ) ,
+AQL::SORT_TIEBREAK => Prop::ID ,
+```
+
+```
+?sort=name       → SORT doc.name ASC, doc.id ASC
+?sort=-year,name → SORT doc.year DESC, doc.name ASC, doc.id ASC
+(no ?sort=)      → SORT doc.year DESC, doc.id ASC
+?sort=id         → SORT doc.id ASC            (already total: nothing is appended)
+?sort=-id        → SORT doc.id DESC           (same — the direction changes nothing)
+```
+
+### It closes an order; it is not set key by key
+
+There is **one per model**, never one per sortable key: it is not a property of a criterion, it is what completes the list. And it applies to **every** sort the model serves, including the synthetic `distance` and `score` keys, where ties are the rule rather than the exception — two addresses equally far from a point, two documents holding a term equally often.
+
+```
+?near=…          → SORT DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) ASC, doc.id ASC
+```
+
+### The only exception: the order is already total
+
+An order that already names the tiebreaker is not refined by naming it twice — that would be one comparison for nothing, and on a key an index serves, the whole index walk.
+
+🚨 **And the key that closes an order is not the same everywhere.** `id` closes a collection of one type; on a collection mixing two under the same `id`, it closes nothing. Which is why the tiebreaker is **declared by the model**, and why no universal rule can stand in for it — neither in the library nor in the client.
+
+A multi-key tiebreaker only appends what is missing:
+
+```php
+AQL::SORT_TIEBREAK => sortKeys( Prop::ID , Prop::ADDITIONAL_TYPE ) ,   // 'id,additionalType'
+```
+
+```
+?sort=name → SORT doc.name ASC, doc.id ASC, doc.additionalType ASC
+?sort=id   → SORT doc.id ASC, doc.additionalType ASC
+```
+
+### Three rules, and nothing more
+
+- **it is appended last** — it never overrides what the caller asked for, it speaks only when everything else is level;
+- **it travels the whitelist and the permission gate**, like any other criterion. 🚨 A tiebreaker missing from `SORTABLE` is dropped **in silence**: the query looks ordinary and the order reads as settled when it is not. Declare it in `SORTABLE`;
+- **it is appended after the fallback** of the previous section: a sort that resolved to nothing falls back on the model's default and **then** closes — never on the tiebreaker alone.
+
+> **`null` by default.** A model that declares nothing keeps exactly the behaviour it had: a named sort orders what it names, ties included. The mechanism is opted into model by model.
+
+### What it costs
+
+One more criterion can **take a sort away from an index**: when a `SORT` follows an index's columns exactly, ArangoDB walks the index and stops at the `LIMIT`; as soon as the `SORT` asks for a column the index does not carry at its tail, the whole filtered set must be sorted before the first page comes back.
+
+The remedy lives in the index, not in the code: **extend the index with the tiebreaker key**.
+
+```php
+// the index ended on `modified`; it now ends the way the sort does
+IndexOptions::FIELDS => [ Prop::ADDITIONAL_TYPE , Prop::MODIFIED , Prop::_KEY ] ,
+```
+
+Where no index served the sort — the common case, a sort on a label — the sort was already entirely in memory and the tiebreaker adds one comparison.
+
 ## Sorting through a relation
 
 **The situation.** An article's author is not one of its fields: it lives in
@@ -363,6 +431,8 @@ Typical combination — the 10 **nearest** museums within 5 km:
 - **`SORT_DEFAULT` must name whitelisted keys.** The default sort goes through the same doorkeeper as the client.
 - **The `?near=` geo key must be in `SORTABLE`.** A model exposing `?near=` declares its geo field (`'geo'`, or a `Field::REQUIRES` definition to gate it). Without it, distance sorting stops.
 - **An invalid client key is dropped, never an exception.** A sort key (or a geo key) outside the whitelist, or refused by permission, is simply dropped — no injection possible, no crash. A faulty **declaration** is the other side of that frontier: a relational entry that cannot be honoured throws, because only the model's author can fix it.
+- ⚠ **The tiebreaker does not close a grouped list.** After a `COLLECT` (`?group=`), `doc` is out of scope: the criterion closing the order would have to be a **dimension** of the grouping, not a field of the document. `?group=year&sort=-sum_revenue` therefore stays without a total order, and paginating deep into it keeps the flaw described above.
+- ⚠ **A `SORT` passed as an array still receives the tiebreaker**, but with no way of knowing what the array already names: `[ 'doc.id DESC' ]` with an `id` tiebreaker produces `doc.id DESC, doc.id ASC`. It is valid and changes no result, only redundant — when using the array form, write the whole order in it.
 - ⚠ **`Arango::SORT` also accepts an array, and that form skips both doorkeepers.** A string is what a client sends (`?sort=name`) and it goes through the `SORTABLE` whitelist and the permission gate. An **array** is copied verbatim into the `SORT` clause:
 
   ```php

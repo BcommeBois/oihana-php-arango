@@ -52,6 +52,23 @@ use function oihana\core\strings\key;
  * ?sort=name,-created   // SORT doc.name ASC, doc.created DESC
  * ```
  *
+ * ### Total order (`SORT_TIEBREAK`)
+ * A pagination only means something under a **total** order: `LIMIT`/`OFFSET` say
+ * « the first fifty », and *first* exists only when no two documents are left
+ * level. `SORT_DEFAULT` answers for the case where nothing is asked for;
+ * `SORT_TIEBREAK` answers for the case where something is — it is appended to
+ * every resolved sort, last, so it speaks only on ties:
+ * ```php
+ * AQL::SORTABLE      => [ Prop::ID , Prop::NAME ] ,
+ * AQL::SORT_TIEBREAK => Prop::ID ,
+ * // ?sort=name  → SORT doc.name ASC, doc.id ASC
+ * // ?sort=id    → SORT doc.id ASC          (already total, nothing appended)
+ * ```
+ * It closes the order as a whole, so there is **one per model**, never one per
+ * sortable key — and it must be declared in `AQL::SORTABLE`, since it travels the
+ * same gates as any criterion. `null` (the default) keeps the historical
+ * behaviour: a named sort orders exactly what it names, ties included.
+ *
  * ### Permission gate
  * A whitelisted key can still be **permission-gated**, so a field hidden from the
  * projection stays untriable (no sort oracle). The gate is resolved by
@@ -135,6 +152,14 @@ trait SortTrait
     public ?array $sortable = null ;
 
     /**
+     * The criterion that closes this model's order, in the `?sort=` grammar.
+     *
+     * `null` — the default — keeps the historical behaviour : a named sort orders
+     * exactly what it names, ties included.
+     */
+    public ?string $sortTiebreak = null ;
+
+    /**
      * Initialize the sortable array definition.
      *
      * The raw definition (from the `AQL::SORTABLE` init key, or the property default)
@@ -151,6 +176,22 @@ trait SortTrait
     public function initializeSortable( array $init = [] ):static
     {
         $this->sortable = normalizeSortable( $init[ AQL::SORTABLE ] ?? $this->sortable ) ;
+        return $this ;
+    }
+
+    /**
+     * Initialize the criterion that closes the model's order.
+     *
+     * A string in the `?sort=` grammar, so it may name several keys
+     * (`'id,additionalType'`) and a direction (`'-id'`). `null` disables the
+     * mechanism entirely — a model that declares nothing behaves exactly as before.
+     *
+     * @param array $init
+     * @return $this
+     */
+    public function initializeSortTiebreak( array $init = [] ):static
+    {
+        $this->sortTiebreak = $init[ AQL::SORT_TIEBREAK ] ?? $this->sortTiebreak ;
         return $this ;
     }
 
@@ -173,6 +214,14 @@ trait SortTrait
      * gates. A model declaring no default still answers unordered : there is nothing to
      * fall back on.
      *
+     * 🔑 **The model's tiebreaker closes whatever the caller asked for.** A named sort
+     * replaces the default outright — and with it the criterion the default carried to
+     * break its ties. `AQL::SORT_TIEBREAK` is therefore appended to the resolved
+     * criteria, last and only there, unless the order already names it. It is added
+     * **after** the fallback below, so that a sort which resolved to nothing still
+     * gets the default rather than the tiebreaker alone. A model declaring none keeps
+     * the historical behaviour — see {@see sortTiebreakOrders()}.
+     *
      * 🔑 **An empty `?sort=` counts as nothing asked for.** `''` is not `null`, so it
      * used to reach the grammar, resolve to no criterion, and cost the model its default
      * order — while the score and the distance branches already read it as « no sort
@@ -192,6 +241,13 @@ trait SortTrait
      * ```php
      * $model->prepareSort( [ Arango::SORT => 'name,-created' ] ) ;
      * // "doc.name ASC, doc.created DESC"
+     * ```
+     *
+     * @example A named sort closed by the model's tiebreaker
+     * ```php
+     * $model->sortTiebreak = 'id' ;
+     * $model->prepareSort( [ Arango::SORT => 'name' ] ) ;
+     * // "doc.name ASC, doc.id ASC"
      * ```
      *
      * @example Distance sort (nearest first) via `?near=`
@@ -253,6 +309,10 @@ trait SortTrait
         $nearExpression = null ;
         $nearResolved   = false ;
 
+        // The keys the order already carries, which the tiebreaker reads to know
+        // whether it has anything left to close.
+        $named = [] ;
+
         if( is_string( $sort ) )
         {
             $criteria = explode( Char::COMMA , $sort ) ;
@@ -264,15 +324,7 @@ trait SortTrait
                     continue ;
                 }
 
-                if( $key[0] === Char::HYPHEN )
-                {
-                    $order = Order::DESC ;
-                    $key   = ltrim( $key , Char::HYPHEN ) ;
-                }
-                else
-                {
-                    $order = Order::ASC ;
-                }
+                [ $key , $order ] = $this->splitSortToken( $key ) ;
 
                 // Synthetic relevance key, driven by the active View search:
                 // resolves to the BM25 score of the document (descending = most
@@ -305,19 +357,12 @@ trait SortTrait
                     continue ;
                 }
 
-                // Whitelist gate (fail-closed): a client key is honored only when
-                // the model declares it in `$sortable`. No whitelist (`null`) means
-                // nothing client-supplied sorts — the key never reaches doc.<key>.
-                if( is_array( $sortable ) && array_key_exists( $key , $sortable ) )
-                {
-                    // Permission gate: a field hidden from projection stays untriable
-                    // (no sort oracle). A refused key drops its criterion.
-                    $field = $this->authorizeSortKey( $key , $sortable[ $key ] ?? null , $init , $docRef ) ;
+                $criterion = $this->sortCriterion( $key , $order , $sortable , $init , $docRef ) ;
 
-                    if( $field !== null )
-                    {
-                        $orders[] = $field . Char::SPACE . $order ;
-                    }
+                if( $criterion !== null )
+                {
+                    $orders[]      = $criterion ;
+                    $named[ $key ] = true ;
                 }
             }
         }
@@ -344,7 +389,11 @@ trait SortTrait
             return $this->prepareSort( [ ...$init , Arango::SORT => null ] , $sortable , $docRef , $binds ) ;
         }
 
-        return compile( $orders , Char::COMMA . Char::SPACE ) ;
+        // 🚨 The tiebreaker comes last, and it comes after the re-entry above : a sort
+        // that resolved to nothing must still fall back on the model's default, and a
+        // tiebreaker appended before that test would make `$orders` non-empty and cost
+        // the default its turn.
+        return compile( [ ...$orders , ...$this->sortTiebreakOrders( $named , $sortable , $init , $docRef ) ] , Char::COMMA . Char::SPACE ) ;
     }
 
     /**
@@ -750,6 +799,132 @@ trait SortTrait
         $fields = property_exists( $this , AQL::FIELDS ) ? $this->fields : null ;
 
         return isPathAuthorized( $path , $fields , $init ) ;
+    }
+
+    /**
+     * Resolves one sort criterion through the two gates every key travels.
+     *
+     * **Whitelist gate (fail-closed)** : a key is honoured only when the model
+     * declares it in `$sortable`. No whitelist (`null`) means nothing sorts — the
+     * key never reaches `doc.<key>`.
+     *
+     * **Permission gate** : a field hidden from the projection stays untriable, so
+     * the order cannot become an oracle on what the projection withholds. A refused
+     * key drops its criterion.
+     *
+     * Shared by the client's own criteria and by the tiebreaker, so that neither can
+     * reach a field the other could not.
+     *
+     * @param string     $key      The URL key, already stripped of its direction.
+     * @param string     $order    `ASC` or `DESC`.
+     * @param array|null $sortable The whitelist in force for this call.
+     * @param array      $init     The request-level init. Reads `Arango::AUTHORIZER`.
+     * @param string     $docRef   The document variable the fields hang off.
+     *
+     * @return string|null The `<field> <order>` criterion, or `null` when either gate refuses it.
+     *
+     * @throws ValidationException
+     */
+    private function sortCriterion( string $key , string $order , ?array $sortable , array $init , string $docRef ) :?string
+    {
+        if( !is_array( $sortable ) || !array_key_exists( $key , $sortable ) )
+        {
+            return null ;
+        }
+
+        $field = $this->authorizeSortKey( $key , $sortable[ $key ] ?? null , $init , $docRef ) ;
+
+        return $field === null ? null : $field . Char::SPACE . $order ;
+    }
+
+    /**
+     * The criteria that close the order, appended after everything the caller asked for.
+     *
+     * 🚨 **A pagination only means something under a total order.** `LIMIT` and
+     * `OFFSET` say « the first fifty », then « the next fifty », and *first* exists
+     * only when no two documents are left level. A sort on a non-unique key orders
+     * the groups and leaves their inside free : the store is at liberty there, two
+     * pages may serve one document twice and another never, and it happens in `200`
+     * with nothing in the log. The model's `SORT_DEFAULT` closes that hole when
+     * nothing is asked for ; this closes it when something is.
+     *
+     * 🔑 **It closes the order as a whole, so there is one per model** — never one
+     * per sortable key. And it is appended to **every** sort the model serves,
+     * including the synthetic `distance` and `score`, where ties are the rule rather
+     * than the exception : two addresses equally far from a point, two documents
+     * holding a term equally often.
+     *
+     * 🔑 **Except when the order is already total**, which is a property of the
+     * criteria *list*, not of any one key : an order that already names the
+     * tiebreaker cannot be refined by naming it twice. A key unique on one
+     * collection is not unique on the next — `id` closes a collection of one type
+     * and leaves an overlapping one open — which is why the model declares what
+     * closes its own order and no universal rule can.
+     *
+     * The tiebreaker travels the same two gates as any criterion
+     * ({@see sortCriterion()}), so a model naming a key its whitelist does not carry
+     * closes nothing at all — in silence, which reads as settled. Declare the
+     * tiebreaker in `AQL::SORTABLE`.
+     *
+     * @param array<string,bool> $named    The keys the order already carries.
+     * @param array|null         $sortable The whitelist in force for this call.
+     * @param array              $init     The request-level init.
+     * @param string             $docRef   The document variable the fields hang off.
+     *
+     * @return array<int,string> The criteria to append, empty when there is nothing to close.
+     *
+     * @throws ValidationException
+     */
+    private function sortTiebreakOrders( array $named , ?array $sortable , array $init , string $docRef ) :array
+    {
+        if( $this->sortTiebreak === null || $this->sortTiebreak === Char::EMPTY )
+        {
+            return [] ;
+        }
+
+        $orders = [] ;
+
+        foreach( explode( Char::COMMA , $this->sortTiebreak ) as $token )
+        {
+            if( empty( $token ) )
+            {
+                continue ;
+            }
+
+            [ $key , $order ] = $this->splitSortToken( $token ) ;
+
+            if( isset( $named[ $key ] ) )
+            {
+                continue ;
+            }
+
+            $criterion = $this->sortCriterion( $key , $order , $sortable , $init , $docRef ) ;
+
+            if( $criterion !== null )
+            {
+                $orders[] = $criterion ;
+            }
+        }
+
+        return $orders ;
+    }
+
+    /**
+     * Splits a sort token into the key it names and the direction it asks for.
+     *
+     * A leading `-` flips the criterion to descending and is stripped ; anything
+     * else ascends. Shared so that the client's grammar and the model's own
+     * declarations are read the same way.
+     *
+     * @param string $token A non-empty sort token (`'name'`, `'-created'`).
+     *
+     * @return array{0:string,1:string} The `[ key , order ]` pair.
+     */
+    private function splitSortToken( string $token ) :array
+    {
+        return $token[ 0 ] === Char::HYPHEN
+             ? [ ltrim( $token , Char::HYPHEN ) , Order::DESC ]
+             : [ $token , Order::ASC ] ;
     }
 
     /**

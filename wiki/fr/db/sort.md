@@ -76,6 +76,74 @@ Trois précisions qui comptent :
 
 **Et `?sort=` vide compte comme rien de demandé.** `?sort=` tout court — ce qu'un écran envoie quand son sélecteur de tri est vide — laissait lui aussi le modèle sans son défaut, parce que `''` n'est pas `null`. Il applique maintenant le défaut, comme l'absence de paramètre. La même lecture vaut pour un tableau vide passé côté serveur.
 
+## L'ordre total — `AQL::SORT_TIEBREAK`
+
+`limit` et `offset` demandent « les cinquante premiers », puis « les cinquante suivants ». Le mot **premiers** n'a de sens que sous un ordre **total** : un ordre où il ne reste aucune paire de documents que l'on ne sache pas départager.
+
+`SORT_DEFAULT` répond quand personne ne demande rien. `SORT_TIEBREAK` répond quand quelqu'un demande quelque chose.
+
+> **La situation.** Un modèle trie par défaut sur `-year`, et un client demande `?sort=name`. Le `?sort=` **remplace** le défaut — `??`, pas une fusion — donc il emporte aussi le critère qui départageait ses égalités. Reste `SORT doc.name ASC` : les homonymes sont à égalité, la base est libre de leur ordre entre eux, et une promenade `LIMIT`/`OFFSET` peut servir deux fois le même document et n'en servir jamais un autre. En `200`, sans un mot au journal.
+
+```php
+AQL::SORTABLE      => [ Prop::ID , Prop::NAME , Prop::YEAR ] ,
+AQL::SORT_DEFAULT  => descKey( Prop::YEAR ) ,
+AQL::SORT_TIEBREAK => Prop::ID ,
+```
+
+```
+?sort=name       → SORT doc.name ASC, doc.id ASC
+?sort=-year,name → SORT doc.year DESC, doc.name ASC, doc.id ASC
+(aucun ?sort=)   → SORT doc.year DESC, doc.id ASC
+?sort=id         → SORT doc.id ASC            (déjà total : rien n'est ajouté)
+?sort=-id        → SORT doc.id DESC           (idem — le sens ne change rien)
+```
+
+### Il ferme un ordre, il ne se règle pas clé par clé
+
+Il y en a **un seul par modèle**, jamais un par clé triable : ce n'est pas une propriété d'un critère, c'est ce qui achève la liste. Et il s'applique à **tous** les tris que le modèle sert, y compris les clés synthétiques `distance` et `score`, où les égalités sont la règle plutôt que l'exception — deux adresses à égale distance d'un point, deux documents qui contiennent un terme autant de fois.
+
+```
+?near=…          → SORT DISTANCE(doc.geo.latitude, doc.geo.longitude, @lat, @lng) ASC, doc.id ASC
+```
+
+### La seule exception : l'ordre est déjà total
+
+Un ordre qui nomme déjà le départage ne se raffine pas en le nommant deux fois — ce serait une comparaison pour rien, et sur une clé qu'un index sert, la marche de l'index tout entière.
+
+🚨 **Et la clé qui ferme un ordre n'est pas la même partout.** `id` ferme une collection d'un seul type ; sur une collection qui en mélange deux sous le même `id`, il ne ferme rien. C'est pourquoi le départage est **déclaré par le modèle** et qu'aucune règle universelle ne peut s'y substituer — ni côté bibliothèque, ni côté client.
+
+Un départage de plusieurs clés n'ajoute que ce qui manque :
+
+```php
+AQL::SORT_TIEBREAK => sortKeys( Prop::ID , Prop::ADDITIONAL_TYPE ) ,   // 'id,additionalType'
+```
+
+```
+?sort=name → SORT doc.name ASC, doc.id ASC, doc.additionalType ASC
+?sort=id   → SORT doc.id ASC, doc.additionalType ASC
+```
+
+### Trois règles, et rien de plus
+
+- **il est ajouté en dernier** — il ne prend jamais le pas sur ce que l'appelant a demandé, il parle seulement quand tout le reste est à égalité ;
+- **il traverse la *whitelist* et le contrôle d'autorisation**, comme n'importe quel critère. 🚨 Un départage absent de `SORTABLE` est jeté **en silence** : la requête a l'air normale et l'ordre se lit comme réglé alors qu'il ne l'est pas. Déclarez-le dans `SORTABLE` ;
+- **il est ajouté après le repli** de la section précédente : un tri qui n'a rien résolu retombe sur le défaut du modèle, **puis** se ferme — jamais sur le départage tout seul.
+
+> **`null` par défaut.** Un modèle qui ne déclare rien garde exactement le comportement qu'il avait : un tri nommé ordonne ce qu'il nomme, égalités comprises. Le mécanisme s'active modèle par modèle.
+
+### Ce que ça coûte
+
+Un critère de plus peut **retirer un tri à un index** : quand un `SORT` suit exactement les colonnes d'un index, ArangoDB déroule l'index et s'arrête au `LIMIT` ; dès que le `SORT` demande une colonne que l'index n'a pas en queue, il faut trier tout l'ensemble filtré avant de rendre la première page.
+
+Le remède est dans l'index, pas dans le code : **allongez l'index de la clé de départage**.
+
+```php
+// l'index finissait sur `modified` ; il finit maintenant comme le tri
+IndexOptions::FIELDS => [ Prop::ADDITIONAL_TYPE , Prop::MODIFIED , Prop::_KEY ] ,
+```
+
+Là où aucun index ne servait le tri — le cas le plus fréquent, un tri sur un libellé — le tri était déjà entièrement en mémoire et le départage n'ajoute qu'une comparaison.
+
 ## Trier à travers une relation
 
 **La situation.** L'auteur d'un article n'est pas un de ses champs : il vit dans
@@ -368,6 +436,8 @@ Combinaison typique — les 10 lieux **les plus proches**, musées, dans 5 km :
 - **`SORT_DEFAULT` doit nommer des clés whitelistées.** Le tri par défaut passe par le même videur que le client.
 - **La clé géo de `?near=` doit être dans `SORTABLE`.** Un modèle exposant `?near=` déclare son champ géo (`'geo'`, ou une définition `Field::REQUIRES` pour le protéger). Sans ça, le tri par distance s'arrête.
 - **Une clé client invalide est ignorée, jamais une exception.** Une clé de tri (ou une clé géo) hors *whitelist*, ou refusée par la permission, est simplement droppée — pas d'injection possible, pas de plantage. Une **déclaration** fautive est l'autre côté de cette frontière : une entrée relationnelle qui ne peut pas être honorée lève, parce que seul l'auteur du modèle peut la corriger.
+- ⚠ **Le départage ne ferme pas une liste groupée.** Après un `COLLECT` (`?group=`), `doc` n'existe plus : le critère qui ferme l'ordre devrait être une **dimension** du groupement, pas un champ du document. `?group=year&sort=-sum_revenue` reste donc sans ordre total, et paginer profond dedans garde le défaut décrit plus haut.
+- ⚠ **Un `SORT` passé sous forme de tableau reçoit quand même le départage**, mais sans pouvoir savoir ce que le tableau nomme déjà : `[ 'doc.id DESC' ]` avec un départage `id` produit `doc.id DESC, doc.id ASC`. C'est valide et sans effet sur le résultat, seulement redondant — si la forme tableau est utilisée, y écrire l'ordre complet.
 - ⚠ **`Arango::SORT` accepte aussi un tableau, et cette forme saute les deux portiers.** Une chaîne est ce qu'un client envoie (`?sort=name`), et elle passe par la *whitelist* `SORTABLE` et par la garde de permission. Un **tableau** est recopié tel quel dans la clause `SORT` :
 
   ```php

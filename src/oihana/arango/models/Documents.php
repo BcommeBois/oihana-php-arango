@@ -162,6 +162,7 @@ class Documents implements ArangoDocumentsModel
              ->initializeView             ( $init ) # After the collection and the searchable fields
              ->initializeSortDefault      ( $init )
              ->initializeSortable         ( $init )
+             ->initializeSortTiebreak     ( $init )
              ->initializeDocumentsMethods ()
              ->initializeInvalidations    ( $init , $container ) ; # After the signals it connects to
     }

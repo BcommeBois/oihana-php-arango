@@ -149,6 +149,7 @@ class AQL
     public const string SKIN_FIELDS     = 'skinFields' ;
     public const string SORT            = 'sort' ;
     public const string SORT_DEFAULT    = 'sortDefault' ;
+    public const string SORT_TIEBREAK   = 'sortTiebreak' ;
     public const string SORTABLE        = 'sortable' ;
     public const string START_VERTEX    = 'startVertex' ;
     public const string TARGET          = 'target' ;

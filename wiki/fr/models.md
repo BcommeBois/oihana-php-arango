@@ -61,6 +61,7 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 | `AQL::SEARCHABLE`   | `array`         | Champs sur lesquels `?search=` opère.                                                                  |
 | `AQL::SORTABLE`     | `array`         | *Whitelist* de tri pour `?sort=` (voir [Tri](db/sort.md)).                                             |
 | `AQL::SORT_DEFAULT` | `string`        | Tri par défaut au format grammaire ([`sortKeys`](helpers.md)).                                         |
+| `AQL::SORT_TIEBREAK` | `string`       | Critère qui ferme l'ordre, ajouté en dernier à tout tri (voir [Tri](db/sort.md)).                      |
 | `AQL::EDGES`        | `array`         | Définitions d'*edges* (cf. [edges-joins-projection.md](edges-joins-projection.md)).                    |
 | `AQL::JOINS`        | `array`         | Définitions de *joins* (même page).                                                                    |
 | `AQL::RESOLVE`      | `array`         | *Edges* internes non exposés (utilisés pour la cascade).                                               |
@@ -73,11 +74,12 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 | `AQL::CONDITIONS`   | `array`         | Conditions AQL injectées côté serveur (cf. [filter-internal.md](db/filter-internal.md)).               |
 | `AQL::BINDS`        | `array`         | *Bind variables* injectées côté serveur.                                                               |
 
-### Tri — `AQL::SORTABLE` / `AQL::SORT_DEFAULT`
+### Tri — `AQL::SORTABLE` / `AQL::SORT_DEFAULT` / `AQL::SORT_TIEBREAK`
 
 Le tri (`?sort=` et `?near=`) a sa **page dédiée** : [Tri](db/sort.md). L'essentiel :
 
 - **Fail-closed** — `AQL::SORTABLE` résout chaque clé de `?sort=` vers un champ AQL (3 notations mélangeables : raccourci indexé, alias, associatif). Une clé hors *whitelist* est **silencieusement ignorée** ; **`null` (pas de *whitelist*) = rien n'est triable** (jamais « tout »). `AQL::SORT_DEFAULT` traverse la même *whitelist* et doit donc nommer des clés déclarées.
+- **Ordre total** — `AQL::SORT_TIEBREAK` ajoute en dernier le critère qui **ferme** l'ordre, à tout tri, y compris un `?sort=` explicite (sauf s'il y figure déjà). Sans lui, une pagination sur une clé non unique peut servir deux fois le même document et n'en servir jamais un autre. `null` par défaut : le mécanisme s'active modèle par modèle.
 - **Permission** — une clé de tri peut être **soumise à un contrôle d'autorisation** (`Field::REQUIRES`), hérité du champ homonyme de la projection ou déclaré explicitement, pour qu'un champ caché à la lecture ne soit pas triable (pas d'oracle de tri).
 
 Détail des trois notations, du contrôle d'autorisation et du tri par distance `?near=` dans [Tri](db/sort.md).

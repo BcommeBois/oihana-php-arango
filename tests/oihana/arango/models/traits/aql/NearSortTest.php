@@ -273,4 +273,30 @@ class NearSortTest extends TestCase
             $model->prepareSort( $granted , binds: $this->binds )
         ) ;
     }
+
+    /**
+     * 🚨 **Two addresses equally far from a point is the ordinary case, not the odd one.**
+     * A distance order groups them and leaves the group free, so a paginated walk over a
+     * radius drifts exactly as any other. The model's tiebreaker closes it, and this also
+     * proves the declaration travels the container : `AQL::SORT_TIEBREAK` reaches the model
+     * through its definition, like the whitelist it depends on.
+     *
+     * @throws DependencyException
+     * @throws NotFoundException
+     */
+    public function testTheTiebreakerClosesADistanceOrder(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION    => 'testCollection' ,
+            AQL::LAZY          => false ,
+            AQL::SORTABLE      => [ 'geo' , '_key' ] ,
+            AQL::SORT_TIEBREAK => '_key' ,
+        ]);
+
+        $result = (string) $model->prepareSort( [ Arango::NEAR => $this->near() ] , binds: $this->binds ) ;
+
+        $this->assertStringContainsString( 'DISTANCE(doc.geo.latitude,doc.geo.longitude,' , $result ) ;
+        $this->assertStringEndsWith( ', doc._key ASC' , $result ) ;
+    }
 }

@@ -28,7 +28,7 @@ Main keys per category:
 |---|---|
 | Collection and schema | `COLLECTION`, `DATABASE`, `SCHEMA`, `DOCUMENT`, `DOC_REF`, `DOC` |
 | Iteration | `IN`, `START`, `GRAPH`, `VERTEX`, `EDGE`, `PATH`, `MIN`, `MAX`, `DIRECTION` |
-| Model | `FIELDS`, `FILTERS`, `FILLABLE`, `ALTERS`, `SEARCHABLE`, `SORTABLE`, `SORT_DEFAULT` |
+| Model | `FIELDS`, `FILTERS`, `FILLABLE`, `ALTERS`, `SEARCHABLE`, `SORTABLE`, `SORT_DEFAULT`, `SORT_TIEBREAK` |
 | Relations | `EDGES`, `JOINS`, `FROM`, `TO`, `RESOLVE`, `REQUIRES` |
 | Search | `SEARCH`, `FACETS` |
 | Projection | `SKIN`, `SKIN_FIELDS`, `SKIN_METHODS`, `INDEXES` |

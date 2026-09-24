@@ -28,7 +28,7 @@ Clés principales par catégorie :
 |---|---|
 | Collection et schéma | `COLLECTION`, `DATABASE`, `SCHEMA`, `DOCUMENT`, `DOC_REF`, `DOC` |
 | Itération | `IN`, `START`, `GRAPH`, `VERTEX`, `EDGE`, `PATH`, `MIN`, `MAX`, `DIRECTION` |
-| Modèle | `FIELDS`, `FILTERS`, `FILLABLE`, `ALTERS`, `SEARCHABLE`, `SORTABLE`, `SORT_DEFAULT` |
+| Modèle | `FIELDS`, `FILTERS`, `FILLABLE`, `ALTERS`, `SEARCHABLE`, `SORTABLE`, `SORT_DEFAULT`, `SORT_TIEBREAK` |
 | Relations | `EDGES`, `JOINS`, `FROM`, `TO`, `RESOLVE`, `REQUIRES` |
 | Recherche | `SEARCH`, `FACETS` |
 | Projection | `SKIN`, `SKIN_FIELDS`, `SKIN_METHODS`, `INDEXES` |
