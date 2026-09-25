@@ -152,6 +152,22 @@ $model->list([ Arango::GROUP => [ Group::BY => 'unknown' ] ]) ;
 
 La [spec brute `Arango::COLLECT`](#spec-brute-arangocollect) est l'autre porte vers la même clause : elle bascule la lecture de la même façon.
 
+### Les sommes reviennent sans le bruit des flottants
+
+`SUM` et `AVERAGE` additionnent des flottants binaires, et le moteur rend le résultat tel quel : une somme de documents qui portent des centimes revient en `1380913.4299999992`. Une ligne groupée ne traversant rien, ce bruit arrivait au lecteur.
+
+`list()` et `stream()` nettoient donc les **agrégats qui additionnent** — les `sum` et les `avg` du spec `?group=`, nommés par `summedAggregates()` — avec `oihana\core\maths\shedFloatNoise()` : douze chiffres significatifs, une échelle qui suit la taille du chiffre, et jamais un arrondi métier (les centimes et les décimales d'une quantité survivent).
+
+```php
+$model->list([ Arango::GROUP => [ Group::BY => 'year' , Group::AGG => [ 'total' => 'sum:amount' , 'biggest' => 'max:amount' ] ] ]) ;
+// [ { "year": 2025, "total": 1380913.43, "biggest": 202799.4000000001 } ]
+//                    ▲ nettoyée            ▲ intacte : une valeur qu'un document porte
+```
+
+🔑 **Seul ce qui a été calculé est touché.** Un `min` et un `max` rendent une valeur qu'un document porte, un `count` un entier, une dimension une valeur stockée : aucun ne porte de bruit, et une valeur stockée à treize chiffres significatifs serait altérée par un passage aveugle. Une somme entière reste entière, un `null` reste `null`.
+
+🔑 **La porte `?group=` seulement.** Une [spec brute `Arango::COLLECT`](#spec-brute-arangocollect) est du code écrit à la main : son auteur décide de ce qu'elle sert, et rien n'y est nettoyé à sa place.
+
 ## Champs à points et nommage
 
 Un champ imbriqué devient une variable à underscore (identifiant AQL valide) :

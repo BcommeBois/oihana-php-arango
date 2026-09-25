@@ -480,6 +480,7 @@
             "src/oihana/arango/models/helpers/resolveGeoPoint.php",
             "src/oihana/arango/models/helpers/resolveQuantifier.php",
             "src/oihana/arango/models/helpers/resolveTraversalQuantifier.php",
+            "src/oihana/arango/models/helpers/shedAggregateNoise.php",
             "src/oihana/arango/models/helpers/sortRelationVariable.php",
             "src/oihana/arango/models/helpers/vertexID.php"
         ]

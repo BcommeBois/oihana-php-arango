@@ -45,6 +45,27 @@ final class DocumentsStreamTraitTest extends TestCase
      * rule: a grouped row is not a document and is yielded raw, an ungrouped one is
      * hydrated as before.
      */
+    /**
+     * 🚨 The same shedding as `list()`, row by row : a summed aggregate comes back
+     * clean, everything else as the store handed it.
+     */
+    public function testAGroupedStreamShedsTheNoiseOfItsSums() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->groupable    = [ 'year' => 'year' ] ;
+        $model->streamResult = [ (object) [ 'year' => 2025 , 'total' => 202799.4000000001 , 'biggest' => 154493.7699999999 ] ] ;
+
+        $rows = iterator_to_array( $model->stream
+        ([
+            Arango::GROUP => [ Group::BY => 'year' , Group::AGG => [ 'total' => 'sum:amount' , 'biggest' => 'max:amount' ] ] ,
+        ]) ) ;
+
+        $this->assertTrue( $model->lastRaw ) ;
+        $this->assertSame( 202799.4          , $rows[ 0 ]->total ) ;
+        $this->assertSame( 154493.7699999999 , $rows[ 0 ]->biggest ) ;
+        $this->assertSame( 2025 , $rows[ 0 ]->year ) ;
+    }
+
     public function testStreamReadsAGroupedResultRaw() :void
     {
         $model = new MockDocuments( 'users' ) ;

@@ -793,4 +793,38 @@ class GroupTraitTest extends TestCase
 
         $this->assertSame( [] , $spec ) ;
     }
+
+    /**
+     * 🔑 Only the aggregates that add up are named — the `sum` and the `avg` —, by
+     * their code in the request ; a `min`, a `max`, a `count` and a raw `COLLECT`
+     * spec name nothing.
+     */
+    public function testSummedAggregatesNamesTheSumsAndTheAveragesOnly() :void
+    {
+        $stub = $this->stub() ;
+
+        $names = $stub->summedAggregates
+        ([
+            Arango::GROUP =>
+            [
+                Group::BY  => 'year' ,
+                Group::AGG =>
+                [
+                    'total'    => 'sum:amount' ,
+                    'mean'     => 'avg:amount' ,
+                    'biggest'  => 'max:amount' ,
+                    'smallest' => 'min:amount' ,
+                    'howMany'  => 'count:amount' ,
+                    'pair'     => [ 'sum' , 'weight' ] ,
+                ],
+                Group::COUNT => true ,
+            ],
+        ]) ;
+
+        $this->assertSame( [ 'total' , 'mean' , 'pair' ] , $names ) ;
+
+        $this->assertSame( [] , $stub->summedAggregates( [] ) ) ;
+        $this->assertSame( [] , $stub->summedAggregates( [ Arango::GROUP => [ Group::BY => 'year' ] ] ) ) ;
+        $this->assertSame( [] , $stub->summedAggregates( [ Arango::COLLECT => [ AQL::AGGREGATE => [ 'total' => 'SUM(doc.amount)' ] ] ] ) ) ;
+    }
 }

@@ -19,6 +19,8 @@ use oihana\arango\enums\Arango;
 use oihana\exceptions\BindException;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
+use function oihana\arango\models\helpers\shedAggregateNoise;
+
 /**
  * Provides streaming capabilities for document retrieval from ArangoDB collections.
  *
@@ -41,7 +43,8 @@ trait DocumentsStreamTrait
      * This method provides memory-efficient iteration over large result sets by yielding
      * documents one at a time instead of loading them all into memory. Each document is
      * fully processed (schema mapping and alter() transformation) before being yielded —
-     * **unless the query groups**, in which case its rows are yielded raw. See
+     * **unless the query groups**, in which case its rows are yielded raw — with the float noise
+     * of their `sum` and `avg` shed ({@see \oihana\arango\models\traits\aql\GroupTrait::summedAggregates()}). See
      * {@see \oihana\arango\models\traits\aql\GroupTrait::isGroupedQuery()}.
      *
      * **Key Benefits:**
@@ -191,14 +194,30 @@ trait DocumentsStreamTrait
         $bindVars = $init[ Arango::BINDS ] ?? [] ;
         $limit    = $init[ Arango::LIMIT ] ?? 0 ;
         $query    = $this->buildListQuery( $init , $bindVars ) ;
-        yield from $this->streamDocuments
+
+        // Same query, same reason as list(): a grouped row is not a document — and
+        // its summed aggregates carry the noise of an addition of floats, shed row by row.
+        $raw    = $this->isGroupedQuery( $init ) ;
+        $summed = $raw ? $this->summedAggregates( $init ) : [] ;
+
+        $rows = $this->streamDocuments
         (
             $query ,
             $bindVars ,
             [ CursorField::FULL_COUNT => (bool) $limit ] ,
-            // Same query, same reason as list(): a grouped row is not a document.
-            raw: $this->isGroupedQuery( $init ) ,
+            raw: $raw ,
             context: $init
         ) ;
+
+        if ( $summed === [] )
+        {
+            yield from $rows ;
+            return ;
+        }
+
+        foreach ( $rows as $key => $row )
+        {
+            yield $key => is_object( $row ) || is_array( $row ) ? shedAggregateNoise( $row , $summed ) : $row ;
+        }
     }
 }

@@ -152,6 +152,22 @@ $model->list([ Arango::GROUP => [ Group::BY => 'unknown' ] ]) ;
 
 The [raw `Arango::COLLECT` spec](#raw-arangocollect-spec) is the other door into the same clause: it switches the read just the same.
 
+### The sums come back rid of their float noise
+
+`SUM` and `AVERAGE` add binary floats, and the store hands the result back as it is: a sum over documents holding cents comes back as `1380913.4299999992`. A grouped row goes through nothing, so that noise reached the reader.
+
+`list()` and `stream()` therefore shed it on the **aggregates that add up** — the `sum` and the `avg` of the `?group=` spec, named by `summedAggregates()` — with `oihana\core\maths\shedFloatNoise()`: twelve significant digits, a scale that follows the size of the figure, and never a business rounding (the cents and the decimals of a quantity survive).
+
+```php
+$model->list([ Arango::GROUP => [ Group::BY => 'year' , Group::AGG => [ 'total' => 'sum:amount' , 'biggest' => 'max:amount' ] ] ]) ;
+// [ { "year": 2025, "total": 1380913.43, "biggest": 202799.4000000001 } ]
+//                    ▲ shed                ▲ untouched: a value some document holds
+```
+
+🔑 **Only what was computed is touched.** A `min` and a `max` return a value some document holds, a `count` an integer, a dimension a stored value: none carries noise, and a stored figure of thirteen significant digits would be altered by a blind pass. An integer sum stays an integer, a `null` stays `null`.
+
+🔑 **The `?group=` door only.** A [raw `Arango::COLLECT` spec](#raw-arangocollect-spec) is code written by hand: its author decides what it serves, and nothing is shed on their behalf.
+
 ## Dotted fields and naming
 
 A nested field becomes an underscore variable (a valid AQL identifier):

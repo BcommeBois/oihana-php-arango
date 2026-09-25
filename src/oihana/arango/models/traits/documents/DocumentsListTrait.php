@@ -20,6 +20,8 @@ use oihana\arango\models\traits\ArangoTrait;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 use oihana\exceptions\BindException;
 
+use function oihana\arango\models\helpers\shedAggregateNoise;
+
 /**
  * Provides list retrieval capabilities for ArangoDB document collections.
  *
@@ -237,7 +239,8 @@ trait DocumentsListTrait
      * - Transformed via the `alter()` method (applies skins, conversions, etc.)
      *
      * A **grouped** query (`Arango::GROUP`, or a raw `Arango::COLLECT` spec) skips both steps
-     * and yields plain objects carrying exactly the variables the `COLLECT` emitted.
+     * and yields plain objects carrying exactly the variables the `COLLECT` emitted — with the
+     * float noise of their `sum` and `avg` shed, see {@see \oihana\arango\models\traits\aql\GroupTrait::summedAggregates()}.
      *
      * Returns an empty array if:
      * - No documents match the query criteria
@@ -304,7 +307,14 @@ trait DocumentsListTrait
         // coerced into that property's type rather than kept as computed.
         $raw = $this->isGroupedQuery( $init ) ;
 
-        return $this->getDocuments( $query , $bindVars , $this->profileOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) , raw: $raw , context: $init ) ;
+        $rows = $this->getDocuments( $query , $bindVars , $this->profileOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) , raw: $raw , context: $init ) ;
+
+        // A SUM the store computed carries the noise of an addition of floats, and
+        // nothing downstream reads a grouped row : it is shed here, on the summed
+        // aggregates alone.
+        $summed = $raw ? $this->summedAggregates( $init ) : [] ;
+
+        return $summed === [] ? $rows : array_map( fn( mixed $row ) :mixed => is_object( $row ) || is_array( $row ) ? shedAggregateNoise( $row , $summed ) : $row , $rows ) ;
     }
 
 }

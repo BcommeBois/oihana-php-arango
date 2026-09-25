@@ -183,6 +183,52 @@ trait GroupTrait
     }
 
     /**
+     * Names the aggregates of a {@see Arango::GROUP} spec that **add up** — the
+     * `sum` and the `avg` — and nothing else.
+     *
+     * 🚨 **Those are the only ones that compute a figure, and a computed float carries
+     * noise.** `SUM` and `AVERAGE` add binary floats, and the store hands the result
+     * back as it is : `1380913.4299999992` where every sheet holds cents. A `min` and a
+     * `max` return a value some document holds, a `count` an integer, a dimension a
+     * stored value — none of them is touched, since none was computed.
+     *
+     * 🔑 **Read from the request, not from the compiled spec.** The friendly spec
+     * names each aggregate with its code (`'sum:amount'`) ; a raw {@see Arango::COLLECT}
+     * spec is code written by hand, whose author decides what it serves — it names
+     * nothing here. The whitelist and the permission gate are not replayed : an
+     * aggregate they refused is absent from the row, and a name absent from a row
+     * costs nothing to {@see \oihana\arango\models\helpers\shedAggregateNoise()}.
+     *
+     * @param array $init The list query options.
+     *
+     * @return array<int,string> The variable names of the summed and averaged aggregates.
+     */
+    public function summedAggregates( array $init = [] ) :array
+    {
+        $group = $init[ Arango::GROUP ] ?? null ;
+        $agg   = is_array( $group ) ? ( $group[ Group::AGG ] ?? null ) : null ;
+
+        if ( !is_array( $agg ) )
+        {
+            return [] ;
+        }
+
+        $names = [] ;
+
+        foreach ( $agg as $name => $definition )
+        {
+            [ $code ] = $this->normalizeAggregate( $definition ) ;
+
+            if ( in_array( $code , [ FacetAggregator::SUM , FacetAggregator::AVG ] , true ) )
+            {
+                $names[] = (string) $name ;
+            }
+        }
+
+        return $names ;
+    }
+
+    /**
      * Resolves the `COLLECT` spec for a list query.
      *
      * Translates a friendly {@see Arango::GROUP} spec ({@see Group::BY},
