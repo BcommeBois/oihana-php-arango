@@ -481,6 +481,8 @@ Options utiles sur la définition de join : `Arango::KEY` (attribut de jointure,
 
 > Combinaison naturelle avec les [champs-tableaux embarqués](db/arrays.md) : un champ `tracks` (tableau d'ids muté élément par élément via `ArrayPropertyController`) peut **en même temps** être projeté en documents joints triés dans le `GET` via `Filter::JOINS` — aucune duplication.
 
+> **Quand la cible ne tient pas le document**, la clé d'un `Filter::JOIN` disparaît de la réponse. `Field::ELSE => true` sur le champ sert alors la référence stockée — le code nu — à sa place : voir [Garder la référence quand une jointure ne résout rien](db/conditional-fields.md#garder-la-référence-quand-une-jointure-ne-résout-rien--fieldelse-sur-un-filterjoin).
+
 ### Restreindre les documents joints — `Arango::CONDITIONS`
 
 **Le problème, en clair.** Une jointure ramène des documents. Si ton application en masque une partie — désactivés, hors périmètre — la liste principale les cache, mais la **fiche du parent** continue de les nommer dans son champ joint. On ne peut pas les énumérer, mais on les lit par ricochet.

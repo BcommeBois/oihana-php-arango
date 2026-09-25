@@ -1014,6 +1014,121 @@ final class AqlFieldsTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
+    // ------------------------------------------------------------ Field::ELSE on a join
+
+    /**
+     * A join resolves a reference the document stores ; when the target holds no
+     * such document the backing `LET` is an empty array and the key vanished. With
+     * `Field::ELSE => true` the stored reference is served instead.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testElseTrueOnAJoinKeepsTheStoredReference(): void
+    {
+        $result = aqlFields
+        ([
+            'about' => [ Field::FILTER => Filter::JOIN , Field::UNIQUE => 'about_j1' , Field::ELSE => true ] ,
+        ], 'doc' ) ;
+
+        $this->assertSame
+        (
+            'about:NOT_NULL(IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null,doc.about)' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * `true` follows the field's source name, so an aliased join falls back on the
+     * attribute it reads, not on the label it is served under.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testElseTrueOnAnAliasedJoinFollowsTheSourceName(): void
+    {
+        $result = aqlFields
+        ([
+            'customer' => [ Field::FILTER => Filter::JOIN , Field::UNIQUE => 'c_j1' , Field::NAME => 'about' , Field::ELSE => true ] ,
+        ], 'doc' ) ;
+
+        $this->assertSame
+        (
+            'customer:NOT_NULL(IS_OBJECT(c_j1) ? c_j1 : IS_ARRAY(c_j1) ? FIRST(c_j1) : null,doc.about)' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * The `else` grammar of Field::WHEN applies as it stands : another attribute,
+     * or a literal.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testElseOnAJoinTakesTheWhenElseGrammar(): void
+    {
+        $attribute = aqlFields
+        ([
+            'about' => [ Field::FILTER => Filter::JOIN , Field::UNIQUE => 'about_j1' , Field::ELSE => [ Field::PROPERTY => 'code' ] ] ,
+        ], 'doc' ) ;
+
+        $this->assertSame
+        (
+            'about:NOT_NULL(IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null,doc.code)' ,
+            $attribute
+        ) ;
+
+        $literal = aqlFields
+        ([
+            'about' => [ Field::FILTER => Filter::JOIN , Field::UNIQUE => 'about_j1' , Field::ELSE => 'unknown' ] ,
+        ], 'doc' ) ;
+
+        $this->assertSame
+        (
+            "about:NOT_NULL(IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null,'unknown')" ,
+            $literal
+        ) ;
+    }
+
+    /**
+     * Nothing changes for a join that declares no fallback, and an edge stores no
+     * reference to fall back on : the marker is ignored there, as it always was.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAJoinWithoutElseAndAnEdgeWithOneAreUntouched(): void
+    {
+        $join = aqlFields
+        ([
+            'about' => [ Field::FILTER => Filter::JOIN , Field::UNIQUE => 'about_j1' ] ,
+        ], 'doc' ) ;
+
+        $this->assertSame( 'about:IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null' , $join ) ;
+
+        $edge = aqlFields
+        ([
+            'author' => [ Field::FILTER => Filter::EDGE , Field::UNIQUE => 'author_e1' , Field::ELSE => true ] ,
+        ], 'doc' ) ;
+
+        $this->assertSame( 'author:IS_OBJECT(author_e1) ? author_e1 : IS_ARRAY(author_e1) ? FIRST(author_e1) : null' , $edge ) ;
+    }
+
+    /**
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
     public function testGuardReadingADeniedFieldDropsTheDocument(): void
     {
         $fields =

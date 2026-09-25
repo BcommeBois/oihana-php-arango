@@ -116,6 +116,45 @@ Absent `Field::ELSE`, the fallback is `null`. Two forms otherwise:
 | `Field::ELSE => 0` | `0` | literal (inlined; `null` / `0` / `'unknown'` …) |
 | `Field::ELSE => [ Field::PROPERTY => 'basePrice' ]` | `doc.basePrice` | another document attribute |
 
+### Keeping the reference when a join resolves nothing — `Field::ELSE` on a `Filter::JOIN`
+
+`Field::ELSE` has a second use, without `Field::WHEN`: on a **`Filter::JOIN`**, it names what is
+served when the join finds **no** document. A join resolves a reference the document **stores** —
+a customer code, a depot code, a term — against the target collection; when the target does not
+hold that document (a collective account, an orphan code, a record never harvested), the `LET`
+variable is an empty array and the key **vanishes** from the answer. The reader then loses the
+very code it had at hand.
+
+```php
+AQL::FIELDS =>
+[
+    'about' => [ Field::FILTER => Filter::JOIN , Field::ELSE => true ] ,   // otherwise, the stored code
+],
+```
+
+```aql
+about: NOT_NULL( IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null , doc.about )
+```
+
+| Declared | AQL fallback | Meaning |
+|---|---|---|
+| `Field::ELSE => true` | `doc.about` | the stored reference itself — the field's source attribute (`Field::NAME` if any) |
+| `Field::ELSE => [ Field::PROPERTY => 'code' ]` | `doc.code` | another document attribute |
+| `Field::ELSE => 'unknown'` | `'unknown'` | a literal, with the same quoting rule as below |
+
+Three things to know:
+
+- **The fallback wraps the whole normalisation**, it does not replace its last branch: a join
+  variable is an array, empty when nothing answered, and `FIRST([])` is `null` too — only a
+  `NOT_NULL()` around the result catches both cases.
+- **Without the marker, nothing changes**: the key vanishes as before. The fallback is opted into
+  join by join, wherever a bare code beats an absence.
+- **An edge does not know it**: it stores no reference, it has nothing to fall back on. The marker
+  is ignored there, as it always was.
+
+On the hydration side, a scalar in place of an object is an expected case: the `hydrate*()`
+functions keep an unresolved reference as it stands, they do not turn it into an empty object.
+
 ### An ambiguous literal — `betweenQuotes()`
 
 A string literal is quoted automatically… **unless it already looks like AQL**. That is

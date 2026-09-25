@@ -122,6 +122,45 @@ Sans `Field::ELSE`, le repli est `null`. Deux formes sinon :
 | `Field::ELSE => 0` | `0` | littéral (inliné ; `null` / `0` / `'inconnu'` …) |
 | `Field::ELSE => [ Field::PROPERTY => 'basePrice' ]` | `doc.basePrice` | un autre attribut du document |
 
+### Garder la référence quand une jointure ne résout rien — `Field::ELSE` sur un `Filter::JOIN`
+
+`Field::ELSE` a un second emploi, sans `Field::WHEN` : sur un **`Filter::JOIN`**, il nomme ce qui
+est servi quand la jointure ne trouve **aucun** document. Une jointure résout une référence que le
+document **stocke** — un code de client, de dépôt, de terme — vers la collection cible ; si la cible
+ne tient pas ce document (un compte collectif, un code orphelin, une fiche jamais moissonnée), la
+variable `LET` est un tableau vide et la clé **disparaît** de la réponse. Le lecteur perd alors le
+code lui-même, qu'il avait pourtant sous la main.
+
+```php
+AQL::FIELDS =>
+[
+    'about' => [ Field::FILTER => Filter::JOIN , Field::ELSE => true ] ,   // sinon, le code stocké
+],
+```
+
+```aql
+about: NOT_NULL( IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null , doc.about )
+```
+
+| Déclaré | Repli AQL | Sens |
+|---|---|---|
+| `Field::ELSE => true` | `doc.about` | la référence stockée elle-même — l'attribut source du champ (`Field::NAME` s'il y en a un) |
+| `Field::ELSE => [ Field::PROPERTY => 'code' ]` | `doc.code` | un autre attribut du document |
+| `Field::ELSE => 'inconnu'` | `'inconnu'` | un littéral, avec la même règle de guillemets que ci-dessous |
+
+Trois choses à savoir :
+
+- **Le repli enveloppe toute la normalisation**, il ne remplace pas sa dernière branche : la
+  variable d'une jointure est un tableau, vide quand rien ne répond, et `FIRST([])` vaut `null` lui
+  aussi — seul un `NOT_NULL()` autour du résultat attrape les deux cas.
+- **Sans le marqueur, rien ne change** : la clé disparaît comme avant. Le repli s'active jointure
+  par jointure, là où un code nu vaut mieux qu'une absence.
+- **Un edge ne le connaît pas** : il ne stocke aucune référence, il n'a rien sur quoi retomber. Le
+  marqueur y est ignoré, comme il l'a toujours été.
+
+Côté hydratation, un scalaire à la place d'un objet est un cas prévu : les fonctions `hydrate*()`
+gardent une référence non résolue telle quelle, elles n'en font pas un objet vide.
+
 ### Un littéral ambigu — `betweenQuotes()`
 
 Un littéral chaîne est quoté automatiquement… **sauf s'il ressemble déjà à de l'AQL**. C'est

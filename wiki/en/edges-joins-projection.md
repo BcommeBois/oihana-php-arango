@@ -481,6 +481,8 @@ Useful options on the join definition: `Arango::KEY` (join attribute, default `_
 
 > Natural combination with [embedded array fields](db/arrays.md): a `tracks` field (an array of ids mutated element-by-element via `ArrayPropertyController`) can **at the same time** be projected as sorted joined documents in the `GET` via `Filter::JOINS` — no duplication.
 
+> **When the target does not hold the document**, the key of a `Filter::JOIN` vanishes from the answer. `Field::ELSE => true` on the field serves the stored reference — the bare code — in its place: see [Keeping the reference when a join resolves nothing](db/conditional-fields.md#keeping-the-reference-when-a-join-resolves-nothing--fieldelse-on-a-filterjoin).
+
 ### Restricting the joined documents — `Arango::CONDITIONS`
 
 **The problem, plainly.** A join brings back documents. If your application masks some of them — disabled, out of scope — the main list hides them, but the **parent's record** keeps naming them in its joined field. You cannot enumerate them, yet you read them by ricochet.

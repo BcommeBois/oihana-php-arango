@@ -32,6 +32,7 @@ use function oihana\arango\db\helpers\fields\aqlFieldTranslate;
 use function oihana\arango\db\helpers\fields\aqlFieldUrl;
 use function oihana\arango\db\helpers\fields\aqlFieldWrap;
 use function oihana\arango\db\helpers\fields\conditionReadsDeniedField;
+use function oihana\arango\db\helpers\fields\resolveWhenElse;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\core\strings\betweenDoubleQuotes;
 use function oihana\core\strings\compile;
@@ -218,6 +219,7 @@ function aqlFields
             $value   = $options[ Field::UNIQUE  ] ?? $key ;
             $scope   = $options[ Field::SCOPE   ] ?? AQL::VERTEX ;
             $when    = $options[ Field::WHEN    ] ?? null ;
+            $else    = $options[ Field::ELSE    ] ?? null ;
 
             // Field::SCOPE selects the projection source: the target vertex
             // (default) or the traversal edge. The edge variable only exists
@@ -380,7 +382,13 @@ function aqlFields
 
                 Filter::ARRAY_COUNT , Filter::JOINS_COUNT => aqlFieldArrayCount ( $key , $ref , $keyName ) ,
                 Filter::ARRAY_FIRST                       => aqlFieldArrayFirst ( $key , $value ) ,
-                Filter::EDGE , Filter::JOIN               => aqlFieldObject     ( $key , $value ) ,
+                // A join resolves a reference the document STORES ; when the target holds
+                // no such document the `LET` is an empty array and the key would vanish.
+                // Field::ELSE names what to serve instead — `true` for the stored reference
+                // itself, or the `else` grammar of Field::WHEN — so a record keeps the code
+                // it carries. An edge stores nothing, so it has nothing to fall back on.
+                Filter::JOIN                              => aqlFieldObject     ( $key , $value , $else === null ? null : ( $else === true ? $fieldRef : resolveWhenElse( $else , $ref ) ) ) ,
+                Filter::EDGE                              => aqlFieldObject     ( $key , $value ) ,
 
                 Filter::EDGES , Filter::EDGES_COUNT ,
                 Filter::JOINS , Filter::UNIQUE_NAME => keyValue( $key , $value ) ,

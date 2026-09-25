@@ -39,6 +39,10 @@ class Field
 
     /**
      * Fallback projection emitted when a `Field::WHEN` condition is false (the ternary else branch).
+     *
+     * On a `Filter::JOIN`, the value served when the join resolves nothing : `true` keeps the
+     * reference the document stores (`doc.<field>`), an array `[ Field::PROPERTY => … ]` or a
+     * literal follows the `else` grammar of `Field::WHEN`. Without it the key vanishes.
      */
     public const string ELSE = 'else' ;
 

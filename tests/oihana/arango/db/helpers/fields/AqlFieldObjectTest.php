@@ -30,4 +30,27 @@ final class AqlFieldObjectTest extends TestCase
             aqlFieldObject( 'main' , 'tagsList' ) ,
         ) ;
     }
+
+    /**
+     * The fallback wraps the whole normalisation : a join variable is an empty
+     * array when nothing matched, and `FIRST([])` is `null` too — replacing the
+     * last branch alone would leave that case uncaught.
+     */
+    public function testAFallbackWrapsTheWholeNormalisation() :void
+    {
+        $this->assertSame
+        (
+            'about:NOT_NULL(IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null,doc.about)' ,
+            aqlFieldObject( 'about' , 'about_j1' , 'doc.about' ) ,
+        ) ;
+    }
+
+    public function testNoFallbackLeavesTheExpressionAsItWas() :void
+    {
+        $this->assertSame
+        (
+            aqlFieldObject( 'about' , 'about_j1' ) ,
+            aqlFieldObject( 'about' , 'about_j1' , null ) ,
+        ) ;
+    }
 }

@@ -6,31 +6,45 @@ use oihana\arango\db\enums\AQL;
 use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\isArray;
 use function oihana\arango\db\functions\isObject;
+use function oihana\arango\db\functions\notNull;
 use function oihana\arango\db\operators\ternary;
 use function oihana\core\strings\keyValue;
 
 /**
- * Generates an AQL key/value expression for extracting an object or the first element of an array field.
+ * Projects a field as a single object : the value itself when it is one, its
+ * first element when it is an array, `null` otherwise.
  *
- * @param string $key   Logical key to use in the resulting AQL object.
- * @param string $value AQL field reference to evaluate (e.g. `'doc.authors'`).
+ * ```php
+ * aqlFieldObject( 'author' , 'doc.author' ) ;
+ * // author:IS_OBJECT(doc.author) ? doc.author : IS_ARRAY(doc.author) ? FIRST(doc.author) : null
+ * ```
  *
- * @return string AQL key/value snippet extracting the first array element.
+ * With `$else`, the expression a resolution that gave nothing falls back on —
+ * the stored reference of a join, typically, so a record naming a document the
+ * target collection does not hold keeps the code it stored instead of losing the key :
  *
- * @package oihana\arango\db\helpers\fields
- * @since 1.0.0
- * @author Marc Alcaraz
+ * ```php
+ * aqlFieldObject( 'about' , 'about_j1' , 'doc.about' ) ;
+ * // about:NOT_NULL(IS_OBJECT(about_j1) ? about_j1 : IS_ARRAY(about_j1) ? FIRST(about_j1) : null,doc.about)
+ * ```
+ *
+ * @param string      $key   The projected key.
+ * @param string      $value The AQL reference of the value — a document path or a `LET` variable.
+ * @param string|null $else  The AQL expression to fall back on when the value resolves to `null`.
+ *
+ * @return string The `key:expression` fragment.
  */
-function aqlFieldObject( string $key , string $value ): string
+function aqlFieldObject( string $key , string $value , ?string $else = null ): string
 {
-    return keyValue
+    $object = ternary
     (
-        $key ,
-        ternary
-        (
-            isObject( $value ) ,
-            $value ,
-            ternary( isArray( $value ) , first( $value ) , AQL::NULL )
-        )
-    );
+        isObject( $value ) ,
+        $value ,
+        ternary( isArray( $value ) , first( $value ) , AQL::NULL )
+    ) ;
+
+    // The fallback wraps the whole normalisation rather than replacing its last
+    // branch : a join variable is an ARRAY, empty when nothing matched, and
+    // `FIRST([])` is `null` too — only `NOT_NULL()` around the result catches both.
+    return keyValue( $key , $else === null ? $object : notNull( $object , $else ) ) ;
 }
