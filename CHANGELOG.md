@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-07
+
 ### Fixed
 
 - **A filter slips past the refusal by no path any more.** Three ways remained for a faulty `?filter=` to compile into something other than a `400`, each closed with the sentence the refusal already speaks.

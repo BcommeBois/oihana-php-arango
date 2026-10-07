@@ -9,7 +9,11 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Thirteen breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
+Nothing yet.
+
+## 1.6.0 → 1.7.0 - 2026-10-07
+
+Fourteen breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
 surfaces — and both refuse a **declaration** that could not be honoured and was being half-honoured
 in silence. The third is of another kind: no declaration is refused, but one that was already there
 starts meaning something better. The fourth refuses a **request**, and only one that 1.6.0 already
@@ -19,8 +23,10 @@ about behaviour at all — two names move to another package, and nothing they d
 refuses a call that could only ever have produced an unusable query, the ninth stops a count
 from answering on records it should never have counted, the tenth makes "at least n" mean it, the
 eleventh makes a nested `match` test what it says, the twelfth lets a nested `geo` filter at
-all, and the thirteenth makes an unfilled range mean "no constraint". Only the last changes a
-signature, and only for direct callers of the filter builders.
+all, and the thirteenth makes an unfilled range mean "no constraint". The fourteenth is the one a
+client will notice: a `?filter=` key the model does not declare is **refused** with a `400`, where it
+was dropped and the whole list came back. Two of them change a signature, and only for direct
+callers of the filter builders.
 
 ### 🚨 Breaking
 
@@ -40,7 +46,7 @@ refused one.
    `Traversal::INBOUND` / `OUTBOUND` / `ANY`. The keywords are **upper-case**: `'outbound'` is
    refused too.
 2. A declaration that says nothing, or says `null`, still means `OUTBOUND` — nothing to do.
-3. Nothing changes for a request: an unknown key coming from the URL keeps being dropped in silence.
+3. A declaration that says nothing, or says `null`, still means `OUTBOUND`. A **request** naming an unknown key is another matter since 1.7.0 — see § 14.
 
 #### 2. `Traversal::ANY` is refused on a projected relation whose two ends differ
 
@@ -434,6 +440,54 @@ returned `?string` — nothing changes.
 - **The `AND` composition is unchanged** — it was the reference the rest was aligned on.
 
 ---
+
+#### 14. A `?filter=` key the model does not declare is refused — and so is every way around it
+
+**Before.** A segment naming a key absent from `AQL::FILTERS`, at the root or at any depth of a
+dotted path, was logged as a warning and **dropped**: the query left without it and the whole
+collection came back in `200`. Inside an `and`, the unknown child vanished and loosened the group.
+The reasoning was that an unknown key "returns more results, never a wrong one" — wrong as soon as a
+`limit` truncates: asked for one document by code with `limit=1`, the surface answered the first
+document of the file, labelled as the one asked for. Three side doors did the same: a path going on
+under a scalar key (`code.id` where `code` is a string) fell on a `null`; the direct list form
+(`attachments[*].zzz`) compiled an unchecked `CURRENT.zzz == @v` and answered an empty page; and a
+`match` naming an undeclared sub-field raised a `RuntimeException` the API turned into a `500`.
+
+**Now.** Every one of these answers a `RequestValidationException` — `400` — naming the fault, and the
+same sentence at every depth:
+
+| The request says | `400` |
+|---|---|
+| a key the level does not declare | `The filter key "country" is not filterable at "address".` |
+| a segment with `val` or `op` but no `key` | `A filter segment names no key.` |
+| the `[*]` marker against the type | `The filter key "employee" is a list : write it "employee[*]".` |
+| a path going on under a scalar | `The filter key "code" is not an object : write it "code".` |
+| a sub-field a list does not declare, direct form or `match` | `The filter key "zzz" is not filterable at "attachments[*]".` |
+| a filter on a model declaring no `AQL::FILTERS` | the key named, or `No filter is accepted here : the model declares no filterable key.` |
+
+A **declared** key the library cannot compile — an entry that is neither a `FilterType` constant, a
+callable, nor an array carrying `AQL::TYPE`, or a leaf type no handler compiles — is the model's fault
+and raises a plain `ValidationException` (`500`) naming the declaration. `null` now means "no
+condition" and nothing else: an init that carries no filter, or a bound with neither `min` nor `max`.
+A list declared without sub-filters stays free, in the direct form as in the `match`.
+
+**What to do.**
+
+1. **Read every `?filter=` your clients send** against the keys each model declares. A key that was
+   silently dropped answers `400` from now on — the first request tells you, not the forty-second row.
+2. **Read every filter your own controllers inject** (`injectFilter()`, or a segment built by hand)
+   against the model it is injected into. An undeclared one used to **widen** the read in silence —
+   the scope evaporated; it now fails loud. Declare the key as a real `FilterType`, never
+   `FilterType::VIRTUAL`, which emits no predicate and would drop the scope again.
+3. **Check your declarations' shape**: every `AQL::FILTERS` entry is a `FilterType` constant, a
+   callable, or an array with `AQL::TYPE` (and `AQL::FILTERS` for its leaves). A dotted key declared
+   flat (`'alternateName.fr' => FilterType::STRING`) is never found — a dotted key is read as a path:
+   declare the root as a `Filter::DOCUMENT` with its leaves.
+4. **Direct callers of `parseFilterSegment()`**: it returns a `FilterPath` and never `null` any more;
+   it throws instead. **Direct callers of `buildCombinedInlineFilter()`**: an optional fifth argument,
+   `at`, names the list for the refusal message; nothing changes without it.
+5. Two silences remain, and are not this library's: a `?filter=` whose JSON is malformed is dropped
+   by the controller layer, and a `?sort=` on an unsortable key is ignored (see `AQL::SORT_TIEBREAK`).
 
 ## 1.5.0 → 1.6.0 - 2026-08-24
 
