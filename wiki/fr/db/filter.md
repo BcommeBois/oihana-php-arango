@@ -63,7 +63,7 @@ URL ?filter={"key":"email","val":"john"}
   → exécution
 ```
 
-Toute clé absente de `AQL::FILTERS` est **silencieusement ignorée** (sécurité — aucune injection possible sur un champ non whitelisté).
+Toute clé absente de `AQL::FILTERS` est **refusée** : `400`, `The filter key "pays" is not filterable.` — la clé n'atteint jamais l'AQL (aucune injection possible sur un champ non whitelisté), et le client l'apprend à la première requête. Elle était autrefois ignorée en silence, voir [Ce qui est refusé](#ce-qui-est-refusé-et-ce-qui-rend-null).
 
 ## Opérateurs
 
@@ -398,7 +398,7 @@ Selon qui a écrit la chaîne, ce n'est pas la même faute — et ce n'est donc 
 | Origine de la chaîne | Réponse |
 |---|---|
 | Une requête (`?filter=`, `?group=`, `?facets=`) | `400` — le client corrige son URL |
-| Une déclaration de modèle (`Field::ALTERS`, `Field::WHEN`, `Facet::ALT`) | `500` — c'est le code qui est faux, aucune URL ne le corrigera |
+| Une déclaration de modèle (`Field::ALTERS`, `Field::WHEN`, `Facet::ALT`, une entrée de `AQL::FILTERS`) | `500` — c'est le code qui est faux, aucune URL ne le corrigera |
 
 > ⚠️ **Une position échappe à la vérification.** Dans `["trim","lowr","lower"]`, le deuxième
 > élément est lu comme un **paramètre** de `trim` — exactement comme dans le `["trim","-"]`
@@ -407,8 +407,10 @@ Selon qui a écrit la chaîne, ce n'est pas la même faute — et ce n'est donc 
 > paramètre, et la fin de la chaîne est jetée. Écris la chaîne avec ses maillons imbriqués —
 > `["trim",["substring",0,3],"lower"]` — et chaque maillon redevient vérifiable.
 
-À ne pas confondre avec une **clé** inconnue, qui reste silencieusement ignorée : celle-là
-renvoie *plus* de résultats, jamais un résultat faux.
+Une **clé** inconnue suit la même règle : `400`, la clé nommée, et le chemin sous lequel elle a été
+cherchée quand elle est imbriquée. Elle était ignorée en silence, au motif qu'elle renvoyait « *plus*
+de résultats, jamais un résultat faux » — faux dès qu'un `limit` tronque : la page qui revient alors
+est la première du fichier, pas celle qu'on a demandée.
 
 #### Chaînes
 
@@ -614,7 +616,21 @@ Les groupes `{logic, conditions}` s'imbriquent récursivement :
 
 ## Déclaration côté DI (`AQL::FILTERS`)
 
-Chaque modèle `Documents` déclare les clés filtrables dans `AQL::FILTERS`. Une clé absente de cette liste est **silencieusement ignorée** côté URL — c'est la garantie qu'un client ne peut pas filtrer sur un champ que le développeur n'a pas explicitement exposé.
+Chaque modèle `Documents` déclare les clés filtrables dans `AQL::FILTERS`. Une clé absente de cette liste est **refusée** côté URL (`400`, la clé nommée) — c'est la garantie qu'un client ne peut pas filtrer sur un champ que le développeur n'a pas explicitement exposé, et qu'il le sait.
+
+### Ce qui est refusé, et ce qui rend `null`
+
+| La requête dit | Réponse |
+|---|---|
+| une clé que le niveau ne déclare pas — `{"key":"pays"}`, `{"key":"address.pays"}` | `400` — `The filter key "pays" is not filterable at "address".` |
+| un segment qui parle la grammaire sans nommer de clé — `{"val":"x"}` | `400` — `A filter segment names no key.` |
+| le marqueur `[*]` à contre-type — `employee.name` pour un `EDGES`, `company[*].name` pour un `JOIN` | `400` — `The filter key "employee" is a list : write it "employee[*]".` |
+| un filtre sur un modèle qui ne déclare aucun `AQL::FILTERS` | `400` — la clé nommée, ou `No filter is accepted here : the model declares no filterable key.` |
+| un opérateur ou une fonction `alt` inconnus | `400` — voir plus haut |
+| une borne sans `min` ni `max` | `null` — aucune contrainte exprimée, ce n'est pas une faute |
+| l'init d'une liste **sans** filtre (`limit`, `offset`…) | `null` — ce n'est pas un filtre |
+
+Une clé **déclarée** sous une forme que la bibliothèque ne sait pas compiler — ni constante `FilterType`, ni fonction, ni tableau portant `AQL::TYPE` — est la faute du **modèle**, pas du client : `ValidationException`, `500`, le message nomme la déclaration. Dans un `and` / `or`, un enfant refusé refuse tout le groupe : il ne disparaît plus en desserrant les autres.
 
 ```php
 use oihana\arango\models\enums\filters\FilterType ;
@@ -755,7 +771,7 @@ AQL::EDGES =>
 | `Filter::EDGE` | 1 lié | `manager.name` — **sans** `[*]` |
 | `Filter::EDGES` | N liés | `employee[*].name` — **avec** `[*]` |
 
-> **Règle stricte.** La présence du `[*]` doit correspondre au type pluriel (`EDGES`, `JOINS`, expansion de tableau). Un décalage — `employee.name` pour un `EDGES`, ou `company[*].name` pour un `JOIN` — fait **silencieusement ignorer** le filtre (cohérent avec le reste de l'API : aucune erreur 400).
+> **Règle stricte.** La présence du `[*]` doit correspondre au type pluriel (`EDGES`, `JOINS`, expansion de tableau). Un décalage — `employee.name` pour un `EDGES`, ou `company[*].name` pour un `JOIN` — est **refusé** en `400`, et le message donne la bonne écriture : `The filter key "employee" is a list : write it "employee[*]".` / `The filter key "company" is not a list : write it "company", without "[*]".` La clé existe, c'est l'écriture qui cloche, et le refus le dit.
 
 ### Nommer un objet en dernier : tester sa présence
 
@@ -1110,7 +1126,7 @@ Un `match` sur un tableau d'objets s'écrit de **deux façons**. La forme choisi
 // → CURRENT.price > 0
 ```
 
-> **Pourquoi c'est important.** Trois écritures malformées produisaient autrefois une AQL **valide mais toujours fausse** → `total: 0` **en silence**. « 0 » ressemble à une vraie réponse métier : impossible de distinguer « il n'y a rien » de « j'ai mal écrit le filtre ». Ces trois formes **lèvent désormais une `ValidationException`** (cohérent avec le virage *fail-closed* de `sort` / `group` / facettes). À ne pas confondre avec une **clé inconnue**, qui reste **silencieusement ignorée** (le filtre ne s'applique pas → renvoie *plus* de résultats, comportement voulu et sûr).
+> **Pourquoi c'est important.** Trois écritures malformées produisaient autrefois une AQL **valide mais toujours fausse** → `total: 0` **en silence**. « 0 » ressemble à une vraie réponse métier : impossible de distinguer « il n'y a rien » de « j'ai mal écrit le filtre ». Ces trois formes **lèvent désormais une `ValidationException`** (cohérent avec le virage *fail-closed* de `sort` / `group` / facettes). Une **clé inconnue** est refusée de même, en `400` — voir [Ce qui est refusé](#ce-qui-est-refusé-et-ce-qui-rend-null).
 
 **Piège 1 — sous-champ d'objet imbriqué après `[*]`** *(désormais corrigé automatiquement)*
 
@@ -1235,7 +1251,7 @@ Le framework valide :
 - que l'opérateur `op` est connu ;
 - que la fonction `alt` (et ses paramètres) sont valides.
 
-Les conditions invalides sont **silencieusement ignorées** plutôt que rejetées avec 400. Ce choix protège le service contre des erreurs de client peu graves, mais demande de l'attention côté observabilité : un filtre qui « ne fait rien » mérite une vérification.
+Une condition invalide est **refusée** en `400`, la faute nommée : clé inconnue, segment sans clé, marqueur `[*]` à contre-type, opérateur ou fonction inconnus. Un filtre qui « ne fait rien » n'existe plus que pour une borne vide, ou pour une init de liste qui ne porte aucun filtre.
 
 ### Ordre des fonctions dans `alt`
 

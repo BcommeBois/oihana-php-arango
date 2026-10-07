@@ -44,7 +44,9 @@ use function oihana\arango\db\helpers\buildBetweenClauses;
 use function oihana\arango\db\helpers\resolveAltSides;
 use function oihana\arango\models\helpers\isAttributeAuthorized;
 use function oihana\arango\models\helpers\isAuthorized;
+use function oihana\arango\models\helpers\isFilterSegment;
 use function oihana\arango\models\helpers\isPathAuthorized;
+use function oihana\arango\models\helpers\unknownFilterKey;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\key;
@@ -429,12 +431,31 @@ trait FilterTrait
     /**
      * Prepare the AQL query filtering with specific definitions.
      *
-     * @param array|null $init
-     * @param ?array $binds
-     * @param string $docRef
-     * @param array $auth
-     * @return ?string
+     * Takes either a whole model init — where `Arango::FILTER` carries the filter, or
+     * is absent for an unfiltered list — or the filter payload itself : a segment
+     * (`{ key , op , val , … }`) or a logical group (`[ 'and' , … ]`), at the root or
+     * as a child of a group.
      *
+     * What the request gets wrong is REFUSED, never dropped : a key the model does not
+     * declare at that level, a segment that speaks the grammar but names no key, the
+     * `[*]` marker spelled against its type, an unknown operator or `alt` function —
+     * all answer a {@see RequestValidationException} (`400`) naming the fault. Dropped,
+     * such a segment used to leave the query without it, and the whole collection came
+     * back in `200`. What the MODEL gets wrong — a declared key under a form nothing
+     * here compiles — answers a plain {@see ValidationException} instead, so the two
+     * families of fault are told apart by their exception.
+     *
+     * `null` means « no condition » and nothing else : an init that carries no filter,
+     * or a bound that expresses neither `min` nor `max`.
+     *
+     * @param array|null $init   The model init, or the filter payload.
+     * @param ?array     $binds  The bind variables, populated by reference.
+     * @param string     $docRef The document reference the conditions are written against.
+     * @param array      $auth   The request-level authorizer, captured at the root and passed down.
+     *
+     * @return ?string The AQL condition, or `null` when nothing constrains the query.
+     *
+     * @throws RequestValidationException When the request names an unknown key, no key, a mis-spelled `[*]` marker, or an operator / function the filter cannot honour.
      * @throws BindException
      * @throws ConstantException
      * @throws ContainerExceptionInterface
@@ -464,9 +485,26 @@ trait FilterTrait
 
         $init = $init[ Arango::FILTER ] ?? $init ?? null ;
 
-        if ( !is_array( $this->filters ) || empty( $this->filters ) || !is_array( $init ) || empty( $init ) )
+        if ( !is_array( $init ) || empty( $init ) )
         {
             return null;
+        }
+
+        // A model that declares no filterable key cannot honour any filter : one that
+        // reaches it is refused like any unknown key, not silenced. An init that merely
+        // carries no filter — the ordinary unfiltered list — is not a filter at all.
+        if ( !is_array( $this->filters ) || empty( $this->filters ) )
+        {
+            if ( isFilterSegment( $init ) )
+            {
+                $key = $init[ FilterParam::KEY ] ?? null ;
+
+                throw is_string( $key )
+                    ? unknownFilterKey( $key )
+                    : new RequestValidationException( 'No filter is accepted here : the model declares no filterable key.' ) ;
+            }
+
+            return null ;
         }
 
         if( isAssociative( $init ) )
@@ -475,6 +513,15 @@ trait FilterTrait
 
             if ( !isset( $key ) )
             {
+                // `{"val":"x"}` speaks the filter grammar but says nothing about what it
+                // filters : refused. Inside an `and`, such a segment used to vanish and
+                // loosen the group. The init of an unfiltered list lands here too, and
+                // that one is no fault — it is told apart by isFilterSegment().
+                if ( isFilterSegment( $init ) )
+                {
+                    throw new RequestValidationException( 'A filter segment names no key.' ) ;
+                }
+
                 return null ;
             }
 
@@ -586,9 +633,20 @@ trait FilterTrait
             {
                 return $customFilter( $init , $binds , $docRef ) ;
             }
+            else if ( $definition === null )
+            {
+                throw unknownFilterKey( $key ) ;
+            }
             else
             {
-                $this->logger->warning( __METHOD__ . ' failed , the key: "' . $key . '" is not a valid filterable attribute' ) ;
+                // Declared, but under something that is neither a FilterType constant,
+                // a callable, nor a relation : the model's fault, not the caller's.
+                throw new ValidationException( sprintf
+                (
+                    'The filter "%s" is misdeclared : expected a FilterType constant, a callable, or an array carrying AQL::TYPE, got %s.' ,
+                    $key ,
+                    is_string( $definition ) ? sprintf( '"%s"' , $definition ) : get_debug_type( $definition )
+                )) ;
             }
         }
         else

@@ -7,7 +7,10 @@ use RuntimeException;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Operator;
 use oihana\arango\enums\Filter;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\utils\FilterPath;
+use oihana\enums\Char;
+use oihana\exceptions\ValidationException;
 
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
@@ -44,8 +47,10 @@ use Psr\Container\NotFoundExceptionInterface;
  * @param array                   $parentPath Accumulated path from parent segments for error reporting
  * @param ContainerInterface|null $container  DI container for resolving target models and their relations
  *
- * @return FilterPath|null Parsed segment information with nested relations, or null if segment is not allowed
+ * @return FilterPath Parsed segment information with nested relations.
  *
+ * @throws RequestValidationException   When the segment names a key the level does not declare, or spells the `[*]` marker against its type — the caller's fault, `400`.
+ * @throws ValidationException          When the key is declared under something that is neither a FilterType constant, a callable, nor an array carrying `AQL::TYPE` — the model's fault.
  * @throws RuntimeException             If relation reference is not found in edges/joins configuration
  * @throws ContainerExceptionInterface  If container encounters an error resolving models
  * @throws NotFoundExceptionInterface   If target model is not found in container
@@ -82,7 +87,7 @@ function parseFilterSegment
     array               $parentPath = []   ,
     ?ContainerInterface $container  = null ,
 )
-:?FilterPath
+:FilterPath
 {
     // Check for array notation
     $hasArrayNotation = str_contains( $segment , Operator::ARRAY_EXPANSION ) ;
@@ -90,13 +95,16 @@ function parseFilterSegment
 
     $fullPath = [ ...$parentPath , $segment ] ;
 
-    // Check if segment exists in configuration
+    // A key the model does not declare at this level is the caller's fault, and it
+    // is refused — not dropped. Dropped, the predicate vanished and the whole
+    // collection came back in `200`, a page that looked like an answer.
     if ( !isset( $filters[ $cleanSegment ] ) )
     {
-        return null ; // Not allowed
+        throw unknownFilterKey( $cleanSegment , $parentPath ) ;
     }
 
     $config = $filters[ $cleanSegment ] ;
+    $where  = $parentPath === [] ? Char::EMPTY : sprintf( ' at "%s"' , implode( Char::DOT , $parentPath ) ) ;
 
     // Simple type (leaf):
     // - String FilterType constant (e.g., FilterType::STRING)
@@ -111,10 +119,19 @@ function parseFilterSegment
         );
     }
 
-    // Complex configuration
+    // From here on, the key IS declared : whatever is wrong is wrong in the model,
+    // and no URL will ever correct it. That is the other family of fault — the
+    // declaration's — and it is told apart from the caller's by its exception, as
+    // the wiki's table says : the request answers `400`, the model `500`.
     if ( !is_array( $config ) )
     {
-        return null ;
+        throw new ValidationException( sprintf
+        (
+            'The filter "%s" is misdeclared%s : expected a FilterType constant, a callable, or an array carrying AQL::TYPE, got %s.' ,
+            $cleanSegment ,
+            $where ,
+            get_debug_type( $config )
+        )) ;
     }
 
     $type          = $config[ AQL::TYPE    ] ?? null ;
@@ -122,15 +139,29 @@ function parseFilterSegment
 
     if ( !$type )
     {
-        return null ;
+        throw new ValidationException( sprintf
+        (
+            'The filter "%s" is misdeclared%s : its array definition carries no AQL::TYPE.' ,
+            $cleanSegment ,
+            $where
+        )) ;
     }
 
-    // Validate array notation consistency
+    // The `[*]` marker must match the plural types (`EDGES`, `JOINS`, an array
+    // expansion). A mismatch is the caller's spelling, and the refusal says the
+    // right one : the key exists, which a bare « not filterable » would hide.
     $needsArray = in_array( $type , [ Filter::ARRAY_EXPANSION , Filter::EDGES , Filter::JOINS ] ) ;
 
     if ( $hasArrayNotation !== $needsArray )
     {
-        return null ; // Mismatch
+        throw new RequestValidationException( sprintf
+        (
+            $needsArray
+                ? 'The filter key "%1$s"%2$s is a list : write it "%1$s[*]".'
+                : 'The filter key "%1$s"%2$s is not a list : write it "%1$s", without "[*]".' ,
+            $cleanSegment ,
+            $where
+        )) ;
     }
 
     // Get relation reference for edges/joins

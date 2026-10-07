@@ -63,7 +63,7 @@ URL ?filter={"key":"email","val":"john"}
   → execution
 ```
 
-Any key absent from `AQL::FILTERS` is **silently ignored** (security — no injection possible on a non-whitelisted field).
+Any key absent from `AQL::FILTERS` is **refused**: `400`, `The filter key "country" is not filterable.` — the key never reaches the AQL (no injection possible on a non-whitelisted field), and the caller learns it on the first request. It used to be ignored in silence, see [What is refused](#what-is-refused-and-what-yields-null).
 
 ## Operators
 
@@ -397,7 +397,7 @@ Who wrote the chain decides which fault it is — and therefore which answer:
 | Origin of the chain | Answer |
 |---|---|
 | A request (`?filter=`, `?group=`, `?facets=`) | `400` — the caller fixes their URL |
-| A model declaration (`Field::ALTERS`, `Field::WHEN`, `Facet::ALT`) | `500` — the code is what is wrong, and no URL will fix it |
+| A model declaration (`Field::ALTERS`, `Field::WHEN`, `Facet::ALT`, an `AQL::FILTERS` entry) | `500` — the code is what is wrong, and no URL will fix it |
 
 > ⚠️ **One position escapes the check.** In `["trim","lowr","lower"]` the second element is read
 > as a **parameter** of `trim` — exactly as it is in the legitimate `["trim","-"]`, which means
@@ -406,8 +406,10 @@ Who wrote the chain decides which fault it is — and therefore which answer:
 > with its links nested — `["trim",["substring",0,3],"lower"]` — and every link becomes
 > checkable again.
 
-Not to be confused with an unknown **key**, which stays silently ignored: that one returns *more*
-results, never a wrong one.
+An unknown **key** follows the same rule: `400`, the key named, and the path it was looked up
+under when nested. It used to be ignored in silence, on the grounds that it returned "*more*
+results, never a wrong one" — wrong as soon as a `limit` truncates: the page that comes back is
+then the first of the file, not the one asked for.
 
 #### Strings
 
@@ -614,7 +616,21 @@ The `{logic, conditions}` groups nest recursively:
 
 ## DI declaration (`AQL::FILTERS`)
 
-Each `Documents` model declares the filterable keys in `AQL::FILTERS`. A key absent from this list is **silently ignored** URL-side — this guarantees a client cannot filter on a field the developer hasn't explicitly exposed.
+Each `Documents` model declares the filterable keys in `AQL::FILTERS`. A key absent from this list is **refused** URL-side (`400`, the key named) — this guarantees a client cannot filter on a field the developer hasn't explicitly exposed, and that it knows.
+
+### What is refused, and what yields `null`
+
+| The request says | Answer |
+|---|---|
+| a key the level does not declare — `{"key":"country"}`, `{"key":"address.country"}` | `400` — `The filter key "country" is not filterable at "address".` |
+| a segment speaking the grammar without naming a key — `{"val":"x"}` | `400` — `A filter segment names no key.` |
+| the `[*]` marker against the type — `employee.name` for an `EDGES`, `company[*].name` for a `JOIN` | `400` — `The filter key "employee" is a list : write it "employee[*]".` |
+| a filter on a model declaring no `AQL::FILTERS` | `400` — the key named, or `No filter is accepted here : the model declares no filterable key.` |
+| an unknown operator or `alt` function | `400` — see above |
+| a bound with neither `min` nor `max` | `null` — no constraint expressed, not a fault |
+| the init of a list **without** a filter (`limit`, `offset`…) | `null` — it is not a filter |
+
+A **declared** key under a form the library cannot compile — neither a `FilterType` constant, nor a callable, nor an array carrying `AQL::TYPE` — is the **model's** fault, not the caller's: `ValidationException`, `500`, the message names the declaration. Inside an `and` / `or`, a refused child refuses the whole group: it no longer vanishes and loosens the others.
 
 ```php
 use oihana\arango\models\enums\filters\FilterType ;
@@ -755,7 +771,7 @@ AQL::EDGES =>
 | `Filter::EDGE` | 1 linked | `manager.name` — **without** `[*]` |
 | `Filter::EDGES` | N linked | `employee[*].name` — **with** `[*]` |
 
-> **Strict rule.** The presence of `[*]` must match the plural type (`EDGES`, `JOINS`, array expansion). A mismatch — `employee.name` for an `EDGES`, or `company[*].name` for a `JOIN` — causes the filter to be **silently ignored** (consistent with the rest of the API: no 400 error).
+> **Strict rule.** The presence of `[*]` must match the plural type (`EDGES`, `JOINS`, array expansion). A mismatch — `employee.name` for an `EDGES`, or `company[*].name` for a `JOIN` — is **refused** with a `400`, and the message gives the right spelling: `The filter key "employee" is a list : write it "employee[*]".` / `The filter key "company" is not a list : write it "company", without "[*]".` The key exists, the spelling is what is off, and the refusal says so.
 
 ### Naming an object last: testing whether it is there
 
@@ -1111,7 +1127,7 @@ A `match` on an object array is written in **two ways**. The form you pick chang
 // → CURRENT.price > 0
 ```
 
-> **Why this matters.** Three malformed spellings used to produce a **valid but always-false** AQL → `total: 0` **silently**. A `0` looks like a genuine business answer: you cannot tell "nothing matches" from "I mistyped the filter". These three forms now **throw a `ValidationException`** (consistent with the *fail-closed* turn of `sort` / `group` / facets). Not to be confused with an **unknown key**, which stays **silently ignored** (the filter does not apply → returns *more* results, the intended, safe behaviour).
+> **Why this matters.** Three malformed spellings used to produce a **valid but always-false** AQL → `total: 0` **silently**. A `0` looks like a genuine business answer: you cannot tell "nothing matches" from "I mistyped the filter". These three forms now **throw a `ValidationException`** (consistent with the *fail-closed* turn of `sort` / `group` / facets). An **unknown key** is refused likewise, with a `400` — see [What is refused](#what-is-refused-and-what-yields-null).
 
 **Trap 1 — nested object sub-field after `[*]`** *(now auto-corrected)*
 
@@ -1236,7 +1252,7 @@ The framework validates:
 - that the `op` operator is known;
 - that the `alt` function (and its parameters) are valid.
 
-Invalid conditions are **silently ignored** rather than rejected with 400. This choice protects the service from minor client errors but requires observability attention: a filter that "does nothing" deserves a check.
+An invalid condition is **refused** with a `400`, the fault named: unknown key, segment without a key, `[*]` marker against the type, unknown operator or function. A filter that "does nothing" only remains for an empty bound, or for a list init that carries no filter.
 
 ### Order of functions in `alt`
 

@@ -204,13 +204,6 @@ trait HasHierarchicalFilter
             container  : $this->container ,
         );
 
-        if ( !$segmentInfo )
-        {
-            $attemptedPath = implode('.' , [ ...$parentPath , $currentSegment ] ) ;
-            $this->logger->warning( sprintf( 'Filter segment not allowed: %s' ,  $attemptedPath ) );
-            return null;
-        }
-
         // If it's the last segment, delegate to the leaf logic — unless the
         // segment is itself a relation (edge/join), in which case there is no
         // leaf field: it is a pure existence/absence check on the relation
@@ -984,16 +977,14 @@ trait HasHierarchicalFilter
                 return $customFilter( $fieldInit , $binds , $docRef ) ;
             }
 
-            // No handler found
-            $pathStr = implode('.' , $segmentInfo->path ) ;
-            $this->logger->warning( sprintf
+            // Declared, but under a type nothing here can compile : the model's fault,
+            // told apart from the caller's by its exception — `500`, never `400`.
+            throw new ValidationException( sprintf
             (
-                "No handler found for filter at path: %s (type: %s)" ,
-                $pathStr ,
-                is_string($segmentInfo->type) ? $segmentInfo->type : gettype($segmentInfo->type)
-            ));
-
-            return null ;
+                'The filter "%s" is misdeclared : no handler compiles the type %s.' ,
+                implode( Char::DOT , $segmentInfo->path ) ,
+                is_string( $segmentInfo->type ) ? sprintf( '"%s"' , $segmentInfo->type ) : get_debug_type( $segmentInfo->type )
+            )) ;
         }
         catch ( RequestValidationException $e )
         {
@@ -1011,6 +1002,13 @@ trait HasHierarchicalFilter
             //
             // Same mistake, opposite answers, told apart by nothing but a dot. The
             // refusal is relayed so both depths answer alike.
+            throw $e ;
+        }
+        catch ( ValidationException $e )
+        {
+            // The declaration's fault, raised just above or by a nested segment : it
+            // is relayed for the same reason, so that a misdeclared leaf answers the
+            // same at the root and in depth, and never a page.
             throw $e ;
         }
         catch ( Exception $e )

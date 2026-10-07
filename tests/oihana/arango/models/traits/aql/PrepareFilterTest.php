@@ -13,6 +13,8 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\enums\filters\FilterType;
+use oihana\arango\exceptions\RequestValidationException;
+use oihana\exceptions\ValidationException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use Psr\Log\LoggerInterface;
@@ -588,14 +590,96 @@ class PrepareFilterTest extends TestCase
      * @throws ReflectionException
      * @throws BindException
      */
-    public function testInvalidKey(): void
+    public function testAnUnknownKeyIsRefusedNamingIt(): void
     {
-        $init = ['key' => 'nonexistent', 'val' => 'value'];
+        // It used to be dropped : the query left without it and the whole collection came back.
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "nonexistent" is not filterable.' ) ;
 
-        $result = $this->model->prepareFilter($init, $this->binds);
+        $this->model->prepareFilter( [ 'key' => 'nonexistent' , 'val' => 'value' ] , $this->binds ) ;
+    }
 
-        // ✅ Le logger warning est appelé mais ne bloque pas
-        $this->assertNull($result);
+    /**
+     * Inside a logical group, the refusal is the same : the unknown child used to
+     * vanish and loosen the `and` around it.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ConstantException
+     * @throws NotFoundExceptionInterface
+     * @throws ContainerExceptionInterface
+     * @throws ReflectionException
+     * @throws BindException
+     */
+    public function testAnUnknownKeyInsideAGroupIsRefusedToo(): void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "ghost" is not filterable.' ) ;
+
+        $this->model->prepareFilter( [ 'and' , [ 'key' => 'name' , 'val' => 'x' ] , [ 'key' => 'ghost' , 'val' => 1 ] ] , $this->binds ) ;
+    }
+
+    /**
+     * A key declared under something that is not a FilterType is the MODEL's fault :
+     * a plain ValidationException, never the `400` kind, and never a page.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ConstantException
+     * @throws NotFoundExceptionInterface
+     * @throws ContainerExceptionInterface
+     * @throws ReflectionException
+     * @throws BindException
+     */
+    public function testAKeyDeclaredUnderAnUnknownTypeIsTheModelsFault(): void
+    {
+        $model = new Documents( $this->model->container , [ AQL::COLLECTION => 'c' , AQL::LAZY => false , AQL::FILTERS => [ 'weird' => 'totallyUnknownType' ] ] ) ;
+
+        try
+        {
+            $model->prepareFilter( [ 'key' => 'weird' , 'val' => 'x' ] , $this->binds ) ;
+            $this->fail( 'A misdeclared filter must not compile.' ) ;
+        }
+        catch ( ValidationException $exception )
+        {
+            $this->assertNotInstanceOf( RequestValidationException::class , $exception ) ;
+            $this->assertSame( 'The filter "weird" is misdeclared : expected a FilterType constant, a callable, or an array carrying AQL::TYPE, got "totallyUnknownType".' , $exception->getMessage() ) ;
+        }
+    }
+
+    /**
+     * A model that declares no filterable key refuses any filter that reaches it —
+     * and still serves the ordinary unfiltered list, whose init carries no filter.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ConstantException
+     * @throws NotFoundExceptionInterface
+     * @throws ContainerExceptionInterface
+     * @throws ReflectionException
+     * @throws BindException
+     */
+    public function testAModelDeclaringNoFilterRefusesAFilterButNotAnUnfilteredInit(): void
+    {
+        $model = new Documents( $this->model->container , [ AQL::COLLECTION => 'c' , AQL::LAZY => false ] ) ;
+
+        $this->assertNull( $model->prepareFilter( [ Arango::LIMIT => 10 ] , $this->binds ) ) ;
+        $this->assertNull( $model->prepareFilter( [ Arango::FILTER => null , Arango::LIMIT => 10 ] , $this->binds ) ) ;
+
+        $byKey = null ;
+
+        try
+        {
+            $model->prepareFilter( [ Arango::FILTER => [ 'key' => 'name' , 'val' => 'x' ] ] , $this->binds ) ;
+        }
+        catch ( RequestValidationException $exception )
+        {
+            $byKey = $exception->getMessage() ;
+        }
+
+        $this->assertSame( 'The filter key "name" is not filterable.' , $byKey ) ;
+
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'No filter is accepted here : the model declares no filterable key.' ) ;
+
+        $model->prepareFilter( [ Arango::FILTER => [ 'and' , [ 'key' => 'name' , 'val' => 'x' ] ] ] , $this->binds ) ;
     }
 
     /**
@@ -606,13 +690,28 @@ class PrepareFilterTest extends TestCase
      * @throws ReflectionException
      * @throws BindException
      */
-    public function testMissingKey(): void
+    public function testASegmentNamingNoKeyIsRefused(): void
     {
-        $init = ['val' => 'value'];
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'A filter segment names no key.' ) ;
 
-        $result = $this->model->prepareFilter($init, $this->binds);
+        $this->model->prepareFilter( [ 'val' => 'value' ] , $this->binds ) ;
+    }
 
-        $this->assertNull($result);
+    /**
+     * The init of an unfiltered list is not a filter : it names no key and speaks no
+     * filter grammar, and it must keep answering « no condition », not a refusal.
+     *
+     * @throws UnsupportedOperationException
+     * @throws ConstantException
+     * @throws NotFoundExceptionInterface
+     * @throws ContainerExceptionInterface
+     * @throws ReflectionException
+     * @throws BindException
+     */
+    public function testAnInitWithoutAFilterIsNotAFilter(): void
+    {
+        $this->assertNull( $this->model->prepareFilter( [ Arango::LIMIT => 10 , Arango::OFFSET => 0 ] , $this->binds ) ) ;
     }
 
     // ========================================

@@ -503,7 +503,7 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testHierarchicalFilterWithInvalidPath(): void
+    public function testAnUnknownSegmentInAPathIsRefusedNamingThePath(): void
     {
         $model = new Documents( $this->container ,
         [
@@ -522,13 +522,11 @@ class HasHierarchicalFilterTest extends TestCase
             ]
         ]);
 
-        // Invalid path - 'country' is not defined
-        $init = [ 'key' => 'address.country' , 'val' => 'France' ] ;
+        // 'country' is not declared under 'address' : refused, and the refusal says where it looked.
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "country" is not filterable at "address".' ) ;
 
-        $result = $model->prepareFilter( $init , $this->binds ) ;
-
-        // Should return null for invalid paths
-        $this->assertNull( $result ) ;
+        $model->prepareFilter( [ 'key' => 'address.country' , 'val' => 'France' ] , $this->binds ) ;
     }
 
     /**
@@ -542,7 +540,7 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testHierarchicalFilterWithMissingKey(): void
+    public function testASegmentNamingNoKeyIsRefused(): void
     {
         $model = new Documents( $this->container ,
         [
@@ -561,12 +559,11 @@ class HasHierarchicalFilterTest extends TestCase
             ]
         ]);
 
-        // Missing key
-        $init = [ 'val' => 'Paris' ] ;
+        // A segment that speaks the grammar (`val`) but names no key : refused, not silenced.
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'A filter segment names no key.' ) ;
 
-        $result = $model->prepareFilter( $init , $this->binds ) ;
-
-        $this->assertNull( $result ) ;
+        $model->prepareFilter( [ 'val' => 'Paris' ] , $this->binds ) ;
     }
 
     // ========================================
@@ -902,8 +899,8 @@ class HasHierarchicalFilterTest extends TestCase
 
     /**
      * A nested leaf whose configured type is neither a known FilterType nor a
-     * resolvable callable produces no handler: a warning is logged and the
-     * filter resolves to null.
+     * resolvable callable is the MODEL's fault, not the caller's : it is raised as a
+     * plain ValidationException — never the `400` kind — and never answers a page.
      *
      * @throws BindException
      * @throws ConstantException
@@ -915,7 +912,7 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testNestedUnknownLeafTypeReturnsNull(): void
+    public function testAMisdeclaredNestedLeafTypeIsTheModelsFault(): void
     {
         $model = new Documents( $this->container ,
         [
@@ -934,9 +931,16 @@ class HasHierarchicalFilterTest extends TestCase
             ]
         ]);
 
-        $init = [ 'key' => 'address.weird' , 'val' => 'x' ] ;
-
-        $this->assertNull( $model->prepareFilter( $init , $this->binds ) ) ;
+        try
+        {
+            $model->prepareFilter( [ 'key' => 'address.weird' , 'val' => 'x' ] , $this->binds ) ;
+            $this->fail( 'A misdeclared leaf type must not compile.' ) ;
+        }
+        catch ( ValidationException $exception )
+        {
+            $this->assertNotInstanceOf( RequestValidationException::class , $exception ) ;
+            $this->assertSame( 'The filter "address.weird" is misdeclared : no handler compiles the type "totallyUnknownType".' , $exception->getMessage() ) ;
+        }
     }
 
     // ========================================
@@ -1439,12 +1443,13 @@ class HasHierarchicalFilterTest extends TestCase
 
     /**
      * ⚠ The strict notation rule is deliberately left standing: a list named WITHOUT
-     * its `[*]` keeps being dropped.
+     * its `[*]` is refused — and the refusal says the spelling, since the key exists.
      *
      * It is what catches the caller who means `attachments[*]` and forgets the marker.
      * Giving that spelling a meaning of its own would turn a caught typo into a
-     * plausible page answering another question — the failure mode this whole batch
-     * exists to close.
+     * plausible page answering another question ; dropping it, as it used to be, gave
+     * the whole collection instead — the two failure modes this whole batch exists to
+     * close.
      *
      * @throws BindException
      * @throws ConstantException
@@ -1456,9 +1461,55 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testAListNamedWithoutItsMarkerIsStillDropped(): void
+    public function testAListNamedWithoutItsMarkerIsRefusedWithItsSpelling(): void
     {
-        $this->assertNull( $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments' ] , $this->binds ) ) ;
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "attachments" is a list : write it "attachments[*]".' ) ;
+
+        $this->ticketsWithLists()->prepareFilter( [ 'key' => 'attachments' ] , $this->binds ) ;
+    }
+
+    /**
+     * The reverse mismatch — an object named WITH the marker — is refused the same way,
+     * saying to drop it.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAnObjectNamedWithTheMarkerIsRefusedWithItsSpelling(): void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "resolution" is not a list : write it "resolution", without "[*]".' ) ;
+
+        $this->ticketsWithLists()->prepareFilter( [ 'key' => 'resolution[*].steps[*].dueAt' , 'val' => 'x' ] , $this->binds ) ;
+    }
+
+    /**
+     * In depth, the spelling refusal names the path it was looked up under.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAMismatchInDepthNamesItsPath(): void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "steps" at "resolution" is a list : write it "steps[*]".' ) ;
+
+        $this->ticketsWithLists()->prepareFilter( [ 'key' => 'resolution.steps.dueAt' , 'val' => 'x' ] , $this->binds ) ;
     }
 
     /**
@@ -1551,8 +1602,9 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * When the remaining path cannot resolve a leaf condition inside the join,
-     * the whole join traversal resolves to null.
+     * A leaf that expresses no constraint — a `between` with neither `min` nor
+     * `max` — is not a fault : it yields `null`, and so does the join around it.
+     * That is the one `null` a relation still answers.
      *
      * @throws BindException
      * @throws ConstantException
@@ -1564,7 +1616,89 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testJoinTraversalReturnsNullWhenInnerConditionUnresolved(): void
+    public function testAJoinAroundALeafExpressingNoConstraintYieldsNull(): void
+    {
+        $this->container->set( 'CompanyModel' , new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'companies' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'amount' => FilterType::NUMBER ] ,
+        ])) ;
+
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'people' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'company' =>
+                [
+                    AQL::TYPE    => Filter::JOIN ,
+                    AQL::FILTERS => [ 'amount' => FilterType::NUMBER ] ,
+                ]
+            ],
+            AQL::JOINS =>
+            [
+                'company' => [ AQL::MODEL => 'CompanyModel' , AQL::KEY => '_key' ] ,
+            ],
+        ]);
+
+        $this->assertNull( $model->prepareFilter( [ 'key' => 'company.amount' , 'op' => 'between' ] , $this->binds ) ) ;
+    }
+
+    /**
+     * The same, through an edge : no constraint expressed, no condition, no fault.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAnEdgeAroundALeafExpressingNoConstraintYieldsNull(): void
+    {
+        $this->container->set( 'EmployeeEdge' , new MockEdges( 'employee_edges' ) ) ;
+
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'companies' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'employee' =>
+                [
+                    AQL::TYPE    => Filter::EDGES ,
+                    AQL::FILTERS => [ 'amount' => FilterType::NUMBER ] ,
+                ]
+            ],
+            AQL::EDGES =>
+            [
+                'employee' => [ AQL::MODEL => 'EmployeeEdge' , AQL::DIRECTION => Traversal::OUTBOUND ] ,
+            ],
+        ]);
+
+        $this->assertNull( $model->prepareFilter( [ 'key' => 'employee[*].amount' , 'op' => 'between' ] , $this->binds ) ) ;
+    }
+
+    /**
+     * A leaf the join's nested filters do not declare is refused, naming the join
+     * it was looked up under — it used to drop the whole traversal in silence.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAnUnknownLeafInsideAJoinIsRefusedNamingThePath(): void
     {
         $company = new Documents( $this->container ,
         [
@@ -1593,9 +1727,10 @@ class HasHierarchicalFilterTest extends TestCase
         ]);
 
         // 'unknownField' is not declared in the join's nested filters
-        $result = $model->prepareFilter( [ 'key' => 'company.unknownField' , 'val' => 'x' ] , $this->binds ) ;
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "unknownField" is not filterable at "company".' ) ;
 
-        $this->assertNull( $result ) ;
+        $model->prepareFilter( [ 'key' => 'company.unknownField' , 'val' => 'x' ] , $this->binds ) ;
     }
 
     /**
@@ -1772,8 +1907,8 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * When the inner condition behind the edge cannot be resolved, the edge
-     * traversal resolves to null.
+     * A leaf the edge's nested filters do not declare is refused, naming the edge
+     * as the request spelled it — it used to drop the whole traversal in silence.
      *
      * @throws BindException
      * @throws ConstantException
@@ -1785,7 +1920,7 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testEdgeTraversalReturnsNullWhenInnerConditionUnresolved(): void
+    public function testAnUnknownLeafInsideAnEdgeIsRefusedNamingThePath(): void
     {
         $this->container->set( 'EmployeeEdge' , new MockEdges( 'employee_edges' ) ) ;
 
@@ -1808,9 +1943,10 @@ class HasHierarchicalFilterTest extends TestCase
         ]);
 
         // 'unknownField' is not declared in the edge's nested filters
-        $result = $model->prepareFilter( [ 'key' => 'employee[*].unknownField' , 'val' => 'x' ] , $this->binds ) ;
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "unknownField" is not filterable at "employee[*]".' ) ;
 
-        $this->assertNull( $result ) ;
+        $model->prepareFilter( [ 'key' => 'employee[*].unknownField' , 'val' => 'x' ] , $this->binds ) ;
     }
 
     /**
