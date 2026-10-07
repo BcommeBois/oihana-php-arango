@@ -173,7 +173,7 @@ trait HasFilterArray
                         $allowedFields = $filterConfig[ AQL::FILTERS ] ;
                     }
 
-                    return $this->buildMatchCondition( $match , $binds , $baseKey , $allowedFields , $alt , $quant ) ;
+                    return $this->buildMatchCondition( $match , $binds , $baseKey , $allowedFields , $alt , $quant , $cleanBaseKey . Operator::ARRAY_EXPANSION ) ;
                 }
             }
 
@@ -410,6 +410,7 @@ trait HasFilterArray
      * @param array|null &$binds        The bind variables, populated by reference.
      * @param string     $baseKey       The fully qualified AQL key of the array
      *                                  (`doc.attachments`, `doc.resolution.steps`).
+     * @param string     $at            The list as the request spelled it (`attachments[*]`), named by the refusal of an undeclared sub-field.
      * @param array      $allowedFields The declared sub-fields. **Empty means no
      *                                  validation**, so a caller that cannot resolve
      *                                  them must say so rather than pass `[]`.
@@ -431,11 +432,12 @@ trait HasFilterArray
         string  $baseKey       ,
         array   $allowedFields ,
         mixed   $alt           ,
-        mixed   $quant
+        mixed   $quant         ,
+        string  $at = Char::EMPTY
     )
     :string
     {
-        $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields , $alt ) ;
+        $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields , $alt , $at ) ;
 
         // `quant` present → question-mark operator (ANY/ALL/NONE/AT LEAST n).
         if ( $quant !== null )

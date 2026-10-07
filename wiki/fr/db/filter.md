@@ -331,6 +331,8 @@ Quand la **valeur est un tableau** (ex. `op:in`), la chaîne est appliquée à *
 
 ### Sur les filtres imbriqués (expansion `[*]` et `match`)
 
+> 🚨 **Un sous-champ que la liste ne déclare pas est refusé**, dans la forme directe comme dans le `match` : `400`, `The filter key "zzz" is not filterable at "attachments[*]".` La forme directe (`attachments[*].zzz`) compilait autrefois `CURRENT.zzz == @v` sans rien vérifier et répondait une page vide en `200`. **Une liste déclarée sans sous-filtres reste libre** : il n'y a rien à vérifier, dans les deux formes.
+
 `alt` s'applique aussi **à l'intérieur** des expansions de tableau. Pour une clé `champ[*].sousChamp`, il enveloppe la condition inline `CURRENT.<sousChamp>` (et sa valeur) :
 
 ```
@@ -625,6 +627,8 @@ Chaque modèle `Documents` déclare les clés filtrables dans `AQL::FILTERS`. Un
 | une clé que le niveau ne déclare pas — `{"key":"pays"}`, `{"key":"address.pays"}` | `400` — `The filter key "pays" is not filterable at "address".` |
 | un segment qui parle la grammaire sans nommer de clé — `{"val":"x"}` | `400` — `A filter segment names no key.` |
 | le marqueur `[*]` à contre-type — `employee.name` pour un `EDGES`, `company[*].name` pour un `JOIN` | `400` — `The filter key "employee" is a list : write it "employee[*]".` |
+| un chemin qui continue sous une **feuille** — `code.id` où `code` est une chaîne | `400` — `The filter key "code" is not an object : write it "code".` |
+| un sous-champ qu'une **liste** ne déclare pas — `attachments[*].zzz`, ou `zzz` dans son `match` | `400` — `The filter key "zzz" is not filterable at "attachments[*]".` (le `match` répondait `500`) |
 | un filtre sur un modèle qui ne déclare aucun `AQL::FILTERS` | `400` — la clé nommée, ou `No filter is accepted here : the model declares no filterable key.` |
 | un opérateur ou une fonction `alt` inconnus | `400` — voir plus haut |
 | une borne sans `min` ni `max` | `null` — aucune contrainte exprimée, ce n'est pas une faute |
@@ -1109,6 +1113,8 @@ Quand chaque élément est un **objet**, la condition porte sur un sous-champ (`
 - `n` est converti en **entier** (anti-injection) ; un `quant` inconnu **rejette** le filtre (`ValidationException`). Le champ reste compatible `alt`.
 
 #### Les deux formes de `match` — et les trois pièges rejetés
+
+> Un sous-champ non déclaré dans le `match` répond `400` avec la phrase de toute clé inconnue, la liste nommée — il levait une `RuntimeException` que l'API transformait en `500`.
 
 Un `match` sur un tableau d'objets s'écrit de **deux façons**. La forme choisie change ce que tu as le droit d'exprimer.
 

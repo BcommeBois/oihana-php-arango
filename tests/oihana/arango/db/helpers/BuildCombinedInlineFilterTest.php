@@ -4,6 +4,7 @@ namespace tests\oihana\arango\db\helpers;
 
 use oihana\arango\models\enums\filters\FilterMatch;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
@@ -90,12 +91,29 @@ final class BuildCombinedInlineFilterTest extends TestCase
     /**
      * @throws BindException
      */
-    public function testDisallowedFieldThrows(): void
+    public function testAnUndeclaredFieldIsRefusedNamingIt(): void
     {
         $binds = [] ;
 
-        $this->expectException( RuntimeException::class ) ;
+        // The request's fault, 400 — it used to be a RuntimeException the API turned into a 500.
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "secret" is not filterable.' ) ;
         buildCombinedInlineFilter( [ 'secret' => 'x' ] , $binds , [ 'email' => true ] ) ;
+    }
+
+    /**
+     * Given the list it was written under, the refusal names it too — the same
+     * sentence an unknown key gets anywhere else.
+     *
+     * @throws BindException
+     */
+    public function testAnUndeclaredFieldNamesTheListItWasWrittenUnder(): void
+    {
+        $binds = [] ;
+
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "secret" is not filterable at "attachments[*]".' ) ;
+        buildCombinedInlineFilter( [ 'secret' => 'x' ] , $binds , [ 'email' => true ] , null , 'attachments[*]' ) ;
     }
 
     /**
@@ -161,11 +179,12 @@ final class BuildCombinedInlineFilterTest extends TestCase
      *
      * @throws BindException
      */
-    public function testDisallowedFieldInExplicitLogicThrows(): void
+    public function testAnUndeclaredFieldInExplicitLogicIsRefused(): void
     {
         $binds = [] ;
 
-        $this->expectException( RuntimeException::class ) ;
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "secret" is not filterable.' ) ;
         buildCombinedInlineFilter
         (
             [ FilterMatch::ALL => [ [ FilterParam::KEY => 'secret' , FilterParam::VAL => 'x' ] ] ] ,

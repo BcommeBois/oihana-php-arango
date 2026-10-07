@@ -11,7 +11,7 @@ use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
-use RuntimeException;
+use function oihana\arango\models\helpers\unknownFilterKey;
 
 /**
  * Build combined inline filter conditions for array expansion.
@@ -50,12 +50,14 @@ use RuntimeException;
  * @param array|null &$binds        Bind variables array
  * @param array      $allowedFields Optional: List of allowed field names for validation
  * @param mixed      $alt           Optional `alt` transformation applied to EVERY sub-field condition (field + value).
+ * @param string $at The list as the request spelled it (`attachments[*]`), named by the refusal of an undeclared sub-field ; empty at the root of a bare call.
  *
  * @return string The combined inline filter condition
  *
  * @throws BindException If binding fails
  * @throws UnsupportedOperationException If an alt chain is invalid
  * @throws ValidationException If the simple object form is given a non-scalar value (use the explicit `all` form)
+ * @throws RequestValidationException When a sub-field the list does not declare is named — `400`, the key and the list named
  *
  * @example
  * ```php
@@ -104,6 +106,7 @@ function buildCombinedInlineFilter
     ?array &$binds ,
     array  $allowedFields = [] ,
     mixed  $alt           = null ,
+    string $at            = '' ,
 )
 : string
 {
@@ -138,11 +141,7 @@ function buildCombinedInlineFilter
         {
             if ( !empty( $allowedFields ) && !isset( $allowedFields[ $key ] ) )
             {
-                throw new RuntimeException
-                (
-                    "Field '$key' is not allowed in match filter. " .
-                    "Allowed fields: " . implode( ', ' , array_keys( $allowedFields ) )
-                ) ;
+                throw unknownFilterKey( (string) $key , $at === '' ? [] : [ $at ] ) ;
             }
 
             // Fail-loud: the simple object form compares a sub-field to a SCALAR
@@ -191,11 +190,7 @@ function buildCombinedInlineFilter
         // Validate field if allowedFields is provided
         if ( !empty( $allowedFields ) && !isset( $allowedFields[ $key ] ) )
         {
-            throw new RuntimeException
-            (
-                "Field '$key' is not allowed in match filter. " .
-                "Allowed fields: " . implode( ', ' , array_keys( $allowedFields ) )
-            ) ;
+            throw unknownFilterKey( (string) $key , $at === '' ? [] : [ $at ] ) ;
         }
 
         $parts[] = buildInlineFilterCondition
@@ -216,8 +211,8 @@ function buildCombinedInlineFilter
     // Combine with appropriate logic
     return match( $logic )
     {
-        FilterMatch::ANY   => implode( ' || ' , $parts ) ,
-        FilterMatch::NONE  => '!(' . implode( ' || ' , $parts ) . ')' ,
-        default => implode( ' && ' , $parts ) // 'all'
+        FilterMatch::ANY  => implode( ' || ' , $parts ) ,
+        FilterMatch::NONE => '!(' . implode( ' || ' , $parts ) . ')' ,
+        default           => implode( ' && ' , $parts ) // 'all'
     } ;
 }

@@ -300,7 +300,8 @@ class HasHierarchicalFilterTest extends TestCase
                     AQL::TYPE    => Filter::ARRAY_EXPANSION ,
                     AQL::FILTERS =>
                     [
-                        'seller' => FilterType::STRING ,
+                        // `seller` is an OBJECT inside each offer : the path may go on under it.
+                        'seller' => [ AQL::TYPE => Filter::DOCUMENT , AQL::FILTERS => [ 'id' => FilterType::STRING ] ] ,
                     ]
                 ]
             ]
@@ -2405,5 +2406,131 @@ class HasHierarchicalFilterTest extends TestCase
 
         $this->expectException( ValidationException::class ) ;
         $model->prepareFilter( [ 'key' => 'company' , 'quant' => 'all' ] , $this->binds ) ;
+    }
+
+    // ========================================
+    // A PATH UNDER A LEAF
+    // ========================================
+
+    /**
+     * A path that goes on under a key declared as a scalar is the request's fault, and
+     * the refusal says the spelling that would work. It used to fall on the traversal's
+     * `default => null` and drop the whole filter — the collection came back whole.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAPathUnderALeafIsRefusedWithItsSpelling(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'people' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'name' => FilterType::STRING ] ,
+        ]);
+
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "name" is not an object : write it "name".' ) ;
+
+        $model->prepareFilter( [ 'key' => 'name.first' , 'val' => 'x' ] , $this->binds ) ;
+    }
+
+    /**
+     * In depth, the refusal names the path and the spelling down to the leaf.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAPathUnderANestedLeafNamesItsPath(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'people' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'address' => [ AQL::TYPE => Filter::DOCUMENT , AQL::FILTERS => [ 'city' => FilterType::STRING ] ] ,
+            ],
+        ]);
+
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "city" at "address" is not an object : write it "address.city".' ) ;
+
+        $model->prepareFilter( [ 'key' => 'address.city.zip' , 'val' => 'x' ] , $this->binds ) ;
+    }
+
+    /**
+     * Inside a group, the refused segment refuses the whole filter : it used to vanish
+     * and loosen the `and` around it.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAPathUnderALeafInsideAGroupRefusesTheWholeFilter(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'people' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'name' => FilterType::STRING , 'age' => FilterType::NUMBER ] ,
+        ]);
+
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "name" is not an object : write it "name".' ) ;
+
+        $model->prepareFilter( [ 'and' , [ 'key' => 'age' , 'val' => 3 ] , [ 'key' => 'name.first' , 'val' => 'x' ] ] , $this->binds ) ;
+    }
+
+    /**
+     * Inside a list, the same : an element sub-field declared as a scalar does not
+     * open to a deeper path.
+     *
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAPathUnderAnArrayLeafIsRefusedWithItsSpelling(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'products' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    =>
+            [
+                'offers' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS => [ 'seller' => FilterType::STRING ] ] ,
+            ],
+        ]);
+
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter key "seller" at "offers[*]" is not an object : write it "offers[*].seller".' ) ;
+
+        $model->prepareFilter( [ 'key' => 'offers[*].seller.id' , 'val' => 'org-42' ] , $this->binds ) ;
     }
 }

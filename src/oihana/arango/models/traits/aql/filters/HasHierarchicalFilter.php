@@ -47,6 +47,7 @@ use function oihana\arango\models\helpers\edges\resolveEdgeTarget;
 use function oihana\arango\models\helpers\extractNestedRelations;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isPathAuthorized;
+use function oihana\arango\models\helpers\unknownFilterKey;
 use function oihana\arango\models\helpers\parseFilterSegment;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\betweenParentheses;
@@ -281,7 +282,18 @@ trait HasHierarchicalFilter
                 availableJoins    : $availableJoins ,
                 auth              : $auth           ,
             ),
-            default => null
+            // A path that goes on under a LEAF : the key exists, declared as a scalar,
+            // and the request treats it as an object (`assignedSeller.id` where
+            // `assignedSeller` is a code). There is nothing to traverse, and `null`
+            // here used to drop the whole filter — the collection came back whole.
+            // Refused, and the refusal says the spelling that would work.
+            default => throw new RequestValidationException( sprintf
+            (
+                'The filter key "%s"%s is not an object : write it "%s".' ,
+                $currentSegment ,
+                $parentPath === [] ? Char::EMPTY : sprintf( ' at "%s"' , implode( Char::DOT , $parentPath ) ) ,
+                implode( Char::DOT , [ ...$parentPath , $currentSegment ] )
+            ))
         };
     }
 
@@ -335,6 +347,13 @@ trait HasHierarchicalFilter
         {
             return Boolean::FALSE ;
         }
+
+        // The element sub-field is held to the declared sub-filters, as a `match` is :
+        // `inventoryLevel[*].foo` used to compile `CURRENT.foo == @v` unchecked and
+        // answer an empty page in `200` — a plausible answer to a question nobody
+        // could have asked. A list declaring no sub-filters stays free, as it is for
+        // a `match`.
+        $this->refuseUndeclaredArrayLeaf( $segmentInfo->nestedFilters ?? [] , $remainingSegments , $segmentInfo->path ) ;
 
         $nestedPath = implode(Char::DOT , $remainingSegments ) ;
         $fullPath   = $cleanKey . Operator::ARRAY_EXPANSION . Char::DOT . $nestedPath ;
@@ -392,6 +411,61 @@ trait HasHierarchicalFilter
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
+    /**
+     * Refuses an element sub-field the list does not declare, following the path when
+     * it goes on under a declared object (`offers[*].seller.id`).
+     *
+     * A list declared without sub-filters is free : nothing to check against, the
+     * same rule the `match` form applies. A path that goes on under a declared scalar
+     * is refused like any path under a leaf, with the spelling that would work.
+     *
+     * @param array<array-key,mixed> $declared The nested `AQL::FILTERS` of the list.
+     * @param array<string>          $segments The segments below the list.
+     * @param array<string>          $path     The path of the list, as the request spelled it.
+     *
+     * @return void
+     *
+     * @throws RequestValidationException When a segment is unknown, or goes on under a scalar.
+     */
+    private function refuseUndeclaredArrayLeaf( array $declared , array $segments , array $path ) : void
+    {
+        foreach ( $segments as $index => $segment )
+        {
+            if ( $declared === [] )
+            {
+                return ;
+            }
+
+            $clean = str_replace( Operator::ARRAY_EXPANSION , Char::EMPTY , $segment ) ;
+
+            if ( !array_key_exists( $clean , $declared ) )
+            {
+                throw unknownFilterKey( $clean , $path ) ;
+            }
+
+            if ( $index === count( $segments ) - 1 )
+            {
+                return ;
+            }
+
+            $definition = $declared[ $clean ] ;
+
+            if ( !is_array( $definition ) || !is_array( $definition[ AQL::FILTERS ] ?? null ) )
+            {
+                throw new RequestValidationException( sprintf
+                (
+                    'The filter key "%s" at "%s" is not an object : write it "%s".' ,
+                    $clean ,
+                    implode( Char::DOT , $path ) ,
+                    implode( Char::DOT , [ ...$path , $segment ] )
+                )) ;
+            }
+
+            $declared = $definition[ AQL::FILTERS ] ;
+            $path[]   = $segment ;
+        }
+    }
+
     private function buildDocumentTraversal
     (
         array      $remainingSegments   ,
@@ -897,6 +971,7 @@ trait HasHierarchicalFilter
                     $segmentInfo->nestedFilters ?? [] ,
                     requestAlt( $init[ FilterParam::ALT ] ?? null ) ,
                     $init[ FilterParam::QUANT ] ?? null ,
+                    implode( Char::DOT , $segmentInfo->path ) ,
                 ) ;
             }
 

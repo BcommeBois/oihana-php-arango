@@ -14,6 +14,7 @@ use ReflectionException;
 use RuntimeException;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\db\enums\Traversal;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
@@ -251,11 +252,64 @@ class FilterNestedMatchTest extends TestCase
                 $this->compile( [ 'key' => $key , 'match' => [ 'zzz' => 'x' ] ] ) ;
                 $this->fail( "an undeclared sub-field must be refused at $key" ) ;
             }
-            catch ( RuntimeException $exception )
+            catch ( RequestValidationException $exception )
             {
-                $this->assertStringContainsString( "Field 'zzz' is not allowed in match filter" , $exception->getMessage() ) ;
+                // The request's fault, 400 — it used to be a RuntimeException the API turned into a 500.
+                $this->assertSame( 'The filter key "zzz" is not filterable at "' . $key . '".' , $exception->getMessage() ) ;
             }
         }
+    }
+
+    /**
+     * The direct form (`list[*].field`) is held to the same declared sub-fields as the
+     * `match` : it used to compile `CURRENT.zzz == @v` unchecked and answer an empty
+     * page in `200`.
+     *
+     * @throws BindException
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testTheDirectFormIsHeldToTheDeclaredSubFieldsAtBothDepths(): void
+    {
+        foreach ( [ 'attachments[*]' , 'resolution.steps[*]' ] as $key )
+        {
+            try
+            {
+                $this->compile( [ 'key' => $key . '.zzz' , 'val' => 'x' ] ) ;
+                $this->fail( "an undeclared sub-field must be refused at $key" ) ;
+            }
+            catch ( RequestValidationException $exception )
+            {
+                $this->assertSame( 'The filter key "zzz" is not filterable at "' . $key . '".' , $exception->getMessage() ) ;
+            }
+        }
+
+        // The counter-proof : a declared sub-field compiles as before, at both depths.
+        $this->assertStringContainsString( 'CURRENT.label ==' , (string) $this->compile( [ 'key' => 'attachments[*].label'      , 'val' => 'x' ] ) ) ;
+        $this->assertStringContainsString( 'CURRENT.label ==' , (string) $this->compile( [ 'key' => 'resolution.steps[*].label' , 'val' => 'x' ] ) ) ;
+    }
+
+    /**
+     * A list declaring no sub-filters stays free, in the direct form as in the `match` :
+     * there is nothing to check against. The rule is unchanged, only made explicit.
+     *
+     * @throws BindException
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    public function testAListDeclaringNoSubFilterStaysFreeInBothForms(): void
+    {
+        $model = new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'tickets' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'notes' => [ AQL::TYPE => Filter::ARRAY_EXPANSION ] ] ,
+        ]);
+
+        $this->assertStringContainsString( 'CURRENT.anything ==' , (string) $this->compile( [ 'key' => 'notes[*].anything' , 'val' => 'x' ] , $model ) ) ;
+        $this->assertStringContainsString( 'CURRENT.anything ==' , (string) $this->compile( [ 'key' => 'notes[*]' , 'match' => [ 'anything' => 'x' ] ] , $model ) ) ;
     }
 
     /**

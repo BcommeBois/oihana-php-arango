@@ -330,6 +330,8 @@ When the **value is an array** (e.g. `op:in`), the chain is applied to **each el
 
 ### On nested filters (array expansion `[*]` and `match`)
 
+> 🚨 **A sub-field the list does not declare is refused**, in the direct form as in the `match`: `400`, `The filter key "zzz" is not filterable at "attachments[*]".` The direct form (`attachments[*].zzz`) used to compile `CURRENT.zzz == @v` unchecked and answer an empty page in `200`. **A list declared without sub-filters stays free**: there is nothing to check against, in either form.
+
 `alt` also applies **inside** array expansions. For a key `field[*].subField`, it wraps the inline condition `CURRENT.<subField>` (and its value):
 
 ```
@@ -625,6 +627,8 @@ Each `Documents` model declares the filterable keys in `AQL::FILTERS`. A key abs
 | a key the level does not declare — `{"key":"country"}`, `{"key":"address.country"}` | `400` — `The filter key "country" is not filterable at "address".` |
 | a segment speaking the grammar without naming a key — `{"val":"x"}` | `400` — `A filter segment names no key.` |
 | the `[*]` marker against the type — `employee.name` for an `EDGES`, `company[*].name` for a `JOIN` | `400` — `The filter key "employee" is a list : write it "employee[*]".` |
+| a path that goes on under a **leaf** — `code.id` where `code` is a string | `400` — `The filter key "code" is not an object : write it "code".` |
+| a sub-field a **list** does not declare — `attachments[*].zzz`, or `zzz` in its `match` | `400` — `The filter key "zzz" is not filterable at "attachments[*]".` (the `match` used to answer `500`) |
 | a filter on a model declaring no `AQL::FILTERS` | `400` — the key named, or `No filter is accepted here : the model declares no filterable key.` |
 | an unknown operator or `alt` function | `400` — see above |
 | a bound with neither `min` nor `max` | `null` — no constraint expressed, not a fault |
@@ -1110,6 +1114,8 @@ When each element is an **object**, the condition targets a sub-field (`reviews[
 - `n` is cast to an **integer** (injection-safe); an unknown `quant` **rejects** the filter (`ValidationException`). The field stays `alt`-aware.
 
 #### The two `match` forms — and the three rejected traps
+
+> An undeclared sub-field in a `match` answers `400` with the sentence any unknown key gets, the list named — it used to raise a `RuntimeException` the API turned into a `500`.
 
 A `match` on an object array is written in **two ways**. The form you pick changes what you are allowed to express.
 
