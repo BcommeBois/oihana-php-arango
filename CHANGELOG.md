@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-10-08
+
+### Fixed
+
+- **A list's `total` survives an `afterModelCall` that queries the model.** The full count of a paginated list belongs to the cursor of the *last* query the shared connection ran. `DocumentsControllerListTrait` read it *after* `afterModelCall()` : a hook that read a document back — to enrich every row of the page — left the count of its own `get` behind, and the list answered `"total": 0` under a page that was not empty. The count is now read right after `list()`, before the hook ; the unpaginated total (`limit = 0`) is still counted after the hook, which may remove documents from the page. No signature changes.
+  - **Docs:** `wiki/{fr,en}/controllers/README.md` — a paragraph under the lifecycle hooks : the `total` is fixed before `afterModelCall`, a hook may query the model.
+  - **Tests:** `testListWithLimitAppliesLimitAndUsesFoundRows` finally asserts the `total` it canned ; new : a hook whose `get` resets the driver count leaves the `total` whole, and a hook that drops a row from an unpaginated list still lowers it.
+
 ## [1.7.0] - 2026-10-07
 
 ### Fixed

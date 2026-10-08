@@ -121,14 +121,16 @@ trait DocumentsControllerListTrait
             else
             {
                 $documents = $this->model->list( $modelInit ) ;
+
+                // The full count belongs to the cursor of the LAST query the shared
+                // connection ran: it is read here, before the hook, so a hook that
+                // queries the model cannot overwrite it. The unpaginated total stays
+                // after the hook, which may still remove documents from the page.
+                $foundRows = $limit > 0 && $isDocuments ? $this->model->foundRows() : null ;
+
                 $this->afterModelCall( $request , $modelInit , $documents ) ;
 
-                $total = count( $documents ) ;
-
-                if( $limit > 0 && $isDocuments )
-                {
-                    $total = $this->model->foundRows() ;
-                }
+                $total = $foundRows ?? count( $documents ) ;
             }
 
             $options = [ Output::TOTAL => $total ] ;

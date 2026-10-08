@@ -241,6 +241,14 @@ audit trail, a cache) reads the flag.
 - **`delete` covers its probe.** The existence probe of a deletion runs under the deletion's own
   `$init`, so the two cannot disagree on the scope the hook poses.
 
+#### A list's `total` is fixed before `afterModelCall`
+
+On a paginated list, the *full count* belongs to the cursor of the **last** query the shared
+connection ran. The controller reads it **right after** `list()`, before invoking
+`afterModelCall`: a hook may therefore query the model — read a document back, enrich every row —
+without overwriting the `total` of the answer. Without a `limit`, the `total` is the number of
+documents **after** the hook: a hook that removes rows from the page still lowers it.
+
 #### The other controllers
 
 | Controller | What is announced |

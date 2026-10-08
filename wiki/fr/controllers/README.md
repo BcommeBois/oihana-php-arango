@@ -241,6 +241,14 @@ sans périmètre. Marquée, l'oubli tombe du bon côté — et le crochet qui a 
 - **`delete` couvre sa sonde.** La sonde d'existence d'une suppression tourne sous l'`$init` de la
   suppression, pour que les deux ne puissent pas diverger sur le périmètre posé par le crochet.
 
+#### Le `total` d'une liste est figé avant `afterModelCall`
+
+Sur une liste paginée, le *full count* appartient au curseur de la **dernière** requête passée par
+la connexion partagée. Le contrôleur le lit **juste après** `list()`, avant d'invoquer
+`afterModelCall` : un crochet peut donc interroger le modèle — relire un document, enrichir chaque
+ligne — sans écraser le `total` de la réponse. Sans `limit`, le `total` est le nombre de documents
+**après** le crochet : un crochet qui retire des lignes de la page le fait encore baisser.
+
 #### Les autres contrôleurs
 
 | Contrôleur | Ce qui est annoncé |

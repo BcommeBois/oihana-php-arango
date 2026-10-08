@@ -2,12 +2,18 @@
 
 namespace tests\oihana\arango\controllers;
 
+use Closure;
+
 use oihana\arango\controllers\DocumentsController;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\enums\Facet;
 use oihana\enums\Output;
 
+use org\schema\helpers\SchemaResolver;
+
 use PHPUnit\Framework\Attributes\CoversClass;
+
+use Psr\Http\Message\ServerRequestInterface as Request;
 
 use tests\oihana\arango\controllers\mocks\ThrowingDocuments;
 use tests\oihana\arango\models\traits\documents\mocks\MockDocuments;
@@ -110,10 +116,79 @@ class DocumentsControllerReadTest extends ControllerTestCase
         // ?limit=10 → the query carries LIMIT and the limit>0 branch calls foundRows()
         $request = $this->makeRequest( [ 'limit' => '10' ] ) ;
 
-        $result = $controller->list( $request , null , [] ) ;
+        $result  = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload = json_decode( (string) $result->getBody() , true ) ;
 
-        $this->assertSame( $model->documentsResult , $result ) ;
+        $this->assertCount( 1 , $payload[ Output::RESULT ] ) ;
+        $this->assertSame( 99 , $payload[ Output::TOTAL ] ) ; // the full count, not the page size
         $this->assertStringContainsString( 'LIMIT 10' , $model->lastQuery ) ;
+    }
+
+    public function testListTotalSurvivesAHookThatQueriesTheModel() :void
+    {
+        // The full count belongs to the cursor of the LAST query the connection ran:
+        // this double forgets it as soon as another fetch seam runs, like the driver does.
+        $model = new class( 'users' ) extends MockDocuments
+        {
+            public function getObject( string $query , array $bindVars = [] , array $options = [] , bool $raw = false , null|SchemaResolver|Closure|string $schema = null , array $context = [] ) :?object
+            {
+                $this->foundRowsResult = 0 ;
+                return parent::getObject( $query , $bindVars , $options , $raw , $schema , $context ) ;
+            }
+        } ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] , (object) [ '_key' => '2' ] ] ;
+        $model->objectResult    = (object) [ '_key' => 'ref' ] ;
+        $model->foundRowsResult = 99 ;
+
+        // A consumer whose after hook reads a document back for every listed row.
+        $controller = new class( ...$this->controllerArgsOf( $model ) ) extends DocumentsController
+        {
+            protected function afterModelCall( ?Request $request , array &$init , mixed &$result ) :void
+            {
+                parent::afterModelCall( $request , $init , $result ) ;
+
+                if ( is_array( $result ) )
+                {
+                    $this->model->get( [ Arango::VALUE => 'ref' ] ) ;
+                }
+            }
+        } ;
+
+        $request = $this->makeRequest( [ 'limit' => '10' ] ) ;
+
+        $result  = $controller->list( $request , $this->makeResponse() , [] ) ;
+        $payload = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertCount( 2 , $payload[ Output::RESULT ] ) ;
+        $this->assertSame( 99 , $payload[ Output::TOTAL ] ) ; // read before the hook, not after its `get`
+        $this->assertSame( 0 , $model->foundRowsResult ) ;    // the hook did run its query
+    }
+
+    public function testListWithoutLimitCountsTheDocumentsTheHookLeaves() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->documentsResult = [ (object) [ '_key' => '1' ] , (object) [ '_key' => '2' ] , (object) [ '_key' => '3' ] ] ;
+        $model->foundRowsResult = 99 ; // must stay unread without a limit
+
+        // A consumer whose after hook drops the last listed row.
+        $controller = new class( ...$this->controllerArgsOf( $model ) ) extends DocumentsController
+        {
+            protected function afterModelCall( ?Request $request , array &$init , mixed &$result ) :void
+            {
+                parent::afterModelCall( $request , $init , $result ) ;
+
+                if ( is_array( $result ) )
+                {
+                    array_pop( $result ) ;
+                }
+            }
+        } ;
+
+        $result  = $controller->list( $this->makeRequest() , $this->makeResponse() , [] ) ;
+        $payload = json_decode( (string) $result->getBody() , true ) ;
+
+        $this->assertCount( 2 , $payload[ Output::RESULT ] ) ;
+        $this->assertSame( 2 , $payload[ Output::TOTAL ] ) ; // counted after the hook
     }
 
     public function testListComputesFacetCountsWhenRequested() :void
