@@ -12,6 +12,7 @@ use ReflectionException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
+use oihana\core\options\CompressOption;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\results\ExplainResult;
@@ -21,6 +22,8 @@ use oihana\arango\models\traits\queries\ListQueryTrait;
 use oihana\exceptions\BindException;
 
 use function oihana\arango\models\helpers\shedAggregateNoise;
+use function oihana\core\arrays\compress as compressArray;
+use function oihana\core\objects\compress;
 
 /**
  * Provides list retrieval capabilities for ArangoDB document collections.
@@ -318,7 +321,21 @@ trait DocumentsListTrait
         // aggregates alone — a grouped row's, never a raw skin's.
         $summed = $this->isGroupedQuery( $init ) ? $this->summedAggregates( $init ) : [] ;
 
-        return $summed === [] ? $rows : array_map( fn( mixed $row ) :mixed => is_object( $row ) || is_array( $row ) ? shedAggregateNoise( $row , $summed ) : $row , $rows ) ;
+        if ( $summed !== [] )
+        {
+            return array_map( fn( mixed $row ) :mixed => is_object( $row ) || is_array( $row ) ? shedAggregateNoise( $row , $summed ) : $row , $rows ) ;
+        }
+
+        // A raw skin keeps the shape a hydrated row would have : a key the document
+        // does not hold is absent, where the projection answered null. First level
+        // only — a nested value is the store's own, a series keeps its empty months.
+        if ( $raw && $this->isRawSkin( $init ) )
+        {
+            $options = [ CompressOption::RECURSIVE => false ] ;
+            return array_map( fn( mixed $row ) :mixed => is_object( $row ) ? compress( $row , $options ) : ( is_array( $row ) ? compressArray( $row , $options ) : $row ) , $rows ) ;
+        }
+
+        return $rows ;
     }
 
 }

@@ -13,6 +13,7 @@ use ReflectionException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
+use oihana\core\options\CompressOption;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\enums\Arango;
@@ -20,6 +21,8 @@ use oihana\exceptions\BindException;
 use oihana\arango\models\traits\queries\ListQueryTrait;
 
 use function oihana\arango\models\helpers\shedAggregateNoise;
+use function oihana\core\arrays\compress as compressArray;
+use function oihana\core\objects\compress;
 
 /**
  * Provides streaming capabilities for document retrieval from ArangoDB collections.
@@ -212,15 +215,27 @@ trait DocumentsStreamTrait
             context: $init
         ) ;
 
-        if ( $summed === [] )
+        if ( $summed !== [] )
         {
-            yield from $rows ;
+            foreach ( $rows as $key => $row )
+            {
+                yield $key => is_object( $row ) || is_array( $row ) ? shedAggregateNoise( $row , $summed ) : $row ;
+            }
             return ;
         }
 
-        foreach ( $rows as $key => $row )
+        // Same rule as list() : a raw skin omits the keys the document does not hold,
+        // first level only.
+        if ( $raw && $this->isRawSkin( $init ) )
         {
-            yield $key => is_object( $row ) || is_array( $row ) ? shedAggregateNoise( $row , $summed ) : $row ;
+            $options = [ CompressOption::RECURSIVE => false ] ;
+            foreach ( $rows as $key => $row )
+            {
+                yield $key => is_object( $row ) ? compress( $row , $options ) : ( is_array( $row ) ? compressArray( $row , $options ) : $row ) ;
+            }
+            return ;
         }
+
+        yield from $rows ;
     }
 }

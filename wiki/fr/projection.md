@@ -324,7 +324,7 @@ Sous `?skin=dashboard`, `list()` et `stream()` lisent les lignes brutes, exactem
 
 Ce qu'une ligne brute garde : chaque champ que la projection a émis, avec sa garde de permission (`AQL::REQUIRES`), son `Filter::URL`, ses joins et ses edges tels que l'AQL les a construits. Ce qu'elle perd : la classe de schéma et les alters, donc l'enveloppe `@type` / `@context` du document et de chaque objet imbriqué qu'un alter aurait construit. `get()` n'est pas concerné : un document seul ne coûte rien à hydrater.
 
-Les lignes reviennent en `stdClass`, comme une ligne groupée. Le bruit des agrégats sommés n'est nettoyé que sur les lignes groupées : un skin brut porte des valeurs stockées, elles reviennent intactes.
+Les lignes reviennent en `stdClass`, comme une ligne groupée. Le bruit des agrégats sommés n'est nettoyé que sur les lignes groupées : un skin brut porte des valeurs stockées, elles reviennent intactes. Une chose est alignée sur la forme hydratée : une projection répond `null` pour une clé que le document ne porte pas, là où une ligne hydratée omet la clé — une ligne brute l'omet aussi (`oihana\core\objects\compress()`, premier niveau seulement : une série imbriquée garde ses mois vides). Une ligne groupée n'est pas concernée : une moyenne de rien est un `null` légitime.
 
 ## Quel mécanisme choisir ?
 

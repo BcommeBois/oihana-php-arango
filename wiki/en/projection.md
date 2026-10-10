@@ -324,7 +324,7 @@ Under `?skin=dashboard`, `list()` and `stream()` read the rows raw, exactly as t
 
 What a raw row keeps : every field the projection emitted, with its permission gating (`AQL::REQUIRES`), its `Filter::URL`, its joins and edges as the AQL built them. What it loses : the schema class and the alters, hence the `@type` / `@context` envelope of the document and of every nested object an alter would have built. `get()` is not concerned : a single document is cheap to hydrate.
 
-Rows come back as `stdClass`, as a grouped row does. The noise of the summed aggregates is shed on grouped rows only : a raw skin carries stored values, and they come back untouched.
+Rows come back as `stdClass`, as a grouped row does. The noise of the summed aggregates is shed on grouped rows only : a raw skin carries stored values, and they come back untouched. One thing is aligned on the hydrated shape : a projection answers `null` for a key the document does not hold, where a hydrated row leaves the key out — a raw row leaves it out too (`oihana\core\objects\compress()`, first level only : a nested series keeps its empty months). A grouped row is not concerned : an average of nothing is a legitimate `null`.
 
 ## Which mechanism to use?
 

@@ -71,6 +71,31 @@ final class DocumentsListTraitTest extends TestCase
     }
 
     /**
+     * A projection answers null for a key the document does not hold ; a hydrated
+     * row never shows that key. A raw skin keeps the hydrated shape : the key is
+     * absent. A grouped row is not concerned, an average of nothing is a null.
+     */
+    public function testARawSkinOmitsTheKeysTheDocumentDoesNotHold() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->rawSkins        = [ 'dashboard' ] ;
+        $model->documentsResult = [ (object) [ 'id' => 'a' , 'revenue' => 12 , 'orderBacklog' => null ] ] ;
+
+        $rows = $model->list( [ Arango::SKIN => 'dashboard' ] ) ;
+
+        $this->assertFalse( property_exists( $rows[ 0 ] , 'orderBacklog' ) ) ;
+        $this->assertSame( 12 , $rows[ 0 ]->revenue ) ;
+
+        $model->groupable       = [ 'year' => 'year' ] ;
+        $model->documentsResult = [ (object) [ 'year' => 2025 , 'mean' => null ] ] ;
+
+        $rows = $model->list( [ Arango::GROUP => [ Group::BY => 'year' , Group::AGG => [ 'mean' => 'avg:amount' ] ] ] ) ;
+
+        $this->assertTrue( property_exists( $rows[ 0 ] , 'mean' ) ) ;
+        $this->assertNull( $rows[ 0 ]->mean ) ;
+    }
+
+    /**
      * A grouped line is not a document: the schema and the alters are skipped, so an
      * aggregate the schema class does not declare survives the read instead of being
      * dropped — or, when the name does collide, coerced into that property's type.

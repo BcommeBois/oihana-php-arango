@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-10
+
+### Fixed
+
+- **A row served under a raw skin omits the keys the document does not hold.** A projection writes every key it names, and the store answers `null` for one the document lacks ; a hydrated row never shows that key, since the schema class leaves the property unset. A raw row now keeps that shape — `oihana\core\objects\compress()`, first level only, a nested series keeps its empty months — so a reader tests the presence of a key the same way under every skin. A grouped row is not concerned : an average of nothing is a legitimate `null`.
+
 ## [1.8.0] - 2026-10-10
 
 ### Added

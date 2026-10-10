@@ -79,6 +79,18 @@ final class DocumentsStreamTraitTest extends TestCase
         $this->assertFalse( $model->lastRaw ) ;
     }
 
+    public function testStreamUnderARawSkinOmitsTheKeysTheDocumentDoesNotHold() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->rawSkins     = [ 'dashboard' ] ;
+        $model->streamResult = [ (object) [ 'id' => 'a' , 'orderBacklog' => null ] ] ;
+
+        $rows = iterator_to_array( $model->stream( [ Arango::SKIN => 'dashboard' ] ) ) ;
+
+        $this->assertFalse( property_exists( $rows[ 0 ] , 'orderBacklog' ) ) ;
+        $this->assertSame( 'a' , $rows[ 0 ]->id ) ;
+    }
+
     public function testStreamReadsAGroupedResultRaw() :void
     {
         $model = new MockDocuments( 'users' ) ;
