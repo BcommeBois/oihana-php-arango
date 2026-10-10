@@ -8,10 +8,11 @@ This page describes the **projection** layer: which fields come out in the respo
 2. [The `Field::SKINS` marker at the document level](#the-fieldskins-marker-at-the-document-level)
 3. [Per-request projection — `Field::SKINS` on sub-fields](#per-request-projection--fieldskins-on-sub-fields)
 4. [Alternative projection per skin — `AQL::SKIN_FIELDS`](#alternative-projection-per-skin--aqlskin_fields)
-5. [Which mechanism to use?](#which-mechanism-to-use)
-6. [Permission-gated projections — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
-7. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
-8. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
+5. [A skin served raw — `AQL::RAW_SKINS`](#a-skin-served-raw--aqlraw_skins)
+6. [Which mechanism to use?](#which-mechanism-to-use)
+7. [Permission-gated projections — `AQL::REQUIRES`](#permission-gated-edges-and-joins--aqlrequires)
+8. [Transforming the projected value — `Field::ALTERS`](#transforming-the-projected-value--fieldalters)
+9. [Internal reference — the `matchesSkin` helper](#internal-reference--the-matchesskin-helper)
 
 ## Overview
 
@@ -303,6 +304,28 @@ Two points worth knowing:
 - The key is read at **three levels**: the edge/join definitions (re-resolved at every relation nesting level), the **model root**, and the **structural sub-fields** (`Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`). Placed anywhere else — on a scalar field for instance — it is silently ignored; to show/hide a field per skin, the mechanism remains [`Field::SKINS`](#per-request-projection--fieldskins-on-sub-fields).
 - A skin pinned via `AQL::SKIN` only applies to the definition carrying it: its nested relations (nested `AQL::EDGES` / `AQL::JOINS`) fall back on the request skin, unless explicitly pinned on their own definition.
 
+## A skin served raw — `AQL::RAW_SKINS`
+
+A projection shapes the row in AQL ; the hydration then rebuilds it in PHP — one object of the schema class per document, one object per nested value an alter builds — before the row is encoded back to JSON. On a page of a few documents that is cheap. On a list of thousands of documents it is the whole cost of the read : the store answers in a tenth of a second, the hydration and the encoding of the objects take seconds, and what they add to the response is the `@type` / `@context` envelope of each object, nothing else.
+
+A model can name the skins it serves **raw** :
+
+```php
+AQL::FIELDS      => [ Prop::ID => Filter::DEFAULT , Prop::NAME => Filter::DEFAULT , Prop::REVENUE => Filter::DEFAULT , /* … */ ] ,
+AQL::SKIN_FIELDS =>
+[
+    Skin::FULL      => [ /* the joined projection */ ] ,
+    Skin::DASHBOARD => [ Prop::ID => Filter::DEFAULT , Prop::REVENUE => [ Field::FILTER => Filter::DEFAULT , Field::REQUIRES => 'statistics:revenue' ] ] ,
+],
+AQL::RAW_SKINS   => [ Skin::DASHBOARD ] ,
+```
+
+Under `?skin=dashboard`, `list()` and `stream()` read the rows raw, exactly as they do for a grouped query (`Arango::GROUP`), and for the same reason : the projection already gave the row its shape. The two declarations are independent — `AQL::SKIN_FIELDS` says what to project, `AQL::RAW_SKINS` says not to hydrate ; a skin can have one without the other.
+
+What a raw row keeps : every field the projection emitted, with its permission gating (`AQL::REQUIRES`), its `Filter::URL`, its joins and edges as the AQL built them. What it loses : the schema class and the alters, hence the `@type` / `@context` envelope of the document and of every nested object an alter would have built. `get()` is not concerned : a single document is cheap to hydrate.
+
+Rows come back as `stdClass`, as a grouped row does. The noise of the summed aggregates is shed on grouped rows only : a raw skin carries stored values, and they come back untouched.
+
 ## Which mechanism to use?
 
 | Need | Recommended solution |
@@ -314,6 +337,7 @@ Two points worth knowing:
 | The same nested key needs **two shapes** per skin (minimal grid vs broken-down) | `AQL::SKIN_FIELDS` on the structural sub-field |
 | INBOUND edge towards a document that may reference back to the source | `AQL::SKIN => Skin::MAIN` on the edge definition to break the cycle |
 | Restrict an edge or join projection to a user permission | `AQL::REQUIRES` on the definition — the callable is posed automatically by the base (or `InjectAuthorizerTrait` for a stable callable) |
+| A list of thousands of documents, read by a screen that needs no object envelope | `AQL::RAW_SKINS` naming the skin — the projection shapes the row, nothing hydrates it |
 
 The mechanisms compose. A definition can combine `AQL::SKIN_FIELDS` for the main projection, `Field::SKINS` on the sub-fields of each individual projection, and an `AQL::SKIN` to pin the target skin. The resolution is independent at each level.
 

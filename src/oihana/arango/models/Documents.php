@@ -152,6 +152,7 @@ class Documents implements ArangoDocumentsModel
              ->initializeHydration        ( $init )
              ->initializeJoins            ( $init )
              ->initializeFields           ( $init )
+             ->initializeRawSkins         ( $init )
              ->initializeSkinFields       ( $init )
              ->initializeMock             ( $init )
              ->initializeQueryID          ( $init )

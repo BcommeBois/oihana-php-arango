@@ -4,6 +4,7 @@ namespace oihana\arango\models\traits\aql;
 
 use Exception;
 
+use oihana\exceptions\UnsupportedOperationException;
 use function oihana\arango\db\helpers\assertVariableName;
 use function oihana\arango\db\helpers\matchesSkin;
 
@@ -159,6 +160,27 @@ trait FieldsTrait
     public array $fields = [] ;
 
     /**
+     * The skins a read serves **raw** : no schema class, no alters, the document
+     * exactly as the projection shaped it.
+     *
+     * A list read under one of these skins skips the hydration the way a grouped
+     * query does, and for the same reason : the projection already gave the row
+     * its shape, and the schema would only decorate it. What such a row loses is
+     * what the hydration adds — the `@type` / `@context` envelope of the schema
+     * class and of every nested object an alter would build. What it keeps is
+     * everything the projection emitted, its permission gating included.
+     *
+     * An empty list (default) changes nothing : every skin hydrates.
+     *
+     * @var array<int, string>
+     * @example
+     * ```
+     * $model->rawSkins = [ Skin::DASHBOARD ] ;
+     * ```
+     */
+    public array $rawSkins = [] ;
+
+    /**
      * Optional per-skin alternative projections for the model's own fields.
      *
      * A `skin => fields` table with the exact same semantics as the
@@ -257,6 +279,19 @@ trait FieldsTrait
     }
 
     /**
+     * Initialize the list of skins served raw from an associative array.
+     *
+     * @param array<string, mixed> $init Optional initialization array containing an `AQL::RAW_SKINS` key.
+     *
+     * @return static
+     */
+    public function initializeRawSkins( array $init = [] ):static
+    {
+        $this->rawSkins = $init[ AQL::RAW_SKINS ] ?? $this->rawSkins ;
+        return $this;
+    }
+
+    /**
      * Initialize the per-skin projections registry from an associative array.
      *
      * @param array<string, mixed> $init Optional initialization array containing an `AQL::SKIN_FIELDS` key.
@@ -267,6 +302,43 @@ trait FieldsTrait
     {
         $this->skinFields = $init[ AQL::SKIN_FIELDS ] ?? $this->skinFields ;
         return $this;
+    }
+
+    /**
+     * Whether a read built from this init comes back raw — without the schema
+     * class and the alters.
+     *
+     * Two independent reasons, and either one is enough : the query groups
+     * ({@see GroupTrait::isGroupedQuery()}), since a `COLLECT` row is not a
+     * document ; or the request skin is one the model serves raw
+     * ({@see isRawSkin()}). The consumer composes both traits, as `Documents` does.
+     *
+     * @param array<string, mixed> $init The init array of the read.
+     *
+     * @return bool
+     *
+     * @throws ValidationException
+     * @throws UnsupportedOperationException
+     */
+    public function isRawRead( array $init = [] ) :bool
+    {
+        return $this->isGroupedQuery( $init ) || $this->isRawSkin( $init ) ;
+    }
+
+    /**
+     * Whether the skin of this init is one the model declared raw ({@see $rawSkins}).
+     *
+     * A request without a skin never is : the default skin hydrates unless the
+     * model names it.
+     *
+     * @param array<string, mixed> $init The init array of the read, read on its `AQL::SKIN` key.
+     *
+     * @return bool
+     */
+    public function isRawSkin( array $init = [] ) :bool
+    {
+        $skin = $init[ AQL::SKIN ] ?? null ;
+        return is_string( $skin ) && in_array( $skin , $this->rawSkins , true ) ;
     }
 
     /**
@@ -282,12 +354,14 @@ trait FieldsTrait
      * sub-fields are all removed by the skin — or whose own `AQL::SKIN_FIELDS`
      * table resolves to nothing for the requested skin — is dropped from the result.
      *
-     * @param string|null       $skin      Optional skin to filter applicable fields.
-     * @param array|null        $fields    Optional custom fields to process (defaults to $this->fields).
-     * @param string|null       $parentKey Optional parent key definition.
-     * @param string|array|null $in        Optional field or list of fields to filter the final fields definitions.
+     * @param array|null $fields Optional custom fields to process (defaults to $this->fields).
+     * @param string|null $skin Optional skin to filter applicable fields.
+     * @param string|null $parentKey Optional parent key definition.
+     * @param string|array|null $in Optional field or list of fields to filter the final fields definitions.
      *
      * @return array<string, array>|null Normalized fields ready for query, or null if none.
+     *
+     * @throws ValidationException
      *
      * @example
      * ```
@@ -661,17 +735,19 @@ trait FieldsTrait
      * edge/join definition). A declared table that resolves to nothing for the
      * requested skin drops the field the same way (returns `null`).
      *
-     * @param string $key     Field name
-     * @param array  $options Field options, may include:
+     * @param string $key Field name
+     * @param array $options Field options, may include:
      *  - Field::FILTER
      *  - Field::NAME
      *  - Field::QUOTED
      *  - Field::FIELDS (for DOCUMENT or MAP)
      * @param ?string $parentKey The Optional parent key
-     * @param ?string $skin      Optional skin propagated to the nested sub-fields.
+     * @param ?string $skin Optional skin propagated to the nested sub-fields.
      *
      * @return array<string, mixed>|null Normalized field definition, or `null` when the
      *                                   skin removed every declared sub-field.
+     *
+     * @throws ValidationException
      *
      * @example
      * ```

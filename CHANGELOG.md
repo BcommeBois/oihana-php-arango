@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-10
+
+### Added
+
+- **A model names the skins it serves raw — `AQL::RAW_SKINS`.** A list read under one of these skins skips the schema class and the alters, the way a grouped query already does, and for the same reason : the projection shaped the row, the hydration would only decorate it with the `@type` / `@context` envelope of every object — and on a list of thousands of documents, that decoration and its encoding are the whole cost of the read. `list()` and `stream()` read `isRawRead()`, which is « grouped, or a raw skin » ; the noise of the summed aggregates is still shed on grouped rows only. `AQL::SKIN_FIELDS` keeps saying what to project, `AQL::RAW_SKINS` says not to hydrate, and a model can declare one without the other. An empty list, the default, changes nothing. `get()` is not concerned.
+
 ## [1.7.1] - 2026-10-08
 
 ### Fixed

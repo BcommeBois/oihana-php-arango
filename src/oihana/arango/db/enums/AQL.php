@@ -134,6 +134,7 @@ class AQL
     public const string RANGE_VALUE     = 'rangeValue' ;
     public const string RAW             = 'raw' ;
     public const string RAW_KEYS        = 'rawKeys' ;
+    public const string RAW_SKINS       = 'rawSkins' ;
     public const string RAW_VALUES      = 'rawValues' ;
     public const string RELATION        = 'relation' ;
     public const string REPLACE         = 'replace' ;

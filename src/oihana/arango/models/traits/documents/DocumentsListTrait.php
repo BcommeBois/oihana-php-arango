@@ -241,6 +241,8 @@ trait DocumentsListTrait
      * A **grouped** query (`Arango::GROUP`, or a raw `Arango::COLLECT` spec) skips both steps
      * and yields plain objects carrying exactly the variables the `COLLECT` emitted — with the
      * float noise of their `sum` and `avg` shed, see {@see \oihana\arango\models\traits\aql\GroupTrait::summedAggregates()}.
+     * So does a read under a skin the model serves raw (`AQL::RAW_SKINS`) : the rows come
+     * back exactly as the projection shaped them, see {@see \oihana\arango\models\traits\aql\FieldsTrait::isRawRead()}.
      *
      * Returns an empty array if:
      * - No documents match the query criteria
@@ -304,15 +306,17 @@ trait DocumentsListTrait
         // document, so neither the schema nor the alters apply to it. Hydrating one
         // keeps only the names the schema class happens to declare — every other
         // variable the query invented is dropped, and a name that does collide is
-        // coerced into that property's type rather than kept as computed.
-        $raw = $this->isGroupedQuery( $init ) ;
+        // coerced into that property's type rather than kept as computed. A skin the
+        // model serves raw (`AQL::RAW_SKINS`) skips the same two steps : the
+        // projection already shaped the row, the schema would only decorate it.
+        $raw = $this->isRawRead( $init ) ;
 
         $rows = $this->getDocuments( $query , $bindVars , $this->profileOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) , raw: $raw , context: $init ) ;
 
         // A SUM the store computed carries the noise of an addition of floats, and
         // nothing downstream reads a grouped row : it is shed here, on the summed
-        // aggregates alone.
-        $summed = $raw ? $this->summedAggregates( $init ) : [] ;
+        // aggregates alone — a grouped row's, never a raw skin's.
+        $summed = $this->isGroupedQuery( $init ) ? $this->summedAggregates( $init ) : [] ;
 
         return $summed === [] ? $rows : array_map( fn( mixed $row ) :mixed => is_object( $row ) || is_array( $row ) ? shedAggregateNoise( $row , $summed ) : $row , $rows ) ;
     }

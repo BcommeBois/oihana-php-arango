@@ -8,10 +8,11 @@ Cette page décrit la couche **projection** : quels champs sortent dans la répo
 2. [Le marqueur `Field::SKINS` au niveau document](#le-marqueur-fieldskins-au-niveau-document)
 3. [Projection variable selon le skin de la requête — `Field::SKINS` sur les sous-champs](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs)
 4. [Projection alternative selon le skin — `AQL::SKIN_FIELDS`](#projection-alternative-selon-le-skin--aqlskin_fields)
-5. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
-6. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
-7. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
-8. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
+5. [Un skin servi brut — `AQL::RAW_SKINS`](#un-skin-servi-brut--aqlraw_skins)
+6. [Quel mécanisme choisir ?](#quel-mécanisme-choisir-)
+7. [Restreindre la projection à une permission — `AQL::REQUIRES`](#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)
+8. [Transformer la valeur projetée — `Field::ALTERS`](#transformer-la-valeur-projetée--fieldalters)
+9. [Référence interne — la fonction `matchesSkin`](#référence-interne--la-fonction-matchesskin)
 
 ## Vue d'ensemble
 
@@ -303,6 +304,28 @@ Deux points à connaître :
 - La clé est lue à **trois niveaux** : les définitions d'edges/joins (ré-évaluée à chaque niveau d'imbrication des relations), la **racine du modèle**, et les **sous-champs structurels** (`Filter::MAP` / `Filter::DOCUMENT` / `Filter::WRAP`). Posée ailleurs — par exemple sur un champ scalaire — elle est ignorée en silence ; pour montrer/cacher un champ selon le skin, le mécanisme reste [`Field::SKINS`](#projection-variable-selon-le-skin-de-la-requête--fieldskins-sur-les-sous-champs).
 - Un skin pinné via `AQL::SKIN` ne vaut que pour la définition qui le porte : ses sous-relations (`AQL::EDGES` / `AQL::JOINS` imbriqués) retombent sur le skin de la requête, sauf pin explicite sur leur propre définition.
 
+## Un skin servi brut — `AQL::RAW_SKINS`
+
+Une projection donne sa forme à la ligne en AQL ; l'hydratation la reconstruit ensuite en PHP — un objet de la classe de schéma par document, un objet par valeur imbriquée qu'un alter construit — avant que la ligne soit réencodée en JSON. Sur une page de quelques documents, c'est bon marché. Sur une liste de plusieurs milliers de documents, c'est tout le coût de la lecture : la base répond en un dixième de seconde, l'hydratation et l'encodage des objets prennent des secondes, et ce qu'ils ajoutent à la réponse est l'enveloppe `@type` / `@context` de chaque objet, rien d'autre.
+
+Un modèle peut nommer les skins qu'il sert **bruts** :
+
+```php
+AQL::FIELDS      => [ Prop::ID => Filter::DEFAULT , Prop::NAME => Filter::DEFAULT , Prop::REVENUE => Filter::DEFAULT , /* … */ ] ,
+AQL::SKIN_FIELDS =>
+[
+    Skin::FULL      => [ /* la projection jointe */ ] ,
+    Skin::DASHBOARD => [ Prop::ID => Filter::DEFAULT , Prop::REVENUE => [ Field::FILTER => Filter::DEFAULT , Field::REQUIRES => 'statistics:revenue' ] ] ,
+],
+AQL::RAW_SKINS   => [ Skin::DASHBOARD ] ,
+```
+
+Sous `?skin=dashboard`, `list()` et `stream()` lisent les lignes brutes, exactement comme pour une requête groupée (`Arango::GROUP`), et pour la même raison : la projection a déjà donné sa forme à la ligne. Les deux déclarations sont indépendantes — `AQL::SKIN_FIELDS` dit quoi projeter, `AQL::RAW_SKINS` dit de ne pas hydrater ; un skin peut avoir l'une sans l'autre.
+
+Ce qu'une ligne brute garde : chaque champ que la projection a émis, avec sa garde de permission (`AQL::REQUIRES`), son `Filter::URL`, ses joins et ses edges tels que l'AQL les a construits. Ce qu'elle perd : la classe de schéma et les alters, donc l'enveloppe `@type` / `@context` du document et de chaque objet imbriqué qu'un alter aurait construit. `get()` n'est pas concerné : un document seul ne coûte rien à hydrater.
+
+Les lignes reviennent en `stdClass`, comme une ligne groupée. Le bruit des agrégats sommés n'est nettoyé que sur les lignes groupées : un skin brut porte des valeurs stockées, elles reviennent intactes.
+
 ## Quel mécanisme choisir ?
 
 | Besoin | Solution recommandée |
@@ -314,6 +337,7 @@ Deux points à connaître :
 | La même clé imbriquée doit avoir **deux formes** selon le skin (grille minimale vs décomposée) | `AQL::SKIN_FIELDS` posé sur le sous-champ structurel |
 | Edge INBOUND vers un document qui peut référencer en retour la source | `AQL::SKIN => Skin::MAIN` sur la définition d'edge pour couper le cycle |
 | Restreindre la projection d'un edge ou d'un join à une permission utilisateur | `AQL::REQUIRES` sur la définition — le callable est posé automatiquement par la base (ou `InjectAuthorizerTrait` pour un callable stable) |
+| Une liste de milliers de documents, lue par un écran qui n'a pas besoin de l'enveloppe des objets | `AQL::RAW_SKINS` nommant le skin — la projection donne sa forme à la ligne, rien ne l'hydrate |
 
 Les mécanismes se cumulent. Une définition peut combiner `AQL::SKIN_FIELDS` pour la projection principale, des `Field::SKINS` sur les sous-champs des projections individuelles, et un `AQL::SKIN` pour pinner le skin du target. La résolution est indépendante à chaque niveau.
 

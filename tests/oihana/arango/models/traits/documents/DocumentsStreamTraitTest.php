@@ -66,6 +66,19 @@ final class DocumentsStreamTraitTest extends TestCase
         $this->assertSame( 2025 , $rows[ 0 ]->year ) ;
     }
 
+    public function testStreamReadsARawSkinRaw() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->streamResult = [] ;
+        $model->rawSkins     = [ 'dashboard' ] ;
+
+        iterator_to_array( $model->stream( [ Arango::SKIN => 'dashboard' ] ) ) ;
+        $this->assertTrue( $model->lastRaw ) ;
+
+        iterator_to_array( $model->stream( [ Arango::SKIN => 'full' ] ) ) ;
+        $this->assertFalse( $model->lastRaw ) ;
+    }
+
     public function testStreamReadsAGroupedResultRaw() :void
     {
         $model = new MockDocuments( 'users' ) ;

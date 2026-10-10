@@ -35,6 +35,42 @@ final class DocumentsListTraitTest extends TestCase
     }
 
     /**
+     * A skin the model declared raw skips the schema and the alters, the way a grouped
+     * query does : the projection already shaped the row. Any other skin, and no skin
+     * at all, hydrate as before.
+     */
+    public function testListReadsARawSkinRaw() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->rawSkins = [ 'dashboard' ] ;
+
+        $model->list( [ Arango::SKIN => 'dashboard' ] ) ;
+        $this->assertTrue( $model->lastRaw ) ;
+
+        $model->list( [ Arango::SKIN => 'full' ] ) ;
+        $this->assertFalse( $model->lastRaw ) ;
+
+        $model->list( [] ) ;
+        $this->assertFalse( $model->lastRaw ) ;
+    }
+
+    /**
+     * The noise of the summed aggregates is a grouped row's business : a raw skin
+     * carries stored values, and they come back untouched.
+     */
+    public function testARawSkinKeepsItsStoredValuesUntouched() :void
+    {
+        $model = new MockDocuments( 'users' ) ;
+        $model->rawSkins        = [ 'dashboard' ] ;
+        $model->documentsResult = [ (object) [ 'amount' => 1380913.4299999992 ] ] ;
+
+        $rows = $model->list( [ Arango::SKIN => 'dashboard' ] ) ;
+
+        $this->assertTrue( $model->lastRaw ) ;
+        $this->assertSame( 1380913.4299999992 , $rows[ 0 ]->amount ) ;
+    }
+
+    /**
      * A grouped line is not a document: the schema and the alters are skipped, so an
      * aggregate the schema class does not declare survives the read instead of being
      * dropped — or, when the name does collide, coerced into that property's type.

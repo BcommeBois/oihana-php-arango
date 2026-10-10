@@ -44,8 +44,10 @@ trait DocumentsStreamTrait
      * documents one at a time instead of loading them all into memory. Each document is
      * fully processed (schema mapping and alter() transformation) before being yielded —
      * **unless the query groups**, in which case its rows are yielded raw — with the float noise
-     * of their `sum` and `avg` shed ({@see \oihana\arango\models\traits\aql\GroupTrait::summedAggregates()}). See
-     * {@see \oihana\arango\models\traits\aql\GroupTrait::isGroupedQuery()}.
+     * of their `sum` and `avg` shed ({@see \oihana\arango\models\traits\aql\GroupTrait::summedAggregates()}) —
+     * **or the request skin is one the model serves raw** (`AQL::RAW_SKINS`), in which case the rows
+     * are yielded exactly as the projection shaped them. See
+     * {@see \oihana\arango\models\traits\aql\FieldsTrait::isRawRead()}.
      *
      * **Key Benefits:**
      * - **Memory Efficient**: Only one document in memory at a time
@@ -195,10 +197,11 @@ trait DocumentsStreamTrait
         $limit    = $init[ Arango::LIMIT ] ?? 0 ;
         $query    = $this->buildListQuery( $init , $bindVars ) ;
 
-        // Same query, same reason as list(): a grouped row is not a document — and
-        // its summed aggregates carry the noise of an addition of floats, shed row by row.
-        $raw    = $this->isGroupedQuery( $init ) ;
-        $summed = $raw ? $this->summedAggregates( $init ) : [] ;
+        // Same query, same reasons as list(): a grouped row is not a document, and a
+        // skin the model serves raw needs no schema — and the summed aggregates of a
+        // grouped row carry the noise of an addition of floats, shed row by row.
+        $raw    = $this->isRawRead( $init ) ;
+        $summed = $this->isGroupedQuery( $init ) ? $this->summedAggregates( $init ) : [] ;
 
         $rows = $this->streamDocuments
         (

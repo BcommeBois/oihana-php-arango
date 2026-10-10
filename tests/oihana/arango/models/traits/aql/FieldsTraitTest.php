@@ -629,6 +629,43 @@ class FieldsTraitTest extends TestCase
         return $stub ;
     }
 
+    // ---------------------------------------------------------------- initializeRawSkins / isRawSkin
+
+    public function testInitializeRawSkinsSetsTheListAndReturnsSelf() :void
+    {
+        $stub = $this->stub() ;
+
+        $result = $stub->initializeRawSkins( [ AQL::RAW_SKINS => [ 'dashboard' ] ] ) ;
+
+        $this->assertSame( $stub , $result ) ;
+        $this->assertSame( [ 'dashboard' ] , $stub->rawSkins ) ;
+    }
+
+    public function testInitializeRawSkinsWithEmptyInitKeepsExisting() :void
+    {
+        $stub = $this->stub() ;
+        $stub->initializeRawSkins( [ AQL::RAW_SKINS => [ 'dashboard' ] ] ) ;
+        $stub->initializeRawSkins( [] ) ;
+
+        $this->assertSame( [ 'dashboard' ] , $stub->rawSkins ) ;
+    }
+
+    public function testIsRawSkinNamesTheDeclaredSkinsOnly() :void
+    {
+        $stub = $this->stub() ;
+        $stub->initializeRawSkins( [ AQL::RAW_SKINS => [ 'dashboard' ] ] ) ;
+
+        $this->assertTrue ( $stub->isRawSkin( [ AQL::SKIN => 'dashboard' ] ) ) ;
+        $this->assertFalse( $stub->isRawSkin( [ AQL::SKIN => 'full' ] ) ) ;
+        $this->assertFalse( $stub->isRawSkin( [ AQL::SKIN => null ] ) ) ;
+        $this->assertFalse( $stub->isRawSkin( [] ) ) ;
+    }
+
+    public function testNoRawSkinByDefault() :void
+    {
+        $this->assertFalse( $this->stub()->isRawSkin( [ AQL::SKIN => 'dashboard' ] ) ) ;
+    }
+
     public function testInitializeSkinFieldsSetsRegistryAndReturnsSelf() :void
     {
         $stub = $this->stub() ;
