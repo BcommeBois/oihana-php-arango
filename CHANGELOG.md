@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-12
+
 ### Added
 
 - **A read carries the cursor options its caller names — `Arango::CURSOR_OPTIONS`.** `list()`, `get()`, `count()` and `stream()` hand the server the `batchSize`, `ttl`, `memoryLimit`, `maxRuntime` and `stream` a caller gives under this key, the same way all four. Until now the models wrote their options by hand, each its own way, and nothing else reached the server : a caller walking a big collection could neither bound what PHP holds — with the configured `batchSize` of 80 000, `stream()` received the whole result in a single batch and kept it whole while yielding it — nor let a cursor outlive a slow loop. The defaults of the façade (`batchSize`, `maxRuntime`) only fill what the caller left out ; without the key, every read sends exactly what it sent before.

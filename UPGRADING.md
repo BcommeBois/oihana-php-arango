@@ -11,6 +11,118 @@ the CHANGELOG entries.
 
 Nothing yet.
 
+## 1.8.1 → 1.9.0 - 2026-10-12
+
+1.8.0 and 1.8.1 carried no breaking change. 1.9.0 carries three, all of the same kind : a filter
+that could not be read used to be **dropped** — and a dropped filter answers the whole collection,
+in `200`, with nothing to tell it from a real answer. It is now **refused**, with a sentence saying
+what to write instead. A fourth comes with `oihana/php-controllers` and closes the first of the
+two silences § 14.5 of 1.7.0 left open : a `?filter=` whose JSON is malformed.
+
+### 🚨 Breaking
+
+#### 1. A filter the model cannot read is refused
+
+**Before.** When the filter handed to a model had a shape no filter reads, `prepareFilter()`
+answered `null` : no clause, no error, every document. That covered a filter left as a JSON string
+(`Arango::FILTER => '{"key":"active","val":true}'`), a Mongo-style `{"age":{"$gte":30}}`, a mistyped
+`{"agee":1}`, and the `{"logic":"or","conditions":[…]}` form the wiki used to teach — a form this
+library never compiled. Inside an `and`, such a child **vanished and loosened the group**.
+`["not", a, b]` and `["not", {"agee":1}]` compiled AQL the server refused ; a scalar member, or an
+unknown operator such as `xor`, raised a `TypeError` no controller catches.
+
+**Now.** Every shape that cannot be read answers a `RequestValidationException` (`400`) :
+
+| sent | refusal |
+| :--- | :--- |
+| an object speaking no filter grammar | `The filter {"agee"} speaks no filter grammar : name the field with "key" — … — or write a group as a list — ["and"\|"or"\|"not", …].` |
+| neither an object nor a list | `A filter is a segment {"key":…} or a group ["and"\|"or"\|"not", …] : string given.` |
+| `["and"]`, `["or"]`, `["not"]` | `The filter group "or" holds no condition.` |
+| `["xor", …]` | `Unknown filter group operator "xor" — expected one of: and, not, or.` |
+| `["not", a, b]` | `The filter group "not" takes a single condition : negate several with ["not", ["and", …]] or ["not", ["or", …]].` |
+
+Still « no filter » : an absent `Arango::FILTER`, `null`, `[]` (`?filter=[]`, `?filter={}`), and the
+init of an unfiltered read — its `limit`, `offset`, raw `AQL::CONDITIONS`.
+
+**What to do.**
+
+1. **Grep your clients** for `"logic"` / `"conditions"` in a `?filter=` and rewrite each group as a
+   list : `{"logic":"or","conditions":[a,b]}` becomes `["or", a, b]`.
+2. **Grep your own code** for `Arango::FILTER =>` followed by a string : decode it first, the model
+   takes an array.
+3. **Rewrite every `["not", a, b]`** as `["not", ["and", a, b]]` or `["not", ["or", a, b]]` — whichever
+   you meant ; the old form never reached a result.
+4. A page that builds its filter from checkboxes and sends `["or"]` when none is checked now gets a
+   `400` : send no filter instead.
+5. **Direct callers** of `prepareFilter()` keep its contract. What *is* a filter now goes through
+   the new protected `compileFilter()`, which is strict ; `prepareFilterConditions()` refuses an
+   unreadable group or member instead of answering `null`.
+
+#### 2. A server-side scope no filter can read is refused when it is injected
+
+**Before.** `InjectFilterTrait::injectFilterGroup()` stored whatever group it was handed, to be merged
+later with the caller's filter. `injectFilterGroup( $init , 'not' , [ $a , $b ] )` compiled `(a ! b)` ;
+an unknown operator or an unreadable operand reached the compiler — which, since § 1, refuses it as
+the **caller's** fault (`400`), for a scope the host built.
+
+**Now.** It is refused at injection with a plain `ValidationException` (`500`, the host's fault),
+before anything is merged.
+
+**What to do.**
+
+1. **Read every `injectFilterGroup()` call** in your controllers : the operator is a `FilterLogic`
+   constant ; a `not` takes **one** operand — nest a group to negate several ; every operand is a
+   segment built with `FilterParam` keys, or a nested group.
+2. An empty operand list still injects nothing — nothing to do there.
+
+#### 3. A refused filter leaves a traversal or a concept scheme as a `400`, not a `500`
+
+**Before.** `TraversalController` (its four routes) and `ConceptSchemeController::get()` caught no
+exception : a refusal left the method, and Slim's error handler — which relays the code of **its own**
+`HttpException` only — answered `500`. An undeclared filter key, every refusal of § 1, and the
+malformed `?filter=` of § 4 all came back as server errors on these routes. `?prune=` degraded a
+malformed predicate to « no prune » and answered the whole sub-tree.
+
+**Now.** Both controllers answer like the document controllers : `fail()` with
+`HttpStatusCode::fromException()` — the client status the exception carries, `500` otherwise.
+`?prune=` follows `?filter=` : what is not JSON, or is JSON but neither an object nor a list, is
+refused (`The prune parameter is not valid JSON.`) ; absent, empty or `null` still mean no prune.
+
+**What to do.**
+
+1. **If your application's error handler** logged or reshaped the exceptions of these routes, they no
+   longer reach it : they are answered by the controller, like every document route's.
+2. **Check the `?prune=` your clients send** to `getChildren` / `getDescendants`.
+
+#### 4. A `?filter=` or a `?facets=` that is not JSON is refused (`oihana/php-controllers`)
+
+**Before.** The reader of `oihana/php-controllers` logged a `warning` and returned nothing : the whole
+collection came back. A parameter declared as a facet through `ControllerParam::PARAMS` — `?id=abc`,
+an identifier left unquoted — was dropped without even a warning.
+
+**Now.** With `oihana/php-controllers` at `0b32f93` or later, it answers `Error400` :
+`The filter parameter is not valid JSON.`, `The filter parameter must be a JSON object or list, int given.`,
+`The facets parameter is not valid JSON.`, `The id parameter is not valid JSON.` An **empty**
+parameter — a form field left blank — and the JSON `null` still mean « no filter ». A single JSON
+value in a declared facet parameter (`?id=12`) is still read.
+
+**What to do.**
+
+1. **Update `oihana/php-controllers`.** On the document controllers the refusal travels through the
+   capability overlay of `oihana/php-auth` (`prepareFilterBase()`) unchanged.
+2. **Quote string identifiers** in declared facet parameters : `?id="abc"`, not `?id=abc`.
+
+### Worth knowing
+
+- **`Arango::CURSOR_OPTIONS`** is new : `list()`, `get()`, `count()` and `stream()` take a caller's
+  `batchSize`, `ttl`, `memoryLimit`, `maxRuntime` and `stream`. Nothing changes without the key ; with
+  it, anything outside the five — or of the wrong type — is refused.
+- **`Arango::PROFILE`** is now honoured by `count()` and `stream()`.
+- **After a `stream()`**, the total and the profile stay readable, like after a `list()` ; an
+  abandoned stream closes its server cursor (`DELETE`) instead of letting it live until its `ttl`.
+  `ArangoDB::getCursor()` no longer answers `null` after a stream.
+- The second silence of § 14.5 remains : a `?sort=` on an unsortable key is ignored.
+
 ## 1.6.0 → 1.7.0 - 2026-10-07
 
 Fourteen breaking changes. The first two are on the same key — `AQL::DIRECTION`, read by the edge
