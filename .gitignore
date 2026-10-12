@@ -35,3 +35,6 @@ node_modules/
 
 # Local configuration (never commit credentials)
 configs/config.toml
+
+# Work-in-progress notes (chantiers, decisions, lot plans) — local only
+/todo/
