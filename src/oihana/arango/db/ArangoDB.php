@@ -418,6 +418,15 @@ class ArangoDB
     /**
      * Returns a generator yielding documents one by one from the current cursor.
      *
+     * When the generator ends — drained, abandoned, or stopped by an error — it closes
+     * and releases **its own** cursor, and leaves the façade's slot alone : like any
+     * other read, the slot tells the last query run until the next one, so the total
+     * and the profile of a stream stay readable after its loop. An abandoned cursor is
+     * closed on the server (`DELETE`) instead of living on until its `ttl` ; its rows
+     * are let go of either way.
+     *
+     * ⚠️ The slot is shared by every model : a query run inside the loop takes it.
+     *
      * @param null|SchemaResolver|Closure|string $schema    Optional class / resolver / closure to map the documents.
      * @param string                             $hydration How a document is turned into its schema object, one of the {@see Hydration} modes.
      *
@@ -432,17 +441,31 @@ class ArangoDB
             return ;
         }
 
+        // Its own cursor : by the time the generator is released, another query may own
+        // the slot.
+        $cursor = $this->cursor ;
+
         try
         {
-            foreach ( $this->cursor as $document )
+            foreach ( $cursor as $document )
             {
                 yield $this->hydrateDocument( $document , $schema , $hydration ) ;
             }
         }
         finally
         {
-            $this->cursor = null ;
-            $this->data   = []   ;
+            // Never thrown : it would replace the error that stopped the loop, or surface
+            // wherever the generator happens to be released.
+            try
+            {
+                $cursor->close() ;
+            }
+            catch ( ArangoException $e )
+            {
+                $this->logger?->warning( __METHOD__ . ' could not close an abandoned cursor: ' . $e->getMessage() ) ;
+            }
+
+            $cursor->release() ;
         }
     }
 

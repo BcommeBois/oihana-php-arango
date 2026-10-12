@@ -373,6 +373,23 @@ class Cursor implements IteratorAggregate , Countable
     }
 
     /**
+     * Lets go of the rows of the current batch, and of nothing else : the extra metadata
+     * (stats, `fullCount`, profile), the server count, the identifier and `hasMore` stay
+     * readable.
+     *
+     * For a cursor whose rows have already been handed over — a stream that ended — so
+     * that the memory they hold is freed while what the query measured is not lost.
+     * Iterating it again goes on from the next batch, if any ; a drained cursor once
+     * released yields nothing.
+     *
+     * @return void
+     */
+    public function release() : void
+    {
+        $this->batch = [] ;
+    }
+
+    /**
      * Fetches the next batch from the server and updates the internal state.
      *
      * @throws ArangoException When the request fails.

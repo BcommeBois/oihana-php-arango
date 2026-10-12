@@ -297,7 +297,11 @@ class ArangoDBTest extends ArangoDBTestCase
 
     // ---- streamDocuments ------------------------------------------------
 
-    public function testStreamDocumentsYieldsHydratedRowsThenResetsState() :void
+    /**
+     * The stream closes and releases ITS cursor, and leaves the façade's slot alone :
+     * like list(), the slot tells the last query run until the next one.
+     */
+    public function testStreamDocumentsYieldsHydratedRowsThenReleasesItsCursor() :void
     {
         $cursor = $this->createMock( Cursor::class ) ;
         $cursor->method( 'getIterator' )->willReturnCallback( function() :\Generator
@@ -305,6 +309,8 @@ class ArangoDBTest extends ArangoDBTestCase
             yield [ '_key' => 'a' ] ;
             yield [ '_key' => 'b' ] ;
         } ) ;
+        $cursor->expects( $this->once() )->method( 'close' ) ;
+        $cursor->expects( $this->once() )->method( 'release' ) ;
 
         $db = $this->newArangoDB( null , null , $cursor ) ;
 
@@ -312,7 +318,7 @@ class ArangoDBTest extends ArangoDBTestCase
 
         $this->assertCount( 2 , $rows ) ;
         $this->assertSame( 'a' , $rows[ 0 ]->_key ) ;
-        $this->assertNull( $db->getCursor() ) ; // the `finally` reset the cursor
+        $this->assertSame( $cursor , $db->getCursor() ) ;
     }
 
     public function testStreamDocumentsIsEmptyWithoutCursor() :void

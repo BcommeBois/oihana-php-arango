@@ -293,6 +293,53 @@ class CursorTest extends TestCase
     }
 
     // =========================================================================
+    // Release
+    // =========================================================================
+
+    /**
+     * `release()` lets go of the rows already handed over, and of nothing else : the
+     * total, the profile, the count and the identity of the cursor stay readable.
+     */
+    public function testReleaseDropsTheRowsAndKeepsTheMetadata() :void
+    {
+        $history = [] ;
+        $db      = $this->makeDatabase( [] , $history ) ; // no HTTP call expected
+
+        $cursor = new Cursor
+        (
+            $db ,
+            [
+                'result'  => [ 1 , 2 , 3 ] ,
+                'hasMore' => true ,
+                'id'      => 'c-7' ,
+                'count'   => 12 ,
+                'extra'   => [ 'stats' => [ 'fullCount' => 40 ] , 'profile' => [ 'executing' => 0.1 ] ] ,
+            ] ,
+        ) ;
+
+        $cursor->release() ;
+
+        $this->assertSame( [] , ( fn() => $this->batch )->call( $cursor ) ) ;
+        $this->assertSame( 40 , $cursor->getFullCount() ) ;
+        $this->assertSame( [ 'executing' => 0.1 ] , $cursor->getExtra()[ 'profile' ] ) ;
+        $this->assertSame( 12 , count( $cursor ) ) ;
+        $this->assertSame( 'c-7' , $cursor->getId() ) ;
+        $this->assertTrue( $cursor->hasMore() ) ;
+        $this->assertCount( 0 , $history ) ;
+    }
+
+    public function testADrainedCursorOnceReleasedYieldsNothing() :void
+    {
+        $cursor = new Cursor( $this->makeDatabase( [] ) , [ 'result' => [ 1 , 2 ] , 'hasMore' => false ] ) ;
+
+        $this->assertSame( [ 1 , 2 ] , iterator_to_array( $cursor , false ) ) ;
+
+        $cursor->release() ;
+
+        $this->assertSame( [] , iterator_to_array( $cursor , false ) ) ;
+    }
+
+    // =========================================================================
     // Metadata
     // =========================================================================
 

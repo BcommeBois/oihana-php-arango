@@ -169,8 +169,9 @@ trait DocumentsStreamTrait
      *   `ttl` shorter than the work done between two batches kills the cursor. `stream`
      *   is refused with a `limit`.
      * - **`profile`** (`bool|int`, optional)
-     *   Runs the query profiled, see {@see Arango::PROFILE}. ⚠ The profile is read
-     *   **while iterating** : once the last row is handed over, the cursor is let go.
+     *   Runs the query profiled, see {@see Arango::PROFILE}. The profile — like
+     *   `foundRows()` — is read after the loop ; ⚠ a query run inside the loop takes the
+     *   façade's slot, and they then tell that query.
      *
      * @return Generator<mixed>
      * A PHP generator that yields documents one by one. Each yielded document

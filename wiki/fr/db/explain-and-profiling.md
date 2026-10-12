@@ -164,7 +164,7 @@ $users->getProfile()->timings() ;            // ['parsing' => …, 'optimizing p
 
 `get( [ … , 'profile' => true ] )` profile une lecture de document unique de la même façon, et `count()` un comptage.
 
-> ⚠️ **`stream()` se profile pendant qu'on le parcourt.** Le générateur lâche son curseur, et tout ce qu'il porte, dès qu'il a rendu la dernière ligne : lisez `getProfile()` / `getStats()` **dans** la boucle, pas après.
+> ⚠️ **Lisez le profil avant de lancer une autre requête.** Un `stream()` se lit après sa boucle, comme un `list()`. Mais la façade n'a qu'**un** emplacement pour « la dernière requête », partagé par tous les modèles : une lecture lancée **dans** la boucle — enrichir chaque ligne d'un `get()` — prend sa place, et `getProfile()` / `getStats()` / `foundRows()` parlent alors de cette lecture-là.
 
 Les autres options du curseur (taille des lots, durée de vie, plafond mémoire…) passent par [`Arango::CURSOR_OPTIONS`](../models.md#les-options-de-curseur--arangocursor_options).
 

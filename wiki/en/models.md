@@ -183,6 +183,9 @@ $events->stream( [ Arango::CURSOR_OPTIONS => [ CursorField::STREAM => true , Cur
 streaming cursor keeps its query alive on the server for the whole walk, and a read that already
 exceeded a time limit in one piece may exceed it again. It never becomes a default.
 
+A walk abandoned on the way — a `break`, an exception — **closes its cursor on the server**: the
+streaming query does not stay alive until its `ttl` runs out.
+
 #### Capping a read
 
 **The situation.** A dashboard sorts the whole collection. A plain error is preferred to a query that

@@ -164,7 +164,7 @@ $users->getProfile()->timings() ;            // ['parsing' => …, 'optimizing p
 
 `get( [ … , 'profile' => true ] )` profiles a single-document fetch the same way, and `count()` a count.
 
-> ⚠️ **`stream()` is profiled while it is iterated.** The generator lets go of its cursor, and of everything it carries, as soon as it has handed over the last row: read `getProfile()` / `getStats()` **inside** the loop, not after it.
+> ⚠️ **Read the profile before running another query.** A `stream()` is read after its loop, like a `list()`. But the façade has **one** slot for "the last query", shared by every model: a read run **inside** the loop — enriching each row with a `get()` — takes it, and `getProfile()` / `getStats()` / `foundRows()` then speak of that read.
 
 The other cursor options (batch size, time to live, memory ceiling…) go through [`Arango::CURSOR_OPTIONS`](../models.md#cursor-options--arangocursor_options).
 

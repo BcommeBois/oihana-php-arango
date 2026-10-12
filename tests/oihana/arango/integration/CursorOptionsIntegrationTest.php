@@ -173,27 +173,18 @@ final class CursorOptionsIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * `stream()` used to drop `Arango::PROFILE` without a word too — but its profile is
-     * read **while iterating**: the façade lets go of the cursor, and of what it carries,
-     * as soon as the last row is handed over.
+     * `stream()` used to drop `Arango::PROFILE` without a word too. Its profile is read
+     * after the loop, like any other read's — see `StreamCursorIntegrationTest`.
      */
-    public function testAStreamIsProfiledWhileItIsIterated() :void
+    public function testAStreamIsProfiledWhenAsked() :void
     {
-        $model    = $this->model() ;
-        $profiled = [] ;
+        $model = $this->model() ;
 
-        foreach ( $model->stream( [ Arango::PROFILE => true ] ) as $row )
-        {
-            $profiled[] = !empty( $model->getExtra()[ 'profile' ] ?? null ) ;
-        }
-
-        $this->assertSame( array_fill( 0 , 10 , true ) , $profiled ) ;
-        $this->assertSame( [] , $model->getExtra() ) ;
+        iterator_to_array( $model->stream( [ Arango::PROFILE => true ] ) , false ) ;
+        $this->assertNotEmpty( $model->getExtra()[ 'profile' ] ?? null ) ;
 
         // The counter-proof: without the key, nothing is profiled.
-        foreach ( $model->stream( [] ) as $row )
-        {
-            $this->assertArrayNotHasKey( 'profile' , $model->getExtra() ) ;
-        }
+        iterator_to_array( $model->stream( [] ) , false ) ;
+        $this->assertArrayNotHasKey( 'profile' , $model->getExtra() ) ;
     }
 }

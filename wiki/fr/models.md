@@ -185,6 +185,9 @@ un curseur en flux garde sa requête vivante sur le serveur pendant tout le parc
 qui dépassait déjà un délai d'un seul tenant peut le dépasser de nouveau. Il ne devient jamais un
 défaut.
 
+Un parcours abandonné en route — un `break`, une exception — **ferme son curseur sur le serveur** :
+la requête en flux ne reste pas vivante jusqu'à l'expiration de son `ttl`.
+
 #### Plafonner une lecture
 
 **La situation.** Un tableau de bord trie toute la collection. On préfère une erreur franche à une
