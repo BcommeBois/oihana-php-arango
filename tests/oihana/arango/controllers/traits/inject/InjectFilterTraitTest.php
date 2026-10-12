@@ -3,11 +3,15 @@
 namespace tests\oihana\arango\controllers\traits\inject;
 
 use oihana\arango\controllers\traits\inject\InjectFilterTrait;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\enums\filters\FilterComparator;
 use oihana\arango\models\enums\filters\FilterLogic;
 use oihana\arango\models\enums\filters\FilterParam;
 
+use oihana\exceptions\ValidationException;
+
 use PHPUnit\Framework\Attributes\CoversTrait;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 use tests\oihana\arango\controllers\mocks\InjectFilterHost;
@@ -125,6 +129,78 @@ class InjectFilterTraitTest extends TestCase
         $this->assertCount( 2 , $filters ) ;
         $this->assertSame( 'active' , $filters[ 0 ][ FilterParam::KEY ] ) ;
         $this->assertSame( FilterLogic::OR , $filters[ 1 ][ 0 ] ) ;
+    }
+
+    /**
+     * A scope injected by the host that no filter can read is the HOST's fault : refused
+     * at injection with a plain ValidationException (500), before it is merged with the
+     * caller's filter — where it could only be refused as the caller's fault (400).
+     */
+    public function testInjectFilterGroupRefusesAnUnknownOperator() :void
+    {
+        $init = [] ;
+
+        try
+        {
+            new InjectFilterHost()->callInjectFilterGroup( $init , 'xor' , [ [ FilterParam::KEY => 'a' , FilterParam::VAL => 1 ] ] ) ;
+            $this->fail( 'An unknown operator was injected.' ) ;
+        }
+        catch ( ValidationException $exception )
+        {
+            $this->assertNotInstanceOf( RequestValidationException::class , $exception ) ;
+            $this->assertSame( 'injectFilterGroup() takes a group operator — and, not, or — "xor" given.' , $exception->getMessage() ) ;
+        }
+
+        $this->assertSame( [] , $init ) ;
+    }
+
+    /**
+     * `["not", a, b]` compiled `(a ! b)` — AQL the server refuses.
+     */
+    public function testInjectFilterGroupRefusesANotOfSeveralOperands() :void
+    {
+        $init = [] ;
+
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( 'injectFilterGroup() negates a single operand with "not" : nest the group to negate several — [ [ "or" , … ] ].' ) ;
+
+        new InjectFilterHost()->callInjectFilterGroup( $init , FilterLogic::NOT ,
+        [
+            [ FilterParam::KEY => 'a' , FilterParam::VAL => 1 ] ,
+            [ FilterParam::KEY => 'b' , FilterParam::VAL => 2 ] ,
+        ]) ;
+    }
+
+    public function testInjectFilterGroupAcceptsANotOfOneOperand() :void
+    {
+        $host = new InjectFilterHost() ;
+        $init = [] ;
+
+        $host->callInjectFilterGroup( $init , FilterLogic::NOT , [ [ FilterLogic::OR , [ FilterParam::KEY => 'a' , FilterParam::VAL => 1 ] , [ FilterParam::KEY => 'b' , FilterParam::VAL => 2 ] ] ] ) ;
+
+        $this->assertSame( FilterLogic::NOT , $init[ $host->injectedKey() ][ 0 ][ 0 ] ) ;
+    }
+
+    public static function unreadableOperands() :array
+    {
+        return
+        [
+            'no grammar' => [ [ 'ownerid' => 'u1' ] , 'injectFilterGroup() takes segments and groups : The filter {"ownerid"} speaks no filter grammar' ] ,
+            'a string'   => [ '{"key":"a"}'         , 'injectFilterGroup() takes segments and groups : A filter is a segment {"key":…} or a group ["and"|"or"|"not", …] : string given.' ] ,
+            'null'       => [ null                  , 'injectFilterGroup() takes segments and groups : A filter is a segment {"key":…} or a group ["and"|"or"|"not", …] : null given.' ] ,
+            'empty'      => [ []                    , 'injectFilterGroup() takes segments and groups : A filter group holds no condition.' ] ,
+        ] ;
+    }
+
+    #[DataProvider( 'unreadableOperands' )]
+    public function testInjectFilterGroupRefusesAnUnreadableOperand( mixed $operand , string $message ) :void
+    {
+        $init = [] ;
+
+        $this->expectException( ValidationException::class ) ;
+        $this->expectExceptionMessage( $message ) ;
+
+        new InjectFilterHost()->callInjectFilterGroup( $init , FilterLogic::OR , [ [ FilterParam::KEY => 'public' , FilterParam::VAL => true ] , $operand ] ) ;
     }
 
     public function testInjectFilterGroupAcceptsANestedGroup() :void

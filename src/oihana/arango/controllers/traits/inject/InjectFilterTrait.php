@@ -8,6 +8,13 @@ use oihana\arango\models\enums\filters\FilterParam;
 
 use Psr\Http\Message\ServerRequestInterface as Request;
 
+use oihana\enums\Char;
+use oihana\exceptions\ValidationException;
+
+use function oihana\arango\models\helpers\isFilterSegment;
+use function oihana\arango\models\helpers\unreadableFilter;
+use function oihana\core\arrays\isAssociative;
+
 /**
  * Provides filter injection helpers for ArangoDB-based controllers.
  *
@@ -95,17 +102,47 @@ trait InjectFilterTrait
      * a group with no operand would otherwise widen the result set to everything,
      * which is never what a scope means.
      *
+     * A group no filter can read is refused HERE, with a plain {@see ValidationException}
+     * (`500`) : an unknown operator, a `not` of several operands (`(a ! b)` is AQL the
+     * server refuses), an operand that is neither a segment nor a group. It is the host's
+     * fault ; merged with the caller's filter, it could only be refused as the caller's.
+     *
      * @param array  $init    The init array to enrich (passed by reference).
      * @param string $logic   A {@see FilterLogic} operator (`and` / `or` / `not`).
      * @param array  $filters The group's operands: filter definitions, or nested groups.
      *
      * @return void
+     *
+     * @throws ValidationException When the group cannot be read.
      */
     protected function injectFilterGroup( array &$init , string $logic , array $filters ) :void
     {
         if( empty( $filters ) )
         {
             return ;
+        }
+
+        if ( !FilterLogic::includes( $logic ) )
+        {
+            throw new ValidationException( sprintf
+            (
+                'injectFilterGroup() takes a group operator — %s — "%s" given.' ,
+                implode( Char::COMMA . Char::SPACE , [ FilterLogic::AND , FilterLogic::NOT , FilterLogic::OR ] ) ,
+                $logic
+            )) ;
+        }
+
+        if ( $logic === FilterLogic::NOT && count( $filters ) !== 1 )
+        {
+            throw new ValidationException( 'injectFilterGroup() negates a single operand with "not" : nest the group to negate several — [ [ "or" , … ] ].' ) ;
+        }
+
+        foreach ( $filters as $filter )
+        {
+            if ( !is_array( $filter ) || $filter === [] || ( isAssociative( $filter ) && !isFilterSegment( $filter ) ) )
+            {
+                throw new ValidationException( 'injectFilterGroup() takes segments and groups : ' . unreadableFilter( $filter )->getMessage() ) ;
+            }
         }
 
         $init[ self::INJECTED_FILTERS ]   = $init[ self::INJECTED_FILTERS ] ?? [] ;
