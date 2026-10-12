@@ -10,6 +10,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\controllers\TraversalController;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\controllers\enums\ModelOperation;
 
 use oihana\controllers\enums\ControllerParam;
@@ -250,18 +251,60 @@ final class TraversalControllerTest extends ControllerTestCase
         $this->assertSame( $authorizer , $edges->calls[ 0 ][ 2 ][ Arango::AUTHORIZER ] ?? null ) ;
     }
 
-    public function testMalformedFilterJsonNeverReachesTheEngine() :void
+    /**
+     * Invalid JSON used to degrade to « no filter » : every vertex came back. The
+     * reader refuses it now (php-controllers), and the refusal must leave the
+     * controller as a `400` — it used to escape the method, and Slim's own error
+     * handler answers `500` to an exception it does not know.
+     */
+    public function testMalformedFilterJsonFailsWithABadRequestOnBothSurfaces() :void
     {
-        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
-        $edges->outbound = [] ;
-
+        $edges   = new RecordingTraversalEdges( 'has_subcategory' ) ;
         $request = $this->makeRequest( [ ControllerParam::FILTER => '{ not json' ] ) ;
 
-        $this->makeController( $edges )->getChildren( $request , null , [ Schema::ID => '5' ] ) ;
+        $many   = $this->makeController( $edges )->getChildren( $request , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+        $single = $this->makeController( $edges )->getParent  ( $request , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
 
-        // Invalid JSON degrades to "no filter" : the engine is not even called.
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $many  ->getStatusCode() ) ;
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $single->getStatusCode() ) ;
+        $this->assertStringContainsString( 'The filter parameter is not valid JSON.' , (string) $many->getBody() ) ;
         $this->assertSame( [] , $edges->filterCalls ) ;
-        $this->assertArrayNotHasKey( AQL::FILTER , $edges->calls[ 0 ][ 2 ] ) ;
+        $this->assertSame( [] , $edges->calls ) ;
+    }
+
+    /**
+     * A filter the engine refuses — an unknown key, a shape it cannot read — leaves
+     * the controller as the engine's own `400`, on both surfaces.
+     */
+    public function testAFilterTheEngineRefusesFailsWithABadRequestOnBothSurfaces() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->filterThrows = new RequestValidationException( 'The filter key "zzz" is not filterable.' ) ;
+
+        $request = $this->makeRequest( [ ControllerParam::FILTER => json_encode( [ 'key' => 'zzz' , 'val' => 1 ] ) ] ) ;
+
+        $many   = $this->makeController( $edges )->getChildren( $request , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+        $single = $this->makeController( $edges )->getParent  ( $request , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $many  ->getStatusCode() ) ;
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $single->getStatusCode() ) ;
+        $this->assertStringContainsString( 'The filter key \"zzz\" is not filterable.' , (string) $single->getBody() ) ;
+        $this->assertSame( [] , $edges->calls ) ;
+    }
+
+    /**
+     * A failure that carries no client status is a server error — answered, not escaped.
+     */
+    public function testAFailingTraversalFailsWithAServerErrorOnBothSurfaces() :void
+    {
+        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
+        $edges->traversalThrows = new ArangoException( 'the store is down' ) ;
+
+        $many   = $this->makeController( $edges )->getChildren( $this->makeRequest() , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+        $single = $this->makeController( $edges )->getParent  ( $this->makeRequest() , $this->makeResponse() , [ Schema::ID => '5' ] ) ;
+
+        $this->assertSame( HttpStatusCode::INTERNAL_SERVER_ERROR , $many  ->getStatusCode() ) ;
+        $this->assertSame( HttpStatusCode::INTERNAL_SERVER_ERROR , $single->getStatusCode() ) ;
     }
 
     // ---- ?prune= (cut the branch under a non-matching vertex) -----------
@@ -329,18 +372,42 @@ final class TraversalControllerTest extends ControllerTestCase
         $this->assertSame( [] , $edges->calls ) ;
     }
 
-    public function testMalformedPruneJsonIsIgnored() :void
+    /**
+     * `?prune=` follows the `?filter=` reader : what cannot be read is refused — it
+     * used to degrade to « no prune », and the whole subtree came back.
+     */
+    public function testUnreadablePruneFailsWithABadRequest() :void
     {
-        $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
-        $edges->outbound = [] ;
+        foreach ( [ [ '{ not json' , 'The prune parameter is not valid JSON.' ] , [ '42' , 'The prune parameter must be a JSON object or list, int given.' ] ] as [ $prune , $message ] )
+        {
+            $edges    = new RecordingTraversalEdges( 'has_subcategory' ) ;
+            $response = $this->makeController( $edges )->getDescendants
+            (
+                $this->makeRequest( [ TraversalController::PRUNE_PARAM => $prune ] ) ,
+                $this->makeResponse() ,
+                [ Schema::ID => '5' ]
+            ) ;
 
-        $request = $this->makeRequest( [ TraversalController::PRUNE_PARAM => '{ not json' ] ) ;
+            $this->assertSame( HttpStatusCode::BAD_REQUEST , $response->getStatusCode() , $prune ) ;
+            $this->assertStringContainsString( $message , (string) $response->getBody() ) ;
+            $this->assertSame( [] , $edges->calls ) ;
+        }
+    }
 
-        $this->makeController( $edges )->getDescendants( $request , null , [ Schema::ID => '5' ] ) ;
+    /**
+     * An empty `?prune=` — a form field left blank — and the JSON `null` say « no prune ».
+     */
+    public function testAnEmptyOrNullPruneIsNoPrune() :void
+    {
+        foreach ( [ '' , 'null' ] as $prune )
+        {
+            $edges = new RecordingTraversalEdges( 'has_subcategory' ) ;
 
-        // Invalid JSON degrades to "no prune" : the engine is not called, no PRUNE.
-        $this->assertSame( [] , $edges->filterCalls ) ;
-        $this->assertArrayNotHasKey( AQL::PRUNE , $edges->calls[ 0 ][ 2 ] ) ;
+            $this->makeController( $edges )->getDescendants( $this->makeRequest( [ TraversalController::PRUNE_PARAM => $prune ] ) , null , [ Schema::ID => '5' ] ) ;
+
+            $this->assertSame( [] , $edges->filterCalls ) ;
+            $this->assertArrayNotHasKey( AQL::PRUNE , $edges->calls[ 0 ][ 2 ] ) ;
+        }
     }
 
     // ---- guards ---------------------------------------------------------

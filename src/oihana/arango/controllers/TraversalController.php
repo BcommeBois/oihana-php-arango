@@ -2,6 +2,8 @@
 
 namespace oihana\arango\controllers;
 
+use Exception;
+
 use DI\Container;
 use DI\DependencyException;
 use DI\NotFoundException;
@@ -10,6 +12,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\controllers\traits\AuthorizationContextTrait;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\Edges;
 use oihana\arango\controllers\enums\ModelOperation;
 
@@ -24,6 +27,7 @@ use oihana\enums\Char;
 use oihana\enums\Output;
 use oihana\enums\http\HttpStatusCode;
 use oihana\exceptions\BindException;
+use oihana\exceptions\http\Error400;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 use oihana\reflect\exceptions\ConstantException;
@@ -322,6 +326,29 @@ class TraversalController extends Controller
     }
 
     /**
+     * Answers an exception the way the document controllers do : the status it carries
+     * when it is a client one (`400` for a refused parameter or filter), `500`
+     * otherwise. It used to escape the method, and Slim's own error handler answers
+     * `500` to any exception it does not know — a refused `?filter=` included.
+     *
+     * @param Request|null  $request
+     * @param Response|null $response
+     * @param Exception     $exception
+     *
+     * @return mixed
+     */
+    private function failFrom( ?Request $request , ?Response $response , Exception $exception ) :mixed
+    {
+        return $this->fail
+        (
+            request  : $request ,
+            response : $response ,
+            code     : HttpStatusCode::fromException( $exception ) ,
+            details  : $exception->getMessage()
+        ) ;
+    }
+
+    /**
      * Resolves the `{id}` placeholder, or fails.
      */
     private function id( array $args ) :?string
@@ -355,44 +382,51 @@ class TraversalController extends Controller
      */
     private function many( ?Request $request , ?Response $response , array $args , bool $inbound , bool $transitive , array $init = [] ) :mixed
     {
-        if ( !$this->prepareTraversal( $request , $response , $args , $inbound , $id , $prune , $failure ) )
+        try
         {
-            return $failure ;
+            if ( !$this->prepareTraversal( $request , $response , $args , $inbound , $id , $prune , $failure ) )
+            {
+                return $failure ;
+            }
+
+            $modelInit = [] ;
+
+            if ( $transitive )
+            {
+                $param = $request?->getQueryParams()[ self::DEPTH_PARAM ] ?? null ;
+                $depth = is_numeric( $param ) ? (int) $param : 0 ;
+                // A MAX_DEPTH without a MIN_DEPTH yields an invalid `IN ..N` traversal.
+                $modelInit[ AQL::MIN_DEPTH ] = 1 ;
+                $modelInit[ AQL::MAX_DEPTH ] = $depth > 0 ? min( $depth , self::DEFAULT_MAX_DEPTH ) : self::DEFAULT_MAX_DEPTH ;
+            }
+
+            $modelInit = $this->prepareVertexFilter( $request , $init , $modelInit , $prune ) ;
+
+            // Neither `list` nor `get`: the call goes to the edges model, and no FILTER over
+            // the collection would describe what it does.
+            $modelInit[ Arango::OPERATION ] = ModelOperation::TRAVERSE ;
+
+            // The authorization seat, posed LAST : a scope must have the final word over
+            // the client `?filter=` already compiled into AQL::FILTER by the line above.
+            $this->beforeModelCall( $request , $modelInit ) ;
+
+            $vertices = $inbound
+                      ? $this->edges->getInboundVertices ( $id , $modelInit )
+                      : $this->edges->getOutboundVertices( $id , $modelInit ) ;
+
+            $this->afterModelCall( $request , $modelInit , $vertices ) ;
+
+            $vertices = is_array( $vertices ) ? $vertices : [] ;
+
+            // Not paginated : all traversed vertices ship in one response, so count == total.
+            $total = count( $vertices ) ;
+
+            return $this->success( $request , $response , $vertices , [ Output::COUNT => $total , Output::TOTAL => $total ] ) ;
         }
-
-        $modelInit = [] ;
-
-        if ( $transitive )
+        catch ( Exception $e )
         {
-            $param = $request?->getQueryParams()[ self::DEPTH_PARAM ] ?? null ;
-            $depth = is_numeric( $param ) ? (int) $param : 0 ;
-            // A MAX_DEPTH without a MIN_DEPTH yields an invalid `IN ..N` traversal.
-            $modelInit[ AQL::MIN_DEPTH ] = 1 ;
-            $modelInit[ AQL::MAX_DEPTH ] = $depth > 0 ? min( $depth , self::DEFAULT_MAX_DEPTH ) : self::DEFAULT_MAX_DEPTH ;
+            return $this->failFrom( $request , $response , $e ) ;
         }
-
-        $modelInit = $this->prepareVertexFilter( $request , $init , $modelInit , $prune ) ;
-
-        // Neither `list` nor `get`: the call goes to the edges model, and no FILTER over
-        // the collection would describe what it does.
-        $modelInit[ Arango::OPERATION ] = ModelOperation::TRAVERSE ;
-
-        // The authorization seat, posed LAST : a scope must have the final word over
-        // the client `?filter=` already compiled into AQL::FILTER by the line above.
-        $this->beforeModelCall( $request , $modelInit ) ;
-
-        $vertices = $inbound
-                  ? $this->edges->getInboundVertices ( $id , $modelInit )
-                  : $this->edges->getOutboundVertices( $id , $modelInit ) ;
-
-        $this->afterModelCall( $request , $modelInit , $vertices ) ;
-
-        $vertices = is_array( $vertices ) ? $vertices : [] ;
-
-        // Not paginated : all traversed vertices ship in one response, so count == total.
-        $total = count( $vertices ) ;
-
-        return $this->success( $request , $response , $vertices , [ Output::COUNT => $total , Output::TOTAL => $total ] ) ;
     }
 
     /**
@@ -406,16 +440,18 @@ class TraversalController extends Controller
      * `$response` was provided (a non-HTTP call), so a null `$failure` cannot tell
      * a refusal from a pass.
      *
-     * @param Request|null  $request  The current PSR-7 request.
+     * @param Request|null $request The current PSR-7 request.
      * @param Response|null $response The PSR-7 response, or null out of HTTP.
-     * @param array         $args     The route placeholders — expects {@see Schema::ID}.
-     * @param bool          $inbound  Whether the traversal walks INBOUND.
-     * @param string|null   $id       Receives the resolved `{id}` when the entry passes.
-     * @param array|null    $prune    Receives the decoded `?prune=` predicate, or null.
-     * @param mixed         $failure  Receives the failure response when the entry is
+     * @param array $args The route placeholders — expects {@see Schema::ID}.
+     * @param bool $inbound Whether the traversal walks INBOUND.
+     * @param string|null $id Receives the resolved `{id}` when the entry passes.
+     * @param array|null $prune Receives the decoded `?prune=` predicate, or null.
+     * @param mixed $failure Receives the failure response when the entry is
      *                                refused — itself null when `$response` is null.
      *
      * @return bool True when the traversal may proceed, false when it is refused.
+     *
+     * @throws RequestValidationException
      */
     private function prepareTraversal( ?Request $request , ?Response $response , array $args , bool $inbound , ?string &$id , ?array &$prune , mixed &$failure ) :bool
     {
@@ -473,10 +509,10 @@ class TraversalController extends Controller
      * only when one exists : with no authorization stack it stays absent and the
      * projection falls open (backward compatible).
      *
-     * @param Request|null $request   The current PSR-7 request.
-     * @param array        $init      The caller init (an `Arango::AUTHORIZER` here wins).
-     * @param array        $modelInit The traversal init being assembled.
-     * @param array|null   $prune     The decoded `?prune=` predicate, or null.
+     * @param Request|null $request The current PSR-7 request.
+     * @param array $init The caller init (an `Arango::AUTHORIZER` here wins).
+     * @param array $modelInit The traversal init being assembled.
+     * @param array|null $prune The decoded `?prune=` predicate, or null.
      *
      * @return array The `$modelInit` enriched with `AQL::FILTER` / `AQL::PRUNE` /
      *               `AQL::BINDS` / `Arango::AUTHORIZER` when applicable.
@@ -485,6 +521,7 @@ class TraversalController extends Controller
      * @throws ConstantException
      * @throws ContainerExceptionInterface
      * @throws DependencyException
+     * @throws Error400
      * @throws NotFoundException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
@@ -551,25 +588,38 @@ class TraversalController extends Controller
     /**
      * Reads and decodes the `?prune=` query parameter (a JSON predicate).
      *
-     * Malformed or non-array JSON degrades to null (no prune), mirroring the
-     * `?filter=` reader.
+     * It follows the `?filter=` reader : absent, empty or the JSON `null` mean « no
+     * prune » ; what is not JSON, or is JSON but neither an object nor a list, is
+     * refused. It used to degrade to « no prune » — and the whole subtree came back.
      *
      * @param Request|null $request The current PSR-7 request.
      *
      * @return array|null The decoded predicate, or null.
+     *
+     * @throws RequestValidationException When the parameter cannot be read.
      */
     private function readPrune( ?Request $request ) :?array
     {
         $param = $request?->getQueryParams()[ self::PRUNE_PARAM ] ?? null ;
 
-        if ( is_string( $param ) && json_validate( $param ) )
+        if ( !is_string( $param ) || $param === Char::EMPTY )
         {
-            $value = json_decode( $param , true ) ;
-
-            return is_array( $value ) ? $value : null ;
+            return null ;
         }
 
-        return null ;
+        if ( !json_validate( $param ) )
+        {
+            throw new RequestValidationException( 'The prune parameter is not valid JSON.' ) ;
+        }
+
+        $value = json_decode( $param , true ) ;
+
+        if ( $value !== null && !is_array( $value ) )
+        {
+            throw new RequestValidationException( sprintf( 'The prune parameter must be a JSON object or list, %s given.' , get_debug_type( $value ) ) ) ;
+        }
+
+        return $value ;
     }
 
     /**
@@ -594,22 +644,29 @@ class TraversalController extends Controller
      */
     private function single( ?Request $request , ?Response $response , array $args , bool $inbound , array $init = [] ) :mixed
     {
-        if ( !$this->prepareTraversal( $request , $response , $args , $inbound , $id , $prune , $failure ) )
+        try
         {
-            return $failure ;
+            if ( !$this->prepareTraversal( $request , $response , $args , $inbound , $id , $prune , $failure ) )
+            {
+                return $failure ;
+            }
+
+            $modelInit = $this->prepareVertexFilter( $request , $init , [] , $prune ) ;
+
+            $modelInit[ Arango::OPERATION ] = ModelOperation::TRAVERSE_FIRST ;
+
+            // The authorization seat, posed LAST — see many().
+            $this->beforeModelCall( $request , $modelInit ) ;
+
+            $vertex = $inbound ? $this->edges->getFirstInboundVertex ( $id , $modelInit ) : $this->edges->getFirstOutboundVertex( $id , $modelInit ) ;
+
+            $this->afterModelCall( $request , $modelInit , $vertex ) ;
+
+            return $this->success( $request , $response , $vertex ?: null ) ;
         }
-
-        $modelInit = $this->prepareVertexFilter( $request , $init , [] , $prune ) ;
-
-        $modelInit[ Arango::OPERATION ] = ModelOperation::TRAVERSE_FIRST ;
-
-        // The authorization seat, posed LAST — see many().
-        $this->beforeModelCall( $request , $modelInit ) ;
-
-        $vertex = $inbound ? $this->edges->getFirstInboundVertex ( $id , $modelInit ) : $this->edges->getFirstOutboundVertex( $id , $modelInit ) ;
-
-        $this->afterModelCall( $request , $modelInit , $vertex ) ;
-
-        return $this->success( $request , $response , $vertex ?: null ) ;
+        catch ( Exception $e )
+        {
+            return $this->failFrom( $request , $response , $e ) ;
+        }
     }
 }

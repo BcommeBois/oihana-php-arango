@@ -2,6 +2,8 @@
 
 namespace oihana\arango\controllers;
 
+use Exception;
+
 use DI\Container;
 use DI\DependencyException;
 use DI\NotFoundException;
@@ -191,61 +193,77 @@ class ConceptSchemeController extends Controller
             return $this->fail( $request , $response , HttpStatusCode::INTERNAL_SERVER_ERROR , 'Concept scheme model not configured' ) ;
         }
 
-        // SKOS top concepts = the roots : the concepts that have no broader relation.
-        // ?sort / ?search / ?filter are honoured through the framework helpers ; the
-        // model applies its own SORTABLE/SEARCHABLE/AQL::FILTERS whitelist.
-        $params = [] ;
+        // A refused ?filter= (not JSON, a key the model does not declare…) carries a
+        // client status : it leaves as that status. It used to escape the method, and
+        // Slim's own error handler answers `500` to any exception it does not know.
+        try
+        {
+            // SKOS top concepts = the roots : the concepts that have no broader relation.
+            // ?sort / ?search / ?filter are honoured through the framework helpers ; the
+            // model applies its own SORTABLE/SEARCHABLE/AQL::FILTERS whitelist.
+            $params = [] ;
 
-        // The optional ?filter= (a JSON predicate, same DSL as the Documents surface)
-        // is ANDed with the root constraint. The root filter stays the FIRST operand
-        // and the URL filter enters as a SINGLE trailing operand : a client `or` group
-        // keeps its own parentheses and can never degrade "is a root" into an
-        // alternative (`root || a || b`). See InjectFilterTrait for the same invariant.
-        $rootFilter = [ FilterParam::KEY => $this->relation , FilterParam::QUANT => FilterQuantifier::NONE ] ;
-        $urlFilter  = $this->prepareFilter( $request , $init , $params ) ;
-        $filter     = $urlFilter === null ? $rootFilter : [ FilterLogic::AND , $rootFilter , $urlFilter ] ;
+            // The optional ?filter= (a JSON predicate, same DSL as the Documents surface)
+            // is ANDed with the root constraint. The root filter stays the FIRST operand
+            // and the URL filter enters as a SINGLE trailing operand : a client `or` group
+            // keeps its own parentheses and can never degrade "is a root" into an
+            // alternative (`root || a || b`). See InjectFilterTrait for the same invariant.
+            $rootFilter = [ FilterParam::KEY => $this->relation , FilterParam::QUANT => FilterQuantifier::NONE ] ;
+            $urlFilter  = $this->prepareFilter( $request , $init , $params ) ;
+            $filter     = $urlFilter === null ? $rootFilter : [ FilterLogic::AND , $rootFilter , $urlFilter ] ;
 
-        $modelInit =
-        [
-            // Fail-closed : the request-scoped authorizer gates Field::REQUIRES on the
-            // filtered attributes (no filter oracle on a hidden field). It falls open
-            // when no authorization stack is wired (buildPermissionAuthorizer → null).
-            Arango::AUTHORIZER => $init[ Arango::AUTHORIZER ] ?? $this->buildPermissionAuthorizer( $request ) ,
-            Arango::FILTER     => $filter ,
-            Arango::OPERATION  => ModelOperation::LIST ,
-            Arango::SEARCH     => $this->prepareSearch( $request , [] , $params ) ,
-            Arango::SKIN       => $this->skin ,
-            Arango::SORT       => $this->prepareSort( $request , [] , $params , Schema::NAME ) ,
-        ] ;
+            $modelInit =
+            [
+                // Fail-closed : the request-scoped authorizer gates Field::REQUIRES on the
+                // filtered attributes (no filter oracle on a hidden field). It falls open
+                // when no authorization stack is wired (buildPermissionAuthorizer → null).
+                Arango::AUTHORIZER => $init[ Arango::AUTHORIZER ] ?? $this->buildPermissionAuthorizer( $request ) ,
+                Arango::FILTER     => $filter ,
+                Arango::OPERATION  => ModelOperation::LIST ,
+                Arango::SEARCH     => $this->prepareSearch( $request , [] , $params ) ,
+                Arango::SKIN       => $this->skin ,
+                Arango::SORT       => $this->prepareSort( $request , [] , $params , Schema::NAME ) ,
+            ] ;
 
-        // The authorization seat : a subclass overriding beforeModelCall() poses its
-        // own scope here — a structured predicate ANDed into Arango::FILTER, or AQL
-        // fragments under Arango::CONDITIONS, both honoured by list(). It runs last,
-        // so the client `?filter=` can never win over the scope.
-        $this->beforeModelCall( $request , $modelInit ) ;
+            // The authorization seat : a subclass overriding beforeModelCall() poses its
+            // own scope here — a structured predicate ANDed into Arango::FILTER, or AQL
+            // fragments under Arango::CONDITIONS, both honoured by list(). It runs last,
+            // so the client `?filter=` can never win over the scope.
+            $this->beforeModelCall( $request , $modelInit ) ;
 
-        $roots = $this->model->list( $modelInit ) ;
+            $roots = $this->model->list( $modelInit ) ;
 
-        $this->afterModelCall( $request , $modelInit , $roots ) ;
+            $this->afterModelCall( $request , $modelInit , $roots ) ;
 
-        // afterModelCall() may replace the result outright, so the list shape the
-        // scheme and the envelope rely on is re-established rather than assumed.
-        $roots = is_array( $roots ) ? $roots : [] ;
+            // afterModelCall() may replace the result outright, so the list shape the
+            // scheme and the envelope rely on is re-established rather than assumed.
+            $roots = is_array( $roots ) ? $roots : [] ;
 
-        $scheme = new ConceptScheme
-        ([
-            Schema::NAME                   => $this->title ,
-            ConceptScheme::HAS_TOP_CONCEPT => $roots ,
-        ]) ;
+            $scheme = new ConceptScheme
+            ([
+                Schema::NAME                   => $this->title ,
+                ConceptScheme::HAS_TOP_CONCEPT => $roots ,
+            ]) ;
 
-        // The scheme is not paginated : every root ships in `hasTopConcept`, so
-        // count == total == the number of top concepts (the "N families" the UI shows).
-        $total = count( $roots ) ;
+            // The scheme is not paginated : every root ships in `hasTopConcept`, so
+            // count == total == the number of top concepts (the "N families" the UI shows).
+            $total = count( $roots ) ;
 
-        return $this->success( $request , $response , $scheme ,
-        [
-            Output::COUNT => $total ,
-            Output::TOTAL => $total ,
-        ]) ;
+            return $this->success( $request , $response , $scheme ,
+            [
+                Output::COUNT => $total ,
+                Output::TOTAL => $total ,
+            ]) ;
+        }
+        catch ( Exception $e )
+        {
+            return $this->fail
+            (
+                request  : $request ,
+                response : $response ,
+                code     : HttpStatusCode::fromException( $e ) ,
+                details  : $e->getMessage()
+            ) ;
+        }
     }
 }

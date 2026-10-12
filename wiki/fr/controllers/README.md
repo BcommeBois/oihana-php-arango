@@ -716,7 +716,8 @@ Les quatre méthodes acceptent un paramètre `?filter=` — le [même DSL JSON](
 
 **Pourquoi c'est sûr.** Une traversée inline son slot `FILTER` verbatim (un cran server-only), donc le JSON client n'est **jamais** déposé brut. Il est d'abord *compilé* par le moteur gardé du modèle d'arête, ciblé sur le sommet traversé `vertex`, en `FILTER vertex.status == @bind` — si bien que les deux garde-fous des `Documents` s'appliquent à l'identique :
 
-- **Whitelist** — seuls les attributs déclarés dans le `AQL::FILTERS` du modèle d'arête sont filtrables ; un attribut non déclaré est écarté, donc `?filter=` ne peut jamais atteindre un champ non exposé.
+- **Whitelist** — seuls les attributs déclarés dans le `AQL::FILTERS` du modèle d'arête sont filtrables ; un attribut non déclaré est **refusé** (`400`, la clé nommée), donc `?filter=` ne peut jamais atteindre un champ non exposé.
+- **Lisibilité** — un `?filter=` qui n'est pas du JSON, ou du JSON qui n'est ni un objet ni une liste, répond `400` (`The filter parameter is not valid JSON.`) ; il était ignoré, et toute la traversée revenait. Un `?filter=` vide ou `null` reste « pas de filtre ».
 - **Authorizer** — quand la pile d'autorisation est câblée, l'authorizer de requête verrouille `Field::REQUIRES` à la fois sur le prédicat compilé et sur la projection du sommet (`returnFields()`) : un attribut masqué ne peut pas être sondé à travers la traversée. Sans pile, il tombe ouvert (rétro-compatible).
 
 **Sémantique — `?filter=` cache, il n'élague pas.** Sur une traversée transitive (`ancestors` / `descendants`), un sommet non-matchant est retiré de la **liste plate** renvoyée, mais la traversée continue de descendre *à travers* lui — donc un petit-enfant matchant survit même si son parent est filtré. C'est le bon comportement pour une liste plate ; pour en reconstruire un arbre `children[]`, voir la note sur les trous dans [`buildTree()`](../edges-joins-projection.md).
@@ -732,6 +733,7 @@ Là où `?filter=` cache un sommet mais continue de descendre, `?prune=` **coupe
 
 `?prune=cond` exclut aussi le sommet-**frontière** non-matchant (sa condition rejoint le `FILTER`) et ne marche jamais son sous-arbre — il se compile en `FILTER vertex.status == @b` **et** `PRUNE !( vertex.status == @b )`. Tu obtiens le sous-arbre propre des sommets matchants, sans feuille-frontière parasite.
 
+- **Lisibilité** — comme `?filter=` : un `?prune=` qui n'est pas du JSON, ou ni un objet ni une liste, répond `400` (`The prune parameter is not valid JSON.`) ; il était ignoré, et tout le sous-arbre revenait. Vide ou `null` : pas d'élagage.
 - **Direction** — `?prune=` est **rejeté avec `400`** sur les méthodes inbound (`getParent`, `getAncestors`) : élaguer en remontant vers la racine n'a pas de sens défini. Il s'applique à `getChildren` / `getDescendants` (sur `getChildren` direct c'est un no-op inoffensif — rien sous la profondeur 1).
 - **Se compose avec `?filter=`** — les deux peuvent être envoyés ensemble. Chaque condition restreint l'ensemble renvoyé (elles s'`AND`ent dans le `FILTER`) ; seule celle de prune arrête aussi la descente. Ex. `?filter={lang:fr}&prune={status:publié}` renvoie le sous-arbre publié, encore restreint aux sommets français.
 
@@ -839,7 +841,7 @@ Un groupe `or` client ne peut pas relâcher la portée : le filtre d'URL entre c
 
 Deux garde-fous, identiques aux contrôleurs `Documents` :
 
-- **Whitelist** — seuls les attributs déclarés dans le `AQL::FILTERS` du modèle sont filtrables ; tout le reste est écarté (loggé), donc `?filter=` ne peut jamais atteindre un champ non déclaré.
+- **Whitelist** — seuls les attributs déclarés dans le `AQL::FILTERS` du modèle sont filtrables ; tout le reste est **refusé** (`400`, la clé nommée), donc `?filter=` ne peut jamais atteindre un champ non déclaré. Un `?filter=` qui n'est pas du JSON répond `400` lui aussi.
 - **Authorizer** — quand la pile d'autorisation est câblée (`CapabilityEnforcerInterface` + `PermissionSubjectResolverInterface` dans le conteneur), l'authorizer de requête verrouille `Field::REQUIRES` : un attribut masqué au demandeur neutralise son prédicat à `false` au lieu de fuir, ce qui ferme l'oracle de filtre. Sans pile, il tombe ouvert (rétro-compatible).
 
 ### Périmétrer les racines

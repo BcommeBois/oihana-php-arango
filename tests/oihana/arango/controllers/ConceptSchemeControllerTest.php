@@ -2,10 +2,14 @@
 
 namespace tests\oihana\arango\controllers;
 
+use Throwable;
+
 use DI\Container;
 
+use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\controllers\ConceptSchemeController;
 use oihana\arango\enums\Arango;
+use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\enums\filters\FilterLogic;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\enums\filters\FilterQuantifier;
@@ -13,6 +17,7 @@ use oihana\arango\models\enums\filters\FilterQuantifier;
 use oihana\controllers\enums\ControllerParam;
 
 use oihana\enums\Output;
+use oihana\enums\http\HttpStatusCode;
 
 use org\schema\constants\Schema;
 
@@ -44,17 +49,21 @@ final class ConceptSchemeControllerTest extends ControllerTestCase
     /**
      * A MockDocuments whose list() captures its init and returns canned roots.
      */
-    private function model( array $roots ) :MockDocuments
+    private function model( array $roots , ?Throwable $throws = null ) :MockDocuments
     {
-        return new class( $roots ) extends MockDocuments
+        return new class( $roots , $throws ) extends MockDocuments
         {
             public array $listInit = [] ;
 
-            public function __construct( private array $roots ) { parent::__construct( 'categories' ) ; }
+            public function __construct( private array $roots , private ?Throwable $throws ) { parent::__construct( 'categories' ) ; }
 
             public function list( array $init = [] ) :array
             {
                 $this->listInit = $init ;
+                if ( $this->throws !== null )
+                {
+                    throw $this->throws ;
+                }
                 return $this->roots ;
             }
         } ;
@@ -177,18 +186,38 @@ final class ConceptSchemeControllerTest extends ControllerTestCase
         $this->assertCount( 3 , $got ) ;
     }
 
-    public function testMalformedFilterJsonKeepsOnlyTheRootConstraint() :void
+    /**
+     * Invalid JSON used to degrade to « no filter » — every root came back. The reader
+     * refuses it now (php-controllers), and the refusal must leave the controller as a
+     * `400` : it used to escape the method, and Slim's own error handler answers `500`.
+     */
+    public function testMalformedFilterJsonFailsWithABadRequest() :void
     {
-        $model = $this->model( [] ) ;
+        $model    = $this->model( [] ) ;
+        $response = $this->makeController( $model )->get( $this->makeRequest( [ ControllerParam::FILTER => '{ not json' ] ) , $this->makeResponse() ) ;
 
-        // Invalid JSON → PrepareFilter logs a warning and yields null → root only.
-        $this->makeController( $model )->get( $this->makeRequest( [ ControllerParam::FILTER => '{ not json' ] ) ) ;
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $response->getStatusCode() ) ;
+        $this->assertStringContainsString( 'The filter parameter is not valid JSON.' , (string) $response->getBody() ) ;
+        $this->assertSame( [] , $model->listInit ) ;
+    }
 
-        $this->assertSame
-        (
-            [ FilterParam::KEY => Oihana::BROADER , FilterParam::QUANT => FilterQuantifier::NONE ] ,
-            $model->listInit[ Arango::FILTER ] ?? null
-        ) ;
+    /**
+     * A filter the model refuses leaves the controller as the model's own `400`.
+     */
+    public function testAFilterTheModelRefusesFailsWithABadRequest() :void
+    {
+        $model    = $this->model( [] , new RequestValidationException( 'The filter key "zzz" is not filterable.' ) ) ;
+        $response = $this->makeController( $model )->get( $this->makeRequest( [ ControllerParam::FILTER => json_encode( [ 'key' => 'zzz' , 'val' => 1 ] ) ] ) , $this->makeResponse() ) ;
+
+        $this->assertSame( HttpStatusCode::BAD_REQUEST , $response->getStatusCode() ) ;
+        $this->assertStringContainsString( 'The filter key \"zzz\" is not filterable.' , (string) $response->getBody() ) ;
+    }
+
+    public function testAFailingModelFailsWithAServerError() :void
+    {
+        $response = $this->makeController( $this->model( [] , new ArangoException( 'the store is down' ) ) )->get( $this->makeRequest() , $this->makeResponse() ) ;
+
+        $this->assertSame( HttpStatusCode::INTERNAL_SERVER_ERROR , $response->getStatusCode() ) ;
     }
 
     public function testAnExplicitAuthorizerIsThreadedIntoTheModelCall() :void

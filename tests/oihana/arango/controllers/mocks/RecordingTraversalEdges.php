@@ -2,6 +2,8 @@
 
 namespace tests\oihana\arango\controllers\mocks;
 
+use Throwable;
+
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 
@@ -70,6 +72,16 @@ class RecordingTraversalEdges extends MockEdges
     public array $compiledBinds = [] ;
 
     /**
+     * When set, thrown by {@see prepareFilter} — a refusal of the filter engine.
+     */
+    public ?Throwable $filterThrows = null ;
+
+    /**
+     * When set, thrown by every traversal — a failure of the store.
+     */
+    public ?Throwable $traversalThrows = null ;
+
+    /**
      * Records the compile call (the URL predicate, the target docRef and whether an
      * authorizer was forwarded) and returns the canned fragment/binds — the real
      * JSON→AQL engine is covered by {@see \oihana\arango\models\traits\aql\FilterTrait}
@@ -77,6 +89,11 @@ class RecordingTraversalEdges extends MockEdges
      */
     public function prepareFilter( ?array $init = [] , ?array &$binds = null , string $docRef = AQL::DOC , array $auth = [] ) :?string
     {
+        if ( $this->filterThrows !== null )
+        {
+            throw $this->filterThrows ;
+        }
+
         $this->filterCalls[] =
         [
             $init[ Arango::FILTER ] ?? null ,
@@ -100,24 +117,40 @@ class RecordingTraversalEdges extends MockEdges
     public function getFirstInboundVertex( ?string $to = null , array $init = [] ) :object|array|null
     {
         $this->calls[] = [ 'getFirstInboundVertex' , $to , $init ] ;
+        if ( $this->traversalThrows !== null )
+        {
+            throw $this->traversalThrows ;
+        }
         return $this->firstInbound ;
     }
 
     public function getFirstOutboundVertex( ?string $from = null , array $init = [] ) :object|array|null
     {
         $this->calls[] = [ 'getFirstOutboundVertex' , $from , $init ] ;
+        if ( $this->traversalThrows !== null )
+        {
+            throw $this->traversalThrows ;
+        }
         return $this->firstOutbound ;
     }
 
     public function getInboundVertices( ?string $to = null , array $init = [] ) :object|array|null
     {
         $this->calls[] = [ 'getInboundVertices' , $to , $init ] ;
+        if ( $this->traversalThrows !== null )
+        {
+            throw $this->traversalThrows ;
+        }
         return $this->inbound ;
     }
 
     public function getOutboundVertices( ?string $from = null , array $init = [] ) :object|array|null
     {
         $this->calls[] = [ 'getOutboundVertices' , $from , $init ] ;
+        if ( $this->traversalThrows !== null )
+        {
+            throw $this->traversalThrows ;
+        }
         return $this->outbound ;
     }
 }

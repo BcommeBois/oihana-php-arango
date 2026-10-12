@@ -714,7 +714,8 @@ All four methods accept a `?filter=` query parameter — the [same JSON DSL](../
 
 **How it stays safe.** A traversal inlines its `FILTER` slot verbatim (a server-only knob), so the client JSON is **never** dropped in raw. It is first *compiled* by the edge model's gated engine, targeting the traversed `vertex`, into `FILTER vertex.status == @bind` — which means the two `Documents` guard rails apply unchanged:
 
-- **Whitelist** — only the attributes declared in the edge model's `AQL::FILTERS` are filterable; an undeclared attribute is dropped, so `?filter=` can never reach an unexposed field.
+- **Whitelist** — only the attributes declared in the edge model's `AQL::FILTERS` are filterable; an undeclared attribute is **refused** (`400`, the key named), so `?filter=` can never reach an unexposed field.
+- **Readability** — a `?filter=` that is not JSON, or JSON that is neither an object nor a list, answers `400` (`The filter parameter is not valid JSON.`); it used to be ignored, and the whole traversal came back. An empty or `null` `?filter=` is still no filter.
 - **Authorizer** — when an authorization stack is wired, the request authorizer gates `Field::REQUIRES` both on the compiled predicate and on the vertex projection (`returnFields()`): a hidden attribute cannot be probed through the traversal. Without a stack it falls open (backward compatible).
 
 **Semantics — `?filter=` hides, it does not prune.** On a transitive traversal (`ancestors` / `descendants`), a non-matching vertex is removed from the returned **flat list**, but the traversal still descends *through* it — so a matching grand-child survives even when its parent is filtered out. This is the correct behaviour for a flat list; to reconstruct a `children[]` tree from it, see the note on holes in [`buildTree()`](../edges-joins-projection.md).
@@ -730,6 +731,7 @@ Where `?filter=` hides a vertex but keeps descending, `?prune=` **cuts the whole
 
 `?prune=cond` excludes the non-matching **boundary** vertex too (its condition also joins the `FILTER`) and never walks its sub-tree — it compiles to `FILTER vertex.status == @b` **and** `PRUNE !( vertex.status == @b )`. So you get the clean sub-tree of matching vertices, no stray boundary leaves.
 
+- **Readability** — like `?filter=`: a `?prune=` that is not JSON, or neither an object nor a list, answers `400` (`The prune parameter is not valid JSON.`); it used to be ignored, and the whole sub-tree came back. Empty or `null`: no pruning.
 - **Direction** — `?prune=` is **rejected with `400`** on the inbound methods (`getParent`, `getAncestors`): pruning while climbing to the root is ill-defined. It applies to `getChildren` / `getDescendants` (on the direct `getChildren` it is a harmless no-op — there is nothing below depth 1).
 - **Composes with `?filter=`** — both may be sent at once. Every condition narrows the returned set (they `AND` in the `FILTER`); only the prune one also stops the descent. E.g. `?filter={lang:fr}&prune={status:published}` returns the published sub-tree, further restricted to French vertices.
 
@@ -837,7 +839,7 @@ A client `or` group cannot loosen the scope: the URL filter enters as a **single
 
 Two guard rails, identical to the `Documents` controllers:
 
-- **Whitelist** — only the attributes declared in the model's `AQL::FILTERS` are filterable; anything else is dropped (logged), so `?filter=` can never reach an undeclared field.
+- **Whitelist** — only the attributes declared in the model's `AQL::FILTERS` are filterable; anything else is **refused** (`400`, the key named), so `?filter=` can never reach an undeclared field. A `?filter=` that is not JSON answers `400` too.
 - **Authorizer** — when an authorization stack is wired (`CapabilityEnforcerInterface` + `PermissionSubjectResolverInterface` in the container), the request authorizer gates `Field::REQUIRES`: an attribute hidden from the caller neutralizes its predicate to `false` instead of leaking, closing the filter-oracle. Without a stack, it falls open (backward compatible).
 
 ### Scoping the roots
