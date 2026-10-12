@@ -117,6 +117,132 @@ $users->get( [ Arango::ID => 'abc' , Arango::SKIN => Skin::FULL ] ) ;
 $total = $users->count( [ Arango::FILTER => '{"key":"active","val":true}' ] ) ;
 ```
 
+### Cursor options — `Arango::CURSOR_OPTIONS`
+
+When a model reads, it opens a **cursor** on the server: ArangoDB computes the result and hands it
+back in batches. A few settings of that cursor belong to the caller — the batch size, how long the
+cursor lives between two batches, a memory or time ceiling, the streaming mode. They go in
+**`Arango::CURSOR_OPTIONS`**, an array keyed by the `CursorField` constants, and `list()`, `get()`,
+`count()` and `stream()` honour them the same way. Without the key, every read sends exactly what it
+sent before.
+
+**The setting.** An `events` collection — an event log of two million records. Every night, a job
+walks it with `stream()` and writes each event to an export file. The application configuration sets
+`batchSize = 80000`.
+
+| option | constant | type | what it sets |
+|---|---|---|---|
+| `batchSize` | `CursorField::BATCH_SIZE` | integer > 0 | the number of rows per batch |
+| `ttl` | `CursorField::TTL` | integer > 0 | the seconds the cursor survives **between two batches** |
+| `memoryLimit` | `CursorField::MEMORY_LIMIT` | integer > 0 | the memory ceiling of the query, in bytes |
+| `maxRuntime` | `CursorField::MAX_RUNTIME` | number > 0 | the time ceiling of the query, in seconds |
+| `stream` | `CursorField::STREAM` | boolean | the server computes each batch when it is pulled, instead of everything up front |
+
+#### Bounding what PHP holds in memory
+
+**The situation.** The nightly job grows with every export. With `batchSize = 80000`, its batches are
+huge: `stream()` hands the rows over one by one, but the batch they come from stays whole in memory
+while it is walked.
+
+```php
+foreach ( $events->stream( [ Arango::CURSOR_OPTIONS => [ CursorField::BATCH_SIZE => 1000 ] ] ) as $event )
+{
+    $export->write( $event ) ;
+}
+```
+
+PHP now holds a thousand records at a time. The configured value is only a default: the caller's
+option replaces it, and the library fills only what the caller left out (`batchSize`, `maxRuntime`).
+
+#### Letting the cursor outlive a slow loop
+
+**The situation.** The export no longer writes to a file but to a remote service, and each write
+takes time. Between two batches, the cursor waits on the server; if it waits longer than its time to
+live, the server drops it, and the next batch answers **"cursor not found"**.
+
+```php
+$options = [ CursorField::BATCH_SIZE => 1000 , CursorField::TTL => 600 ] ;
+
+foreach ( $events->stream( [ Arango::CURSOR_OPTIONS => $options ] ) as $event )
+{
+    $remote->send( $event ) ; // ten minutes to get through a batch of a thousand
+}
+```
+
+The `ttl` is set from **the time spent processing one batch**, not from the length of the whole read.
+
+#### Letting the server compute as it goes
+
+**The situation.** We do not want the server to prepare the two million records at once.
+
+```php
+$events->stream( [ Arango::CURSOR_OPTIONS => [ CursorField::STREAM => true , CursorField::BATCH_SIZE => 1000 ] ] ) ;
+```
+
+🚨 **Measure the streaming mode before trusting it.** It has never been measured on a heavy query: a
+streaming cursor keeps its query alive on the server for the whole walk, and a read that already
+exceeded a time limit in one piece may exceed it again. It never becomes a default.
+
+#### Capping a read
+
+**The situation.** A dashboard sorts the whole collection. A plain error is preferred to a query that
+runs away.
+
+```php
+$events->list
+([
+    Arango::SORT           => '-date' ,
+    Arango::LIMIT          => 50 ,
+    Arango::CURSOR_OPTIONS => [ CursorField::MEMORY_LIMIT => 256_000_000 , CursorField::MAX_RUNTIME => 5 ] ,
+]) ;
+```
+
+Beyond them, the read throws an `HttpException` (see limit 3).
+
+#### What is refused — and why the refusal is ours
+
+The server **says nothing** about an option it does not know, nor about a value of the wrong type:
+`{"batchsize": 1000}` (wrong case), `batchSize: "1000"`, `ttl: -5` or `stream: "yes"` all run as if
+the option were absent (measured on ArangoDB 3.12). A typo would become an invisible setting; the read
+therefore throws a `ValidationException`:
+
+| what the caller gives | why it is refused |
+|---|---|
+| an option outside the five | the server would ignore it without a word |
+| a value of the wrong type, null or ≤ 0 | same |
+| `query`, `bindVars` | they would **replace the query the model builds**, and every guard in it |
+| `fullCount` | the read decides it, from its `LIMIT`: it feeds the total of a paginated list |
+| `profile` | it goes through [`Arango::PROFILE`](db/explain-and-profiling.md) |
+| `count` | no read of the model hands the cursor count back |
+| `stream: true` with a `LIMIT` (`list()`, `stream()`) | see limit 2 |
+
+#### The limits
+
+**Limit 1 — `batchSize` bounds no memory in `list()`.** `list()` gathers every batch before returning
+its array: smaller batches mean more round trips, not less memory. Only `stream()` benefits — and only
+when `batchSize` is smaller than the result. *It concerns you* if you are trying to lighten a big
+read: go through `stream()`.
+
+**Limit 2 — A streaming cursor does not count beyond its `LIMIT`.** Measured on 3.12: in streaming
+mode, `fullCount` stays `null`, even once the cursor is drained. A paginated list in streaming mode
+would report a total of **0** without an error; the combination is therefore refused. Without a
+`LIMIT`, `stream` is accepted — that is precisely the full walk of a collection.
+
+**Limit 3 — The ceilings show up as server errors.** An exceeded `memoryLimit` throws an
+`HttpException` with code 500, an exceeded `maxRuntime` one with code 410, an expired `ttl` one with
+code **404** ("cursor not found") — on the next batch, in the middle of the walk. No controller reads
+this key from the URL; *it concerns you* only if your application wires it into a controller:
+`HttpStatusCode::fromException()` translates the exception by its code, and the client would receive
+a 404 for an expired cursor.
+
+**Limit 4 — `stream()` refuses at the first iteration.** It is a generator: nothing runs before it is
+walked, neither the query nor the check of the options. A refused option shows up on the first turn
+of the loop, like any other error of the read.
+
+**Limit 5 — A memory ceiling only bites on a query that allocates.** A plain read (`FOR … RETURN`, a
+count, one record by its key) uses so little that even a one-byte ceiling usually passes.
+`memoryLimit` is a safeguard for the reads that sort, group or gather.
+
 ### Automatic timestamps — and how a write keeps its own dates
 
 Every write stamps `modified` with the moment of the write, and an insert stamps `created` with it

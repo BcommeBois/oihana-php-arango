@@ -235,6 +235,14 @@ trait DocumentsListTrait
      *   Enable query debugging. When `true`, logs the AQL query and bind variables.
      *   Default: `false`
      *
+     * **Cursor:**
+     * - **`cursorOptions`** (`?array`, optional)
+     *   The cursor options sent to the server, see {@see Arango::CURSOR_OPTIONS}. `stream`
+     *   is refused with a `limit` : a streaming cursor does not count the rows beyond it.
+     *   ⚠ `batchSize` bounds no memory here — every batch is gathered before returning.
+     * - **`profile`** (`bool|int`, optional)
+     *   Runs the query profiled, see {@see Arango::PROFILE}.
+     *
      * @return array
      * An array of matching documents. Each document is:
      * - Retrieved from ArangoDB based on the query
@@ -292,7 +300,7 @@ trait DocumentsListTrait
      * - Property hydration errors
      * - Method invocation failures during alter()
      * @throws UnsupportedOperationException
-     * @throws ValidationException
+     * @throws ValidationException If the group spec is malformed, or the cursor options are refused.
      *
      * @see buildListQuery() For the query construction logic
      * @see getDocuments() For the underlying execution and transformation
@@ -314,7 +322,7 @@ trait DocumentsListTrait
         // projection already shaped the row, the schema would only decorate it.
         $raw = $this->isRawRead( $init ) ;
 
-        $rows = $this->getDocuments( $query , $bindVars , $this->profileOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) , raw: $raw , context: $init ) ;
+        $rows = $this->getDocuments( $query , $bindVars , $this->cursorOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) , raw: $raw , context: $init ) ;
 
         // A SUM the store computed carries the noise of an addition of floats, and
         // nothing downstream reads a grouped row : it is shed here, on the summed

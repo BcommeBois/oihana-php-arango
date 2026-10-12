@@ -30,10 +30,13 @@ use oihana\arango\db\results\ProfileResult;
 use oihana\arango\enums\Arango;
 
 use oihana\enums\Char;
+use oihana\exceptions\ValidationException;
 use oihana\logging\DebugTrait;
 use oihana\models\traits\AlterDocumentTrait;
 use oihana\models\traits\SchemaTrait;
 use oihana\traits\LazyTrait;
+
+use function oihana\arango\models\helpers\assertCursorOption;
 
 /**
  * This class is the generic Model class.
@@ -209,7 +212,7 @@ trait ArangoTrait
 
     /**
      * Returns the typed execution statistics of the last query (scanned / filtered
-     * / time / memory …). Most meaningful right after a profiled `list()` / `get()`
+     * / time / memory …). Most meaningful right after a profiled read
      * (see {@see Arango::PROFILE}).
      *
      * @return ExecutionStats
@@ -231,11 +234,62 @@ trait ArangoTrait
     }
 
     /**
+     * Returns the cursor options of a read : the ones the read decides itself
+     * (`$options`, e.g. the `fullCount` of a limited list), the `profile` asked through
+     * {@see Arango::PROFILE}, then the ones the caller names through
+     * {@see Arango::CURSOR_OPTIONS}.
+     *
+     * The caller's options never meet the read's own : `fullCount` and `profile` are
+     * not among them. What they do meet are the defaults of the façade
+     * (`batchSize`, `maxRuntime`), which fill only what is absent — the caller wins.
+     *
+     * Every refusal is ours, since the server says nothing : an option it does not
+     * know and a value of the wrong type both run as if absent.
+     *
+     * @param array $init    The model input array.
+     * @param array $options The cursor options the read decides itself.
+     *
+     * @return array
+     *
+     * @throws ValidationException When the caller's options are not an array, name an
+     *                             option outside the five, carry a value of the wrong
+     *                             type, or ask a limited read to stream.
+     */
+    protected function cursorOptions( array $init , array $options = [] ) :array
+    {
+        $options = $this->profileOptions( $init , $options ) ;
+        $caller  = $init[ Arango::CURSOR_OPTIONS ] ?? [] ;
+
+        if ( !is_array( $caller ) )
+        {
+            throw new ValidationException( 'The cursor options must be an array, ' . get_debug_type( $caller ) . ' given.' ) ;
+        }
+
+        foreach ( $caller as $name => $value )
+        {
+            assertCursorOption( $name , $value ) ;
+            $options[ $name ] = $value ;
+        }
+
+        // A streaming cursor answers fullCount: null, even once drained — the total of
+        // a limited read would come back 0 without a word.
+        if ( ( $options[ CursorField::STREAM ] ?? false ) === true && ( $options[ CursorField::FULL_COUNT ] ?? false ) === true )
+        {
+            throw new ValidationException
+            (
+                'The cursor option "stream" is refused on a limited read: a streaming cursor does not count the rows beyond the LIMIT, so the total would read 0.'
+            ) ;
+        }
+
+        return $options ;
+    }
+
+    /**
      * Merges the cursor `profile` option into `$options` when the `$init` array
      * requests profiling via {@see Arango::PROFILE} (`true` → profile level 2, or
      * an explicit integer level). Returns `$options` unchanged otherwise.
      *
-     * @param array $init    The model input array (`list()` / `get()`).
+     * @param array $init    The model input array.
      * @param array $options The cursor options to augment.
      *
      * @return array

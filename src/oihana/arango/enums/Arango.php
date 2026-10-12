@@ -98,6 +98,20 @@ class Arango extends AQL
     public const string COUNTER = 'counter' ;
 
     /**
+     * The 'cursorOptions' parameter — the cursor options a read sends to the server,
+     * keyed by {@see CursorField} : `batchSize`, `ttl`, `memoryLimit`, `maxRuntime`
+     * and `stream`, honoured the same way by `list()`, `get()`, `count()` and
+     * `stream()`. Anything else is refused, and so is a value of the wrong type —
+     * the server would ignore either without a word.
+     *
+     * ⚠️ Not to be confused with {@see Arango::OPTIONS} — the server options of a
+     * write (`keepNull`, …) in a model, the output options in a controller.
+     *
+     * Absent, every read sends what it always sent.
+     */
+    public const string CURSOR_OPTIONS = 'cursorOptions' ;
+
+    /**
      * The 'dateField' parameter.
      */
     public const string DATE_FIELD = 'dateField' ;
@@ -360,8 +374,8 @@ class Arango extends AQL
     public const string POSITION_KEY = 'positionKey' ;
 
     /**
-     * The 'profile' parameter — when truthy, `list()` / `get()` run the query in
-     * profiled mode (`true` → profile level 2) and the measurements are exposed
+     * The 'profile' parameter — when truthy, `list()` / `get()` / `count()` / `stream()`
+     * run the query in profiled mode (`true` → profile level 2) and the measurements are exposed
      * through {@see ArangoTrait::getProfile()}.
      */
     public const string PROFILE = 'profile' ;

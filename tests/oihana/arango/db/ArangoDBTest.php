@@ -199,6 +199,43 @@ class ArangoDBTest extends ArangoDBTestCase
         $this->assertArrayNotHasKey( 'skipped' , $root ) ;
     }
 
+    /**
+     * The façade's `batchSize` / `maxRuntime` are defaults: a caller that names its own
+     * keeps them — the cursor options a model reads with reach the server unchanged.
+     */
+    public function testPrepareKeepsTheBatchSizeAndMaxRuntimeTheCallerNames() :void
+    {
+        $captured = null ;
+
+        $database = $this->createMock( Database::class ) ;
+        $database->method( 'query' )->willReturnCallback
+        (
+            function( string $query , array $binds , array $options ) use ( &$captured ) :Cursor
+            {
+                $captured = $options ;
+                return $this->createMock( Cursor::class ) ;
+            }
+        ) ;
+
+        $db = $this->newArangoDB( $database ) ;
+        $this->setProperty( $db , 'maxRuntime' , 30.0 ) ;
+
+        $db->prepare
+        ([
+            CursorField::QUERY       => 'FOR x IN c RETURN x' ,
+            CursorField::BATCH_SIZE  => 500 ,
+            CursorField::MAX_RUNTIME => 2.5 ,
+        ])->execute() ;
+
+        $this->assertSame( 500 , $captured[ CursorField::BATCH_SIZE ] ) ;
+        $this->assertSame( [ CursorField::MAX_RUNTIME => 2.5 ] , $captured[ CursorField::OPTIONS ] ) ;
+
+        $db->prepare( [ CursorField::QUERY => 'FOR x IN c RETURN x' ] )->execute() ;
+
+        $this->assertSame( 10000 , $captured[ CursorField::BATCH_SIZE ] ) ;
+        $this->assertSame( [ CursorField::MAX_RUNTIME => 30.0 ] , $captured[ CursorField::OPTIONS ] ) ;
+    }
+
     // ---- results --------------------------------------------------------
 
     public function testGetResultReturnsNullWithoutCursor() :void

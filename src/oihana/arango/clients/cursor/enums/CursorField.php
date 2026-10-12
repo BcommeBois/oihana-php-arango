@@ -159,6 +159,17 @@ class CursorField
     public const string STATS = 'stats' ;
 
     /**
+     * Cursor option — run the query **lazily**: the server computes each batch when
+     * it is pulled instead of materialising the whole result up front. Nested under
+     * {@see OPTIONS}.
+     *
+     * ⚠️ A streaming cursor does not honour {@see COUNT}, {@see CACHE} nor
+     * {@see FULL_COUNT} — measured on 3.12, `fullCount` stays `null` even once the
+     * cursor is drained.
+     */
+    public const string STREAM = 'stream' ;
+
+    /**
      * Cursor option — server-side time-to-live of the cursor (in
      * seconds). The cursor is dropped automatically when no batch is
      * pulled within that window. Lives at the root of the

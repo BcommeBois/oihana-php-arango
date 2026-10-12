@@ -427,6 +427,7 @@
             "src/oihana/arango/migrations/helpers/renameFieldQuery.php",
             "src/oihana/arango/migrations/helpers/setDefaultQuery.php",
             "src/oihana/arango/models/helpers/alterExpression.php",
+            "src/oihana/arango/models/helpers/assertCursorOption.php",
             "src/oihana/arango/models/helpers/assertDocuments.php",
             "src/oihana/arango/models/helpers/authorizeRelationFields.php",
             "src/oihana/arango/models/helpers/authorizeTargetFields.php",

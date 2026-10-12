@@ -117,6 +117,135 @@ $users->get( [ Arango::ID => 'abc' , Arango::SKIN => Skin::FULL ] ) ;
 $total = $users->count( [ Arango::FILTER => '{"key":"active","val":true}' ] ) ;
 ```
 
+### Les options de curseur — `Arango::CURSOR_OPTIONS`
+
+Quand un modèle lit, il ouvre un **curseur** sur le serveur : ArangoDB calcule le résultat et le
+renvoie par lots. Quelques réglages de ce curseur appartiennent à l'appelant — la taille des lots,
+la durée de vie du curseur entre deux lots, un plafond de mémoire ou de durée, le mode flux. Ils se
+donnent dans **`Arango::CURSOR_OPTIONS`**, un tableau indexé par les constantes `CursorField`, et
+`list()`, `get()`, `count()` et `stream()` les honorent de la même façon. Sans la clé, chaque
+lecture envoie exactement ce qu'elle envoyait avant.
+
+**Le décor.** Une collection `events` — un journal d'événements de deux millions de fiches. Chaque
+nuit, une tâche la parcourt avec `stream()` et écrit chaque événement dans un fichier d'export. La
+configuration de l'application fixe `batchSize = 80000`.
+
+| option | constante | type | ce qu'elle règle |
+|---|---|---|---|
+| `batchSize` | `CursorField::BATCH_SIZE` | entier > 0 | le nombre de lignes par lot |
+| `ttl` | `CursorField::TTL` | entier > 0 | les secondes que le curseur survit **entre deux lots** |
+| `memoryLimit` | `CursorField::MEMORY_LIMIT` | entier > 0 | le plafond de mémoire de la requête, en octets |
+| `maxRuntime` | `CursorField::MAX_RUNTIME` | nombre > 0 | le plafond de durée de la requête, en secondes |
+| `stream` | `CursorField::STREAM` | booléen | le serveur calcule chaque lot quand on le demande, au lieu de tout calculer d'avance |
+
+#### Borner ce que PHP garde en mémoire
+
+**La situation.** La tâche de nuit grossit à chaque export. Avec `batchSize = 80000`, ses lots sont
+énormes : `stream()` rend les lignes une à une, mais le lot dont elles viennent reste entier en
+mémoire pendant qu'on le parcourt.
+
+```php
+foreach ( $events->stream( [ Arango::CURSOR_OPTIONS => [ CursorField::BATCH_SIZE => 1000 ] ] ) as $event )
+{
+    $export->write( $event ) ;
+}
+```
+
+PHP ne tient plus que mille fiches à la fois. Le défaut de la configuration n'est qu'un défaut :
+l'option de l'appelant le remplace, et la bibliothèque ne remplit que ce que l'appelant n'a pas donné
+(`batchSize`, `maxRuntime`).
+
+#### Laisser le curseur survivre à une boucle lente
+
+**La situation.** L'export n'écrit plus dans un fichier mais dans un service distant, et chaque
+écriture prend du temps. Entre deux lots, le curseur attend sur le serveur ; s'il attend plus que sa
+durée de vie, le serveur le supprime, et le lot suivant répond **« cursor not found »**.
+
+```php
+$options = [ CursorField::BATCH_SIZE => 1000 , CursorField::TTL => 600 ] ;
+
+foreach ( $events->stream( [ Arango::CURSOR_OPTIONS => $options ] ) as $event )
+{
+    $remote->send( $event ) ; // dix minutes pour finir un lot de mille
+}
+```
+
+Le `ttl` se règle sur **le temps passé à traiter un lot**, pas sur la durée totale de la lecture.
+
+#### Faire calculer le serveur au fil de l'eau
+
+**La situation.** On veut que le serveur ne prépare pas les deux millions de fiches d'un coup.
+
+```php
+$events->stream( [ Arango::CURSOR_OPTIONS => [ CursorField::STREAM => true , CursorField::BATCH_SIZE => 1000 ] ] ) ;
+```
+
+🚨 **Le mode flux se mesure avant d'y croire.** Il n'a jamais été mesuré sur une requête lourde :
+un curseur en flux garde sa requête vivante sur le serveur pendant tout le parcours, et une lecture
+qui dépassait déjà un délai d'un seul tenant peut le dépasser de nouveau. Il ne devient jamais un
+défaut.
+
+#### Plafonner une lecture
+
+**La situation.** Un tableau de bord trie toute la collection. On préfère une erreur franche à une
+requête qui s'emballe.
+
+```php
+$events->list
+([
+    Arango::SORT           => '-date' ,
+    Arango::LIMIT          => 50 ,
+    Arango::CURSOR_OPTIONS => [ CursorField::MEMORY_LIMIT => 256_000_000 , CursorField::MAX_RUNTIME => 5 ] ,
+]) ;
+```
+
+Au-delà, la lecture lève une `HttpException` (voir la limite 3).
+
+#### Ce qui est refusé — et pourquoi c'est nous qui refusons
+
+Le serveur **ne dit rien** d'une option qu'il ne connaît pas, ni d'une valeur du mauvais type :
+`{"batchsize": 1000}` (minuscule fautive), `batchSize: "1000"`, `ttl: -5` ou `stream: "yes"`
+tournent comme si l'option était absente (mesuré sur ArangoDB 3.12). Une faute de frappe deviendrait
+un réglage invisible ; la lecture lève donc une `ValidationException` :
+
+| ce que l'appelant donne | pourquoi c'est refusé |
+|---|---|
+| une option hors des cinq | le serveur l'ignorerait sans un mot |
+| une valeur du mauvais type, nulle ou ≤ 0 | idem |
+| `query`, `bindVars` | elles **remplaceraient la requête que le modèle construit**, et toutes ses gardes avec |
+| `fullCount` | c'est la lecture qui le décide, d'après sa `LIMIT` : il alimente le total d'une liste paginée |
+| `profile` | il passe par [`Arango::PROFILE`](db/explain-and-profiling.md) |
+| `count` | aucune lecture du modèle ne rend le compte du curseur |
+| `stream: true` avec une `LIMIT` (`list()`, `stream()`) | voir la limite 2 |
+
+#### Les limites
+
+**Limite 1 — `batchSize` ne borne aucune mémoire dans `list()`.** `list()` rassemble tous les lots
+avant de rendre son tableau : des lots plus petits font plus d'allers-retours, pas moins de mémoire.
+Seul `stream()` en profite — et seulement si `batchSize` est plus petit que le résultat. *Ça te
+concerne* si tu cherches à alléger une grosse lecture : passe par `stream()`.
+
+**Limite 2 — Un curseur en flux ne compte pas au-delà de sa `LIMIT`.** Mesuré sur 3.12 : en mode flux,
+`fullCount` reste `null`, même une fois le curseur vidé. Une liste paginée en flux annoncerait un
+total de **0** sans erreur ; la combinaison est donc refusée. Sans `LIMIT`, `stream` passe — c'est
+justement le parcours complet d'une collection.
+
+**Limite 3 — Les plafonds se voient comme des erreurs du serveur.** Un `memoryLimit` dépassé lève une
+`HttpException` de code 500, un `maxRuntime` dépassé une de code 410, un `ttl` écoulé une de code
+**404** (« cursor not found ») — au lot suivant, au milieu du parcours. Aucun contrôleur ne lit
+cette clé dans l'URL ; *ça te concerne* seulement si ton application la câble dans un contrôleur :
+`HttpStatusCode::fromException()` traduit l'exception par son code, et le client recevrait un 404
+pour un curseur expiré.
+
+**Limite 4 — `stream()` refuse à la première itération.** C'est un générateur : rien ne s'exécute
+avant qu'on le parcoure, ni la requête ni la vérification des options. Une option refusée se voit
+au premier tour de boucle, comme toute autre erreur de la lecture.
+
+**Limite 5 — Un plafond de mémoire ne mord que sur une requête qui alloue.** Une lecture simple
+(`FOR … RETURN`, un comptage, une fiche par sa clé) consomme si peu que même un plafond d'un octet
+passe le plus souvent. `memoryLimit` est un garde-fou pour les lectures qui trient, groupent ou
+rassemblent.
+
 ### Les dates automatiques — et comment une écriture garde les siennes
 
 Chaque écriture tamponne `modified` avec le moment de l'écriture, et une insertion tamponne aussi

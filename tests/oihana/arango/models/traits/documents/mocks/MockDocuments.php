@@ -112,7 +112,7 @@ class MockDocuments extends Documents
      *
      * @param string                             $query    The AQL query the trait built.
      * @param array                              $bindVars The bind variables the trait built.
-     * @param array                              $options  Cursor options (ignored by the double).
+     * @param array                              $options  Cursor options — captured in {@see $lastOptions}.
      * @param bool                               $raw      Whether to skip hydration (ignored).
      * @param null|SchemaResolver|Closure|string $schema   Hydration schema (ignored).
      *
@@ -129,8 +129,9 @@ class MockDocuments extends Documents
     )
     :mixed
     {
-        $this->lastQuery = $query ;
-        $this->lastBinds = $bindVars ;
+        $this->lastQuery   = $query ;
+        $this->lastBinds   = $bindVars ;
+        $this->lastOptions = $options ;
         return $this->firstResult ;
     }
 
@@ -139,7 +140,7 @@ class MockDocuments extends Documents
      *
      * @param string                             $query    The AQL query the trait built.
      * @param array                              $bindVars The bind variables the trait built.
-     * @param array                              $options  Cursor options (ignored by the double).
+     * @param array                              $options  Cursor options — captured in {@see $lastOptions}.
      * @param bool                               $raw      Whether to skip hydration (ignored).
      * @param null|SchemaResolver|Closure|string $schema   Hydration schema (ignored).
      *
@@ -168,7 +169,7 @@ class MockDocuments extends Documents
      *
      * @param string                             $query    The AQL query the trait built.
      * @param array                              $bindVars The bind variables the trait built.
-     * @param array                              $options  Cursor options (ignored by the double).
+     * @param array                              $options  Cursor options — captured in {@see $lastOptions}.
      * @param bool                               $raw      Whether to skip hydration — captured in {@see $lastRaw}.
      * @param null|SchemaResolver|Closure|string $schema   Hydration schema (ignored).
      *
@@ -198,7 +199,7 @@ class MockDocuments extends Documents
      *
      * @param string                             $query    The AQL query the trait built.
      * @param array                              $bindVars The bind variables the trait built.
-     * @param array                              $options  Cursor options (ignored by the double).
+     * @param array                              $options  Cursor options — captured in {@see $lastOptions}.
      * @param bool                               $raw      Whether to skip hydration — captured in {@see $lastRaw}.
      * @param null|SchemaResolver|Closure|string $schema   Hydration schema (ignored).
      *
@@ -217,6 +218,7 @@ class MockDocuments extends Documents
     {
         $this->lastQuery   = $query ;
         $this->lastBinds   = $bindVars ;
+        $this->lastOptions = $options ;
         $this->lastContext = $context ;
         $this->lastRaw     = $raw ;
         yield from $this->streamResult ;

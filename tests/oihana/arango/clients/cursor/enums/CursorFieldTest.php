@@ -31,6 +31,7 @@ class CursorFieldTest extends TestCase
         $this->assertSame( 'query'       , CursorField::QUERY        ) ;
         $this->assertSame( 'result'      , CursorField::RESULT       ) ;
         $this->assertSame( 'stats'       , CursorField::STATS        ) ;
+        $this->assertSame( 'stream'      , CursorField::STREAM       ) ;
         $this->assertSame( 'ttl'         , CursorField::TTL          ) ;
     }
 
@@ -40,7 +41,8 @@ class CursorFieldTest extends TestCase
         [
             'batchSize' , 'bindVars'  , 'cache'   , 'count'     , 'extra'  ,
             'fullCount' , 'hasMore'   , 'id'      , 'maxRuntime', 'memoryLimit' ,
-            'options'   , 'query'     , 'result'  , 'stats'     , 'ttl'    ,
+            'options'   , 'query'     , 'result'  , 'stats'     , 'stream' ,
+            'ttl'       ,
         ] ;
 
         foreach ( $fields as $field )
@@ -69,5 +71,6 @@ class CursorFieldTest extends TestCase
     {
         $this->assertNotContains( CursorField::FULL_COUNT  , CursorField::ROOT_OPTIONS ) ;
         $this->assertNotContains( CursorField::MAX_RUNTIME , CursorField::ROOT_OPTIONS ) ;
+        $this->assertNotContains( CursorField::STREAM      , CursorField::ROOT_OPTIONS ) ;
     }
 }

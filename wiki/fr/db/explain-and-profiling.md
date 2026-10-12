@@ -141,9 +141,9 @@ echo implode( ', ' , $plan->rules() ) ;          // "… use-indexes, remove-fil
 
 `explain` vous donne le *plan* ; le **profiling** vous dit ce qui s'est réellement passé quand la requête a *tourné* — combien de lignes lues depuis des index vs des full scans, combien filtrées, combien de temps chaque phase a pris. Contrairement à `explain()`, le profiling **exécute la requête**.
 
-### Depuis un modèle — `?profile` / `Arango::PROFILE`
+### Depuis un modèle — `Arango::PROFILE`
 
-Passez `Arango::PROFILE` (`'profile'`) dans l'entrée de `list()` / `get()`. La requête tourne normalement (vous récupérez vos documents), et les mesures sont capturées pour le prochain `getProfile()` / `getStats()` :
+Passez `Arango::PROFILE` (`'profile'`) dans l'entrée de `list()`, `get()`, `count()` ou `stream()`. C'est une clé de modèle : aucun contrôleur ne la lit dans l'URL. La requête tourne normalement (vous récupérez vos documents), et les mesures sont capturées pour le prochain `getProfile()` / `getStats()` :
 
 ```php
 use oihana\arango\enums\Arango ;
@@ -162,7 +162,11 @@ $users->getProfile()->totalTime() ;          // somme des timings de phases
 $users->getProfile()->timings() ;            // ['parsing' => …, 'optimizing plan' => …, 'executing' => …, …]
 ```
 
-`get( [ … , 'profile' => true ] )` profile une lecture de document unique de la même façon.
+`get( [ … , 'profile' => true ] )` profile une lecture de document unique de la même façon, et `count()` un comptage.
+
+> ⚠️ **`stream()` se profile pendant qu'on le parcourt.** Le générateur lâche son curseur, et tout ce qu'il porte, dès qu'il a rendu la dernière ligne : lisez `getProfile()` / `getStats()` **dans** la boucle, pas après.
+
+Les autres options du curseur (taille des lots, durée de vie, plafond mémoire…) passent par [`Arango::CURSOR_OPTIONS`](../models.md#les-options-de-curseur--arangocursor_options).
 
 ### L'objet `ExecutionStats`
 

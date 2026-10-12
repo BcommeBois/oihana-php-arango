@@ -141,9 +141,9 @@ echo implode( ', ' , $plan->rules() ) ;          // "… use-indexes, remove-fil
 
 `explain` tells you the *plan*; **profiling** tells you what actually happened when the query *ran* — how many rows were scanned from indexes vs. full collections, how many were filtered out, how long each phase took. Unlike `explain()`, profiling **executes the query**.
 
-### From a model — `?profile` / `Arango::PROFILE`
+### From a model — `Arango::PROFILE`
 
-Pass `Arango::PROFILE` (`'profile'`) in the `list()` / `get()` input. The query runs normally (you still get your documents), and the measurements are captured for the next `getProfile()` / `getStats()` call:
+Pass `Arango::PROFILE` (`'profile'`) in the `list()`, `get()`, `count()` or `stream()` input. It is a model key: no controller reads it from the URL. The query runs normally (you still get your documents), and the measurements are captured for the next `getProfile()` / `getStats()` call:
 
 ```php
 use oihana\arango\enums\Arango ;
@@ -162,7 +162,11 @@ $users->getProfile()->totalTime() ;          // sum of all phase timings
 $users->getProfile()->timings() ;            // ['parsing' => …, 'optimizing plan' => …, 'executing' => …, …]
 ```
 
-`get( [ … , 'profile' => true ] )` profiles a single-document fetch the same way.
+`get( [ … , 'profile' => true ] )` profiles a single-document fetch the same way, and `count()` a count.
+
+> ⚠️ **`stream()` is profiled while it is iterated.** The generator lets go of its cursor, and of everything it carries, as soon as it has handed over the last row: read `getProfile()` / `getStats()` **inside** the loop, not after it.
+
+The other cursor options (batch size, time to live, memory ceiling…) go through [`Arango::CURSOR_OPTIONS`](../models.md#cursor-options--arangocursor_options).
 
 ### The `ExecutionStats` object
 

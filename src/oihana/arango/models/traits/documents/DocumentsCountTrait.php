@@ -63,6 +63,9 @@ trait DocumentsCountTrait
      * `optimized` is `false`. Handled by `prepareSearch()`.
      * - **`conditions`** (`?array`, optional): An array of additional AQL filter conditions to append to
      * the query. Only applies if `optimized` is `false`.
+     * - **`cursorOptions`** (`?array`, optional): The cursor options sent to the server, see
+     * {@see Arango::CURSOR_OPTIONS}.
+     * - **`profile`** (`bool|int`, optional): Runs the query profiled, see {@see Arango::PROFILE}.
      *
      * @return int The number of documents matching the criteria. Returns `0` if in mock mode.
      *
@@ -74,7 +77,7 @@ trait DocumentsCountTrait
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException If a reflection error occurs (e.g., during internal AQL building).
      * @throws UnsupportedOperationException
-     * @throws ValidationException
+     * @throws ValidationException If the cursor options are refused.
      * @throws ConstantException
      *
      * @example
@@ -99,6 +102,6 @@ trait DocumentsCountTrait
             }
         }
 
-        return $this->getFirstResult( $query , $bindVars ) ;
+        return $this->getFirstResult( $query , $bindVars , $this->cursorOptions( $init ) ) ;
     }
 }

@@ -162,6 +162,16 @@ trait DocumentsStreamTrait
      *   and bind variables via `debugQuery()`.
      *   Default: `false`
      *
+     * **Cursor:**
+     * - **`cursorOptions`** (`?array`, optional)
+     *   The cursor options sent to the server, see {@see Arango::CURSOR_OPTIONS}. A
+     *   `batchSize` smaller than the result is what bounds the rows held in memory ; a
+     *   `ttl` shorter than the work done between two batches kills the cursor. `stream`
+     *   is refused with a `limit`.
+     * - **`profile`** (`bool|int`, optional)
+     *   Runs the query profiled, see {@see Arango::PROFILE}. ⚠ The profile is read
+     *   **while iterating** : once the last row is handed over, the cursor is let go.
+     *
      * @return Generator<mixed>
      * A PHP generator that yields documents one by one. Each yielded document
      * has already been processed through schema mapping (if configured) and
@@ -188,7 +198,8 @@ trait DocumentsStreamTrait
      *                            - Property access errors during hydration
      * @throws ValidationException If the group spec is malformed — `buildListQuery()` has been able
      *                             to raise it since grouping was introduced, and the contract had
-     *                             never said so.
+     *                             never said so — or the cursor options are refused. Like every
+     *                             other error of the read, it surfaces at the first iteration.
      *
      * @see list() For loading all documents into memory at once
      * @see buildListQuery() For the query construction logic
@@ -210,7 +221,7 @@ trait DocumentsStreamTrait
         (
             $query ,
             $bindVars ,
-            [ CursorField::FULL_COUNT => (bool) $limit ] ,
+            $this->cursorOptions( $init , [ CursorField::FULL_COUNT => (bool) $limit ] ) ,
             raw: $raw ,
             context: $init
         ) ;

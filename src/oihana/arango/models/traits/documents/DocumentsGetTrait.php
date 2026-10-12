@@ -6,6 +6,7 @@ use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\models\traits\ArangoTrait;
 use oihana\arango\models\traits\queries\GetQueryTrait;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -36,6 +37,8 @@ trait DocumentsGetTrait
      * - active : The optional active property.
      * - fields (`?array<string>`, optional): An array of specific fields to return for each document. If not provided, all document fields are returned. Handled by `returnFields()`.</li>
      * - skin (?<string>, optional): The skin to apply on the result document.
+     * - cursorOptions (?array, optional): The cursor options sent to the server, see {@see \oihana\arango\enums\Arango::CURSOR_OPTIONS}.
+     * - profile (bool|int, optional): Runs the query profiled, see {@see \oihana\arango\enums\Arango::PROFILE}.
      *
      * @return ?object The specific item.
      *
@@ -44,11 +47,12 @@ trait DocumentsGetTrait
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException If a reflection error occurs (e.g., during internal AQL building).
+     * @throws ValidationException If the cursor options are refused.
      */
     public function get( array $init = [] ) :?object
     {
         $bindVars = $this->prepareBindVars( $init ) ;
         $query    = $this->buildGetQuery( $init , $bindVars ) ;
-        return $this->getObject( $query , $bindVars , $this->profileOptions( $init ) , context: $init ) ;
+        return $this->getObject( $query , $bindVars , $this->cursorOptions( $init ) , context: $init ) ;
     }
 }
