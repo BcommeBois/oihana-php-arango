@@ -82,23 +82,25 @@ $cursor = $db->query( $query ) ;
 
 `Database::query()` accepte soit une instance `AqlQuery`, soit une chaîne brute. Quand vous passez une chaîne, posez les binds en deuxième argument ; quand vous passez un `AqlQuery`, le deuxième argument doit être vide (sinon le helper lève `InvalidArgumentException`).
 
-Le troisième argument est un tableau d'options transmis au curseur serveur :
+Le troisième argument est un tableau d'options transmis au curseur serveur **tel quel**. Le serveur lit cinq options à la racine de la requête, et toutes les autres sous l'objet imbriqué `options` :
 
-| Option | Type | Effet |
-|---|---|---|
-| `count` | `bool` | Si `true`, le serveur renvoie le nombre total de résultats d'emblée. Nécessaire pour appeler `$cursor->count()`. |
-| `fullCount` | `bool` | Renvoie le compte **avant** toute clause `LIMIT`. Récupéré via `$cursor->getFullCount()`. |
-| `batchSize` | `int` | Nombre de lignes par batch réseau. Le curseur va chercher les batches suivants transparenment au fil de l'itération. |
-| `ttl` | `int` | Durée de vie du curseur côté serveur, en secondes. |
-| `cache` | `bool` | Réutilise le cache de résultats AQL si applicable. |
-| `memoryLimit` | `int` | Mémoire maximale (octets) que la requête peut utiliser. |
-| `options` | `array` | Objet imbriqué pour les flags avancés : `profile`, `maxRuntime`, `failOnWarning`, `optimizer.rules`, etc. |
+| Option | Où | Type | Effet |
+|---|---|---|---|
+| `count` | racine | `bool` | Si `true`, le serveur renvoie le nombre total de résultats d'emblée. Nécessaire pour appeler `$cursor->count()`. |
+| `batchSize` | racine | `int` | Nombre de lignes par lot réseau. Le curseur va chercher les lots suivants de lui-même au fil de l'itération. |
+| `ttl` | racine | `int` | Durée de vie du curseur côté serveur entre deux lots, en secondes. |
+| `cache` | racine | `bool` | Réutilise le cache de résultats AQL si applicable. |
+| `memoryLimit` | racine | `int` | Mémoire maximale (octets) que la requête peut utiliser. |
+| `fullCount` | `options` | `bool` | Renvoie le compte **avant** toute clause `LIMIT`. Récupéré via `$cursor->getFullCount()`. |
+| `profile`, `stream`, `maxRuntime`, `failOnWarning`, `optimizer.rules`, … | `options` | | Les réglages avancés. |
+
+> ⚠️ **`Database::query()` ne déplace rien.** Une option écrite à la racine alors qu'elle appartient à `options` est ignorée par le serveur, sans un mot — mesuré : `fullCount` à la racine laisse `getFullCount()` à `0`, le même drapeau sous `options` donne le vrai total. La façade `ArangoDB` fait ce rangement elle-même (`CursorField::ROOT_OPTIONS`), et un modèle prend ses options par [`Arango::CURSOR_OPTIONS`](../models.md#les-options-de-curseur--arangocursor_options).
 
 ```php
 $cursor = $db->query(
     aql( 'FOR u IN users LIMIT @offset , @limit RETURN u' , 0 , 100 ) ,
     [] ,
-    [ 'count' => true , 'fullCount' => true , 'batchSize' => 50 ] ,
+    [ 'count' => true , 'batchSize' => 50 , 'options' => [ 'fullCount' => true ] ] ,
 ) ;
 ```
 

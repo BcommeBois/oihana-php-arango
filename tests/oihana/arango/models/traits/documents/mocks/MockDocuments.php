@@ -16,9 +16,10 @@ use org\schema\helpers\SchemaResolver;
  *
  * It extends {@see Documents} but bypasses the DI container / ArangoDB driver
  * (same approach as EdgesDeleteTraitTest): the constructor only sets the few
- * properties the build/orchestration logic needs, and the three result-fetching
- * seams of ArangoTrait — getObject(), getDocuments(), getFirstResult() — are
- * overridden to capture the executed query + binds and return canned results.
+ * properties the build/orchestration logic needs, and the four result-fetching
+ * seams of ArangoTrait — getObject(), getDocuments(), getFirstResult(),
+ * streamDocuments() — are overridden to capture the executed query, binds and
+ * cursor options, and return canned results.
  *
  * This exercises the real trait logic (query building, the count==1 vs N
  * branching, debug/mock short-circuits, return shaping) without any HTTP I/O.

@@ -42,7 +42,8 @@ class CursorField
     public const string BIND_VARS = 'bindVars' ;
 
     /**
-     * Cursor option — enable the per-query plan cache. Lives at the
+     * Cursor option — serve the result from the AQL query **results** cache
+     * when it holds it (and the server's cache mode allows it). Lives at the
      * root of the `POST /_api/cursor` request body.
      */
     public const string CACHE = 'cache' ;

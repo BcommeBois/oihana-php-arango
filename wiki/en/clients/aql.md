@@ -82,23 +82,25 @@ $cursor = $db->query( $query ) ;
 
 `Database::query()` accepts either an `AqlQuery` instance or a plain string. When you pass a string, give the bind vars in the second argument; when you pass an `AqlQuery`, the second argument must be empty (the helper will throw `InvalidArgumentException` otherwise).
 
-The third argument is an options array forwarded to the server cursor:
+The third argument is an options array forwarded to the server cursor **as is**. The server reads five options at the root of the request, and every other one under the nested `options` object:
 
-| Option | Type | Effect |
-|---|---|---|
-| `count` | `bool` | If `true`, the server returns the total result count up-front. Required to use `$cursor->count()`. |
-| `fullCount` | `bool` | Returns the count **before** any `LIMIT` clause. Read it via `$cursor->getFullCount()`. |
-| `batchSize` | `int` | Number of rows per network batch. The cursor will transparently fetch more batches as you iterate. |
-| `ttl` | `int` | Server-side cursor lifetime, in seconds. |
-| `cache` | `bool` | Reuse the AQL query results cache if applicable. |
-| `memoryLimit` | `int` | Maximum memory (bytes) the query is allowed to use. |
-| `options` | `array` | Nested object for advanced flags: `profile`, `maxRuntime`, `failOnWarning`, `optimizer.rules`, etc. |
+| Option | Where | Type | Effect |
+|---|---|---|---|
+| `count` | root | `bool` | If `true`, the server returns the total result count up-front. Required to use `$cursor->count()`. |
+| `batchSize` | root | `int` | Number of rows per network batch. The cursor will transparently fetch more batches as you iterate. |
+| `ttl` | root | `int` | Server-side cursor lifetime between two batches, in seconds. |
+| `cache` | root | `bool` | Reuse the AQL query results cache if applicable. |
+| `memoryLimit` | root | `int` | Maximum memory (bytes) the query is allowed to use. |
+| `fullCount` | `options` | `bool` | Returns the count **before** any `LIMIT` clause. Read it via `$cursor->getFullCount()`. |
+| `profile`, `stream`, `maxRuntime`, `failOnWarning`, `optimizer.rules`, … | `options` | | The advanced flags. |
+
+> ⚠️ **`Database::query()` moves nothing.** An option written at the root that belongs under `options` is ignored by the server without a word — measured: `fullCount` at the root leaves `getFullCount()` at `0`, the same flag under `options` reads the real total. The `ArangoDB` façade does the dispatch itself (`CursorField::ROOT_OPTIONS`), and a model takes its options through [`Arango::CURSOR_OPTIONS`](../models.md#cursor-options--arangocursor_options).
 
 ```php
 $cursor = $db->query(
     aql( 'FOR u IN users LIMIT @offset , @limit RETURN u' , 0 , 100 ) ,
     [] ,
-    [ 'count' => true , 'fullCount' => true , 'batchSize' => 50 ] ,
+    [ 'count' => true , 'batchSize' => 50 , 'options' => [ 'fullCount' => true ] ] ,
 ) ;
 ```
 
