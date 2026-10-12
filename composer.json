@@ -477,6 +477,7 @@
             "src/oihana/arango/models/helpers/normalizeSortable.php",
             "src/oihana/arango/models/helpers/parseFilterSegment.php",
             "src/oihana/arango/models/helpers/unknownFilterKey.php",
+            "src/oihana/arango/models/helpers/unreadableFilter.php",
             "src/oihana/arango/models/helpers/relations/updateEdgeRelation.php",
             "src/oihana/arango/models/helpers/relations/updateRelations.php",
             "src/oihana/arango/models/helpers/resolveAltSides.php",

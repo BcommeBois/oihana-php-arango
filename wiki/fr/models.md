@@ -114,7 +114,7 @@ $users->list([
 
 $users->get( [ Arango::ID => 'abc' , Arango::SKIN => Skin::FULL ] ) ;
 
-$total = $users->count( [ Arango::FILTER => '{"key":"active","val":true}' ] ) ;
+$total = $users->count( [ Arango::FILTER => [ 'key' => 'active' , 'val' => true ] ] ) ;
 ```
 
 ### Les options de curseur — `Arango::CURSOR_OPTIONS`

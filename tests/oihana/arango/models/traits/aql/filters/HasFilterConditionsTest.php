@@ -5,6 +5,7 @@ namespace tests\oihana\arango\models\traits\aql\filters;
 use DI\Container;
 use DI\DependencyException;
 use DI\NotFoundException;
+use oihana\arango\exceptions\RequestValidationException;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -330,27 +331,28 @@ class HasFilterConditionsTest extends TestCase
         $this->assertStringContainsString( 'doc.name' , $result ) ;
     }
 
-    public function testNotWithEmptyCondition(): void
+    /**
+     * A NOT with nothing to negate used to answer null — no filter, the whole
+     * collection. It is a faulty request, and it is said.
+     */
+    public function testNotWithEmptyConditionIsRefused(): void
     {
-        $init =
-        [
-            'not' ,
-        ];
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'The filter group "not" holds no condition.' ) ;
 
-        $result = $this->model->prepareFilter( $init , $this->binds ) ;
-
-        // Should return null for invalid NOT condition
-        $this->assertNull( $result ) ;
+        $this->model->prepareFilter( [ 'not' ] , $this->binds ) ;
     }
 
     /**
-     * A single NOT operand that is null short-circuits to null (the
-     * isset($init[0]) guard fails), without attempting to negate anything.
+     * A null NOT operand used to short-circuit to null — no filter at all. A group
+     * holds segments and groups ; null is neither, and it is said.
      */
-    public function testNotWithNullOperandReturnsNull(): void
+    public function testNotWithNullOperandIsRefused(): void
     {
-        $result = $this->model->prepareFilterConditions( [ 'not' , null ] , $this->binds ) ;
-        $this->assertNull( $result ) ;
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'null given.' ) ;
+
+        $this->model->prepareFilterConditions( [ 'not' , null ] , $this->binds ) ;
     }
 
     public function testConditionsWithMixedTypes(): void

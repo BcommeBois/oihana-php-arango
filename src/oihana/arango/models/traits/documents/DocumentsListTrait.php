@@ -137,7 +137,7 @@ trait DocumentsListTrait
      * $documents = $model->list([
      *     'active'  => true,
      *     'facets'  => ['category' => 'electronics'],
-     *     'filter'  => ['price' => ['$gte' => 100]],
+     *     'filter'  => ['key' => 'price', 'op' => 'ge', 'val' => 100],
      *     'search'  => ['title' => 'laptop'],
      *     'sort'    => ['priority' => 'DESC', 'createdAt' => 'ASC'],
      *     'limit'   => 100,

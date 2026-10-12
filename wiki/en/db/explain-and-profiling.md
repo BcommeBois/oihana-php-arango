@@ -98,7 +98,7 @@ When you build a list with the `Documents` model (filters, facets, search, sort,
 $init =
 [
     'active' => true ,
-    'filter' => [ 'age' => [ '$gte' => 30 ] ] ,
+    'filter' => [ 'key' => 'age' , 'op' => 'ge' , 'val' => 30 ] ,
     'sort'   => [ 'name' => 'ASC' ] ,
     'limit'  => 20 ,
 ] ;
@@ -149,7 +149,7 @@ Pass `Arango::PROFILE` (`'profile'`) in the `list()`, `get()`, `count()` or `str
 use oihana\arango\enums\Arango ;
 
 // Runs the list AND profiles it (true → profile level 2; an int sets the level explicitly).
-$rows = $users->list( [ 'filter' => [ 'age' => [ '$gte' => 30 ] ] , 'profile' => true ] ) ;
+$rows = $users->list( [ 'filter' => [ 'key' => 'age' , 'op' => 'ge' , 'val' => 30 ] , 'profile' => true ] ) ;
 
 $stats = $users->getStats() ;     // typed ExecutionStats
 $stats->scannedFull() ;           // 50  → no index was used (full scan)

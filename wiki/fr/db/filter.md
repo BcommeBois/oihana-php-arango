@@ -581,37 +581,31 @@ On peut fournir **plusieurs** valeurs de repli (la première non-`null` gagne) :
 
 Toutes les conditions du tableau sont jointes par `&&`. C'est la forme la plus courante.
 
-### Logique OR — clé `logic`
+### Logique OR — un groupe `["or", …]`
 
-Pour combiner avec `||`, ajouter une clé `logic` dans une condition de niveau racine :
+Pour combiner avec `||`, écrire un **groupe** : une liste dont le premier élément est l'opérateur.
 
 ```jsonc
-?filter={
-    "logic":"or",
-    "conditions":[
-        {"key":"role","val":"admin"},
-        {"key":"role","val":"owner"}
-    ]
-}
+?filter=[
+    "or",
+    {"key":"role","val":"admin"},
+    {"key":"role","val":"owner"}
+]
 // FILTER (doc.role == @role_1 || doc.role == @role_2)
 ```
 
-Les valeurs acceptées de `logic` sont définies par l'enum `FilterLogic` : `and` (défaut) et `or`.
+Les opérateurs acceptés sont ceux de l'enum `FilterLogic` : `and` (celui d'une liste sans opérateur), `or` et `not`. `not` prend **une seule** condition — pour en nier plusieurs, nier un groupe : `["not", ["or", a, b]]`.
+
+> ⚠️ **La forme `{"logic":"or","conditions":[…]}` n'existe pas.** Elle figurait ici, avec l'AQL qu'elle était censée produire, mais la bibliothèque ne l'a jamais compilée : le filtre était **jeté**, et toute la collection repartait en `200`. Elle est aujourd'hui **refusée** (`400`), avec une phrase qui rappelle la forme du groupe.
 
 ### Imbrication
 
-Les groupes `{logic, conditions}` s'imbriquent récursivement :
+Les groupes s'imbriquent récursivement :
 
 ```jsonc
 ?filter=[
     {"key":"active","val":true},
-    {
-        "logic":"or",
-        "conditions":[
-            {"key":"role","val":"admin"},
-            {"key":"role","val":"owner"}
-        ]
-    }
+    ["or", {"key":"role","val":"admin"}, {"key":"role","val":"owner"}]
 ]
 // FILTER doc.active == @active && (doc.role == @role_1 || doc.role == @role_2)
 ```
@@ -631,10 +625,15 @@ Chaque modèle `Documents` déclare les clés filtrables dans `AQL::FILTERS`. Un
 | un sous-champ qu'une **liste** ne déclare pas — `attachments[*].zzz`, ou `zzz` dans son `match` | `400` — `The filter key "zzz" is not filterable at "attachments[*]".` (le `match` répondait `500`) |
 | un filtre sur un modèle qui ne déclare aucun `AQL::FILTERS` | `400` — la clé nommée, ou `No filter is accepted here : the model declares no filterable key.` |
 | un opérateur ou une fonction `alt` inconnus | `400` — voir plus haut |
+| un filtre qui ne parle aucune grammaire — `{"agee":1}`, `{"age":{"$gte":30}}`, `{"logic":"or","conditions":[…]}` | `400` — `The filter {"agee"} speaks no filter grammar : name the field with "key" — … — or write a group as a list — ["and"\|"or"\|"not", …].` |
+| un filtre ou un membre de groupe qui n'est ni un objet ni une liste — une chaîne JSON, `42`, `null` | `400` — `A filter is a segment {"key":…} or a group ["and"\|"or"\|"not", …] : string given.` |
+| un groupe sans condition — `["or"]`, `["not"]` | `400` — `The filter group "or" holds no condition.` |
+| un opérateur de groupe inconnu — `["xor", …]` | `400` — `Unknown filter group operator "xor" — expected one of: and, not, or.` |
+| un `not` de plusieurs conditions — `["not", a, b]` | `400` — `The filter group "not" takes a single condition : …` (il produisait de l'AQL que le serveur refusait) |
 | une borne sans `min` ni `max` | `null` — aucune contrainte exprimée, ce n'est pas une faute |
-| l'init d'une liste **sans** filtre (`limit`, `offset`…) | `null` — ce n'est pas un filtre |
+| l'init d'une liste **sans** filtre (`limit`, `offset`…), `?filter=[]`, `?filter={}` | `null` — ce n'est pas un filtre |
 
-Une clé **déclarée** sous une forme que la bibliothèque ne sait pas compiler — ni constante `FilterType`, ni fonction, ni tableau portant `AQL::TYPE` — est la faute du **modèle**, pas du client : `ValidationException`, `500`, le message nomme la déclaration. Dans un `and` / `or`, un enfant refusé refuse tout le groupe : il ne disparaît plus en desserrant les autres.
+Une clé **déclarée** sous une forme que la bibliothèque ne sait pas compiler — ni constante `FilterType`, ni fonction, ni tableau portant `AQL::TYPE` — est la faute du **modèle**, pas du client : `ValidationException`, `500`, le message nomme la déclaration. Dans un `and` / `or`, un enfant refusé refuse tout le groupe — qu'il nomme une clé inconnue ou qu'il ne parle aucune grammaire : il ne disparaît plus en desserrant les autres.
 
 ```php
 use oihana\arango\models\enums\filters\FilterType ;

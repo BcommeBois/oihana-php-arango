@@ -581,37 +581,31 @@ You may pass **several** fallbacks (first non-`null` wins): `alt:[["coalesce", "
 
 All conditions in the array are joined by `&&`. This is the most common form.
 
-### OR logic — `logic` key
+### OR logic — an `["or", …]` group
 
-To combine with `||`, add a `logic` key in a root-level condition:
+To combine with `||`, write a **group**: a list whose first element is the operator.
 
 ```jsonc
-?filter={
-    "logic":"or",
-    "conditions":[
-        {"key":"role","val":"admin"},
-        {"key":"role","val":"owner"}
-    ]
-}
+?filter=[
+    "or",
+    {"key":"role","val":"admin"},
+    {"key":"role","val":"owner"}
+]
 // FILTER (doc.role == @role_1 || doc.role == @role_2)
 ```
 
-Accepted `logic` values are defined by the `FilterLogic` enum: `and` (default) and `or`.
+Accepted operators are those of the `FilterLogic` enum: `and` (the one of a list without operator), `or` and `not`. `not` takes **a single** condition — to negate several, negate a group: `["not", ["or", a, b]]`.
+
+> ⚠️ **The `{"logic":"or","conditions":[…]}` form does not exist.** It used to be shown here, with the AQL it was meant to produce, but the library never compiled it: the filter was **dropped**, and the whole collection came back in `200`. It is now **refused** (`400`), with a sentence recalling the group form.
 
 ### Nesting
 
-The `{logic, conditions}` groups nest recursively:
+Groups nest recursively:
 
 ```jsonc
 ?filter=[
     {"key":"active","val":true},
-    {
-        "logic":"or",
-        "conditions":[
-            {"key":"role","val":"admin"},
-            {"key":"role","val":"owner"}
-        ]
-    }
+    ["or", {"key":"role","val":"admin"}, {"key":"role","val":"owner"}]
 ]
 // FILTER doc.active == @active && (doc.role == @role_1 || doc.role == @role_2)
 ```
@@ -631,10 +625,15 @@ Each `Documents` model declares the filterable keys in `AQL::FILTERS`. A key abs
 | a sub-field a **list** does not declare — `attachments[*].zzz`, or `zzz` in its `match` | `400` — `The filter key "zzz" is not filterable at "attachments[*]".` (the `match` used to answer `500`) |
 | a filter on a model declaring no `AQL::FILTERS` | `400` — the key named, or `No filter is accepted here : the model declares no filterable key.` |
 | an unknown operator or `alt` function | `400` — see above |
+| a filter speaking no grammar — `{"agee":1}`, `{"age":{"$gte":30}}`, `{"logic":"or","conditions":[…]}` | `400` — `The filter {"agee"} speaks no filter grammar : name the field with "key" — … — or write a group as a list — ["and"\|"or"\|"not", …].` |
+| a filter or a group member that is neither an object nor a list — a JSON string, `42`, `null` | `400` — `A filter is a segment {"key":…} or a group ["and"\|"or"\|"not", …] : string given.` |
+| a group without a condition — `["or"]`, `["not"]` | `400` — `The filter group "or" holds no condition.` |
+| an unknown group operator — `["xor", …]` | `400` — `Unknown filter group operator "xor" — expected one of: and, not, or.` |
+| a `not` of several conditions — `["not", a, b]` | `400` — `The filter group "not" takes a single condition : …` (it produced AQL the server refused) |
 | a bound with neither `min` nor `max` | `null` — no constraint expressed, not a fault |
-| the init of a list **without** a filter (`limit`, `offset`…) | `null` — it is not a filter |
+| the init of a list **without** a filter (`limit`, `offset`…), `?filter=[]`, `?filter={}` | `null` — it is not a filter |
 
-A **declared** key under a form the library cannot compile — neither a `FilterType` constant, nor a callable, nor an array carrying `AQL::TYPE` — is the **model's** fault, not the caller's: `ValidationException`, `500`, the message names the declaration. Inside an `and` / `or`, a refused child refuses the whole group: it no longer vanishes and loosens the others.
+A **declared** key under a form the library cannot compile — neither a `FilterType` constant, nor a callable, nor an array carrying `AQL::TYPE` — is the **model's** fault, not the caller's: `ValidationException`, `500`, the message names the declaration. Inside an `and` / `or`, a refused child refuses the whole group — whether it names an unknown key or speaks no grammar at all: it no longer vanishes and loosens the others.
 
 ```php
 use oihana\arango\models\enums\filters\FilterType ;

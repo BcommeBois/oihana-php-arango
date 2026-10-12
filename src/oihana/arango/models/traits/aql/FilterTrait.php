@@ -47,6 +47,7 @@ use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isFilterSegment;
 use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\arango\models\helpers\unknownFilterKey;
+use function oihana\arango\models\helpers\unreadableFilter;
 use function oihana\core\arrays\isAssociative;
 use function oihana\core\callables\resolveCallable;
 use function oihana\core\strings\key;
@@ -433,8 +434,8 @@ trait FilterTrait
      *
      * Takes either a whole model init — where `Arango::FILTER` carries the filter, or
      * is absent for an unfiltered list — or the filter payload itself : a segment
-     * (`{ key , op , val , … }`) or a logical group (`[ 'and' , … ]`), at the root or
-     * as a child of a group.
+     * (`{ key , op , val , … }`) or a logical group (`[ 'and' , … ]`). The payload is
+     * compiled by {@see compileFilter()}, which refuses every shape it cannot read.
      *
      * What the request gets wrong is REFUSED, never dropped : a key the model does not
      * declare at that level, a segment that speaks the grammar but names no key, the
@@ -445,8 +446,9 @@ trait FilterTrait
      * here compiles — answers a plain {@see ValidationException} instead, so the two
      * families of fault are told apart by their exception.
      *
-     * `null` means « no condition » and nothing else : an init that carries no filter,
-     * or a bound that expresses neither `min` nor `max`.
+     * `null` means « no condition » and nothing else : an init that carries no filter
+     * (`Arango::FILTER` absent, `null` or `[]`), or a bound that expresses neither `min`
+     * nor `max`.
      *
      * @param array|null $init   The model init, or the filter payload.
      * @param ?array     $binds  The bind variables, populated by reference.
@@ -455,7 +457,7 @@ trait FilterTrait
      *
      * @return ?string The AQL condition, or `null` when nothing constrains the query.
      *
-     * @throws RequestValidationException When the request names an unknown key, no key, a mis-spelled `[*]` marker, or an operator / function the filter cannot honour.
+     * @throws RequestValidationException When the filter has a shape no filter reads, names an unknown key, no key, a mis-spelled `[*]` marker, or an operator / function the filter cannot honour.
      * @throws BindException
      * @throws ConstantException
      * @throws ContainerExceptionInterface
@@ -483,46 +485,94 @@ trait FilterTrait
             $auth = [ Arango::AUTHORIZER => $init[ Arango::AUTHORIZER ] ] ;
         }
 
-        $init = $init[ Arango::FILTER ] ?? $init ?? null ;
-
-        if ( !is_array( $init ) || empty( $init ) )
+        // The filter itself, when the init names it. Without that wrapper, the init is a
+        // bare filter when it speaks the grammar or is a list — otherwise it is the init
+        // of an unfiltered read (`limit`, `offset`, the raw AQL::CONDITIONS…), no filter.
+        if ( is_array( $init ) && array_key_exists( Arango::FILTER , $init ) )
         {
-            return null;
+            $filter = $init[ Arango::FILTER ] ;
+        }
+        else if ( is_array( $init ) && $init !== [] && isFilterSegment( $init ) )
+        {
+            $filter = $init ;
+        }
+        else
+        {
+            return null ;
+        }
+
+        // `?filter=[]` and `?filter={}` say « no filter », like an absent one.
+        if ( $filter === null || $filter === [] )
+        {
+            return null ;
+        }
+
+        return $this->compileFilter( $filter , $binds , $docRef , $auth ) ;
+    }
+
+    /**
+     * Compiles a filter — the value of `Arango::FILTER`, a member of a group, the operand
+     * of a `not` — into its AQL condition.
+     *
+     * Every shape it cannot read is REFUSED : a scalar or a JSON string, an empty member,
+     * an object that speaks no filter grammar (`{"agee":1}`, `{"age":{"$gte":30}}`, the
+     * `{"logic":…,"conditions":[…]}` form). They used to be dropped, and dropped, they
+     * answered the whole collection — inside an `and`, they loosened the group.
+     *
+     * @param mixed      $init   The filter : a segment or a group.
+     * @param ?array     $binds  The bind variables, populated by reference.
+     * @param string     $docRef The document reference the conditions are written against.
+     * @param array      $auth   The request-level authorizer, captured at the root and passed down.
+     *
+     * @return ?string The AQL condition, or `null` when the filter constrains nothing (a
+     *                 declared `FilterType::VIRTUAL`, a bound with neither `min` nor `max`).
+     *
+     * @throws RequestValidationException When the filter cannot be read, or names a key, an operator or a function the model cannot honour.
+     * @throws BindException
+     * @throws ConstantException
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    protected function compileFilter
+    (
+        mixed  $init           ,
+        ?array &$binds = null  ,
+        string $docRef = AQL::DOC ,
+        array  $auth   = []
+    )
+    :?string
+    {
+        if ( !is_array( $init ) || ( isAssociative( $init ) && !isFilterSegment( $init ) ) )
+        {
+            throw unreadableFilter( $init ) ;
         }
 
         // A model that declares no filterable key cannot honour any filter : one that
-        // reaches it is refused like any unknown key, not silenced. An init that merely
-        // carries no filter — the ordinary unfiltered list — is not a filter at all.
+        // reaches it is refused like any unknown key, not silenced.
         if ( !is_array( $this->filters ) || empty( $this->filters ) )
         {
-            if ( isFilterSegment( $init ) )
-            {
-                $key = $init[ FilterParam::KEY ] ?? null ;
+            $key = $init[ FilterParam::KEY ] ?? null ;
 
-                throw is_string( $key )
-                    ? unknownFilterKey( $key )
-                    : new RequestValidationException( 'No filter is accepted here : the model declares no filterable key.' ) ;
-            }
-
-            return null ;
+            throw is_string( $key )
+                ? unknownFilterKey( $key )
+                : new RequestValidationException( 'No filter is accepted here : the model declares no filterable key.' ) ;
         }
 
         if( isAssociative( $init ) )
         {
             $key = $init[ FilterParam::KEY ] ?? null ;
 
+            // `{"val":"x"}` speaks the filter grammar but says nothing about what it
+            // filters : refused. Inside an `and`, such a segment used to vanish and
+            // loosen the group.
             if ( !isset( $key ) )
             {
-                // `{"val":"x"}` speaks the filter grammar but says nothing about what it
-                // filters : refused. Inside an `and`, such a segment used to vanish and
-                // loosen the group. The init of an unfiltered list lands here too, and
-                // that one is no fault — it is told apart by isFilterSegment().
-                if ( isFilterSegment( $init ) )
-                {
-                    throw new RequestValidationException( 'A filter segment names no key.' ) ;
-                }
-
-                return null ;
+                throw new RequestValidationException( 'A filter segment names no key.' ) ;
             }
 
             // Permission gate: a field hidden from the projection (Field::REQUIRES)
@@ -653,8 +703,6 @@ trait FilterTrait
         {
             return $this->prepareFilterConditions( $init , $binds , $docRef , $auth ) ;
         }
-
-        return null ;
     }
 
     /**
