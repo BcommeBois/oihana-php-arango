@@ -857,7 +857,7 @@ Ni `val`, ni `op` : une cardinalité ne se compare pas à une valeur envoyée. C
 
 **⚠ Deux écritures restent volontairement en dehors.**
 
-- **Sans le `[*]`** — `{"key":"attachments"}` — le filtre est toujours **ignoré**. C'est la [règle stricte de notation](#cardinalité--notation-) qui l'attrape, et c'est elle qui rattrape l'appelant ayant simplement oublié le marqueur. Lui donner un sens propre transformerait une faute de frappe rattrapée en page plausible répondant à autre chose.
+- **Sans le `[*]`** — `{"key":"attachments"}` — le filtre est **refusé** en `400` : `The filter key "attachments" is a list : write it "attachments[*]".` C'est la [règle stricte de notation](#cardinalité--notation-) qui l'attrape, et c'est elle qui rattrape l'appelant ayant simplement oublié le marqueur. Lui donner un sens propre transformerait une faute de frappe rattrapée en page plausible répondant à autre chose.
 - **Avec un `match`** — `{"key":"attachments[*]","match":{…}}` — ce n'est pas une question de nombre mais un test **multi-champs sur les éléments** ; il garde son comportement et ses gardes de permission par sous-champ. **À toute profondeur** : `{"key":"resolution.steps[*]","match":{…}}` compile la même chose, sur la référence que la traversée d'objet a atteinte.
 
 
@@ -944,7 +944,7 @@ Les transformations [`alt`](#transformations-alt) s'appliquent normalement à la
 ### Performance & tolérance
 
 - Chaque edge/join génère une **sous-requête par document racine évalué**. À réserver aux relations indexées (`_key` pour un join, l'index d'arête pour un edge) et à combiner avec des filtres scalaires sélectifs **en amont** pour réduire l'ensemble parcouru.
-- Mêmes garde-fous que partout : un sous-champ absent des `AQL::FILTERS` du niveau est **ignoré et journalisé** (`warning`) ; seules les **valeurs** sont bindées.
+- Mêmes garde-fous que partout : un sous-champ absent des `AQL::FILTERS` du niveau est **refusé** en `400`, le chemin nommé (`The filter key "zzz" is not filterable at "company".`) ; seules les **valeurs** sont bindées.
 - Besoin de **facettes d'UI** sur une relation (cases à cocher « lié à X », agrégats « moyenne des reliés ≥ … ») ? C'est le rôle de [`?facets=`](facets.md) — voir [Recherche & filtrage](search-and-filtering.md#quand-utiliser-quoi).
 
 ## Cas pratiques

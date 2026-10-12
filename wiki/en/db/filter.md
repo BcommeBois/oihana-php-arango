@@ -857,7 +857,7 @@ No `val`, no `op`: a cardinality is not compared to a payload. It is exactly the
 
 **⚠ Two spellings are deliberately left out.**
 
-- **Without the `[*]`** — `{"key":"attachments"}` — the filter is still **ignored**. That is the [strict notation rule](#cardinality--the--notation) catching it, and it is what catches the caller who simply forgot the marker. Giving that spelling a meaning of its own would turn a caught typo into a plausible page answering something else.
+- **Without the `[*]`** — `{"key":"attachments"}` — the filter is **refused** with a `400`: `The filter key "attachments" is a list : write it "attachments[*]".` That is the [strict notation rule](#cardinality--the--notation) catching it, and it is what catches the caller who simply forgot the marker. Giving that spelling a meaning of its own would turn a caught typo into a plausible page answering something else.
 - **With a `match`** — `{"key":"attachments[*]","match":{…}}` — this is not a question about number but a **multi-field test on the elements**; it keeps its behaviour and its per-sub-field permission gates. **At any depth**: `{"key":"resolution.steps[*]","match":{…}}` compiles the same thing, against the reference the object traversal reached.
 
 
@@ -944,7 +944,7 @@ AQL::EDGES =>
 ### Performance & leniency
 
 - Each edge/join generates a **sub-query per evaluated root document**. Reserve it for indexed relations (`_key` for a join, the edge index for an edge) and combine it with selective scalar filters **upstream** to shrink the scanned set.
-- Same safeguards as everywhere: a sub-field absent from the level's `AQL::FILTERS` is **ignored and logged** (`warning`); only **values** are bound.
+- Same safeguards as everywhere: a sub-field absent from the level's `AQL::FILTERS` is **refused** with a `400`, the path named (`The filter key "zzz" is not filterable at "company".`); only **values** are bound.
 - Need **UI facets** on a relation (checkboxes "linked to X", aggregates "average of linked ≥ …")? That is the job of [`?facets=`](facets.md) — see [Search & filtering](search-and-filtering.md#when-to-use-which).
 
 ## Practical cases
