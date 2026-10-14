@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A dump states the full path of the archive it wrote.** `dump` computed the final path of its archive and never said it : the command ended on « Database dump completed successfully. », and copying the archive elsewhere — an `scp` to another machine, the `--file` of a `restore` — meant listing the output directory and picking the right timestamped file by hand. It now prints `Archive : <path>` once the archive is in place, before the rotation. The path is **absolute** (`realpath()`), since the output directory may be relative (`--directory`, a profile's `directory`, `[app].dumps`), and it names the `.tar.gz.enc` when the archive is encrypted. The line is printed **under `--quiet` too** : a scheduled dump is the one whose log most needs to say where its archive went.
+  - **Docs:** `wiki/{fr,en}/commands/arangodb.md` — § `dump` : what the command prints at the end, and why under `--quiet`.
+  - **Tests:** `ArangoDumpActionTest` — the line names the absolute path of the archive, of the encrypted archive, of an archive written to a relative `--directory`, and survives `--quiet` while the rest of the report is silenced. Five mutations of the line — removed, without `realpath()`, the bare file name, the normal verbosity, the path before the move — each turn the suite red.
+
 ## [1.9.0] - 2026-10-12
 
 ### Added

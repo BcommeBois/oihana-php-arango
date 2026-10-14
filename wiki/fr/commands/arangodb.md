@@ -287,6 +287,20 @@ php bin/console.php command:arangodb dump --encrypt --passphrase 's3cret'
 # → <dumps>/2026-06-01T14:30:00-my_db.tar.gz.enc
 ```
 
+La commande se termine en donnant le **chemin absolu** de l'archive, prêt à copier — pour un
+`scp` vers une autre machine, ou pour le `--file` d'un `restore` :
+
+```
+Archive : /srv/app/dumps/2026-06-01T14:30:00-my_db.tar.gz
+
+ [OK] Database dump completed successfully.
+```
+
+Le chemin est absolu même quand le dossier de sortie est relatif (`--directory`, `directory` d'un
+profil, `[app].dumps`). Cette ligne s'affiche **aussi sous `--quiet`**, qui fait taire tout le
+reste : une sauvegarde planifiée est celle dont le journal a le plus besoin de dire où est partie
+son archive.
+
 ### Sous-ensemble — `--collection`
 
 Les deux syntaxes sont acceptées (et mélangeables) :

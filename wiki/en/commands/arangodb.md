@@ -284,6 +284,19 @@ php bin/console.php command:arangodb dump --encrypt --passphrase 's3cret'
 # → <dumps>/2026-06-01T14:30:00-my_db.tar.gz.enc
 ```
 
+The command ends by stating the **absolute path** of the archive, ready to copy — for an `scp`
+to another machine, or for the `--file` of a `restore`:
+
+```
+Archive : /srv/app/dumps/2026-06-01T14:30:00-my_db.tar.gz
+
+ [OK] Database dump completed successfully.
+```
+
+The path is absolute even when the output directory is relative (`--directory`, a profile's
+`directory`, `[app].dumps`). The line is printed **under `--quiet` too**, which silences
+everything else: a scheduled dump is the one whose log most needs to say where its archive went.
+
 ### Subset — `--collection`
 
 Both syntaxes are accepted (and can be mixed):

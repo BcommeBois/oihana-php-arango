@@ -434,6 +434,10 @@ trait ArangoDumpAction
             // @codeCoverageIgnoreEnd
         }
 
+        // The full path, ready to copy — even under --quiet, since a scheduled
+        // dump is the one whose log most needs to say where its archive went.
+        $io->writeln( sprintf( 'Archive : %s' , realpath( $toFile ) ?: $toFile ) , OutputInterface::VERBOSITY_QUIET ) ;
+
         // 05b - Rotation: prune automatically after a successful dump (opt-in),
         // never touching the archive just created.
         $retention = is_array( $this->dumpConfig[ ArangoCommandParam::RETENTION ] ?? null ) ? $this->dumpConfig[ ArangoCommandParam::RETENTION ] : [] ;

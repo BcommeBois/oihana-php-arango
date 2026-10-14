@@ -34,6 +34,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Host wiring {@see ArangoDumpAction::dump()} for integration testing.
@@ -334,6 +335,73 @@ class ArangoDumpActionTest extends TestCase
 
         $encrypted = glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz.enc' ) ?: [] ;
         $this->assertCount( 1 , $encrypted ) ;
+    }
+
+    // ---------------------------------------------------------------- the archive path
+
+    public function testDumpStatesTheAbsolutePathOfTheArchive() :void
+    {
+        $output = new BufferedOutput() ;
+
+        $this->host()->dump( $this->input() , $output ) ;
+
+        $archives = glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ;
+        $this->assertCount( 1 , $archives ) ;
+        $this->assertStringContainsString( 'Archive : ' . realpath( $archives[ 0 ] ) . PHP_EOL , $output->fetch() ) ;
+    }
+
+    public function testEncryptedDumpStatesThePathOfTheEncryptedArchive() :void
+    {
+        $host = $this->host() ;
+        $host->encrypt = true ;
+        $output = new BufferedOutput() ;
+
+        $host->dump( $this->input() , $output ) ;
+
+        $encrypted = glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz.enc' ) ?: [] ;
+        $this->assertCount( 1 , $encrypted ) ;
+        $this->assertStringContainsString( 'Archive : ' . realpath( $encrypted[ 0 ] ) . PHP_EOL , $output->fetch() ) ;
+    }
+
+    public function testRelativeOutputDirectoryIsStatedAsAnAbsolutePath() :void
+    {
+        $workingDirectory = $this->makeExtraDir() ;
+        array_unshift( $this->extraDirs , $workingDirectory . DIRECTORY_SEPARATOR . 'out' ) ;
+
+        $previous = getcwd() ;
+        chdir( $workingDirectory ) ;
+
+        try
+        {
+            $output = new BufferedOutput() ;
+            $this->host()->dump( $this->input( [ '--' . ArangoCommandOption::DIRECTORY => 'out' ] ) , $output ) ;
+        }
+        finally
+        {
+            chdir( $previous ) ;
+        }
+
+        $archives = glob( $workingDirectory . DIRECTORY_SEPARATOR . 'out' . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ;
+        $this->assertCount( 1 , $archives ) ;
+
+        $line = preg_match( '/^Archive : (.+)$/m' , $output->fetch() , $match ) === 1 ? $match[ 1 ] : '' ;
+        $this->assertStringStartsWith( DIRECTORY_SEPARATOR , $line ) ;
+        $this->assertSame( realpath( $archives[ 0 ] ) , $line ) ;
+    }
+
+    public function testQuietDumpStillStatesTheArchive() :void
+    {
+        $output = new BufferedOutput( OutputInterface::VERBOSITY_QUIET ) ;
+
+        $this->host()->dump( $this->input() , $output ) ;
+
+        $text     = $output->fetch() ;
+        $archives = glob( $this->dir . DIRECTORY_SEPARATOR . '*.tar.gz' ) ?: [] ;
+        $this->assertCount( 1 , $archives ) ;
+        $this->assertStringContainsString( 'Archive : ' . realpath( $archives[ 0 ] ) , $text ) ;
+
+        // The rest of the report is silenced : the line above is the only one left.
+        $this->assertStringNotContainsString( 'completed successfully' , $text ) ;
     }
 
     // ---------------------------------------------------------------- --collection
