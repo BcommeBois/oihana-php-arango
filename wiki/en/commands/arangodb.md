@@ -1183,8 +1183,8 @@ These are **two separate worlds that never cross**:
 > `arango:migrate` — nothing runs at generation time.
 
 ```php
-// api/src/fr/bouney/migrations/Version20260612090000_DescriptionMultilingue.php
-namespace fr\bouney\migrations ;
+// src/migrations/Version20260612090000_DescriptionMultilingue.php
+namespace Acme\migrations ;
 
 use oihana\arango\migrations\Migration ;
 
@@ -1229,12 +1229,12 @@ This is what guarantees prod = staging = local.
 
 ### Where the files live, and the wiring
 
-The `Version*.php` files live in **your host project** (e.g. `api/src/fr/bouney/migrations/`, under the `fr\bouney\migrations` namespace). The library only provides the `Migration` base class and the engine. Three command init keys:
+The `Version*.php` files live in **your host project** (e.g. `src/migrations/`, under the `Acme\migrations` namespace). The library only provides the `Migration` base class and the engine. Three command init keys:
 
 ```php
-// api/definitions/@commands/arangodb.php
+// definitions/commands.php
 ArangoCommandParam::MIGRATIONS_PATH      => $c->get( Paths::MIGRATIONS ) ,   // the Version*.php directory
-ArangoCommandParam::MIGRATIONS_NAMESPACE => 'fr\\bouney\\migrations' ,        // their PHP namespace
+ArangoCommandParam::MIGRATIONS_NAMESPACE => 'Acme\\migrations' ,        // their PHP namespace
 ArangoCommandParam::MIGRATIONS_COLLECTION => 'migrations' ,                   // the tracking collection (default)
 ```
 

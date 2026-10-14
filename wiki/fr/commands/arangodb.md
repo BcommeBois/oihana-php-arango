@@ -1200,8 +1200,8 @@ Ce sont **deux mondes séparés qui ne se croisent jamais** :
 > l'appliques avec `arango:migrate` — rien n'est exécuté à la génération.
 
 ```php
-// api/src/fr/bouney/migrations/Version20260612090000_DescriptionMultilingue.php
-namespace fr\bouney\migrations ;
+// src/migrations/Version20260612090000_DescriptionMultilingue.php
+namespace Acme\migrations ;
 
 use oihana\arango\migrations\Migration ;
 
@@ -1246,12 +1246,12 @@ C'est ce qui garantit que prod = préprod = local.
 
 ### Où vivent les fichiers, et le câblage
 
-Les fichiers `Version*.php` vivent dans **ton projet hôte** (ex. `api/src/fr/bouney/migrations/`, sous le namespace `fr\bouney\migrations`). La lib ne fournit que la classe mère `Migration` et le moteur. Trois clés d'init de la commande :
+Les fichiers `Version*.php` vivent dans **ton projet hôte** (ex. `src/migrations/`, sous le namespace `Acme\migrations`). La lib ne fournit que la classe mère `Migration` et le moteur. Trois clés d'init de la commande :
 
 ```php
-// api/definitions/@commands/arangodb.php
+// definitions/commands.php
 ArangoCommandParam::MIGRATIONS_PATH      => $c->get( Paths::MIGRATIONS ) ,   // le dossier des Version*.php
-ArangoCommandParam::MIGRATIONS_NAMESPACE => 'fr\\bouney\\migrations' ,        // leur namespace PHP
+ArangoCommandParam::MIGRATIONS_NAMESPACE => 'Acme\\migrations' ,        // leur namespace PHP
 ArangoCommandParam::MIGRATIONS_COLLECTION => 'migrations' ,                   // la collection de suivi (défaut)
 ```
 

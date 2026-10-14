@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The documentation and the examples no longer name a real project.** A few examples had been carried over from the project the library was first extracted from, and named it : the namespace of its migrations in the `ArangoMigrationsTrait` and `MigrationRunner` docblocks, in the migration generator test and in the `migrate` section of `wiki/{fr,en}/commands/arangodb.md` ; the names of its harvest commands in `wiki/{fr,en}/commands.md` ; its repository in an older entry of this changelog. They now use the fictional `Acme\migrations` and `acme:harvest:*`. The docblock of `DocumentsCommandTrait::fetchDocuments()` said it read « the OpenEdge database » : it reads the collection.
+
 ### Added
 
 - **A dump states the full path of the archive it wrote.** `dump` computed the final path of its archive and never said it : the command ended on « Database dump completed successfully. », and copying the archive elsewhere — an `scp` to another machine, the `--file` of a `restore` — meant listing the output directory and picking the right timestamped file by hand. It now prints `Archive : <path>` once the archive is in place, before the rotation. The path is **absolute** (`realpath()`), since the output directory may be relative (`--directory`, a profile's `directory`, `[app].dumps`), and it names the `.tar.gz.enc` when the archive is encrypted. The line is printed **under `--quiet` too** : a scheduled dump is the one whose log most needs to say where its archive went.
@@ -776,7 +780,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
   - **The harm was identity, not accuracy.** Two distinct documents came back carrying the same `id` — four documents, three identifiers — and nothing in the response said so. A client indexing or de-duplicating on `id` silently lost rows.
   - **It also bit purely numeric keys**: a zero-padded `"007"` came back as `7`, which no longer addresses anything, and a key above 2^53 lost precision.
-  - **The origin is a port, not a decision.** The line arrived with the very first commit of the repository (`initial code base extracted from oihana-odbc-php`), from a SQL world where `id` really was an auto-incremented integer. On ArangoDB it stopped being true and nothing replayed it; no docblock ever justified it.
+  - **The origin is a port, not a decision.** The line arrived with the very first commit of the repository (the initial code base, extracted from its first host project), from a SQL world where `id` really was an auto-incremented integer. On ArangoDB it stopped being true and nothing replayed it; no docblock ever justified it.
   - **What it takes to adapt:** a consumer comparing `id` to a number (`id === 1234`) or doing arithmetic on it. The library itself has no internal consumer of this filter. Fixing it now costs a line; once an API is settled on a numeric `id` it becomes a negotiation.
   - **Everything else is unchanged**: the output label is still free (`ref => Filter::ID` projects `ref: doc._key`), `Field::NAME` still overrides the source, and `Field::NULLABLE` stays refused there — now for a plain reason, since nothing is fabricated any more.
   - **Tests:** 2 new `AqlFieldsTest` cases (the key projected as stored, `TO_NUMBER` gone, the free label, the aliased source; plus the marker still refused, with its rationale rewritten) and a new **live** `ProjectedIdIntegrationTest` running the old conversion explicitly so the collapse is *measured* — four keys, three identifiers — next to the new projection returning all four untouched. FR/EN wiki updated in `db/conditional-fields.md` and `db/helpers.md`.

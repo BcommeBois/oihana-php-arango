@@ -76,7 +76,7 @@ trait DocumentsCommandTrait
     }
 
     /**
-     * Fetch all documents from the OpenEdge database.
+     * Fetch all documents of the collection.
      *
      * @param OutputInterface $output  The console output instance.
      * @param ?Documents      $ref     The optional Documents reference to use (default, use $this->documents)

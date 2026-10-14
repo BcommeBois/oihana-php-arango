@@ -258,13 +258,13 @@ Cas d'usage typique :
 
 ```bash
 # Harvest les produits depuis une source externe (ex. ERP via ODBC)
-php api/bin/console.php proginov:harvest:products
+php bin/console.php acme:harvest:products
 
 # Harvest les offres tarifaires
-php api/bin/console.php proginov:harvest:products:offers
+php bin/console.php acme:harvest:products:offers
 ```
 
-Voir les commandes `Acme\commands\proginov\*` pour des implémentations complètes côté projet.
+Voir les commandes `Acme\commands\harvest\*` pour des implémentations complètes côté projet.
 
 ## Catalogue des enums
 

@@ -30,7 +30,7 @@ class MigrationRunner
      * @param ArangoDB      $db        The façade handed to every {@see Migration}.
      * @param MigrationStore $store     The tracking-collection persistence.
      * @param string        $path      The directory holding the `Version*.php` files.
-     * @param string        $namespace The PHP namespace the version classes live in (e.g. `fr\bouney\migrations`).
+     * @param string        $namespace The PHP namespace the version classes live in (e.g. `Acme\migrations`).
      * @param string|null   $gitCommit The current git commit hash, or null outside a repository.
      * @param string|null   $agent     The acting agent (`user@host`), or null.
      */

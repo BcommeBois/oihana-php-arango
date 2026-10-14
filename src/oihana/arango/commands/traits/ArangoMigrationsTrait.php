@@ -55,7 +55,7 @@ trait ArangoMigrationsTrait
     public ?string $migrationsPath = null ;
 
     /**
-     * The PHP namespace the version classes are declared in (e.g. `fr\bouney\migrations`).
+     * The PHP namespace the version classes are declared in (e.g. `Acme\migrations`).
      *
      * @var string
      */

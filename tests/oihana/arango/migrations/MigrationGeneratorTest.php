@@ -35,13 +35,13 @@ class MigrationGeneratorTest extends TestCase
 
     public function testCreatesAShellNamedFromTimestampAndLabel() :void
     {
-        $file = new MigrationGenerator( $this->dir , 'fr\\bouney\\migrations' )->create( 'add place kind' , '20260612090000' ) ;
+        $file = new MigrationGenerator( $this->dir , 'Acme\\migrations' )->create( 'add place kind' , '20260612090000' ) ;
 
         $this->assertSame( $this->dir . DIRECTORY_SEPARATOR . 'Version20260612090000_AddPlaceKind.php' , $file ) ;
         $this->assertFileExists( $file ) ;
 
         $body = file_get_contents( $file ) ;
-        $this->assertStringContainsString( 'namespace fr\\bouney\\migrations ;' , $body ) ;
+        $this->assertStringContainsString( 'namespace Acme\\migrations ;' , $body ) ;
         $this->assertStringContainsString( 'class Version20260612090000_AddPlaceKind extends Migration' , $body ) ;
         $this->assertStringContainsString( "return 'add place kind' ;" , $body ) ;
         $this->assertStringContainsString( 'public function up() : void' , $body ) ;
