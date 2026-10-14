@@ -80,6 +80,7 @@ php bin/console.php command:arangodb dump --profile staging-extract --directory 
 | Anonymiser les PII (RGPD) | **Masking** (moteur PHP, toutes éditions) | [Masking](arangodb.md#masking--anonymisation-au-dump) |
 | Empêcher le dossier de dumps de grossir | **Rotation** (`[arango.dump.retention]`) | [Rotation des archives](arangodb.md#rotation-des-archives) |
 | Tout rejouer sans interaction (CI / bun) | `--yes` (+ `auto = true`) | [Garde-fous du restore](arangodb.md#garde-fous-du-restore) |
+| Rafraîchir sa base sans perdre les documents créés en local | `preserve` / `reinject` (`[arango.preserves]`) | [`preserve` / `reinject`](arangodb.md#preserve--reinject--garder-ses-documents-locaux-pendant-une-restauration) |
 
 ---
 
@@ -212,6 +213,41 @@ Ce qui se passe :
 
 ---
 
+## Recette D — Rafraîchir sa base locale sans perdre ses documents
+
+Le cas : la collection `articles` mélange des documents **venus d'ailleurs**
+(`_key` en `src:…`, les mêmes partout) et des documents **créés en local** (des
+essais). Une restauration remplace la collection entière : sans précaution, les
+essais locaux disparaissent et ceux de l'autre serveur arrivent à leur place.
+
+```toml
+# config.toml de la machine où l'on RESTAURE
+[arango.preserves.articles]
+filters = { _key = "string" }
+filter  = '{"key":"_key","op":"nsw","val":"src:"}'
+```
+
+```bash
+php bin/console.php command:arangodb preserve                 # 1) mettre de côté
+php bin/console.php command:arangodb restore --last --yes     # 2) n'importe quelle restauration
+php bin/console.php command:arangodb reinject --yes           # 3) remettre
+```
+
+Ce qui se passe :
+
+- `preserve` copie les documents locaux dans `articles__preserved` ; il refuse si
+  une mise de côté précédente attend encore d'être remise.
+- La restauration remplace `articles`, comme d'habitude — celle de la commande, ou
+  un `arangorestore` à la main : les deux actions ne dépendent pas d'elle.
+- `reinject`, dans une transaction, retire ce que la règle désigne (les essais de
+  l'autre serveur), remet les documents mis de côté et supprime la sauvegarde. Au
+  moindre échec, rien ne change et on peut relancer.
+
+> Vérifie à blanc : `preserve --dry-run` et `reinject --dry-run` affichent les
+> nombres sans rien écrire.
+
+---
+
 ## Sûreté en un coup d'œil
 
 - **Rotation opt-in** : aucune suppression sans politique de rétention (ni `--prune`).
@@ -219,5 +255,8 @@ Ce qui se passe :
 - **Restore** : collections `protected` refusées sauf `--force` ; confirmation
   obligatoire (ou `--yes`) ; arrêt si non interactif sans `--yes` ; avertissement
   cible non locale ; l'archive source n'est consommée que sur **succès**.
-- **`--dry-run` partout** (`dump`, `restore`, `dump --prune`) : montre le plan,
-  n'exécute rien.
+- **`preserve` / `reinject`** : une sauvegarde en attente n'est jamais écrasée ; une
+  collection sans sauvegarde n'est jamais touchée ; la remise est **tout ou rien**
+  (transaction) et se relance sans danger ; confirmation obligatoire (ou `--yes`).
+- **`--dry-run` partout** (`dump`, `restore`, `dump --prune`, `preserve`, `reinject`) :
+  montre le plan, n'exécute rien.

@@ -80,6 +80,26 @@ class ArangoCommandParam
     public const string MODELS = 'models' ;
 
     /**
+     * The 'preserves' parameter — the `[arango.preserves]` config section : the
+     * rule naming, collection by collection, the local documents the `preserve`
+     * action sets aside and the `reinject` action puts back (keyed by collection).
+     */
+    public const string PRESERVES = 'preserves' ;
+
+    /**
+     * The 'filter' key of a `[arango.preserves.<collection>]` rule — the documents
+     * to preserve, written in the `?filter=` grammar (a JSON string).
+     */
+    public const string PRESERVE_FILTER = 'filter' ;
+
+    /**
+     * The 'filters' key of a `[arango.preserves.<collection>]` rule — the keys the
+     * filter may name and their {@see \oihana\arango\models\enums\filters\FilterType},
+     * the counterpart of `AQL::FILTERS` on a model.
+     */
+    public const string PRESERVE_FILTERS = 'filters' ;
+
+    /**
      * The 'profiles' parameter — the `[arango.profiles]` config section (named
      * dump/restore selection profiles, keyed by name).
      */

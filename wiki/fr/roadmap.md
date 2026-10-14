@@ -39,7 +39,8 @@ moteur de recherche fédérée :
   et projection conditionnelle (`Field::WHEN` / `Field::ELSE`).
 - **Diagnostics de requête** : `explain()` typé et profilage sur la façade et le
   modèle.
-- **Outillage opérationnel** : dump / restore (profils, masquage, rotation),
+- **Outillage opérationnel** : dump / restore (profils, masquage, rotation, mise
+  de côté des documents locaux autour d'une restauration : `preserve` / `reinject`),
   commandes de maintenance (`views`, `doctor`, `migrate`) et le cycle de vie des
   analyzers personnalisés (`analyzers` : diff / sync / fix / prune, intégré à
   `doctor`).

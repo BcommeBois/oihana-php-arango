@@ -50,6 +50,8 @@ return
                     ArangoAction::DOCTOR      ,
                     ArangoAction::DUMP        ,
                     ArangoAction::MIGRATE     ,
+                    ArangoAction::PRESERVE    ,
+                    ArangoAction::REINJECT    ,
                     ArangoAction::RESTORE     ,
                     ArangoAction::VIEWS       ,
                 ] ,

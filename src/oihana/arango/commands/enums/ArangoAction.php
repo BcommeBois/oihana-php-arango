@@ -54,6 +54,17 @@ class ArangoAction
     public const string MIGRATE = 'migrate' ;
 
     /**
+     * Set aside the local documents a `[arango.preserves]` rule names, before
+     * a restore replaces their collections.
+     */
+    public const string PRESERVE = 'preserve' ;
+
+    /**
+     * Put back the documents set aside by `preserve`, once the restore is done.
+     */
+    public const string REINJECT = 'reinject' ;
+
+    /**
      * Retore the arangodb database.
      */
     public const string RESTORE = 'restore' ;

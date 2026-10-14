@@ -13,6 +13,8 @@ trait ArangoActions
         ArangoListCollectionsAction ,
         ArangoListDumpsAction ,
         ArangoMigrateAction ,
+        ArangoPreserveAction ,
+        ArangoReinjectAction ,
         ArangoRestoreAction ,
         ArangoViewsAction ;
 }

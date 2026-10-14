@@ -36,7 +36,8 @@ surface, a full operational toolchain, and a federated search engine:
   routing (`Field::PATHS`), and conditional field projection (`Field::WHEN` /
   `Field::ELSE`).
 - **Query diagnostics**: typed `explain()` and profiling on the façade and model.
-- **Operational tooling**: dump / restore (profiles, masking, rotation),
+- **Operational tooling**: dump / restore (profiles, masking, rotation, setting
+  local documents aside around a restore: `preserve` / `reinject`),
   maintenance commands (`views`, `doctor`, `migrate`) and the custom-analyzer
   lifecycle (`analyzers`: diff / sync / fix / prune, with `doctor` integration).
 - **Polymorphic relations & deep access control**: joins and edges whose target

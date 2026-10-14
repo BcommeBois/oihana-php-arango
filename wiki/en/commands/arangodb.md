@@ -1,10 +1,10 @@
 # `command:arangodb` — dump / restore / collections / views / doctor / migrate
 
-`ArangoCommand` is the maintenance command for an ArangoDB database: **backup** (`dump`), **restore** (`restore`), **collection inventory** (`collections`), **ArangoSearch View management** (`views`), **structure health check** (`doctor`) and **versioned data migrations** (`migrate`). It ships pre-wired by the library under the name `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) and is used through `php bin/console.php command:arangodb <action> [options]`.
+`ArangoCommand` is the maintenance command for an ArangoDB database: **backup** (`dump`), **restore** (`restore`), **setting local documents aside around a restore** (`preserve` / `reinject`), **collection inventory** (`collections`), **ArangoSearch View management** (`views`), **structure health check** (`doctor`) and **versioned data migrations** (`migrate`). It ships pre-wired by the library under the name `command:arangodb` ([`definitions/commands.php`](../../../definitions/commands.php)) and is used through `php bin/console.php command:arangodb <action> [options]`.
 
 It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oihanaphp-commands) skeleton (argument/option/output handling via **Symfony Console**): `Kernel` (base class), `CommandArg` (arguments), `CommandOption` (shared options: `--clear`, `--passphrase`, …), `ExitCode`, plus utility traits (`IOTrait`, `EncryptTrait`). The runtime context is therefore a standard Symfony Console application, fed by a **PHP-DI** container.
 
-> **Requirements**: the `arangodump` and `arangorestore` binaries (shipped with ArangoDB) must be on the PHP process `$PATH`. macOS / Homebrew: `brew install arangodb`. The `collections` sub-command and collection validation go through ArangoDB's **HTTP API** (internal client), not the binaries.
+> **Requirements**: the `arangodump` and `arangorestore` binaries (shipped with ArangoDB) must be on the PHP process `$PATH`. macOS / Homebrew: `brew install arangodb`. The `collections`, `preserve` and `reinject` sub-commands and collection validation go through ArangoDB's **HTTP API** (internal client), not the binaries.
 
 > 💡 **In a hurry?** The [Dump / restore strategies](dump-restore-strategies.md) page ties all these blocks into ready-to-use recipes (complete backup, anonymized test extraction, automated local refresh).
 
@@ -21,6 +21,7 @@ It builds on the [`oihana/php-commands`](../getting-started/dependencies.md#oiha
 - [`dump` — backup](#dump--backup) — full database, subset, label, exclusion, `--complete`
 - [`restore` — restore](#restore--restore) — archive selection, targeting, guard-rails
 - [Profiles](#profiles) — named & external selections (staging → local)
+- [`preserve` / `reinject` — keeping local documents through a restore](#preserve--reinject--keeping-local-documents-through-a-restore)
 - [Masking — anonymizing the dump](#masking--anonymizing-the-dump) — anonymize PII, **maskers table**
 - [Archive rotation](#archive-rotation) — retention pruning (`keep` / `max_age` / `max_total`)
 - [`collections` — inventory](#collections--inventory)
@@ -91,6 +92,8 @@ A few terms used on this page, for a reader new to ArangoDB:
 |---|---|---|
 | `dump` | [`ArangoDumpAction`](../../../src/oihana/arango/commands/actions/ArangoDumpAction.php) | Timestamped `arangodump` archive. Whole database or a subset (`--collection` / `--ignore-collection`), AES-encrypted with `--encrypt`. |
 | `restore` | [`ArangoRestoreAction`](../../../src/oihana/arango/commands/actions/ArangoRestoreAction.php) | Restore via `arangorestore` from an archive selected by `--last`, `--date`, `--file` or interactively. Whole or subset (`--collection`). |
+| `preserve` | [`ArangoPreserveAction`](../../../src/oihana/arango/commands/actions/ArangoPreserveAction.php) | Sets aside, in `<collection>__preserved`, the local documents a `[arango.preserves]` rule names — before a restore. Through the HTTP API. |
+| `reinject` | [`ArangoReinjectAction`](../../../src/oihana/arango/commands/actions/ArangoReinjectAction.php) | After the restore: removes what the rule names, puts the documents set aside back, drops the backup — in one transaction. Confirmation, `--yes` to skip it. |
 | `collections` | [`ArangoListCollectionsAction`](../../../src/oihana/arango/commands/actions/ArangoListCollectionsAction.php) | Lists the database collections via the HTTP API. Scopes: user (default), `--system`, `--all`. |
 | `listDumps` (`--list`) | [`ArangoListDumpsAction`](../../../src/oihana/arango/commands/actions/ArangoListDumpsAction.php) | Lists the archive files present in the dumps directory. |
 | `views` | [`ArangoViewsAction`](../../../src/oihana/arango/commands/actions/ArangoViewsAction.php) | ArangoSearch View management via the HTTP API: list (default), `--diff` / `--sync` against the models' `AQL::VIEW` declarations, targeted or interactive `--drop`. |
@@ -107,6 +110,7 @@ Two sources feed the command:
 |---|---|---|
 | `[arango]` in `configs/config.toml` | `database`, `endpoint`, `user`, `password`, `encrypt`, `passphrase` | [`definitions/config.php`](../../../definitions/config.php) → `arango.config` |
 | `[arango.dump]` / `[arango.restore]` | Any `arangodump` / `arangorestore` option (see below) | `ArangoOptionsTrait` via the `dump` / `restore` init keys |
+| `[arango.preserves]` | One rule per collection: `filters` + `filter` (see [`preserve` / `reinject`](#preserve--reinject--keeping-local-documents-through-a-restore)) | `ArangoPreservesTrait` via the `preserves` init key |
 | `[app].dumps` in `configs/config.toml` | Archive directory | [`definitions/config.php`](../../../definitions/config.php) → `app.dumps` |
 
 Dumps directory resolution: **absolute** path → as-is; **relative** → resolved against the library root (`__LIB__`); **missing** → `<library-root>/dumps`.
@@ -200,6 +204,8 @@ return
             [
                 ArangoAction::COLLECTIONS ,
                 ArangoAction::DUMP        ,
+                ArangoAction::PRESERVE    ,
+                ArangoAction::REINJECT    ,
                 ArangoAction::RESTORE     ,
                 ArangoAction::VIEWS       ,
             ] ,
@@ -231,7 +237,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 
 | Option | Shortcut | Action(s) | Description |
 |---|---|---|---|
-| `--collection` | `-c` | dump, restore | Restrict to these collections. **Repeatable** *or* comma-separated (or both). |
+| `--collection` | `-c` | dump, restore, preserve, reinject | Restrict to these collections. **Repeatable** *or* comma-separated (or both). |
 | `--ignore-collection` | — | dump | Exclude these collections from the dump (repeatable / comma). Resolved client-side (see below). |
 | `--complete` | — | dump | Complete backup: every user collection **plus** `_analyzers` and `_graphs` — see [Complete backup](#complete-backup----complete). |
 | `--label` | `-L` | dump, restore | Optional label appended to the archive name (e.g. `pre-migration`). |
@@ -249,14 +255,14 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--threads` | — | dump, restore | Number of parallel threads. |
 | `--view` | — | restore | Restrict the restore to these Views (repeatable / comma-separated). |
 | `--profile` | — | dump, restore | Named profile (`[arango.profiles.<name>]`) or a path to a `.toml` profile file — see [Profiles](#profiles). |
-| `--dry-run` | — | dump, restore, migrate | Report the resolved plan (and the pending migrations) without running anything. |
+| `--dry-run` | — | dump, restore, migrate, preserve, reinject | Report the resolved plan (the pending migrations, the number of documents to set aside or put back) without running anything. |
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
-| `--force` | — | doctor, restore, analyzers | doctor: with `--apply`, allow the drop + recreate of drifted indexes. analyzers: with `--sync`, repair a drifted analyzer in place (drop + recreate + rebuild of its dependent Views); with `--prune`, also drop the orphans still used by a View. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)). |
+| `--force` | — | doctor, restore, reinject, analyzers | doctor: with `--apply`, allow the drop + recreate of drifted indexes. analyzers: with `--sync`, repair a drifted analyzer in place (drop + recreate + rebuild of its dependent Views); with `--prune`, also drop the orphans still used by a View. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)); reinject: write into a protected collection. |
 | `--fix` | — | analyzers | Generate one ready-to-review repair migration per drifted analyzer (path B, same name) instead of touching the database — needs `migrationsPath`. |
 | `--prune` | — | doctor, analyzers, dump | doctor: interactive selection of the orphans to remove. analyzers: drop the orphan custom analyzers declared by none (used ones need `--force`; confirmation, `--yes` to skip). dump: prune old archives per the retention policy (prune-only run; combine with `--dry-run`) — see [Archive rotation](#archive-rotation). |
 | `--create` | — | migrate | Generate an empty migration shell with this description. |
 | `--status` | — | migrate | Table of applied / pending migrations for this database. |
-| `--yes` | `-y` | migrate, restore, analyzers | Skip the confirmation prompt (apply migrations / restore / prune analyzers). |
+| `--yes` | `-y` | migrate, restore, reinject, analyzers | Skip the confirmation prompt (apply migrations / restore / put the documents set aside back / prune analyzers). |
 | `--down` | — | migrate | Roll back the last N applied migrations, default 1 (LIFO). |
 | `--forget` | — | migrate | Rescue: drop a tracking row **without** running its `down()`. |
 | `--diff` | — | views, analyzers | Compare the declarations (models' `AQL::VIEW` / the `analyzers` registry) with the server state (read-only). |
@@ -629,6 +635,126 @@ php bin/console.php command:arangodb restore --profile test-local --last --dry-r
 # Collections : thesaurus, products, clients, sales-reps
 # [OK] Dry run — nothing was restored.
 ```
+
+---
+
+## `preserve` / `reinject` — keeping local documents through a restore
+
+### The problem
+
+To ArangoDB, restoring a collection means **replacing it whole**. That hurts when a collection
+mixes two kinds of documents:
+
+- documents that **come from elsewhere**, the same on every machine — say imported from a source
+  system, with a `_key` starting with `src:`;
+- documents **created on this machine**, its own — trials, for instance.
+
+Refreshing a local database from another server then erases the latter, and brings the other
+server's in their place. `preserve` and `reinject` fix that, **around any restore**: the
+command's own, an `arangorestore` by hand, another tool.
+
+```bash
+php bin/console.php command:arangodb preserve             # 1. set aside
+# 2. … the restore, whatever it is …
+php bin/console.php command:arangodb reinject             # 3. put back
+```
+
+### The rule: `[arango.preserves]`
+
+One table per collection (edge collections included), in the configuration **of the machine
+being restored**:
+
+```toml
+[arango.preserves.articles]
+filters = { _key = "string" }
+filter  = '{"key":"_key","op":"nsw","val":"src:"}'
+```
+
+| Key | Role |
+|---|---|
+| `filters` | The **keys the filter may name**, and their type ([`FilterType`](../db/filter.md#di-declaration-aqlfilters): `string`, `number`, `date`, `bool`, `array`, `geo`). The counterpart of `AQL::FILTERS` on a model. Required. |
+| `filter` | The documents to keep, in the **[`?filter=`](../db/filter.md) grammar**, as JSON — between single quotes, a literal TOML string with no double quote to escape. Segments `{key, op, val}`, groups `["and", …]`, `["or", …]`, `["not", …]`. |
+
+The rule says **which documents of this collection belong to this machine**: a property of the
+local database, like `[arango.restore].protected` — hence a section apart from the
+[profiles](#profiles), which say what to back up. It therefore works without any profile.
+
+> 🔒 **Why not a free AQL condition?** Copied into a query run with the credentials of the
+> configuration, it could hold a sub-query writing elsewhere; and a configuration has no business
+> becoming code. With the `?filter=` grammar, the **values** are always bind parameters, the
+> **keys** must be declared in `filters`, the **operators** and the unreadable shapes are refused
+> by the compiler of the models, and the **collections** are bound too: the configuration only
+> provides data.
+
+### `preserve` — set aside
+
+For each collection with a rule (or those named with `-c`):
+
+1. a collection absent from the database → a warning, nothing to set aside;
+2. **`<collection>__preserved` already exists → refused**: a previous preserve still waits for
+   its reinject, and overwriting it would lose its documents;
+3. the backup `<collection>__preserved` is created **with the type of the collection** (an edge
+   collection for edges: `_from` and `_to` survive);
+4. the documents the rule names are copied into it **in a transaction**, with three numbers that
+   must agree (copied, named by the rule, present in the backup) — otherwise nothing is set aside
+   and the backup is dropped.
+
+```
+articles : 2 document(s) set aside in articles__preserved
+```
+
+Zero documents is not an error: the backup is created empty, and `reinject` will still remove
+what the restore brought. `preserve` only writes into collections it creates: no confirmation.
+
+### `reinject` — put back
+
+A summary, then a **confirmation** (`--yes` to skip it; without `--yes`, a non-interactive run
+stops). For each collection, **in a transaction**:
+
+1. **remove** from the collection what the rule names — what the restore brought;
+2. **put back** the whole backup; a duplicate `_key` is an **error**, never an overwrite;
+3. **count**: the documents the rule names must be exactly those of the backup. A rule changed
+   between `preserve` and `reinject` shows here.
+
+Any failure aborts the transaction: the collection stays as it was, and so does the backup.
+`<collection>__preserved` is dropped only after the commit.
+
+```
+Target  : my_db @ tcp://127.0.0.1:8529
+articles : 1 to remove · 2 to put back
+…
+articles : 1 removed · 2 put back · articles__preserved dropped
+```
+
+> 🚨 **A collection without a backup is left untouched.** Removing what the rule names with
+> nothing to put back would erase the local documents: `reinject` warns and moves on.
+
+**`reinject` can be run again safely.** Step 1 removes everything the rule names, a half put
+back included, before step 2 puts the whole backup back. If dropping the backup fails after the
+commit, a warning says so: running `reinject` again lands on the same result, then drops it.
+
+### Guard-rails
+
+| The configuration or the command says | Answer |
+|---|---|
+| no `[arango.preserves]` section | refused |
+| `-c x` while `x` has no rule | refused, naming the collection |
+| a rule on a `__preserved` collection | refused: a backup is not set aside |
+| no `filters`, or a `filters` value that is a table (sub-document, relation) | refused: a rule reads the fields of the document itself |
+| a type missing from `FilterType`, or `virtual` | refused |
+| a `filter` missing, empty, or not JSON | refused |
+| a filter the compiler refuses (undeclared key, unknown operator…) | refused, with its sentence |
+| `reinject` on a collection of `[arango.restore].protected` | refused unless `--force` |
+| `reinject` with no backup at all | failure: nothing to put back |
+
+`--dry-run` shows the numbers and writes nothing, on both actions.
+
+### What you see along the way
+
+- Between `preserve` and `reinject`, `<collection>__preserved` shows in `collections` — and in a
+  complete `dump` of the database taken at that moment. Harmless, but worth knowing.
+- The backup name is **derived** from the collection: that is what lets `reinject` find it
+  without being told.
 
 ---
 

@@ -79,6 +79,7 @@ php bin/console.php command:arangodb dump --profile staging-extract --directory 
 | Anonymize PII (GDPR) | **Masking** (PHP engine, any edition) | [Masking](arangodb.md#masking--anonymizing-the-dump) |
 | Keep the dump directory from growing | **Rotation** (`[arango.dump.retention]`) | [Archive rotation](arangodb.md#archive-rotation) |
 | Replay everything non-interactively (CI / bun) | `--yes` (+ `auto = true`) | [Restore guard-rails](arangodb.md#restore-guard-rails) |
+| Refresh a database without losing the documents created locally | `preserve` / `reinject` (`[arango.preserves]`) | [`preserve` / `reinject`](arangodb.md#preserve--reinject--keeping-local-documents-through-a-restore) |
 
 ---
 
@@ -210,6 +211,41 @@ What happens:
 
 ---
 
+## Recipe D — Refreshing a local database without losing its documents
+
+The case: the `articles` collection mixes documents that **come from elsewhere**
+(`_key` in `src:…`, the same everywhere) with documents **created locally**
+(trials). A restore replaces the whole collection: without care, the local trials
+vanish and the other server's take their place.
+
+```toml
+# config.toml of the machine being RESTORED
+[arango.preserves.articles]
+filters = { _key = "string" }
+filter  = '{"key":"_key","op":"nsw","val":"src:"}'
+```
+
+```bash
+php bin/console.php command:arangodb preserve                 # 1) set aside
+php bin/console.php command:arangodb restore --last --yes     # 2) any restore
+php bin/console.php command:arangodb reinject --yes           # 3) put back
+```
+
+What happens:
+
+- `preserve` copies the local documents into `articles__preserved`; it refuses
+  when a previous preserve still waits for its reinject.
+- The restore replaces `articles`, as usual — the command's own, or an
+  `arangorestore` by hand: the two actions do not depend on it.
+- `reinject`, in a transaction, removes what the rule names (the other server's
+  trials), puts the documents set aside back and drops the backup. On the
+  slightest failure nothing changes, and it can be run again.
+
+> Dry-run first: `preserve --dry-run` and `reinject --dry-run` show the numbers
+> without writing anything.
+
+---
+
 ## Safety at a glance
 
 - **Opt-in rotation**: no deletion without a retention policy (nor `--prune`).
@@ -217,5 +253,8 @@ What happens:
 - **Restore**: `protected` collections refused unless `--force`; confirmation
   required (or `--yes`); stops if non-interactive without `--yes`; non-local target
   warning; the source archive is consumed only on **success**.
-- **`--dry-run` everywhere** (`dump`, `restore`, `dump --prune`): shows the plan,
-  runs nothing.
+- **`preserve` / `reinject`**: a pending backup is never overwritten; a collection
+  without a backup is never touched; the put back is **all or nothing**
+  (transaction) and can be run again safely; confirmation required (or `--yes`).
+- **`--dry-run` everywhere** (`dump`, `restore`, `dump --prune`, `preserve`,
+  `reinject`): shows the plan, runs nothing.
