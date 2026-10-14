@@ -257,7 +257,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--profile` | — | dump, restore | Named profile (`[arango.profiles.<name>]`) or a path to a `.toml` profile file — see [Profiles](#profiles). |
 | `--dry-run` | — | dump, restore, migrate, preserve, reinject | Report the resolved plan (the pending migrations, the number of documents to set aside or put back) without running anything. |
 | `--apply` | — | doctor | Repair: create what is missing (collections, indexes, Views), resynchronize the Views. |
-| `--force` | — | doctor, restore, reinject, analyzers | doctor: with `--apply`, allow the drop + recreate of drifted indexes. analyzers: with `--sync`, repair a drifted analyzer in place (drop + recreate + rebuild of its dependent Views); with `--prune`, also drop the orphans still used by a View. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)); reinject: write into a protected collection. |
+| `--force` | — | doctor, restore, reinject, analyzers | doctor: with `--apply`, allow the drop + recreate of drifted indexes. analyzers: with `--sync`, repair a drifted analyzer in place (drop + recreate + rebuild of its dependent Views); with `--prune`, also drop the orphans still used by a View. restore: overwrite **protected** collections (see [Restore guard-rails](#restore-guard-rails)); reinject: write into a protected collection, or let a rule name more than its `maxPercent` of the collection. |
 | `--fix` | — | analyzers | Generate one ready-to-review repair migration per drifted analyzer (path B, same name) instead of touching the database — needs `migrationsPath`. |
 | `--prune` | — | doctor, analyzers, dump | doctor: interactive selection of the orphans to remove. analyzers: drop the orphan custom analyzers declared by none (used ones need `--force`; confirmation, `--yes` to skip). dump: prune old archives per the retention policy (prune-only run; combine with `--dry-run`) — see [Archive rotation](#archive-rotation). |
 | `--create` | — | migrate | Generate an empty migration shell with this description. |
@@ -666,14 +666,16 @@ being restored**:
 
 ```toml
 [arango.preserves.articles]
-filters = { _key = "string" }
-filter  = '{"key":"_key","op":"nsw","val":"src:"}'
+filters    = { _key = "string" }
+filter     = '{"key":"_key","op":"nsw","val":"src:"}'
+maxPercent = 50   # optional: 50 by default
 ```
 
 | Key | Role |
 |---|---|
 | `filters` | The **keys the filter may name**, and their type ([`FilterType`](../db/filter.md#di-declaration-aqlfilters): `string`, `number`, `date`, `bool`, `array`, `geo`). The counterpart of `AQL::FILTERS` on a model. Required. |
 | `filter` | The documents to keep, in the **[`?filter=`](../db/filter.md) grammar**, as JSON — between single quotes, a literal TOML string with no double quote to escape. Segments `{key, op, val}`, groups `["and", …]`, `["or", …]`, `["not", …]`. |
+| `maxPercent` | Optional. The **largest share** of the collection, as a whole percent from 1 to 100, the rule may name when `reinject` runs — **50 by default**; `100` turns the guard off (see below). An integer, not a decimal: the TOML decoder hands a decimal back as a string. |
 
 The rule says **which documents of this collection belong to this machine**: a property of the
 local database, like `[arango.restore].protected` — hence a section apart from the
@@ -708,8 +710,8 @@ what the restore brought. `preserve` only writes into collections it creates: no
 
 ### `reinject` — put back
 
-A summary, then a **confirmation** (`--yes` to skip it; without `--yes`, a non-interactive run
-stops). For each collection, **in a transaction**:
+A summary, the **share guard** (below), then a **confirmation** (`--yes` to skip it; without
+`--yes`, a non-interactive run stops). For each collection, **in a transaction**:
 
 1. **remove** from the collection what the rule names — what the restore brought;
 2. **put back** the whole backup; a duplicate `_key` is an **error**, never an overwrite;
@@ -721,10 +723,26 @@ Any failure aborts the transaction: the collection stays as it was, and so does 
 
 ```
 Target  : my_db @ tcp://127.0.0.1:8529
-articles : 1 to remove · 2 to put back
+articles : 1 to remove (25.0 % of 4) · 2 to put back
 …
 articles : 1 removed · 2 put back · articles__preserved dropped
 ```
+
+> 🚨 **A rule that names most of the collection is refused.** A rule for local documents names a
+> **small** share of a restored collection; when it names more than its `maxPercent` (50 % by
+> default), it is almost surely wrong — written on the wrong field, say. `reinject` then refuses
+> **before anything is written**, giving the numbers, **`--dry-run` included** (the dry run
+> announces what the real command would do). **`--yes` does not override it**: it skips the
+> confirmation, not the guard. Only `--force` does, after a warning. The guard is checked again in
+> the transaction, on what is actually removed.
+>
+> ```
+> [ERROR] articles : the rule names 4 of 4 documents (100.0 %), above its maxPercent of 50 — is
+>         the rule right ? Nothing was changed. Rerun with --force to override.
+> ```
+>
+> Without this guard, a rule naming everything removes everything, puts the backup back, and the
+> final count passes: the documents put back are indeed the only ones the rule names afterwards.
 
 > 🚨 **A collection without a backup is left untouched.** Removing what the rule names with
 > nothing to put back would erase the local documents: `reinject` warns and moves on.
@@ -746,6 +764,9 @@ commit, a warning says so: running `reinject` again lands on the same result, th
 | a filter the compiler refuses (undeclared key, unknown operator…) | refused, with its sentence |
 | `reinject` on a collection of `[arango.restore].protected` | refused unless `--force` |
 | `reinject` with no backup at all | failure: nothing to put back |
+| `maxPercent` missing | 50 |
+| `maxPercent` at 0, negative, above 100, decimal or a string | refused |
+| `reinject` whose rule names more than its `maxPercent` of the collection | refused before any write, `--dry-run` and `--yes` included, unless `--force` |
 
 `--dry-run` shows the numbers and writes nothing, on both actions.
 

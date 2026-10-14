@@ -51,6 +51,7 @@ final class PreserveFilter
      * @param string $collection The collection whose documents the rule names.
      * @param array $filters The keys the filter may name, and their `FilterType`.
      * @param array $filter The decoded filter : a segment or a group.
+     * @param int $maxPercent The largest share of the collection, in percent, the rule may name at `reinject`.
      *
      * @throws BindException
      * @throws ConstantException
@@ -61,11 +62,12 @@ final class PreserveFilter
      * @throws ReflectionException
      * @throws UnsupportedOperationException
      */
-    public function __construct( string $collection , array $filters , array $filter )
+    public function __construct( string $collection , array $filters , array $filter , int $maxPercent = self::DEFAULT_MAX_PERCENT )
     {
         $this->collection = $collection ;
         $this->backup     = PreservedCollection::backupOf( $collection ) ;
         $this->filters    = $filters ;
+        $this->maxPercent = $maxPercent ;
 
         $this->initializeQueryID( null ) ;
 
@@ -102,6 +104,15 @@ final class PreserveFilter
     public const string COLLECTION_BIND = 'collection' ;
 
     /**
+     * The largest share of its collection, in percent, a rule names by default.
+     *
+     * A rule names the documents of one machine among the documents a restore
+     * brought from elsewhere : a small share. Naming most of the collection says
+     * the rule is wrong.
+     */
+    public const int DEFAULT_MAX_PERCENT = 50 ;
+
+    /**
      * The name of the backup collection, `<collection>__preserved`.
      */
     public readonly string $backup ;
@@ -120,6 +131,11 @@ final class PreserveFilter
      * The compiled AQL condition, written against `doc`.
      */
     public readonly string $condition ;
+
+    /**
+     * The largest share of the collection, in percent, the rule may name at `reinject`.
+     */
+    public readonly int $maxPercent ;
 
     /**
      * No edge : a rule reads the fields of the document itself, never a relation.
@@ -156,6 +172,20 @@ final class PreserveFilter
     }
 
     /**
+     * The query counting every document of the collection.
+     *
+     * @return AqlQuery
+     */
+    public function collectionCountQuery() :AqlQuery
+    {
+        return new AqlQuery
+        (
+            sprintf( 'RETURN LENGTH( @@%s )' , self::COLLECTION_BIND ) ,
+            [ '@' . self::COLLECTION_BIND => $this->collection ] ,
+        ) ;
+    }
+
+    /**
      * The query copying the documents the rule names into the backup, and
      * returning how many it copied.
      *
@@ -186,6 +216,19 @@ final class PreserveFilter
             sprintf( 'RETURN LENGTH( FOR %1$s IN @@%2$s FILTER %3$s RETURN 1 )' , AQL::DOC , self::COLLECTION_BIND , $this->condition ) ,
             [ ...$this->binds , '@' . self::COLLECTION_BIND => $this->collection ] ,
         ) ;
+    }
+
+    /**
+     * Indicates whether `$named` documents out of `$total` exceed the share the
+     * rule may name. Compared on integers : `$named × 100 > maxPercent × $total`.
+     *
+     * @param int $named The documents the rule names.
+     * @param int $total The documents of the collection.
+     * @return bool True when the rule names more than its `maxPercent` of the collection.
+     */
+    public function exceeds( int $named , int $total ) :bool
+    {
+        return $named * 100 > $this->maxPercent * $total ;
     }
 
     /**
@@ -224,5 +267,18 @@ final class PreserveFilter
             ) ,
             [ ...$this->binds , '@' . self::COLLECTION_BIND => $this->collection ] ,
         ) ;
+    }
+
+    /**
+     * The share, in percent, that `$named` documents are of `$total` — for display only ;
+     * the guard compares integers ({@see exceeds()}).
+     *
+     * @param int $named The documents the rule names.
+     * @param int $total The documents of the collection.
+     * @return float The share in percent, 0 for an empty collection.
+     */
+    public function share( int $named , int $total ) :float
+    {
+        return $total === 0 ? 0.0 : $named * 100 / $total ;
     }
 }

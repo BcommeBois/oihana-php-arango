@@ -117,7 +117,7 @@ class PreserveFilterTest extends TestCase
     {
         $filter = $this->filter( [ 'key' => '_key' , 'op' => 'nsw' , 'val' => 'src:' ] ) ;
 
-        foreach( [ $filter->countQuery() , $filter->copyQuery() , $filter->removeQuery() , $filter->putBackQuery() , $filter->backupCountQuery() ] as $query )
+        foreach( [ $filter->countQuery() , $filter->copyQuery() , $filter->removeQuery() , $filter->putBackQuery() , $filter->backupCountQuery() , $filter->collectionCountQuery() ] as $query )
         {
             $this->assertSame( $this->usedBinds( $query ) , $this->givenBinds( $query ) , $query->query ) ;
         }
@@ -130,6 +130,8 @@ class PreserveFilterTest extends TestCase
         $this->assertSame( 'articles'            , $filter->countQuery()->bindVars[ '@collection' ] ) ;
         $this->assertSame( 'articles'            , $filter->removeQuery()->bindVars[ '@collection' ] ) ;
         $this->assertSame( 'articles__preserved' , $filter->backupCountQuery()->bindVars[ '@backup' ] ) ;
+        $this->assertSame( 'articles'            , $filter->collectionCountQuery()->bindVars[ '@collection' ] ) ;
+        $this->assertSame( 'RETURN LENGTH( @@collection )' , $filter->collectionCountQuery()->query ) ;
 
         $this->assertMatchesRegularExpression( '/FOR doc IN @@collection FILTER .+ INSERT .+ INTO @@backup/'  , $filter->copyQuery()->query ) ;
         $this->assertMatchesRegularExpression( '/FOR doc IN @@backup INSERT .+ INTO @@collection/'          , $filter->putBackQuery()->query ) ;
@@ -147,6 +149,39 @@ class PreserveFilterTest extends TestCase
 
         // The put back copies the whole backup : everything in it was named by the rule.
         $this->assertStringNotContainsString( 'FILTER' , $filter->putBackQuery()->query ) ;
+    }
+
+    // ---------------------------------------------------------------- the share guard
+
+    public function testTheShareIsHalfTheCollectionByDefault() :void
+    {
+        $filter = $this->filter( [ 'key' => '_key' , 'op' => 'nsw' , 'val' => 'src:' ] ) ;
+
+        $this->assertSame( 50 , $filter->maxPercent ) ;
+        $this->assertFalse( $filter->exceeds( 50 , 100 ) , 'exactly the share passes' ) ;
+        $this->assertTrue ( $filter->exceeds( 51 , 100 ) , 'one more document exceeds' ) ;
+        $this->assertTrue ( $filter->exceeds( 2  , 3   ) , '66.7 % exceeds' ) ;
+        $this->assertFalse( $filter->exceeds( 1  , 3   ) , '33.3 % passes' ) ;
+        $this->assertFalse( $filter->exceeds( 0  , 0   ) , 'an empty collection passes' ) ;
+    }
+
+    public function testTheShareFollowsMaxPercent() :void
+    {
+        $tight = new PreserveFilter( 'articles' , [ '_key' => FilterType::STRING ] , [ 'key' => '_key' , 'val' => 'x' ] , 10 ) ;
+        $open  = new PreserveFilter( 'articles' , [ '_key' => FilterType::STRING ] , [ 'key' => '_key' , 'val' => 'x' ] , 100 ) ;
+
+        $this->assertFalse( $tight->exceeds( 10 , 100 ) ) ;
+        $this->assertTrue ( $tight->exceeds( 11 , 100 ) ) ;
+        $this->assertFalse( $open->exceeds( 100 , 100 ) , '100 never refuses' ) ;
+    }
+
+    public function testTheDisplayedShareIsAPercent() :void
+    {
+        $filter = $this->filter( [ 'key' => '_key' , 'op' => 'nsw' , 'val' => 'src:' ] ) ;
+
+        $this->assertSame( 50.0 , $filter->share( 1 , 2 ) ) ;
+        $this->assertSame( 0.0  , $filter->share( 0 , 0 ) ) ;
+        $this->assertEqualsWithDelta( 66.67 , $filter->share( 2 , 3 ) , 0.01 ) ;
     }
 
     public function testTheCopiesLeaveTheSystemAttributesOfTheSourceBehind() :void

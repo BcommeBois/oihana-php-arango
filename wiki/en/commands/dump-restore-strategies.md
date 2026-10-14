@@ -255,6 +255,8 @@ What happens:
   warning; the source archive is consumed only on **success**.
 - **`preserve` / `reinject`**: a pending backup is never overwritten; a collection
   without a backup is never touched; the put back is **all or nothing**
-  (transaction) and can be run again safely; confirmation required (or `--yes`).
+  (transaction) and can be run again safely; confirmation required (or `--yes`); a rule
+  naming more than its `maxPercent` of the collection (50 % by default) is refused, even with
+  `--yes`, unless `--force`.
 - **`--dry-run` everywhere** (`dump`, `restore`, `dump --prune`, `preserve`,
   `reinject`): shows the plan, runs nothing.

@@ -257,6 +257,8 @@ Ce qui se passe :
   cible non locale ; l'archive source n'est consommée que sur **succès**.
 - **`preserve` / `reinject`** : une sauvegarde en attente n'est jamais écrasée ; une
   collection sans sauvegarde n'est jamais touchée ; la remise est **tout ou rien**
-  (transaction) et se relance sans danger ; confirmation obligatoire (ou `--yes`).
+  (transaction) et se relance sans danger ; confirmation obligatoire (ou `--yes`) ; une règle
+  qui désigne plus que son `maxPercent` de la collection (50 % par défaut) est refusée, même
+  avec `--yes`, sauf `--force`.
 - **`--dry-run` partout** (`dump`, `restore`, `dump --prune`, `preserve`, `reinject`) :
   montre le plan, n'exécute rien.

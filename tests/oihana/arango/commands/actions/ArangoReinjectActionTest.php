@@ -112,10 +112,11 @@ class ArangoReinjectActionTest extends TestCase
     }
 
     /**
-     * A fake database : `$exists` tells which collections exist ; the rule names 2
-     * documents of the collection, the backup holds 3, and the put back copies 3.
+     * A fake database : `$exists` tells which collections exist ; the collection
+     * holds `$total` documents, the rule names 2 of them, the backup holds 3, and
+     * the put back copies 3.
      */
-    private function database( array $exists ) :Database&MockObject
+    private function database( array $exists , int $total = 100 ) :Database&MockObject
     {
         $this->collections = [] ;
         foreach( $exists as $name => $present )
@@ -127,11 +128,12 @@ class ArangoReinjectActionTest extends TestCase
 
         $db = $this->createMock( Database::class ) ;
         $db->method( 'collection' )->willReturnCallback( fn( string $name ) => $this->collections[ $name ] ) ;
-        $db->method( 'query' )->willReturnCallback( function( AqlQuery $query )
+        $db->method( 'query' )->willReturnCallback( function( AqlQuery $query ) use ( $total )
         {
             $cursor = $this->createMock( Cursor::class ) ;
             $copiesTheBackup = str_contains( $query->query , 'LENGTH( @@backup )' ) || str_contains( $query->query , 'INTO @@collection' ) ;
-            $cursor->method( 'all' )->willReturn( [ $copiesTheBackup ? 3 : 2 ] ) ;
+            $countsAll       = $query->query === 'RETURN LENGTH( @@collection )' ;
+            $cursor->method( 'all' )->willReturn( [ $countsAll ? $total : ( $copiesTheBackup ? 3 : 2 ) ] ) ;
             return $cursor ;
         }) ;
         return $db ;
@@ -243,7 +245,7 @@ class ArangoReinjectActionTest extends TestCase
         $text = $output->fetch() ;
         $this->assertSame( ExitCode::SUCCESS , $code ) ;
         $this->assertStringContainsString( 'Target  : mydb @ tcp://127.0.0.1:8529' , $text ) ;
-        $this->assertStringContainsString( 'articles : 2 to remove · 3 to put back' , $text ) ;
+        $this->assertStringContainsString( 'articles : 2 to remove (2.0 % of 100) · 3 to put back' , $text ) ;
         $this->assertStringContainsString( 'Dry run — nothing was put back.' , $text ) ;
     }
 
@@ -303,6 +305,112 @@ class ArangoReinjectActionTest extends TestCase
         // collection : the rule no longer names what was set aside.
         $this->expectException( RuntimeException::class ) ;
         $this->expectExceptionMessage( 'articles : 3 document(s) put back, but 2 named by the rule — has the rule changed since preserve ? Nothing was changed.' ) ;
+
+        $host->run( $this->input( [ '--' . ArangoCommandOption::YES => true ] ) , new BufferedOutput() ) ;
+    }
+
+    // ---------------------------------------------------------------- the share guard
+
+    public function testARuleNamingMoreThanItsShareIsRefusedBeforeAnyWrite() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->database( [ 'articles' => true , 'articles__preserved' => true ] , 3 ) ;
+        $host->fakeDatabase->expects( $this->never() )->method( 'withTransaction' ) ;
+        $this->collections[ 'articles__preserved' ]->expects( $this->never() )->method( 'drop' ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::YES => true ] ) , $output ) ;
+
+        $text = preg_replace( '/\s+/' , ' ' , $output->fetch() ) ;
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( 'articles : the rule names 2 of 3 documents (66.7 %), above its maxPercent of 50 — is the rule right ?' , $text ) ;
+        $this->assertStringContainsString( 'Nothing was changed. Rerun with --force to override.' , $text ) ;
+    }
+
+    public function testTheShareGuardFailsTheDryRunToo() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->database( [ 'articles' => true , 'articles__preserved' => true ] , 3 ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $text = $output->fetch() ;
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringNotContainsString( 'Dry run' , $text ) ;
+    }
+
+    public function testExactlyTheShareIsAccepted() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->database( [ 'articles' => true , 'articles__preserved' => true ] , 4 ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'articles : 2 to remove (50.0 % of 4) · 3 to put back' , $output->fetch() ) ;
+    }
+
+    public function testForceLetsARuleNameMoreThanItsShare() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->database( [ 'articles' => true , 'articles__preserved' => true ] , 3 ) ;
+        $host->fakeDatabase->expects( $this->once() )->method( 'withTransaction' )->willReturn( [ 2 , 3 ] ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::YES => true , '--' . ArangoCommandOption::FORCE => true ] ) , $output ) ;
+
+        $text = preg_replace( '/\s+/' , ' ' , $output->fetch() ) ;
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( '--force : the rule names more than its maxPercent of the collection.' , $text ) ;
+        $this->assertStringContainsString( 'articles : 2 removed · 3 put back' , $text ) ;
+    }
+
+    public function testAMaxPercentOfAHundredTurnsTheGuardOff() :void
+    {
+        $host = new ArangoReinjectActionHost
+        ([
+            'articles' =>
+            [
+                ArangoCommandParam::PRESERVE_FILTERS     => [ '_key' => FilterType::STRING ] ,
+                ArangoCommandParam::PRESERVE_FILTER      => '{"key":"_key","op":"nsw","val":"src:"}' ,
+                ArangoCommandParam::PRESERVE_MAX_PERCENT => 100 ,
+            ] ,
+        ]) ;
+        $host->fakeDatabase = $this->database( [ 'articles' => true , 'articles__preserved' => true ] , 2 ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::DRY_RUN => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'articles : 2 to remove (100.0 % of 2) · 3 to put back' , $output->fetch() ) ;
+    }
+
+    public function testTheShareGuardIsCheckedAgainInTheTransaction() :void
+    {
+        $host = $this->host() ;
+
+        // The summary sees 2 of 100 ; in the transaction, the collection holds 3 and 2 are removed.
+        $totals = [ 100 , 3 ] ;
+        $db = $this->database( [ 'articles' => true , 'articles__preserved' => true ] ) ;
+        $host->fakeDatabase = $this->createMock( Database::class ) ;
+        $host->fakeDatabase->method( 'collection' )->willReturnCallback( fn( string $name ) => $this->collections[ $name ] ) ;
+        $host->fakeDatabase->method( 'query' )->willReturnCallback( function( AqlQuery $query ) use ( &$totals , $db )
+        {
+            if( $query->query === 'RETURN LENGTH( @@collection )' )
+            {
+                $cursor = $this->createMock( Cursor::class ) ;
+                $cursor->method( 'all' )->willReturn( [ array_shift( $totals ) ] ) ;
+                return $cursor ;
+            }
+            return $db->query( $query ) ;
+        }) ;
+        $host->fakeDatabase->method( 'withTransaction' )->willReturnCallback( fn( callable $callback ) => $callback() ) ;
+        $this->collections[ 'articles__preserved' ]->expects( $this->never() )->method( 'drop' ) ;
+
+        $this->expectException( RuntimeException::class ) ;
+        $this->expectExceptionMessage( 'articles : 2 of 3 documents removed (66.7 %), above its maxPercent of 50 — nothing was changed.' ) ;
 
         $host->run( $this->input( [ '--' . ArangoCommandOption::YES => true ] ) , new BufferedOutput() ) ;
     }

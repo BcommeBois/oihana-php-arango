@@ -260,7 +260,7 @@ $application->addCommand( $container->get( ArangoCommand::NAME ) ) ;
 | `--profile` | — | dump, restore | Profil nommé (`[arango.profiles.<nom>]`) ou chemin vers un fichier de profil `.toml` — voir [Profils](#profils). |
 | `--dry-run` | — | dump, restore, migrate, preserve, reinject | Affiche le plan résolu (les migrations en attente, les nombres de documents à mettre de côté ou à remettre) sans rien exécuter. |
 | `--apply` | — | doctor | Répare : crée le manquant (collections, index, Views), resynchronise les Views. |
-| `--force` | — | doctor, restore, reinject, analyzers | doctor : avec `--apply`, autorise le drop + recreate des index driftés. analyzers : avec `--sync`, répare un analyzer drifté en place (drop + recreate + reconstruction des Views dépendantes) ; avec `--prune`, supprime aussi les orphelins encore utilisés par une View. restore : écrase les collections **protégées** (voir [Garde-fous du restore](#garde-fous-du-restore)) ; reinject : écrit dans une collection protégée. |
+| `--force` | — | doctor, restore, reinject, analyzers | doctor : avec `--apply`, autorise le drop + recreate des index driftés. analyzers : avec `--sync`, répare un analyzer drifté en place (drop + recreate + reconstruction des Views dépendantes) ; avec `--prune`, supprime aussi les orphelins encore utilisés par une View. restore : écrase les collections **protégées** (voir [Garde-fous du restore](#garde-fous-du-restore)) ; reinject : écrit dans une collection protégée, ou laisse une règle désigner plus que son `maxPercent` de la collection. |
 | `--fix` | — | analyzers | Génère une migration de réparation prête à relire par analyzer drifté (chemin B, même nom) au lieu de toucher la base — nécessite `migrationsPath`. |
 | `--prune` | — | doctor, analyzers, dump | doctor : sélection interactive des orphelins à supprimer. analyzers : supprime les analyzers custom orphelins déclarés par personne (les utilisés nécessitent `--force` ; confirmation, `--yes` pour sauter). dump : élague les vieilles archives selon la politique de rétention (run élagage-seul ; combiner avec `--dry-run`) — voir [Rotation des archives](#rotation-des-archives). |
 | `--create` | — | migrate | Génère la coquille vide d'une migration avec cette description. |
@@ -674,14 +674,16 @@ restaure** :
 
 ```toml
 [arango.preserves.articles]
-filters = { _key = "string" }
-filter  = '{"key":"_key","op":"nsw","val":"src:"}'
+filters    = { _key = "string" }
+filter     = '{"key":"_key","op":"nsw","val":"src:"}'
+maxPercent = 50   # facultatif : 50 par défaut
 ```
 
 | Clé | Rôle |
 |---|---|
 | `filters` | Les **clés que le filtre peut nommer**, et leur type ([`FilterType`](../db/filter.md#déclaration-côté-di-aqlfilters) : `string`, `number`, `date`, `bool`, `array`, `geo`). L'équivalent de `AQL::FILTERS` sur un modèle. Obligatoire. |
 | `filter` | Les documents à garder, dans la **grammaire de [`?filter=`](../db/filter.md)**, en JSON — entre apostrophes, une chaîne TOML littérale, sans guillemet à échapper. Segments `{key, op, val}`, groupes `["and", …]`, `["or", …]`, `["not", …]`. |
+| `maxPercent` | Facultatif. La **part maximale** de la collection, en pourcentage entier de 1 à 100, que la règle peut désigner au moment de `reinject` — **50 par défaut** ; `100` éteint la garde (voir plus bas). Un entier, pas un décimal : le décodeur TOML rend un décimal en chaîne. |
 
 La règle dit **quels documents de cette collection appartiennent à cette machine** : une
 propriété de la base locale, comme `[arango.restore].protected` — d'où une section à part des
@@ -717,8 +719,9 @@ crée : pas de confirmation.
 
 ### `reinject` — remettre
 
-Un récapitulatif, puis une **confirmation** (`--yes` pour la sauter ; sans `--yes`, un lancement
-non interactif s'arrête). Pour chaque collection, **dans une transaction** :
+Un récapitulatif, la **garde de la part** (ci-dessous), puis une **confirmation** (`--yes` pour la
+sauter ; sans `--yes`, un lancement non interactif s'arrête). Pour chaque collection, **dans une
+transaction** :
 
 1. **retirer** de la collection ce que la règle désigne — ce que la restauration a apporté ;
 2. **remettre** toute la sauvegarde ; une `_key` en double est une **erreur**, jamais un
@@ -731,10 +734,27 @@ Ce n'est qu'après la validation que `<collection>__preserved` est supprimée.
 
 ```
 Target  : my_db @ tcp://127.0.0.1:8529
-articles : 1 to remove · 2 to put back
+articles : 1 to remove (25.0 % of 4) · 2 to put back
 …
 articles : 1 removed · 2 put back · articles__preserved dropped
 ```
+
+> 🚨 **Une règle qui désigne la plus grande partie de la collection est refusée.** Une règle de
+> documents locaux désigne une **petite** part d'une collection restaurée ; si elle en désigne
+> plus que son `maxPercent` (50 % par défaut), elle est presque sûrement fausse — écrite sur le
+> mauvais champ, par exemple. `reinject` refuse alors **avant toute écriture**, en donnant les
+> nombres, **`--dry-run` compris** (la marche à blanc annonce ce que ferait la vraie commande).
+> **`--yes` ne passe pas outre** : il saute la confirmation, pas la garde. Seul `--force` passe
+> outre, après un avertissement. La garde est refaite dans la transaction, sur ce qui est
+> réellement retiré.
+>
+> ```
+> [ERROR] articles : the rule names 4 of 4 documents (100.0 %), above its maxPercent of 50 — is
+>         the rule right ? Nothing was changed. Rerun with --force to override.
+> ```
+>
+> Sans cette garde, une règle qui désigne tout retire tout, remet la sauvegarde, et le contrôle
+> final passe : les documents remis sont bien les seuls que la règle désigne ensuite.
 
 > 🚨 **Une collection sans sauvegarde est laissée intacte.** Retirer ce que la règle désigne
 > sans rien avoir à remettre effacerait les documents locaux : `reinject` prévient et passe.
@@ -757,6 +777,9 @@ retombe sur le même résultat, puis la supprime.
 | un filtre que le compilateur refuse (clé non déclarée, opérateur inconnu…) | refus, avec sa phrase |
 | `reinject` sur une collection de `[arango.restore].protected` | refus sauf `--force` |
 | `reinject` sans aucune sauvegarde | échec : rien à remettre |
+| `maxPercent` absent | 50 |
+| `maxPercent` à 0, négatif, au-delà de 100, décimal ou en chaîne | refus |
+| `reinject` dont la règle désigne plus que son `maxPercent` de la collection | refus avant toute écriture, `--dry-run` et `--yes` compris, sauf `--force` |
 
 `--dry-run` affiche les nombres et n'écrit rien, sur les deux actions.
 

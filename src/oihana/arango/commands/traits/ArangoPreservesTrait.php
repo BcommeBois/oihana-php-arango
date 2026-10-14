@@ -19,8 +19,9 @@ use oihana\arango\models\enums\filters\FilterType;
  *
  * ```toml
  * [arango.preserves.articles]
- * filters = { _key = "string" }
- * filter  = '{"key":"_key","op":"nsw","val":"src:"}'
+ * filters    = { _key = "string" }
+ * filter     = '{"key":"_key","op":"nsw","val":"src:"}'
+ * maxPercent = 50   # optional, 50 by default
  * ```
  *
  * The rule says which documents of the collection **belong to this machine** —
@@ -159,6 +160,12 @@ trait ArangoPreservesTrait
             throw new InvalidArgumentException( sprintf( "The preserve rule of '%s' has no readable '%s' : a JSON segment or group of the ?filter= grammar is expected." , $collection , ArangoCommandParam::PRESERVE_FILTER ) ) ;
         }
 
-        return new PreserveFilter( $collection , $filters , $filter ) ;
+        $maxPercent = $definition[ ArangoCommandParam::PRESERVE_MAX_PERCENT ] ?? PreserveFilter::DEFAULT_MAX_PERCENT ;
+        if( !is_int( $maxPercent ) || $maxPercent < 1 || $maxPercent > 100 )
+        {
+            throw new InvalidArgumentException( sprintf( "The preserve rule of '%s' has a '%s' that is not a whole percent from 1 to 100." , $collection , ArangoCommandParam::PRESERVE_MAX_PERCENT ) ) ;
+        }
+
+        return new PreserveFilter( $collection , $filters , $filter , $maxPercent ) ;
     }
 }

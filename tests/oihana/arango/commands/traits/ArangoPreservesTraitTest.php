@@ -115,6 +115,11 @@ class ArangoPreservesTraitTest extends TestCase
             'an empty filter'         => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_FILTER => '{}' ] ) , "has no readable 'filter'" ] ,
             'a filter given as table' => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_FILTER => [ 'key' => '_key' , 'val' => 'x' ] ] ) , "has no readable 'filter'" ] ,
             'an undeclared key'       => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_FILTER => '{"key":"name","val":"x"}' ] ) , 'is not filterable' ] ,
+            'a maxPercent of zero'    => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_MAX_PERCENT => 0     ] ) , "has a 'maxPercent' that is not a whole percent from 1 to 100" ] ,
+            'a negative maxPercent'   => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_MAX_PERCENT => -1    ] ) , "has a 'maxPercent' that is not a whole percent from 1 to 100" ] ,
+            'a maxPercent over 100'   => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_MAX_PERCENT => 101   ] ) , "has a 'maxPercent' that is not a whole percent from 1 to 100" ] ,
+            'a decimal maxPercent'    => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_MAX_PERCENT => 0.5   ] ) , "has a 'maxPercent' that is not a whole percent from 1 to 100" ] ,
+            'a maxPercent as a string' => [ 'articles' , $rule( [ ArangoCommandParam::PRESERVE_MAX_PERCENT => '50' ] ) , "has a 'maxPercent' that is not a whole percent from 1 to 100" ] ,
         ] ;
     }
 
@@ -125,6 +130,20 @@ class ArangoPreservesTraitTest extends TestCase
         $this->expectExceptionMessageMatches( '/' . preg_quote( $collection , '/' ) . '.*' . preg_quote( $words , '/' ) . '/' ) ;
 
         $this->host( [ $collection => $definition ] )->filters() ;
+    }
+
+    public function testMaxPercentIsFiftyByDefaultAndReadFromTheRule() :void
+    {
+        $filters = $this->host
+        ([
+            'articles' => $this->rule() ,
+            'tags'     => $this->rule( [ ArangoCommandParam::PRESERVE_MAX_PERCENT => 1   ] ) ,
+            'authors'  => $this->rule( [ ArangoCommandParam::PRESERVE_MAX_PERCENT => 100 ] ) ,
+        ])->filters() ;
+
+        $this->assertSame( 50  , $filters[ 'articles' ]->maxPercent ) ;
+        $this->assertSame( 1   , $filters[ 'tags'     ]->maxPercent ) ;
+        $this->assertSame( 100 , $filters[ 'authors'  ]->maxPercent ) ;
     }
 
     public function testEveryTypeButVirtualIsAccepted() :void

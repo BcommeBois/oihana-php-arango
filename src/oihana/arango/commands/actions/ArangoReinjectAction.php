@@ -45,6 +45,13 @@ use oihana\commands\traits\IOTrait;
  * 🚨 A collection without a backup is **left untouched** : removing what the rule
  * names with nothing to put back would erase the local documents.
  *
+ * 🚨 A rule that names more than its `maxPercent` of the collection (50 by default)
+ * is **refused** before anything is written — the dry run included — unless
+ * `--force` : a rule meant for the documents of one machine names a small share of
+ * a restored collection, and naming most of it says the rule is wrong. `--yes` skips
+ * the confirmation, never this guard. It is checked again in the transaction, on
+ * what is actually removed.
+ *
  * It can be run again safely : step 1 removes everything the rule names, a
  * half put back included, before step 2 puts the whole backup back.
  *
@@ -86,9 +93,10 @@ trait ArangoReinjectAction
             return ExitCode::FAILURE ;
         }
 
-        $plan    = [] ;
-        $absent  = [] ;
-        $summary = [] ;
+        $plan     = [] ;
+        $absent   = [] ;
+        $exceeded = [] ;
+        $summary  = [] ;
 
         foreach( $filters as $collection => $filter )
         {
@@ -106,13 +114,27 @@ trait ArangoReinjectAction
 
             $plan[ $collection ] = $filter ;
 
+            $named = $this->preserveCount( $db , $filter->countQuery()           ) ;
+            $total = $this->preserveCount( $db , $filter->collectionCountQuery() ) ;
+
             $summary[] = sprintf
             (
-                '%s : %d to remove · %d to put back' ,
+                '%s : %d to remove (%.1f %% of %d) · %d to put back' ,
                 $collection ,
-                $this->preserveCount( $db , $filter->countQuery()       ) ,
+                $named ,
+                $filter->share( $named , $total ) ,
+                $total ,
                 $this->preserveCount( $db , $filter->backupCountQuery() ) ,
             ) ;
+
+            if( $filter->exceeds( $named , $total ) )
+            {
+                $exceeded[] = sprintf
+                (
+                    '%s : the rule names %d of %d documents (%.1f %%), above its maxPercent of %d — is the rule right ?' ,
+                    $collection , $named , $total , $filter->share( $named , $total ) , $filter->maxPercent
+                ) ;
+            }
         }
 
         if( $absent !== [] )
@@ -138,6 +160,17 @@ trait ArangoReinjectAction
 
         $io->text( sprintf( 'Target  : %s @ %s' , $database , $endpoint ) ) ;
         $io->text( $summary ) ;
+
+        if( $exceeded !== [] && !$forced )
+        {
+            $io->error( [ ...$exceeded , 'Nothing was changed. Rerun with --force to override.' ] ) ;
+            return ExitCode::FAILURE ;
+        }
+
+        if( $exceeded !== [] )
+        {
+            $io->warning( [ '--force : the rule names more than its maxPercent of the collection.' , ...$exceeded ] ) ;
+        }
 
         if( $blocked !== [] )
         {
@@ -171,7 +204,7 @@ trait ArangoReinjectAction
 
         foreach( $plan as $collection => $filter )
         {
-            [ $removed , $back ] = $this->putBack( $db , $filter ) ;
+            [ $removed , $back ] = $this->putBack( $db , $filter , $forced ) ;
 
             try
             {
@@ -195,18 +228,36 @@ trait ArangoReinjectAction
      * Removes from a collection the documents the rule names, then copies its whole
      * backup back — in one transaction.
      *
+     * The share guard is checked again on what is actually removed, so a write
+     * between the summary and the transaction cannot slip a rule past it.
+     *
      * @param Database       $db
      * @param PreserveFilter $filter
+     * @param bool           $forced True when `--force` lets a rule name more than its `maxPercent`.
      * @return array{0:int,1:int} The number of documents removed, then put back.
      * @throws Throwable When a step fails or the counts disagree — the transaction is aborted.
      */
-    private function putBack( Database $db , PreserveFilter $filter ) :array
+    private function putBack( Database $db , PreserveFilter $filter , bool $forced ) :array
     {
         return $db->withTransaction
         (
-            callback : function() use ( $db , $filter ) :array
+            callback : function() use ( $db , $filter , $forced ) :array
             {
+                $total    = $this->preserveCount( $db , $filter->collectionCountQuery() ) ;
                 $removed  = $this->preserveCount( $db , $filter->removeQuery()  ) ;
+
+                if( !$forced && $filter->exceeds( $removed , $total ) )
+                {
+                    throw new RuntimeException
+                    (
+                        sprintf
+                        (
+                            '%s : %d of %d documents removed (%.1f %%), above its maxPercent of %d — nothing was changed.' ,
+                            $filter->collection , $removed , $total , $filter->share( $removed , $total ) , $filter->maxPercent
+                        )
+                    ) ;
+                }
+
                 $back     = $this->preserveCount( $db , $filter->putBackQuery() ) ;
                 $matching = $this->preserveCount( $db , $filter->countQuery()   ) ;
 

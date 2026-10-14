@@ -256,10 +256,11 @@ final class PreserveReinjectIntegrationTest extends IntegrationTestCase
         $this->preserve() ;
         $this->restoreTheArchive() ;
 
-        // The new rule no longer names what was set aside : 10 and 11 start with "1".
+        // The new rule names 1 of the 4 restored documents — under the share guard —
+        // but only one of the two set aside : the count after the put back disagrees.
         try
         {
-            $this->command( '{"key":"_key","op":"nsw","val":"1"}' )->runReinject( $this->input( [ '--' . ArangoCommandOption::YES => true , '--' . ArangoCommandOption::COLLECTION => [ self::ARTICLES ] ] ) , new BufferedOutput() ) ;
+            $this->command( '{"key":"_key","op":"in","val":["20","10"]}' )->runReinject( $this->input( [ '--' . ArangoCommandOption::YES => true , '--' . ArangoCommandOption::COLLECTION => [ self::ARTICLES ] ] ) , new BufferedOutput() ) ;
             $this->fail( 'A rule that changed must abort the put back.' ) ;
         }
         catch( RuntimeException $exception )
@@ -269,6 +270,37 @@ final class PreserveReinjectIntegrationTest extends IntegrationTestCase
 
         $this->assertSame( [ '20' , 'src:1' , 'src:2' , 'src:3' ] , $this->keys( self::ARTICLES ) ) ;
         $this->assertTrue( self::$db->collection( 'articles__preserved' )->exists() ) ;
+    }
+
+    /**
+     * The scene that motivated the guard : a rule written on the wrong field names
+     * the whole restored collection. Without --force nothing moves, --yes included.
+     */
+    public function testARuleNamingTheWholeCollectionIsRefused() :void
+    {
+        $this->preserve() ;
+        $this->restoreTheArchive() ;
+
+        $everything = '{"key":"_key","op":"ne","val":"none"}' ;
+        $output     = new BufferedOutput() ;
+        $code       = $this->command( $everything )->runReinject( $this->input( [ '--' . ArangoCommandOption::YES => true , '--' . ArangoCommandOption::COLLECTION => [ self::ARTICLES ] ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::FAILURE , $code ) ;
+        $this->assertStringContainsString( 'articles : the rule names 4 of 4 documents (100.0 %), above its maxPercent of 50' , preg_replace( '/\s+/' , ' ' , $output->fetch() ) ) ;
+        $this->assertSame( [ '20' , 'src:1' , 'src:2' , 'src:3' ] , $this->keys( self::ARTICLES ) ) ;
+        $this->assertSame( [ '10' , '11' ] , $this->keys( 'articles__preserved' ) ) ;
+    }
+
+    public function testForceLetsTheRuleThroughAndDoesWhatItSays() :void
+    {
+        $this->preserve() ;
+        $this->restoreTheArchive() ;
+
+        $everything = '{"key":"_key","op":"ne","val":"none"}' ;
+        $code       = $this->command( $everything )->runReinject( $this->input( [ '--' . ArangoCommandOption::YES => true , '--' . ArangoCommandOption::FORCE => true , '--' . ArangoCommandOption::COLLECTION => [ self::ARTICLES ] ] ) , new BufferedOutput() ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertSame( [ '10' , '11' ] , $this->keys( self::ARTICLES ) ) ;
     }
 
     public function testWithoutABackupNothingIsRemoved() :void

@@ -100,6 +100,13 @@ class ArangoCommandParam
     public const string PRESERVE_FILTERS = 'filters' ;
 
     /**
+     * The 'maxPercent' key of a `[arango.preserves.<collection>]` rule — the largest
+     * share of the collection, an integer percent from 1 to 100, the rule may name
+     * when `reinject` runs (50 by default ; 100 turns the guard off).
+     */
+    public const string PRESERVE_MAX_PERCENT = 'maxPercent' ;
+
+    /**
      * The 'profiles' parameter — the `[arango.profiles]` config section (named
      * dump/restore selection profiles, keyed by name).
      */
