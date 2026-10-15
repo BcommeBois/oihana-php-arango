@@ -121,7 +121,7 @@ class FilterNestedMatchTest extends TestCase
 
         $shape = fn( ?string $aql ) => preg_replace( [ '/@\w+/' , '/doc(\.\w+)*\.(attachments|steps)/' ] , [ '@v' , 'ARRAY' ] , (string) $aql ) ;
 
-        $this->assertSame( 'LENGTH(ARRAY[* FILTER CURRENT.label == @v]) > 0' , $shape( $root ) ) ;
+        $this->assertSame( '@v IN ARRAY[*].label' , $shape( $root ) ) ;
         $this->assertSame( $shape( $root ) , $shape( $nested ) ) ;
 
         // …and the nested one names the array through the reference the object walk
@@ -309,7 +309,7 @@ class FilterNestedMatchTest extends TestCase
         ]);
 
         $this->assertStringContainsString( 'IN doc.notes[*].anything' , (string) $this->compile( [ 'key' => 'notes[*].anything' , 'val' => 'x' ] , $model ) ) ;
-        $this->assertStringContainsString( 'CURRENT.anything ==' , (string) $this->compile( [ 'key' => 'notes[*]' , 'match' => [ 'anything' => 'x' ] ] , $model ) ) ;
+        $this->assertStringContainsString( 'IN doc.notes[*].anything' , (string) $this->compile( [ 'key' => 'notes[*]' , 'match' => [ 'anything' => 'x' ] ] , $model ) ) ;
     }
 
     /**
@@ -351,7 +351,7 @@ class FilterNestedMatchTest extends TestCase
         $result = $this->compile( [ 'key' => 'files[*].tags[*]' , 'match' => [ 'label' => 'x' ] ] , $model ) ;
 
         $this->assertNotSame( Boolean::FALSE , $result ) ;
-        $this->assertStringContainsString( '[* FILTER CURRENT.label ==' , (string) $result ) ;
+        $this->assertMatchesRegularExpression( '/@\w+ IN v_\w+\.tags\[\*\]\.label/' , (string) $result ) ;
     }
 
     // ========================================

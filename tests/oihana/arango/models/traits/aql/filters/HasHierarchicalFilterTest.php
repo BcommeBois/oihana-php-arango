@@ -1537,7 +1537,7 @@ class HasHierarchicalFilterTest extends TestCase
             $this->binds
         ) ;
 
-        $this->assertStringContainsString( 'CURRENT.name' , $result ) ;
+        $this->assertStringContainsString( 'IN doc.attachments[*].name' , $result ) ;
         $this->assertStringNotContainsString( 'LENGTH(doc.attachments[*])' , $result ) ;
     }
 

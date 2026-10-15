@@ -117,7 +117,10 @@ class FilterAltHierarchicalTest extends TestCase
         $this->assertMatchesRegularExpression( '/LOWER\(CURRENT\.propertyID\) == LOWER\(@\S+\) && LOWER\(CURRENT\.value\) == LOWER\(@\S+\)/' , $result ) ;
     }
 
-    public function testMatchNoAltIsUnchanged(): void
+    /**
+     * Without an `alt`, a `match` on one sub-field is the plain lookup an index serves.
+     */
+    public function testMatchWithoutAltIsAPlainLookup(): void
     {
         $init =
         [
@@ -127,7 +130,7 @@ class FilterAltHierarchicalTest extends TestCase
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/FILTER CURRENT\.propertyID == @\S+]/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^@\S+ IN doc\.additionalProperty\[\*\]\.propertyID$/' , $result ) ;
         $this->assertStringNotContainsString( 'LOWER' , $result ) ;
     }
 }

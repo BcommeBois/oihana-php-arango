@@ -210,9 +210,22 @@ class FilterQuantTest extends TestCase
 
     public function testObjectMatchWithoutQuantStaysExistential(): void
     {
-        $result = $this->model->prepareFilter( [ 'key' => 'contactPoint[*]' , 'match' => [ 'verified' => true ] ] , $this->binds ) ;
+        $result = $this->model->prepareFilter( [ 'key' => 'contactPoint[*]' , 'match' => [ 'verified' => true , 'type' => 'home' ] ] , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/^LENGTH\(doc\.contactPoint\[\* FILTER CURRENT\.verified == @\S+]\) > 0$/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^LENGTH\(doc\.contactPoint\[\* FILTER CURRENT\.verified == @\S+ && CURRENT\.type == @\S+]\) > 0$/' , $result ) ;
+    }
+
+    /**
+     * On one sub-field, the same `match` is the lookup an index serves — with no `quant`
+     * or with `any`, which ask the same question.
+     */
+    public function testAMatchOnOneSubFieldIsALookupWithoutQuantOrWithAny(): void
+    {
+        $plain = $this->model->prepareFilter( [ 'key' => 'contactPoint[*]' , 'match' => [ 'verified' => true ] ] , $this->binds ) ;
+        $any   = $this->model->prepareFilter( [ 'key' => 'contactPoint[*]' , 'match' => [ 'verified' => true ] , 'quant' => 'any' ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^@\S+ IN doc\.contactPoint\[\*\]\.verified$/' , $plain ) ;
+        $this->assertMatchesRegularExpression( '/^@\S+ IN doc\.contactPoint\[\*\]\.verified$/' , $any ) ;
     }
 
     // ========================================

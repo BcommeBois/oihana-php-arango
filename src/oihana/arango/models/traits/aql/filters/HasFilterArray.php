@@ -3,14 +3,20 @@
 namespace oihana\arango\models\traits\aql\filters;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\db\enums\ArrayComparator;
 use oihana\arango\db\enums\Comparator;
 use oihana\arango\db\enums\functions\CheckFunction;
 use oihana\arango\db\enums\Clause;
+use oihana\arango\db\enums\Logic;
 use oihana\arango\db\enums\Operator;
+use oihana\arango\exceptions\RequestValidationException;
+use oihana\enums\Boolean;
 use oihana\enums\Char;
 use oihana\arango\models\enums\filters\FilterArrayComparator;
 use oihana\arango\models\enums\filters\FilterComparator;
+use oihana\arango\models\enums\filters\FilterLookup;
 use oihana\arango\models\enums\filters\FilterParam;
+use oihana\arango\models\enums\filters\FilterQuantifier;
 use oihana\exceptions\BindException;
 
 use oihana\exceptions\UnsupportedOperationException;
@@ -200,18 +206,15 @@ trait HasFilterArray
                 // thing and leaves the index to its leading columns : every document they
                 // name is read, and the list is tested in each — a limit bounds nothing,
                 // since the total of the page counts every match.
-                if ( $this->isElementEquality( $baseKey , $operator , $value , $alt , $quant ) )
+                $values = $this->isElementLookup( $baseKey , $alt , $quant ) ? $this->lookupValues( $operator , $value ) : null ;
+
+                if ( $values !== null )
                 {
                     // The sub-field is written into the path : the guard the inline
                     // builder applies to it is applied here too.
                     assertAttributeName( $field , fromRequest: true ) ;
 
-                    return predicate
-                    (
-                        leftOperand  : aqlBind( $value , $binds ) ,
-                        operator     : Comparator::IN ,
-                        rightOperand : $baseKey . Operator::ARRAY_EXPANSION . Char::DOT . $field ,
-                    ) ;
+                    return $this->elementLookup( $baseKey , $field , $values , $binds ) ;
                 }
 
                 // Determine the inline filter condition
@@ -259,6 +262,7 @@ trait HasFilterArray
      * Prepares the filter clause with a specific operator.
      * @param array $init
      * @return string
+     * @throws RequestValidationException
      */
     protected function prepareFilterArrayComparator( array $init = [] ):string
     {
@@ -278,6 +282,8 @@ trait HasFilterArray
      *
      * @param string|array|null $init
      * @param string $docRef
+     * @param array|null $binds
+     *
      * @return string
      *
      * @throws UnsupportedOperationException
@@ -459,6 +465,23 @@ trait HasFilterArray
     )
     :string
     {
+        // 🚨 A `match` on one sub-field asks the question of `attachments[*].label == @v`,
+        // and is written as its lookup for the same reason : the index on the element
+        // serves no other spelling.
+        $single = $this->isElementLookup( $baseKey , $alt , $quant ) ? $this->singleMatch( $match ) : null ;
+
+        if ( $single !== null )
+        {
+            // The guards of the `match` play first — an undeclared sub-field, a value that
+            // is not a scalar, a name that is not one — on a copy of the binds : the
+            // condition they build is not the one written, and a variable bound and never
+            // used is refused by the server.
+            $guarded = $binds ?? [] ;
+            buildCombinedInlineFilter( $match , $guarded , $allowedFields , $alt , $at ) ;
+
+            return $this->elementLookup( $baseKey , $single[ 0 ] , [ $single[ 1 ] ] , $binds ) ;
+        }
+
         $inlineCondition = buildCombinedInlineFilter( $match , $binds , $allowedFields , $alt , $at ) ;
 
         // `quant` present → question-mark operator (ANY/ALL/NONE/AT LEAST n).
@@ -476,34 +499,124 @@ trait HasFilterArray
     }
 
     /**
-     * Whether a filter on an element of a list (`offers[*].seller.id`) is a plain
-     * equality — the one question `@v IN doc.offers[*].seller.id` answers the same way
-     * as the existential `LENGTH( doc.offers[* FILTER CURRENT.seller.id == @v] ) > 0`.
+     * Writes the lookup of an element of a list : `@v IN doc.offers[*].seller.id`, one
+     * per value, joined by `||`.
      *
-     * 🔑 **Every other question keeps the existential spelling**, each for its reason :
-     * - another comparator asks something an `IN` does not say ;
-     * - a `null` or a list is not one value to look up ;
+     * 🚨 **One `IN` per value, never `ANY IN`.** `doc.offers[*].seller.id ANY IN @values`
+     * says the same thing, and ArangoDB does not look it up in the index — measured, as
+     * for `INTERSECTION()`. A list of `IN` joined by `||` is looked up value by value.
+     *
+     * An empty list names no document : it is written `false`, which is what the
+     * existential spelling answered.
+     *
+     * @param string                $baseKey The fully qualified key of the list (`doc.offers`).
+     * @param string                $field   The sub-field of an element (`seller.id`), already checked as a name.
+     * @param array<int,int|float|string|bool> $values  The values to look up, distinct ; none names no document.
+     * @param array|null            &$binds  The bind variables, populated by reference.
+     *
+     * @return string
+     *
+     * @throws BindException
+     */
+    private function elementLookup( string $baseKey , string $field , array $values , ?array &$binds ) :string
+    {
+        if ( $values === [] )
+        {
+            return Boolean::FALSE ;
+        }
+
+        $path    = $baseKey . Operator::ARRAY_EXPANSION . Char::DOT . $field ;
+        $lookups = [] ;
+
+        foreach ( $values as $value )
+        {
+            $lookups[] = predicate
+            (
+                leftOperand  : aqlBind( $value , $binds ) ,
+                operator     : Comparator::IN ,
+                rightOperand : $path ,
+            ) ;
+        }
+
+        return count( $lookups ) === 1 ? $lookups[ 0 ] : betweenParentheses( implode( Char::SPACE . Logic::OR . Char::SPACE , $lookups ) ) ;
+    }
+
+    /**
+     * Whether a filter on an element of a list (`offers[*].seller.id`) may be written as
+     * the lookup of that element — the conditions the list, the `alt` and the `quant`
+     * set, whatever the value asked for.
+     *
+     * 🔑 **Every other filter keeps the existential spelling**, each for its reason :
      * - an `alt` transforms `CURRENT`, which an index does not hold transformed ;
-     * - a `quant` counts the elements, an `IN` only finds one ;
+     * - a `quant` other than `any` counts the elements, an `IN` only finds one ;
      * - a nested list (`employee[*].contactPoint[*].verified`) expands into a list of
      *   lists, in which an `IN` would look for the value among lists.
      *
-     * @param string $baseKey  The fully qualified key of the list (`doc.offers`).
-     * @param mixed  $operator The comparator of the filter.
-     * @param mixed  $value    The value of the filter.
-     * @param mixed  $alt      The resolved `alt` chain, or null.
-     * @param mixed  $quant    The element-axis quantifier, or null.
+     * The value is the other half of the question : {@see self::lookupValues()} and
+     * {@see self::singleMatch()}.
+     *
+     * @param string $baseKey The fully qualified key of the list (`doc.offers`).
+     * @param mixed  $alt     The resolved `alt` chain, or null.
+     * @param mixed  $quant   The element-axis quantifier, or null.
      *
      * @return bool
      */
-    private function isElementEquality( string $baseKey , mixed $operator , mixed $value , mixed $alt , mixed $quant ) :bool
+    private function isElementLookup( string $baseKey , mixed $alt , mixed $quant ) :bool
     {
-        return $alt   === null
-            && $quant === null
-            && is_scalar( $value )
-            && is_string( $operator )
-            && FilterComparator::getAlias( $operator , null ) === Comparator::EQUAL
+        return $alt === null
+            && ( $quant === null || ( is_string( $quant ) && FilterQuantifier::getAlias( $quant ) === ArrayComparator::ANY ) )
             && !str_contains( $baseKey , Operator::ARRAY_EXPANSION ) ;
+    }
+
+    /**
+     * The values an element is looked up for, or `null` when the filter asks another
+     * question than « does the list hold one of these values ? ».
+     *
+     * - an equality (`eq`, or no operator) on a scalar : that value ;
+     * - `in` on a list of scalars, up to {@see FilterLookup::MAX_VALUES} once the
+     *   duplicates are gone : those values, the empty list included.
+     *
+     * Anything else — another comparator, a `null`, a list holding a `null`, an object
+     * or a list, a list longer than the bound — answers `null`, and the filter keeps the
+     * existential spelling, which answers the same documents without the index.
+     *
+     * @param mixed $operator The comparator of the filter.
+     * @param mixed $value    The value of the filter.
+     *
+     * @return array<int,int|float|string|bool>|null
+     */
+    private function lookupValues( mixed $operator , mixed $value ) :?array
+    {
+        $comparator = is_string( $operator ) ? FilterComparator::getAlias( $operator , null ) : null ;
+
+        if ( $comparator === Comparator::EQUAL )
+        {
+            return is_scalar( $value ) ? [ $value ] : null ;
+        }
+
+        if ( $comparator !== Comparator::IN || !is_array( $value ) )
+        {
+            return null ;
+        }
+
+        // 🚨 The duplicates go strictly : `"22"` and `22` are two values, as `==` says in
+        // AQL, where `array_unique()` would fold them together — and `true` with them.
+        $values = [] ;
+
+        foreach ( $value as $item )
+        {
+            if ( !is_scalar( $item ) )
+            {
+                return null ;
+            }
+
+            if ( !in_array( $item , $values , true ) )
+            {
+                $values[] = $item ;
+            }
+        }
+
+        return count( $values ) <= FilterLookup::MAX_VALUES ? $values : null ;
     }
 
     /**
@@ -550,5 +663,28 @@ trait HasFilterArray
         $value = $this->prepareFilterValue( $init , $binds ) ;
 
         return arrayContains( $key , predicate( Clause::CURRENT , $comparator , $value ) , $quantifier ) ;
+    }
+
+    /**
+     * The sub-field and the value of a `match` written in its simple form on **one**
+     * sub-field with a scalar value (`{"label":"x"}`), or `null` for any other `match` :
+     * several sub-fields ask about one element at once, which two lookups would not say,
+     * and the `all` / `any` / `none` forms carry their own operators.
+     *
+     * @param array<array-key,mixed> $match The `match` payload.
+     *
+     * @return array{0:string,1:int|float|string|bool}|null
+     */
+    private function singleMatch( array $match ) :?array
+    {
+        if ( count( $match ) !== 1 )
+        {
+            return null ;
+        }
+
+        $field = array_key_first( $match ) ;
+        $value = $match[ $field ] ;
+
+        return is_string( $field ) && is_scalar( $value ) ? [ $field , $value ] : null ;
     }
 }

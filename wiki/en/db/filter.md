@@ -1137,12 +1137,35 @@ new PersistentIndex( fields : [ 'kind' , 'orders[*].id' ] )
 
 The answer is the existential form's, on each of these cases: an integration test checks it against a real ArangoDB, together with the execution plan.
 
+**Three other spellings ask the same question**, and reach the index as well:
+
+```jsonc
+// a list of values: one IN per value, joined by ||
+{"key":"orders[*].id","op":"in","val":["B2","A1"]}
+// (@a IN doc.orders[*].id || @b IN doc.orders[*].id)
+
+// quant: "any" — « at least one element », the question of the equality
+{"key":"orders[*].id","val":"B2","quant":"any"}
+// @v IN doc.orders[*].id
+
+// a match on one sub-field
+{"key":"orders[*]","match":{"id":"B2"}}
+// @v IN doc.orders[*].id
+```
+
+- **The list is written with `||`, never `ANY IN`.** `doc.orders[*].id ANY IN @list` says the same thing, but ArangoDB does not look it up in the index: measured, as for `INTERSECTION()`.
+- **An empty list** names no document: it is written `false`.
+- **Duplicates go strictly**: `"22"` and `22` are two values, as for `==`.
+- **A list of more than 100 values** (`FilterLookup::MAX_VALUES`) keeps the existential form, which answers the same documents without the index. The bound is measured: on 20 000 documents, ArangoDB looked every value up in the index up to 250 values, dropped the index from 255, and refused the query towards 500 (« too much nesting or too many objects »). The margin allows for the other conditions of a real query.
+- **The guards of the `match` play first**, as before: an undeclared sub-field is refused, and so is a value that is not a scalar.
+
 **Every other question keeps the existential form**, each for its reason:
 
-- **another operator** (`ne`, `like`, `ge`, `in`…) asks something a membership does not;
-- a **`null`** or a **list** value is not one value to look up;
+- **another operator** (`ne`, `nin`, `like`, `ge`…) asks something a membership does not;
+- a **`null`** value, or a list holding a `null`, an object or a list, is not one value to look up;
 - an **`alt`** transforms `CURRENT`, which the index does not hold transformed;
-- a **`quant`** counts the elements, where an `IN` finds one;
+- a **`quant`** other than `any` (`all`, `none`, a number) counts the elements, where an `IN` finds one;
+- a **`match` on several sub-fields** speaks of one element, which two `IN` do not say;
 - a **nested list** (`employee[*].contactPoint[*].verified`) expands into a list of lists.
 
 #### Compatibility & notations

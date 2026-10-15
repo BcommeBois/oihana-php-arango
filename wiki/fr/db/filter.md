@@ -1136,12 +1136,35 @@ new PersistentIndex( fields : [ 'kind' , 'orders[*].id' ] )
 
 La réponse est la même que celle de la forme existentielle, sur chacun de ces cas : un essai d'intégration le vérifie contre un vrai ArangoDB, avec le plan d'exécution.
 
+**Trois autres écritures posent la même question**, et passent aussi par l'index :
+
+```jsonc
+// une liste de valeurs : un IN par valeur, reliés par ||
+{"key":"orders[*].id","op":"in","val":["B2","A1"]}
+// (@a IN doc.orders[*].id || @b IN doc.orders[*].id)
+
+// quant: "any" — « au moins un élément », la question de l'égalité
+{"key":"orders[*].id","val":"B2","quant":"any"}
+// @v IN doc.orders[*].id
+
+// un match sur un seul sous-champ
+{"key":"orders[*]","match":{"id":"B2"}}
+// @v IN doc.orders[*].id
+```
+
+- **La liste s'écrit en `||`, jamais en `ANY IN`.** `doc.orders[*].id ANY IN @liste` dit la même chose, mais ArangoDB ne la cherche pas dans l'index : mesuré, comme `INTERSECTION()`.
+- **Une liste vide** ne désigne aucun document : elle s'écrit `false`.
+- **Les doublons sont retirés strictement** : `"22"` et `22` sont deux valeurs, comme pour `==`.
+- **Une liste de plus de 100 valeurs** (`FilterLookup::MAX_VALUES`) garde la forme existentielle, qui rend les mêmes documents sans l'index. Le seuil est mesuré : sur 20 000 documents, ArangoDB cherche chaque valeur dans l'index jusqu'à 250 valeurs, abandonne l'index à partir de 255, et refuse la requête vers 500 (« too much nesting or too many objects »). La marge tient compte des autres conditions d'une vraie requête.
+- **Les gardes du `match` jouent d'abord**, comme avant : un sous-champ non déclaré est refusé, une valeur non scalaire aussi.
+
 **Les autres questions gardent la forme existentielle**, chacune pour sa raison :
 
-- un **autre opérateur** (`ne`, `like`, `ge`, `in`…) demande autre chose qu'une appartenance ;
-- une valeur **`null`** ou une **liste** n'est pas une valeur à chercher ;
+- un **autre opérateur** (`ne`, `nin`, `like`, `ge`…) demande autre chose qu'une appartenance ;
+- une valeur **`null`**, ou une liste qui contient un `null`, un objet ou une liste, n'est pas une valeur à chercher ;
 - un **`alt`** transforme `CURRENT`, et l'index ne le garde pas transformé ;
-- un **`quant`** compte les éléments, alors qu'un `IN` en trouve un ;
+- un **`quant`** autre que `any` (`all`, `none`, un nombre) compte les éléments, alors qu'un `IN` en trouve un ;
+- un **`match` sur plusieurs sous-champs** parle d'un même élément, ce que deux `IN` ne disent pas ;
 - une **liste imbriquée** (`employee[*].contactPoint[*].verified`) se déploie en liste de listes.
 
 #### Compatibilité & notations

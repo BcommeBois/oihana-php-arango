@@ -20,6 +20,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Filter;
 use oihana\arango\exceptions\RequestValidationException;
 use oihana\arango\models\Documents;
+use oihana\arango\models\enums\filters\FilterLookup;
 use oihana\arango\models\enums\filters\FilterType;
 
 /**
@@ -27,8 +28,9 @@ use oihana\arango\models\enums\filters\FilterType;
  * `@v IN doc.orders[*].id`, and which keep the existential spelling,
  * `LENGTH( doc.orders[* FILTER CURRENT.id == @v] ) > 0`.
  *
- * Only a plain equality on one scalar, on a list of the first level, with neither
- * `alt` nor `quant`, asks the question an `IN` answers. The live proof that the index
+ * Three spellings ask the question an `IN` answers — an equality on one scalar, a
+ * list of scalars (`in`) up to its bound, a `match` on one sub-field — on a list of
+ * the first level, without `alt`, with no `quant` or with `any`. The live proof that the index
  * is then used, and that both spellings answer the same documents, is
  * `ArrayExpansionIndexIntegrationTest`.
  */
@@ -110,7 +112,13 @@ class FilterArrayElementEqualityTest extends TestCase
             'an inequality'  => [ [ 'key' => 'orders[*].id'     , 'op' => 'ne'   , 'val' => 'B2'         ] ] ,
             'a pattern'      => [ [ 'key' => 'orders[*].id'     , 'op' => 'like' , 'val' => 'B%'         ] ] ,
             'a comparison'   => [ [ 'key' => 'orders[*].weight' , 'op' => 'ge'   , 'val' => 12           ] ] ,
-            'a list of ids'  => [ [ 'key' => 'orders[*].id'     , 'op' => 'in'   , 'val' => [ 'B2' , 'A1' ] ] ] ,
+            'a list holding a null'   => [ [ 'key' => 'orders[*].id' , 'op' => 'in'  , 'val' => [ 'B2' , null ] ] ] ,
+            'a list holding a list'   => [ [ 'key' => 'orders[*].id' , 'op' => 'in'  , 'val' => [ 'B2' , [ 'A1' ] ] ] ] ,
+            'a list beyond its bound' => [ [ 'key' => 'orders[*].id' , 'op' => 'in'  , 'val' => self::orders( FilterLookup::MAX_VALUES + 1 ) ] ] ,
+            'none of a list'          => [ [ 'key' => 'orders[*].id' , 'op' => 'nin' , 'val' => [ 'B2' , 'A1' ] ] ] ,
+            'a list with an alt'      => [ [ 'key' => 'orders[*].id' , 'op' => 'in'  , 'val' => [ 'b2' ] , 'alt' => [ 'key' => 'lower' ] ] ] ,
+            'a match on two fields'   => [ [ 'key' => 'orders[*]' , 'match' => [ 'id' => 'B2' , 'urgent' => true ] ] ] ,
+            'a match with an alt'     => [ [ 'key' => 'orders[*]' , 'match' => [ 'id' => 'b2' ] , 'alt' => [ 'key' => 'lower' ] ] ] ,
             'a null'         => [ [ 'key' => 'orders[*].id'     , 'val' => null                          ] ] ,
             'a list value'   => [ [ 'key' => 'orders[*].id'     , 'val' => [ 'B2' ]                      ] ] ,
             'an alt'         => [ [ 'key' => 'orders[*].id'     , 'val' => 'b2' , 'alt' => [ 'key' => 'lower' ] ] ] ,
@@ -138,13 +146,111 @@ class FilterArrayElementEqualityTest extends TestCase
     }
 
     /**
-     * A quantifier counts the elements : it keeps its question-mark operator.
+     * A quantifier other than `any` counts the elements : it keeps its question-mark
+     * operator, on an equality, a list and a `match` alike.
+     *
+     * @return array<string,array{0:array<string,mixed>,1:string}>
      */
-    public function testAQuantifiedEqualityKeepsItsOperator() :void
+    public static function countingQuestions() :array
     {
-        $result = $this->model->prepareFilter( [ 'key' => 'orders[*].id' , 'val' => 'B2' , 'quant' => 'all' ] , $this->binds ) ;
+        return
+        [
+            'all on an equality' => [ [ 'key' => 'orders[*].id' , 'val' => 'B2' , 'quant' => 'all' ] , 'doc.orders[? ALL FILTER CURRENT.id == @' ] ,
+            'none on a list'     => [ [ 'key' => 'orders[*].id' , 'op' => 'in' , 'val' => [ 'B2' ] , 'quant' => 'none' ] , 'doc.orders[? NONE FILTER CURRENT.id IN @' ] ,
+            'at least on a match' => [ [ 'key' => 'orders[*]' , 'match' => [ 'id' => 'B2' ] , 'quant' => 2 ] , 'doc.orders[? AT LEAST (2) FILTER CURRENT.id == @' ] ,
+        ] ;
+    }
 
-        $this->assertStringStartsWith( 'doc.orders[? ALL FILTER CURRENT.id == @' , $result ) ;
+    #[DataProvider( 'countingQuestions' )]
+    public function testACountingQuantifierKeepsItsOperator( array $filter , string $start ) :void
+    {
+        $this->assertStringStartsWith( $start , $this->model->prepareFilter( $filter , $this->binds ) ) ;
+    }
+
+    /**
+     * `quant: any` asks what no quantifier asks : the same lookup.
+     */
+    public function testTheQuantifierAnyIsALookup() :void
+    {
+        $this->assertMatchesRegularExpression( '/^@\w+ IN doc\.orders\[\*\]\.id$/' , $this->model->prepareFilter( [ 'key' => 'orders[*].id' , 'val' => 'B2' , 'quant' => 'any' ] , $this->binds ) ) ;
+        $this->assertMatchesRegularExpression( '/^@\w+ IN doc\.orders\[\*\]\.id$/' , $this->model->prepareFilter( [ 'key' => 'orders[*]' , 'match' => [ 'id' => 'B2' ] , 'quant' => 'any' ] , $this->binds ) ) ;
+    }
+
+    /**
+     * A list of values is one lookup per value, joined by `||`, each value bound.
+     */
+    public function testAListOfValuesIsOneLookupPerValue() :void
+    {
+        $result = $this->model->prepareFilter( [ 'key' => 'orders[*].id' , 'op' => 'in' , 'val' => [ 'B2' , 'A1' ] ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^\(@\w+ IN doc\.orders\[\*\]\.id \|\| @\w+ IN doc\.orders\[\*\]\.id\)$/' , $result ) ;
+        $this->assertSame( [ 'B2' , 'A1' ] , array_values( $this->binds ) ) ;
+    }
+
+    /**
+     * 🚨 The duplicates go strictly : a string and an integer, or `true` and a string,
+     * are two values to AQL, and both are looked up.
+     */
+    public function testTheDuplicatesOfAListGoStrictly() :void
+    {
+        $this->model->prepareFilter( [ 'key' => 'notes[*].author' , 'op' => 'in' , 'val' => [ '22' , 22 , '22' , true , 'ann' ] ] , $this->binds ) ;
+
+        $this->assertSame( [ '22' , 22 , true , 'ann' ] , array_values( $this->binds ) ) ;
+    }
+
+    /**
+     * A list at its bound is still looked up ; one more value and it keeps the
+     * existential spelling (see the existentials).
+     */
+    public function testAListAtItsBoundIsStillALookup() :void
+    {
+        $result = $this->model->prepareFilter( [ 'key' => 'orders[*].id' , 'op' => 'in' , 'val' => self::orders( FilterLookup::MAX_VALUES ) ] , $this->binds ) ;
+
+        $this->assertSame( FilterLookup::MAX_VALUES , substr_count( $result , ' IN doc.orders[*].id' ) ) ;
+    }
+
+    /**
+     * An empty list names no document, as the existential spelling did.
+     */
+    public function testAnEmptyListIsFalse() :void
+    {
+        $this->assertSame( 'false' , $this->model->prepareFilter( [ 'key' => 'orders[*].id' , 'op' => 'in' , 'val' => [] ] , $this->binds ) ) ;
+        $this->assertSame( [] , $this->binds ) ;
+    }
+
+    /**
+     * A `match` on one sub-field is the lookup, and binds its value once : the guards
+     * of the `match` run on a copy of the binds, and a variable bound and never used is
+     * refused by the server.
+     */
+    public function testAMatchOnOneSubFieldIsALookupBindingOnce() :void
+    {
+        $result = $this->model->prepareFilter( [ 'key' => 'orders[*]' , 'match' => [ 'id' => 'B2' ] ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^@\w+ IN doc\.orders\[\*\]\.id$/' , $result ) ;
+        $this->assertSame( [ 'B2' ] , array_values( $this->binds ) ) ;
+    }
+
+    /**
+     * The guards of the `match` still play before the lookup : an undeclared sub-field is
+     * refused, as it is refused in the existential spelling.
+     */
+    public function testAMatchOnAnUndeclaredSubFieldIsRefused() :void
+    {
+        $this->expectException( RequestValidationException::class ) ;
+        $this->expectExceptionMessage( 'ref' ) ;
+
+        $this->model->prepareFilter( [ 'key' => 'orders[*]' , 'match' => [ 'ref' => 'B2' ] ] , $this->binds ) ;
+    }
+
+    /**
+     * `count` orders : B2, then orders numbered from 1.
+     *
+     * @return array<int,string>
+     */
+    private static function orders( int $count ) :array
+    {
+        return [ 'B2' , ...array_map( static fn( int $i ) :string => "X$i" , range( 1 , $count - 1 ) ) ] ;
     }
 
     /**
