@@ -95,6 +95,7 @@
             "src/oihana/arango/db/functions/arrays/count.php",
             "src/oihana/arango/db/functions/arrays/countDistinct.php",
             "src/oihana/arango/db/functions/arrays/first.php",
+            "src/oihana/arango/db/functions/arrays/flatten.php",
             "src/oihana/arango/db/functions/arrays/last.php",
             "src/oihana/arango/db/functions/arrays/length.php",
             "src/oihana/arango/db/functions/arrays/nth.php",

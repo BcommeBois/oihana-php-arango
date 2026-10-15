@@ -122,7 +122,6 @@ class FilterArrayElementEqualityTest extends TestCase
             'a null'         => [ [ 'key' => 'orders[*].id'     , 'val' => null                          ] ] ,
             'a list value'   => [ [ 'key' => 'orders[*].id'     , 'val' => [ 'B2' ]                      ] ] ,
             'an alt'         => [ [ 'key' => 'orders[*].id'     , 'val' => 'b2' , 'alt' => [ 'key' => 'lower' ] ] ] ,
-            'a nested list'  => [ [ 'key' => 'stops[*].scans[*].code' , 'val' => 'S1'                    ] ] ,
         ] ;
     }
 
@@ -143,6 +142,18 @@ class FilterArrayElementEqualityTest extends TestCase
         $this->assertStringStartsWith( 'LENGTH(doc.' , $result ) ;
         $this->assertStringEndsWith( ') > 0' , $result ) ;
         $this->assertStringNotContainsString( ' IN doc.' , $result ) ;
+    }
+
+    /**
+     * A list inside a list is not looked up — it expands into a list of lists, in which
+     * an `IN` would look for the value among lists — and its elements are flattened
+     * before they are counted.
+     */
+    public function testANestedListIsFlattenedNeverLookedUp() :void
+    {
+        $result = $this->model->prepareFilter( [ 'key' => 'stops[*].scans[*].code' , 'val' => 'S1' ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^LENGTH\(FLATTEN\(doc\.stops\[\*\]\.scans\[\* FILTER CURRENT\.code == @\w+\],1\)\) > 0$/' , $result ) ;
     }
 
     /**

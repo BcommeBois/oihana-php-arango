@@ -24,6 +24,7 @@ use oihana\exceptions\ValidationException;
 use function oihana\arango\db\binds\aqlBind;
 use function oihana\arango\db\functions\arrays\arrayContains;
 use function oihana\arango\db\functions\arrays\arrayFilter;
+use function oihana\arango\db\functions\arrays\flatten;
 use function oihana\arango\db\functions\arrays\length;
 use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\buildCombinedInlineFilter;
@@ -233,13 +234,7 @@ trait HasFilterArray
                     return arrayContains( $baseKey , $inlineCondition , resolveQuantifier( $quant ) ) ;
                 }
 
-                // Generate: LENGTH(array[* FILTER CURRENT.field <op> value]) > 0
-                return predicate
-                (
-                    leftOperand  : length( arrayFilter( $baseKey , $inlineCondition ) ) ,
-                    operator     : Comparator::GREATER_THAN ,
-                    rightOperand : '0' ,
-                ) ;
+                return $this->elementsExist( $baseKey , $inlineCondition ) ;
             }
         }
 
@@ -490,12 +485,7 @@ trait HasFilterArray
             return arrayContains( $baseKey , $inlineCondition , resolveQuantifier( $quant ) ) ;
         }
 
-        return predicate
-        (
-            leftOperand  : length( arrayFilter( $baseKey , $inlineCondition ) ) ,
-            operator     : Comparator::GREATER_THAN ,
-            rightOperand : '0' ,
-        ) ;
+        return $this->elementsExist( $baseKey , $inlineCondition ) ;
     }
 
     /**
@@ -539,6 +529,41 @@ trait HasFilterArray
         }
 
         return count( $lookups ) === 1 ? $lookups[ 0 ] : betweenParentheses( implode( Char::SPACE . Logic::OR . Char::SPACE , $lookups ) ) ;
+    }
+
+    /**
+     * Whether at least one element of a list satisfies a condition :
+     * `LENGTH( doc.offers[* FILTER <condition>] ) > 0`.
+     *
+     * 🚨 **A list held inside another list is flattened before it is counted.**
+     * `doc.stops[*].scans[* FILTER …]` yields one list PER STOP, and its length is the
+     * number of stops : counted as is, a parcel with one stop and no matching scan was
+     * selected, whatever the value asked for. The elements are filtered where they are,
+     * then flattened by as many levels as the base key crosses lists
+     * (`FLATTEN( doc.stops[*].scans[* FILTER …] , 1 )`), and only then counted.
+     * Filtering before flattening keeps a stop without scans out of the count : its
+     * expansion is empty, where flattening first would lift a `null` into the list.
+     *
+     * ⚠️ **A `quant` never reaches such a list** : the hierarchical walk forwards it
+     * on a list of the first level only, the level it would count being ambiguous
+     * below, and the existential form is kept, as documented.
+     *
+     * @param string $baseKey   The fully qualified key of the list (`doc.offers`, `doc.stops[*].scans`).
+     * @param string $condition The inline condition on an element (`CURRENT.…`).
+     *
+     * @return string
+     */
+    private function elementsExist( string $baseKey , string $condition ) :string
+    {
+        $depth    = substr_count( $baseKey , Operator::ARRAY_EXPANSION ) ;
+        $elements = arrayFilter( $baseKey , $condition ) ;
+
+        return predicate
+        (
+            leftOperand  : length( $depth === 0 ? $elements : flatten( $elements , $depth ) ) ,
+            operator     : Comparator::GREATER_THAN ,
+            rightOperand : '0' ,
+        ) ;
     }
 
     /**

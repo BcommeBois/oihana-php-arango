@@ -26,6 +26,7 @@ use function oihana\arango\db\functions\arrays\sorted;
 use function oihana\arango\db\functions\arrays\sortedUnique;
 use function oihana\arango\db\functions\arrays\unshift;
 
+use function oihana\arango\db\functions\arrays\flatten;
 use function oihana\arango\db\functions\arrays\length;
 
 class ArrayFunctionsTest extends TestCase
@@ -99,6 +100,12 @@ class ArrayFunctionsTest extends TestCase
     public function testLast(): void
     {
         $this->assertEquals("LAST(arr)", last('arr'));
+    }
+
+    public function testFlatten(): void
+    {
+        $this->assertEquals("FLATTEN(doc.stops[*].scans)", flatten('doc.stops[*].scans'));
+        $this->assertEquals("FLATTEN(doc.a[*].b[*].c,2)", flatten('doc.a[*].b[*].c', 2));
     }
 
     public function testLength(): void

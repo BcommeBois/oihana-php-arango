@@ -235,15 +235,15 @@ class FilterQuantTest extends TestCase
     public function testMultiLevelArrayIgnoresQuant(): void
     {
         // Two `[*]` levels → the binding level is ambiguous, so `quant` is dropped
-        // and the legacy existential (ANY) is emitted.
+        // and the existential (ANY) is emitted — on the inner elements FLATTENED, never
+        // on the list of lists, whose length is the number of outer elements.
         $result = $this->model->prepareFilter
         (
             [ 'key' => 'employee[*].contactPoint[*].verified' , 'op' => 'eq' , 'val' => true , 'quant' => 'all' ] ,
             $this->binds
         ) ;
 
-        $this->assertStringContainsString( 'LENGTH(' , $result ) ;
-        $this->assertStringContainsString( '> 0' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^LENGTH\(FLATTEN\(doc\.employee\[\*\]\.contactPoint\[\* FILTER CURRENT\.verified == @\w+\],1\)\) > 0$/' , $result ) ;
         $this->assertStringNotContainsString( 'ALL' , $result ) ;
         $this->assertStringNotContainsString( '[?' , $result ) ;
     }

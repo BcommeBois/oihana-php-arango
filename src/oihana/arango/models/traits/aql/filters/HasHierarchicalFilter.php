@@ -32,6 +32,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use Psr\Log\LoggerAwareTrait;
 
 use function oihana\arango\db\binds\aqlBindCollection;
+use function oihana\arango\db\functions\arrays\flatten;
 use function oihana\arango\db\functions\length;
 use function oihana\arango\db\operators\logicalNot;
 use function oihana\arango\db\operations\aqlFilter;
@@ -358,6 +359,26 @@ trait HasHierarchicalFilter
         $nestedPath = implode(Char::DOT , $remainingSegments ) ;
         $fullPath   = $cleanKey . Operator::ARRAY_EXPANSION . Char::DOT . $nestedPath ;
 
+        // 🚨 A LIST named last, inside this list (`stops[*].scans[*]`) : its elements
+        // are the question — a `match` on them, or how many there are. Handed to the
+        // array filter as a plain key, the `match` was left behind and the list was
+        // compared to nothing ; it is answered here, as a list of the first level is,
+        // on the elements flattened across the outer list.
+        if ( str_ends_with( (string) end( $remainingSegments ) , Operator::ARRAY_EXPANSION ) )
+        {
+            return $this->buildInnerListCondition
+            (
+                substr( key( $fullPath , $docRef ) , 0 , -strlen( Operator::ARRAY_EXPANSION ) ) ,
+                $this->innerListFilters( $segmentInfo->nestedFilters ?? [] , $remainingSegments ) ,
+                $init ,
+                $binds ,
+                str_replace( Operator::ARRAY_EXPANSION , Char::EMPTY , $leafRelative ) ,
+                $currentFields ,
+                $auth ,
+                implode( Char::DOT , [ ...$segmentInfo->path , ...$remainingSegments ] ) ,
+            ) ;
+        }
+
         // Create init for array field — forward `alt` so the inline expansion
         // condition (CURRENT.<field>) is wrapped like the flat filters.
         $arrayInit =
@@ -411,6 +432,114 @@ trait HasHierarchicalFilter
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
+    /**
+     * The condition on a list named last inside another list (`stops[*].scans[*]`) :
+     * a `match` on its elements, or how many of them there are.
+     *
+     * Both read the elements **flattened across the outer list** — every scan of every
+     * stop. Unflattened, `doc.stops[*].scans[*]` is one list per stop, and its length is
+     * the number of stops.
+     *
+     * - **A `match`** keeps its guards : the sub-fields it names are held to the
+     *   permissions of the projection and to the sub-filters the inner list declares,
+     *   then the condition is built by the array filter, which flattens a nested list
+     *   before counting. A `quant` is not applied : the level it would count is
+     *   ambiguous.
+     * - **Without one**, the question is the cardinality, in the vocabulary of a list of
+     *   the first level : nothing or `any` for « at least one », `none` for « not
+     *   one », an integer for « at least n ». `all` is refused, there being no
+     *   condition to satisfy.
+     *
+     * @param string                 $listKey       The fully qualified key of the inner list, without its marker (`doc.stops[*].scans`).
+     * @param array<array-key,mixed> $declared      The sub-filters the inner list declares.
+     * @param array                  $init          The filter parameters.
+     * @param array|null             &$binds        The bind variables, populated by reference.
+     * @param string                 $relativeBase  The path of the inner list in the projection (`stops.scans`).
+     * @param array|null             $currentFields The projection the path is resolved against.
+     * @param array                  $auth          The caller's permission context.
+     * @param string                 $at            The list as the request spelled it, named by a refusal.
+     *
+     * @return string
+     *
+     * @throws BindException
+     * @throws RequestValidationException When the `match` or the quantifier is refused.
+     * @throws UnsupportedOperationException
+     * @throws ValidationException
+     */
+    private function buildInnerListCondition
+    (
+        string  $listKey       ,
+        array   $declared      ,
+        array   $init          ,
+        ?array  &$binds        ,
+        string  $relativeBase  ,
+        ?array  $currentFields ,
+        array   $auth          ,
+        string  $at            ,
+    )
+    : string
+    {
+        $match = $init[ FilterParam::MATCH ] ?? null ;
+
+        if ( is_array( $match ) )
+        {
+            if ( !$this->matchFieldsAuthorized( $match , $relativeBase , $currentFields , $auth ) )
+            {
+                return Boolean::FALSE ;
+            }
+
+            return $this->buildMatchCondition
+            (
+                $match ,
+                $binds ,
+                $listKey ,
+                $declared ,
+                requestAlt( $init[ FilterParam::ALT ] ?? null ) ,
+                null ,
+                $at ,
+            ) ;
+        }
+
+        $quantifier = resolveTraversalQuantifier( $init[ FilterParam::QUANT ] ?? null ) ;
+
+        if ( $quantifier->negate )
+        {
+            throw new RequestValidationException( sprintf
+            (
+                "The 'all' quantifier requires a condition to satisfy at path: %s. " .
+                "Use 'none' to match documents holding no element." ,
+                $at
+            ) ) ;
+        }
+
+        return predicate
+        (
+            leftOperand  : length( flatten( $listKey . Operator::ARRAY_EXPANSION , substr_count( $listKey , Operator::ARRAY_EXPANSION ) ) ) ,
+            operator     : $quantifier->comparator ,
+            rightOperand : (string) $quantifier->threshold ,
+        ) ;
+    }
+
+    /**
+     * The sub-filters the last list of a path declares, walked from the sub-filters of
+     * the list the path starts under — empty when a level declares none.
+     *
+     * @param array<array-key,mixed> $declared The sub-filters of the outer list.
+     * @param array<string>          $segments The segments below it, down to the inner list.
+     *
+     * @return array<array-key,mixed>
+     */
+    private function innerListFilters( array $declared , array $segments ) : array
+    {
+        foreach ( $segments as $segment )
+        {
+            $definition = $declared[ str_replace( Operator::ARRAY_EXPANSION , Char::EMPTY , $segment ) ] ?? null ;
+            $declared   = is_array( $definition ) && is_array( $definition[ AQL::FILTERS ] ?? null ) ? $definition[ AQL::FILTERS ] : [] ;
+        }
+
+        return $declared ;
+    }
+
     /**
      * Refuses an element sub-field the list does not declare, following the path when
      * it goes on under a declared object (`offers[*].seller.id`).

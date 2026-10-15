@@ -1193,6 +1193,30 @@ Le sous-champ se déclare de **deux façons**, et chacune sert les **deux** écr
 
 Un chemin qu'aucune des deux formes ne déclare reste **refusé** (`400`, `The filter key "seller.name" is not filterable…`), dans les deux écritures. Un objet déclaré sans sous-filtres est libre en dessous, comme une liste déclarée sans sous-filtres.
 
+#### Une liste dans une liste — les éléments mis à plat
+
+**La situation.** Chaque colis a ses arrêts, et chaque arrêt ses lectures de code-barres : `stops: [ { scans: [ { code: "S1" } , … ] } , … ]`. On cherche les colis passés par une lecture donnée.
+
+```jsonc
+{"key":"stops[*].scans[*].code","val":"S1"}                  // un sous-champ
+{"key":"stops[*].scans[*]","match":{"code":"S1"}}            // un match
+{"key":"stops[*].scans[*]","quant":"none"}                   // aucune lecture
+```
+
+`doc.stops[*].scans[* FILTER …]` rend **une liste par arrêt**. Comptée telle quelle, sa longueur est le nombre d'arrêts : un colis avec un arrêt et aucune lecture qui convient était retenu, quelle que soit la valeur cherchée. Les éléments de la liste du bas sont donc **filtrés là où ils sont, puis mis à plat**, et seulement ensuite comptés :
+
+```aql
+LENGTH(FLATTEN(doc.stops[*].scans[* FILTER CURRENT.code == @v],1)) > 0
+LENGTH(FLATTEN(doc.stops[*].scans[*],1)) == 0                // quant: none
+```
+
+- **Filtrer avant de mettre à plat** garde un arrêt sans lectures hors du compte : son expansion est vide, alors qu'une mise à plat faite d'abord y glisserait un `null`.
+- **Trois niveaux** (`routes[*].stops[*].scans[*]`) mettent à plat sur deux niveaux : `FLATTEN(…,2)`.
+- **Le `match` sur la liste du bas** garde ses gardes : un sous-champ non déclaré est refusé (`400`), une valeur non scalaire aussi, et un sous-champ protégé par une permission neutralise le filtre.
+- **Le nombre d'éléments** parle le vocabulaire d'une liste simple : rien ou `any` pour « au moins un », `none` pour « aucun », un entier pour « au moins n » ; `all` est refusé.
+- **`quant` sur un sous-champ ou un `match`** de la liste du bas reste sans effet : le niveau qu'il compterait est ambigu.
+- **Aucun index** ne sert ces filtres : ArangoDB refuse deux `[*]` dans un champ d'index.
+
 #### Compatibilité & notations
 
 - **Forme recommandée** : `quant` (uniforme scalaire + objet).

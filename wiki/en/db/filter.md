@@ -1194,6 +1194,30 @@ The sub-field is declared in **two ways**, and each serves **both** spellings:
 
 A path neither form declares is still **refused** (`400`, `The filter key "seller.name" is not filterable…`), in both spellings. An object declared with no sub-filters is free below it, as a list declared with none is.
 
+#### A list inside a list — the elements flattened
+
+**The situation.** Each parcel has its stops, and each stop its barcode scans: `stops: [ { scans: [ { code: "S1" } , … ] } , … ]`. We look for the parcels that went through a given scan.
+
+```jsonc
+{"key":"stops[*].scans[*].code","val":"S1"}                  // a sub-field
+{"key":"stops[*].scans[*]","match":{"code":"S1"}}            // a match
+{"key":"stops[*].scans[*]","quant":"none"}                   // no scan at all
+```
+
+`doc.stops[*].scans[* FILTER …]` yields **one list per stop**. Counted as is, its length is the number of stops: a parcel with one stop and no matching scan was selected, whatever the value asked for. The elements of the inner list are therefore **filtered where they are, then flattened**, and only then counted:
+
+```aql
+LENGTH(FLATTEN(doc.stops[*].scans[* FILTER CURRENT.code == @v],1)) > 0
+LENGTH(FLATTEN(doc.stops[*].scans[*],1)) == 0                // quant: none
+```
+
+- **Filtering before flattening** keeps a stop without scans out of the count: its expansion is empty, where flattening first would slip a `null` into the list.
+- **Three levels** (`routes[*].stops[*].scans[*]`) flatten two levels: `FLATTEN(…,2)`.
+- **The `match` on the inner list** keeps its guards: an undeclared sub-field is refused (`400`), so is a value that is not a scalar, and a sub-field locked by a permission neutralises the filter.
+- **The number of elements** speaks the vocabulary of a plain list: nothing or `any` for « at least one », `none` for « not one », an integer for « at least n »; `all` is refused.
+- **`quant` on a sub-field or a `match`** of the inner list has no effect: the level it would count is ambiguous.
+- **No index** serves these filters: ArangoDB refuses two `[*]` in an index field.
+
 #### Compatibility & notations
 
 - **Recommended form**: `quant` (uniform across scalar + object).
