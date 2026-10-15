@@ -438,6 +438,16 @@ trait HasHierarchicalFilter
 
             $clean = str_replace( Operator::ARRAY_EXPANSION , Char::EMPTY , $segment ) ;
 
+            // 🚨 The rest of the path may be declared flat at this level
+            // (`'seller.id' => …`) : the `match` spelling reads that declaration, and
+            // both spellings read the same rule ({@see isDeclaredFilterPath()}).
+            $rest = array_slice( $segments , $index ) ;
+
+            if ( count( $rest ) > 1 && array_key_exists( implode( Char::DOT , $rest ) , $declared ) )
+            {
+                return ;
+            }
+
             if ( !array_key_exists( $clean , $declared ) )
             {
                 throw unknownFilterKey( $clean , $path ) ;

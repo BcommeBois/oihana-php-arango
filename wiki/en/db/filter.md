@@ -1168,6 +1168,32 @@ The answer is the existential form's, on each of these cases: an integration tes
 - a **`match` on several sub-fields** speaks of one element, which two `IN` do not say;
 - a **nested list** (`employee[*].contactPoint[*].verified`) expands into a list of lists.
 
+#### Declaring a sub-field of an element — flat or as an object
+
+**The situation.** Each offer holds a `seller` object, and we filter on `seller.id`, through either spelling:
+
+```jsonc
+{"key":"offers[*].seller.id","val":"org-42"}                 // direct
+{"key":"offers[*]","match":{"seller.id":"org-42"}}           // match
+```
+
+The sub-field is declared in **two ways**, and each serves **both** spellings:
+
+```php
+// flat: the whole dotted path, at the level of the list
+'offers' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS => [ 'seller.id' => FilterType::STRING ] ] ,
+
+// as an object: each segment declared inside the object of the previous one
+'offers' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS =>
+[
+    'seller' => [ AQL::TYPE => Filter::DOCUMENT , AQL::FILTERS => [ 'id' => FilterType::STRING ] ] ,
+]] ,
+```
+
+> **Why this is written down.** Each spelling had its own guard, and they did not read the declaration the same way: the direct one walked the path segment by segment and read only the object form; the `match` looked the dotted key up as is and read only the flat form. **No declaration served both**, and one of the two spellings answered `400` to a key that was declared. They now share one rule (`isDeclaredFilterPath()`).
+
+A path neither form declares is still **refused** (`400`, `The filter key "seller.name" is not filterable…`), in both spellings. An object declared with no sub-filters is free below it, as a list declared with none is.
+
 #### Compatibility & notations
 
 - **Recommended form**: `quant` (uniform across scalar + object).

@@ -11,6 +11,7 @@ use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
 
+use function oihana\arango\models\helpers\isDeclaredFilterPath;
 use function oihana\arango\models\helpers\unknownFilterKey;
 
 /**
@@ -139,7 +140,7 @@ function buildCombinedInlineFilter
 
         foreach ( $match as $key => $value )
         {
-            if ( !empty( $allowedFields ) && !isset( $allowedFields[ $key ] ) )
+            if ( !empty( $allowedFields ) && !isDeclaredFilterPath( $allowedFields , (string) $key ) )
             {
                 throw unknownFilterKey( (string) $key , $at === '' ? [] : [ $at ] ) ;
             }
@@ -188,7 +189,7 @@ function buildCombinedInlineFilter
         }
 
         // Validate field if allowedFields is provided
-        if ( !empty( $allowedFields ) && !isset( $allowedFields[ $key ] ) )
+        if ( !empty( $allowedFields ) && !isDeclaredFilterPath( $allowedFields , (string) $key ) )
         {
             throw unknownFilterKey( (string) $key , $at === '' ? [] : [ $at ] ) ;
         }

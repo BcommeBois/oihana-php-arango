@@ -467,6 +467,7 @@
             "src/oihana/arango/models/helpers/getDocuments.php",
             "src/oihana/arango/models/helpers/isAttributeAuthorized.php",
             "src/oihana/arango/models/helpers/isAuthorized.php",
+            "src/oihana/arango/models/helpers/isDeclaredFilterPath.php",
             "src/oihana/arango/models/helpers/isFilterSegment.php",
             "src/oihana/arango/models/helpers/isPathAuthorized.php",
             "src/oihana/arango/models/helpers/joins/buildJoinSubquery.php",

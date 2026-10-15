@@ -1167,6 +1167,32 @@ La réponse est la même que celle de la forme existentielle, sur chacun de ces 
 - un **`match` sur plusieurs sous-champs** parle d'un même élément, ce que deux `IN` ne disent pas ;
 - une **liste imbriquée** (`employee[*].contactPoint[*].verified`) se déploie en liste de listes.
 
+#### Déclarer un sous-champ d'un élément — à plat ou en objet
+
+**La situation.** Chaque offre porte un objet `seller`, et on filtre sur `seller.id`, par l'une ou l'autre écriture :
+
+```jsonc
+{"key":"offers[*].seller.id","val":"org-42"}                 // directe
+{"key":"offers[*]","match":{"seller.id":"org-42"}}           // match
+```
+
+Le sous-champ se déclare de **deux façons**, et chacune sert les **deux** écritures :
+
+```php
+// à plat : le chemin à point entier, au niveau de la liste
+'offers' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS => [ 'seller.id' => FilterType::STRING ] ] ,
+
+// en objet : chaque segment déclaré dans l'objet du précédent
+'offers' => [ AQL::TYPE => Filter::ARRAY_EXPANSION , AQL::FILTERS =>
+[
+    'seller' => [ AQL::TYPE => Filter::DOCUMENT , AQL::FILTERS => [ 'id' => FilterType::STRING ] ] ,
+]] ,
+```
+
+> **Pourquoi c'est écrit.** Les deux écritures avaient chacune leur garde, et elles ne lisaient pas la déclaration de la même façon : l'écriture directe suivait le chemin segment par segment et ne lisait que la forme objet ; le `match` cherchait la clé à point telle quelle et ne lisait que la forme à plat. **Aucune déclaration ne servait les deux**, et l'une des deux écritures répondait `400` sur une clé pourtant déclarée. Elles partagent maintenant une seule règle (`isDeclaredFilterPath()`).
+
+Un chemin qu'aucune des deux formes ne déclare reste **refusé** (`400`, `The filter key "seller.name" is not filterable…`), dans les deux écritures. Un objet déclaré sans sous-filtres est libre en dessous, comme une liste déclarée sans sous-filtres.
+
 #### Compatibilité & notations
 
 - **Forme recommandée** : `quant` (uniforme scalaire + objet).
