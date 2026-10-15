@@ -1103,7 +1103,47 @@ When each element is an **object**, the condition targets a sub-field (`reviews[
 // doc.variants[? NONE FILTER CURRENT.stock == @v]
 ```
 
-> Without `quant`, an object array keeps its historical **existential** behaviour — `LENGTH(doc.reviews[* FILTER CURRENT.rating >= @v]) > 0` (at least one). Adding `quant` breaks nothing (backward compatible). `quant` applies only to **first-level** object arrays; on a nested array (`employee[*].contactPoint[*]`) it is **ignored** (the binding level would be ambiguous) and the existential behaviour is kept.
+> Without `quant`, an object array keeps its historical **existential** behaviour — `LENGTH(doc.reviews[* FILTER CURRENT.rating >= @v]) > 0` (at least one). A plain equality answers the same under another spelling, which an index serves: see [just below](#equality-on-an-element--the-spelling-an-index-serves). Adding `quant` breaks nothing (backward compatible). `quant` applies only to **first-level** object arrays; on a nested array (`employee[*].contactPoint[*]`) it is **ignored** (the binding level would be ambiguous) and the existential behaviour is kept.
+
+#### Equality on an element — the spelling an index serves
+
+**The situation.** Each parcel names the orders it carries, `orders: [ { id: "B2" }, … ]`, and we look for the parcels of one order:
+
+```jsonc
+{"key":"orders[*].id","val":"B2"}
+```
+
+A plain equality on a sub-field is written as a **membership** of the list's projection:
+
+```aql
+@v IN doc.orders[*].id
+```
+
+It is the **only** spelling ArangoDB can look up in an index declared on the element. The existential form `LENGTH(doc.orders[* FILTER CURRENT.id == @v]) > 0` says the same thing, but leaves the index to its leading columns: every document they name is read, and the list is tested in each. A limit changes nothing, since the total of the page counts every match.
+
+The index is declared by the application, with the element at its tail:
+
+```php
+new PersistentIndex( fields : [ 'kind' , 'orders[*].id' ] )
+```
+
+| Stored document | `orders[*].id == "B2"` |
+|---|---|
+| `orders: [ { id: "A1" } , { id: "B2" } ]` | ✓ |
+| `orders: [ { id: "B2" } , { id: "B2" } ]` | ✓, once |
+| `orders: []`, `orders: null`, attribute missing, `orders: "B2"` | ✗ |
+| `orders: [ { ref: "B2" } ]` — element without `id` | ✗ |
+| `orders: [ { id: 22 } ]` looked up with `"22"` | ✗ — the type counts, as for `==` |
+
+The answer is the existential form's, on each of these cases: an integration test checks it against a real ArangoDB, together with the execution plan.
+
+**Every other question keeps the existential form**, each for its reason:
+
+- **another operator** (`ne`, `like`, `ge`, `in`…) asks something a membership does not;
+- a **`null`** or a **list** value is not one value to look up;
+- an **`alt`** transforms `CURRENT`, which the index does not hold transformed;
+- a **`quant`** counts the elements, where an `IN` finds one;
+- a **nested list** (`employee[*].contactPoint[*].verified`) expands into a list of lists.
 
 #### Compatibility & notations
 
@@ -1142,11 +1182,13 @@ A `match` on an object array is written in **two ways**. The form you pick chang
 {"key":"offers[*].seller.id","val":"org-42"}
 ```
 
-The dotted path after `[*]` was not recognised and fell through to `doc.offers[*].seller.id == @v` — an **array projection** compared to a scalar, **never true**. It now builds the correct inline form:
+The dotted path after `[*]` was not recognised and fell through to `doc.offers[*].seller.id == @v` — an **array projection** compared to a scalar, **never true**. It now builds a membership of that projection, the spelling an index serves ([Equality on an element](#equality-on-an-element--the-spelling-an-index-serves)):
 
 ```aql
-LENGTH(doc.offers[* FILTER CURRENT.seller.id == @v]) > 0
+@v IN doc.offers[*].seller.id
 ```
+
+With another operator, the inline form `LENGTH(doc.offers[* FILTER CURRENT.seller.id != @v]) > 0`.
 
 *(A **direct** sub-field — `offers[*].priceCurrency` — already worked; only the **dotted** sub-path was broken.)*
 

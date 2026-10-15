@@ -120,7 +120,7 @@ class FilterDefinitionRequiresGateTest extends TestCase
         $init   = $this->filter( [ 'key' => 'items[*].ref' , 'op' => 'eq' , 'val' => 'X' ] , fn( string $s ) => $s === 'items:filter' ) ;
         $result = $this->model()->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'CURRENT.ref' , $result ) ;
+        $this->assertStringContainsString( 'IN doc.items[*].ref' , $result ) ;
         $this->assertContains( 'X' , $this->binds ) ;
     }
 
@@ -141,7 +141,7 @@ class FilterDefinitionRequiresGateTest extends TestCase
         // No authorizer injected → fail-open (field-level semantics), Gate B is inert.
         $result = $this->model()->prepareFilter( $this->filter( [ 'key' => 'items[*].ref' , 'op' => 'eq' , 'val' => 'X' ] ) , $this->binds ) ;
 
-        $this->assertStringContainsString( 'CURRENT.ref' , $result ) ;
+        $this->assertStringContainsString( 'IN doc.items[*].ref' , $result ) ;
         $this->assertContains( 'X' , $this->binds ) ;
     }
 
@@ -194,7 +194,7 @@ class FilterDefinitionRequiresGateTest extends TestCase
         $init   = $this->filter( [ 'key' => 'items[*].ref' , 'op' => 'eq' , 'val' => 'X' ] , fn() => false ) ;
         $result = $model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'CURRENT.ref' , $result ) ;
+        $this->assertStringContainsString( 'IN doc.items[*].ref' , $result ) ;
         $this->assertContains( 'X' , $this->binds ) ;
     }
 

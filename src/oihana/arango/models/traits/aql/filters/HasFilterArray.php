@@ -15,9 +15,11 @@ use oihana\exceptions\BindException;
 
 use oihana\exceptions\UnsupportedOperationException;
 use oihana\exceptions\ValidationException;
+use function oihana\arango\db\binds\aqlBind;
 use function oihana\arango\db\functions\arrays\arrayContains;
 use function oihana\arango\db\functions\arrays\arrayFilter;
 use function oihana\arango\db\functions\arrays\length;
+use function oihana\arango\db\helpers\assertAttributeName;
 use function oihana\arango\db\helpers\buildCombinedInlineFilter;
 use function oihana\arango\db\helpers\buildInlineFilterCondition;
 use function oihana\arango\db\helpers\requestAlt;
@@ -191,6 +193,26 @@ trait HasFilterArray
             {
                 $baseKey = $matches[1] ; // "doc.contactPoint" or "doc.offers"
                 $field   = $matches[2] ; // "email" or "seller.id"
+
+                // 🚨 An equality on an element is written `@v IN doc.offers[*].seller.id`,
+                // because it is the one spelling ArangoDB looks up in an index declared
+                // on `offers[*].seller.id`. The existential spelling below says the same
+                // thing and leaves the index to its leading columns : every document they
+                // name is read, and the list is tested in each — a limit bounds nothing,
+                // since the total of the page counts every match.
+                if ( $this->isElementEquality( $baseKey , $operator , $value , $alt , $quant ) )
+                {
+                    // The sub-field is written into the path : the guard the inline
+                    // builder applies to it is applied here too.
+                    assertAttributeName( $field , fromRequest: true ) ;
+
+                    return predicate
+                    (
+                        leftOperand  : aqlBind( $value , $binds ) ,
+                        operator     : Comparator::IN ,
+                        rightOperand : $baseKey . Operator::ARRAY_EXPANSION . Char::DOT . $field ,
+                    ) ;
+                }
 
                 // Determine the inline filter condition
                 $inlineCondition = buildInlineFilterCondition
@@ -451,6 +473,37 @@ trait HasFilterArray
             operator     : Comparator::GREATER_THAN ,
             rightOperand : '0' ,
         ) ;
+    }
+
+    /**
+     * Whether a filter on an element of a list (`offers[*].seller.id`) is a plain
+     * equality — the one question `@v IN doc.offers[*].seller.id` answers the same way
+     * as the existential `LENGTH( doc.offers[* FILTER CURRENT.seller.id == @v] ) > 0`.
+     *
+     * 🔑 **Every other question keeps the existential spelling**, each for its reason :
+     * - another comparator asks something an `IN` does not say ;
+     * - a `null` or a list is not one value to look up ;
+     * - an `alt` transforms `CURRENT`, which an index does not hold transformed ;
+     * - a `quant` counts the elements, an `IN` only finds one ;
+     * - a nested list (`employee[*].contactPoint[*].verified`) expands into a list of
+     *   lists, in which an `IN` would look for the value among lists.
+     *
+     * @param string $baseKey  The fully qualified key of the list (`doc.offers`).
+     * @param mixed  $operator The comparator of the filter.
+     * @param mixed  $value    The value of the filter.
+     * @param mixed  $alt      The resolved `alt` chain, or null.
+     * @param mixed  $quant    The element-axis quantifier, or null.
+     *
+     * @return bool
+     */
+    private function isElementEquality( string $baseKey , mixed $operator , mixed $value , mixed $alt , mixed $quant ) :bool
+    {
+        return $alt   === null
+            && $quant === null
+            && is_scalar( $value )
+            && is_string( $operator )
+            && FilterComparator::getAlias( $operator , null ) === Comparator::EQUAL
+            && !str_contains( $baseKey , Operator::ARRAY_EXPANSION ) ;
     }
 
     /**

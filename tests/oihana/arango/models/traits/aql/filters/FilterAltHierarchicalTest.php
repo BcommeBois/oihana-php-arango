@@ -85,13 +85,17 @@ class FilterAltHierarchicalTest extends TestCase
         $this->assertStringNotContainsString( 'LOWER(@' , $result ) ;
     }
 
-    public function testExpansionNoAltIsUnchanged(): void
+    /**
+     * Without an `alt`, an equality on an element is the plain lookup an index serves :
+     * the two cases above keep the inline form because the `alt` transforms `CURRENT`.
+     */
+    public function testExpansionWithoutAltIsAPlainLookup(): void
     {
         $init = [ 'key' => 'contactPoint[*].email' , 'val' => 'admin@acme.com' ] ;
 
         $result = $this->model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertMatchesRegularExpression( '/FILTER CURRENT\.email == @\S+]/' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^@\S+ IN doc\.contactPoint\[\*\]\.email$/' , $result ) ;
         $this->assertStringNotContainsString( 'LOWER' , $result ) ;
     }
 

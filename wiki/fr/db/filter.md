@@ -1102,7 +1102,47 @@ Quand chaque élément est un **objet**, la condition porte sur un sous-champ (`
 // doc.variants[? NONE FILTER CURRENT.stock == @v]
 ```
 
-> Sans `quant`, un tableau d'objets garde son comportement historique **existentiel** — `LENGTH(doc.reviews[* FILTER CURRENT.rating >= @v]) > 0` (au moins un). Ajouter `quant` ne casse rien (rétro-compatible). `quant` ne s'applique qu'aux tableaux d'objets de **1er niveau** ; sur un tableau imbriqué (`employee[*].contactPoint[*]`) il est **ignoré** (le niveau de liaison serait ambigu) et le comportement existentiel est conservé.
+> Sans `quant`, un tableau d'objets garde son comportement historique **existentiel** — `LENGTH(doc.reviews[* FILTER CURRENT.rating >= @v]) > 0` (au moins un). Une égalité simple répond la même chose sous une autre écriture, qu'un index sert : voir [juste en dessous](#égalité-sur-un-élément--la-forme-quun-index-sert). Ajouter `quant` ne casse rien (rétro-compatible). `quant` ne s'applique qu'aux tableaux d'objets de **1er niveau** ; sur un tableau imbriqué (`employee[*].contactPoint[*]`) il est **ignoré** (le niveau de liaison serait ambigu) et le comportement existentiel est conservé.
+
+#### Égalité sur un élément — la forme qu'un index sert
+
+**La situation.** Chaque colis cite les commandes qu'il transporte, `orders: [ { id: "B2" }, … ]`, et on cherche les colis d'une commande :
+
+```jsonc
+{"key":"orders[*].id","val":"B2"}
+```
+
+Une égalité simple sur un sous-champ s'écrit en **appartenance** à la projection de la liste :
+
+```aql
+@v IN doc.orders[*].id
+```
+
+C'est la **seule** écriture qu'ArangoDB sait chercher dans un index déclaré sur l'élément. La forme existentielle `LENGTH(doc.orders[* FILTER CURRENT.id == @v]) > 0` dit la même chose, mais elle laisse l'index à ses colonnes de tête : chaque document qu'elles désignent est lu, puis la liste est testée dans chacun. Une limite n'y change rien, puisque le total de la page compte toutes les correspondances.
+
+L'index se déclare dans le projet, avec l'élément en queue :
+
+```php
+new PersistentIndex( fields : [ 'kind' , 'orders[*].id' ] )
+```
+
+| Document stocké | `orders[*].id == "B2"` |
+|---|---|
+| `orders: [ { id: "A1" } , { id: "B2" } ]` | ✓ |
+| `orders: [ { id: "B2" } , { id: "B2" } ]` | ✓, une seule fois |
+| `orders: []`, `orders: null`, attribut absent, `orders: "B2"` | ✗ |
+| `orders: [ { ref: "B2" } ]` — élément sans `id` | ✗ |
+| `orders: [ { id: 22 } ]` cherché avec `"22"` | ✗ — le type compte, comme pour `==` |
+
+La réponse est la même que celle de la forme existentielle, sur chacun de ces cas : un essai d'intégration le vérifie contre un vrai ArangoDB, avec le plan d'exécution.
+
+**Les autres questions gardent la forme existentielle**, chacune pour sa raison :
+
+- un **autre opérateur** (`ne`, `like`, `ge`, `in`…) demande autre chose qu'une appartenance ;
+- une valeur **`null`** ou une **liste** n'est pas une valeur à chercher ;
+- un **`alt`** transforme `CURRENT`, et l'index ne le garde pas transformé ;
+- un **`quant`** compte les éléments, alors qu'un `IN` en trouve un ;
+- une **liste imbriquée** (`employee[*].contactPoint[*].verified`) se déploie en liste de listes.
 
 #### Compatibilité & notations
 
@@ -1141,11 +1181,13 @@ Un `match` sur un tableau d'objets s'écrit de **deux façons**. La forme choisi
 {"key":"offers[*].seller.id","val":"org-42"}
 ```
 
-Avant, le chemin pointé après `[*]` n'était pas reconnu et retombait sur `doc.offers[*].seller.id == @v` — une **projection de tableau** comparée à un scalaire, **jamais vraie**. Il construit maintenant la bonne forme inline :
+Avant, le chemin pointé après `[*]` n'était pas reconnu et retombait sur `doc.offers[*].seller.id == @v` — une **projection de tableau** comparée à un scalaire, **jamais vraie**. Il construit maintenant une appartenance à cette projection, la forme qu'un index sert ([Égalité sur un élément](#égalité-sur-un-élément--la-forme-quun-index-sert)) :
 
 ```aql
-LENGTH(doc.offers[* FILTER CURRENT.seller.id == @v]) > 0
+@v IN doc.offers[*].seller.id
 ```
+
+Avec un autre opérateur, la forme inline `LENGTH(doc.offers[* FILTER CURRENT.seller.id != @v]) > 0`.
 
 *(Un sous-champ **direct** — `offers[*].priceCurrency` — fonctionnait déjà ; seul le sous-chemin **pointé** était cassé.)*
 

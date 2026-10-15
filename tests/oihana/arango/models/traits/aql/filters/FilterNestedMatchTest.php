@@ -286,8 +286,8 @@ class FilterNestedMatchTest extends TestCase
         }
 
         // The counter-proof : a declared sub-field compiles as before, at both depths.
-        $this->assertStringContainsString( 'CURRENT.label ==' , (string) $this->compile( [ 'key' => 'attachments[*].label'      , 'val' => 'x' ] ) ) ;
-        $this->assertStringContainsString( 'CURRENT.label ==' , (string) $this->compile( [ 'key' => 'resolution.steps[*].label' , 'val' => 'x' ] ) ) ;
+        $this->assertStringContainsString( 'IN doc.attachments[*].label' , (string) $this->compile( [ 'key' => 'attachments[*].label' , 'val' => 'x' ] ) ) ;
+        $this->assertStringContainsString( 'IN doc.resolution.steps[*].label' , (string) $this->compile( [ 'key' => 'resolution.steps[*].label' , 'val' => 'x' ] ) ) ;
     }
 
     /**
@@ -308,7 +308,7 @@ class FilterNestedMatchTest extends TestCase
             AQL::FILTERS    => [ 'notes' => [ AQL::TYPE => Filter::ARRAY_EXPANSION ] ] ,
         ]);
 
-        $this->assertStringContainsString( 'CURRENT.anything ==' , (string) $this->compile( [ 'key' => 'notes[*].anything' , 'val' => 'x' ] , $model ) ) ;
+        $this->assertStringContainsString( 'IN doc.notes[*].anything' , (string) $this->compile( [ 'key' => 'notes[*].anything' , 'val' => 'x' ] , $model ) ) ;
         $this->assertStringContainsString( 'CURRENT.anything ==' , (string) $this->compile( [ 'key' => 'notes[*]' , 'match' => [ 'anything' => 'x' ] ] , $model ) ) ;
     }
 

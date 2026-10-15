@@ -265,17 +265,15 @@ class HasHierarchicalFilterTest extends TestCase
 
         $result = $model->prepareFilter( $init , $this->binds ) ;
 
-        $this->assertStringContainsString( 'LENGTH' , $result ) ;
-        $this->assertStringContainsString( 'contactPoint' , $result ) ;
-        $this->assertStringContainsString( 'FILTER' , $result ) ;
-        $this->assertStringContainsString( '> 0' , $result ) ;
+        $this->assertMatchesRegularExpression( '/^@\w+ IN doc\.contactPoint\[\*\]\.email$/' , $result ) ;
+        $this->assertContains( 'admin@acme.com' , $this->binds ) ;
     }
 
     /**
      * A DOTTED sub-path after the `[*]` (a nested object leaf, `offers[*].seller.id`
-     * where `seller` is an object) builds the correct inline `CURRENT.seller.id`
-     * condition — instead of the former `doc.offers[*].seller.id == @v` (an array
-     * projection compared to a scalar) that never matched, a silent `0`.
+     * where `seller` is an object) is looked up in the projection of the list :
+     * `@v IN doc.offers[*].seller.id`. Never the former `doc.offers[*].seller.id == @v`,
+     * an array projection compared to a scalar, which never matched — a silent `0`.
      *
      * @throws BindException
      * @throws ConstantException
@@ -311,11 +309,9 @@ class HasHierarchicalFilterTest extends TestCase
 
         $result = $model->prepareFilter( $init , $this->binds ) ;
 
-        // Correct inline form, not the always-false projection equality.
-        $this->assertStringContainsString( 'LENGTH' , $result ) ;
-        $this->assertStringContainsString( 'CURRENT.seller.id ==' , $result ) ;
-        $this->assertStringContainsString( '> 0' , $result ) ;
-        $this->assertStringNotContainsString( '.seller.id ==' , str_replace( 'CURRENT.seller.id ==' , '' , $result ) ) ;
+        // A membership in the projection, not the always-false projection equality.
+        $this->assertMatchesRegularExpression( '/^@\w+ IN doc\.offers\[\*\]\.seller\.id$/' , $result ) ;
+        $this->assertStringNotContainsString( '==' , $result ) ;
     }
 
     /**
@@ -1410,8 +1406,9 @@ class HasHierarchicalFilterTest extends TestCase
     }
 
     /**
-     * The fix touches the terminal case only: filtering the elements of the list keeps
-     * its existing existential form, at the root and in depth.
+     * The fix touches the terminal case only: filtering the elements of the list is still
+     * written on the list itself, at the root and in depth — an equality as the lookup
+     * an index serves, through the reference the object walk moved it to.
      *
      * @throws BindException
      * @throws ConstantException
@@ -1423,13 +1420,13 @@ class HasHierarchicalFilterTest extends TestCase
      * @throws UnsupportedOperationException
      * @throws ValidationException
      */
-    public function testFilteringTheElementsOfTheListIsUnchanged(): void
+    public function testFilteringTheElementsOfTheListStillNamesTheList(): void
     {
         $model = $this->ticketsWithLists() ;
 
         $this->assertStringContainsString
         (
-            'doc.attachments[* FILTER CURRENT.name' ,
+            'IN doc.attachments[*].name' ,
             $model->prepareFilter( [ 'key' => 'attachments[*].name' , 'val' => 'a.pdf' ] , $this->binds )
         ) ;
 
@@ -1437,7 +1434,7 @@ class HasHierarchicalFilterTest extends TestCase
 
         $this->assertStringContainsString
         (
-            'doc.resolution.steps[* FILTER CURRENT.dueAt' ,
+            'IN doc.resolution.steps[*].dueAt' ,
             $model->prepareFilter( [ 'key' => 'resolution.steps[*].dueAt' , 'val' => '2026-01-01' ] , $binds )
         ) ;
     }

@@ -255,7 +255,7 @@ class FilterDeepRequiresGateTest extends TestCase
         $model  = $this->arrayModel( [ 'contactPoint' => [ Field::FIELDS => [ 'email' => [ Field::REQUIRES => 'pii:read' ] ] ] ] ) ;
         $result = $model->prepareFilter( $this->filter( [ 'key' => 'contactPoint[*].email' , 'val' => 'x@y.com' ] , fn( string $s ) => $s === 'pii:read' ) , $this->binds ) ;
 
-        $this->assertStringContainsString( 'CURRENT.email' , $result ) ;
+        $this->assertStringContainsString( 'IN doc.contactPoint[*].email' , $result ) ;
         $this->assertContains( 'x@y.com' , $this->binds ) ;
     }
 
@@ -264,7 +264,7 @@ class FilterDeepRequiresGateTest extends TestCase
         $model  = $this->arrayModel( [ 'contactPoint' => [ Field::FIELDS => [ 'email' => [ Field::REQUIRES => 'pii:read' ] ] ] ] ) ;
         $result = $model->prepareFilter( $this->filter( [ 'key' => 'contactPoint[*].email' , 'val' => 'x@y.com' ] ) , $this->binds ) ;
 
-        $this->assertStringContainsString( 'CURRENT.email' , $result ) ;
+        $this->assertStringContainsString( 'IN doc.contactPoint[*].email' , $result ) ;
     }
 
     public function testRefusedMatchFieldNeutralisesTheWholePredicate(): void
