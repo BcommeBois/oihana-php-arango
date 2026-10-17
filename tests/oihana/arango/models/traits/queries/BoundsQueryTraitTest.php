@@ -363,4 +363,23 @@ class BoundsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->stub()->buildBoundsQuery( [ Arango::BOUNDS => 'badMeasure' ] , $binds ) ;
     }
+
+    /**
+     * The bounds frame the set the list walks, through the same loop and its index
+     * hint — as a preference, never forced : they sort nothing.
+     */
+    public function testTheBoundsLoopCarriesTheIndexHint() :void
+    {
+        $stub  = $this->stub() ;
+        $binds = [] ;
+
+        $stub->indexHint      = 'byWidth' ;
+        $stub->forceIndexHint = true ;
+
+        $this->assertStringContainsString
+        (
+            'FOR doc IN @@collection OPTIONS {"indexHint":"byWidth"} COLLECT' ,
+            $stub->buildBoundsQuery( [ Arango::BOUNDS => 'width,height' ] , $binds )
+        ) ;
+    }
 }

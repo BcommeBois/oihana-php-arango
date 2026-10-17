@@ -416,6 +416,46 @@ class ArangoReinjectActionTest extends TestCase
     }
 
     /**
+     * The transaction itself, run to its end : 2 documents removed, the 3 set aside
+     * put back, and the rule then names the 3 it put back — the counts agree, the
+     * put back is kept and its counts are what the action reports.
+     */
+    public function testTheCountsOfTheTransactionAgreeAndThePutBackIsKept() :void
+    {
+        $host = $this->host() ;
+        $db   = $this->database( [ 'articles' => true , 'articles__preserved' => true ] ) ;
+
+        $putBack = false ;
+
+        $host->fakeDatabase = $this->createMock( Database::class ) ;
+        $host->fakeDatabase->method( 'collection' )->willReturnCallback( fn( string $name ) => $this->collections[ $name ] ) ;
+        $host->fakeDatabase->method( 'query' )->willReturnCallback( function( AqlQuery $query ) use ( &$putBack , $db )
+        {
+            if ( str_contains( $query->query , 'INTO @@collection' ) )
+            {
+                $putBack = true ;
+            }
+            else if ( $putBack && $query->query !== 'RETURN LENGTH( @@collection )' )
+            {
+                // Once the backup is back, the rule names what was put back.
+                $cursor = $this->createMock( Cursor::class ) ;
+                $cursor->method( 'all' )->willReturn( [ 3 ] ) ;
+                return $cursor ;
+            }
+
+            return $db->query( $query ) ;
+        }) ;
+        $host->fakeDatabase->method( 'withTransaction' )->willReturnCallback( fn( callable $callback ) => $callback() ) ;
+        $this->collections[ 'articles__preserved' ]->expects( $this->once() )->method( 'drop' ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input( [ '--' . ArangoCommandOption::YES => true ] ) , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'articles : 2 removed · 3 put back · articles__preserved dropped' , $output->fetch() ) ;
+    }
+
+    /**
      * An in-memory input stream holding `$answers`.
      * @return resource
      */

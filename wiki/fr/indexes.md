@@ -17,7 +17,7 @@ ArangoDB expose six types d'index utilisables par le framework. Le bon choix dé
 | `vector` | Recherche par similarité (*embeddings*, *cosine*). ArangoDB 3.12+. | champ tableau de floats | Requiert édition Enterprise pour certaines features Faiss. |
 | `fulltext` *(deprecated)* | Recherche textuelle simple. | un champ chaîne | Remplacé par les vues ArangoSearch — éviter pour les nouvelles fonctionnalités. |
 
-Pour la recherche textuelle avancée (analyseurs linguistiques, BM25, facettes), préférer les **vues ArangoSearch** plutôt qu'un index `fulltext`. La couche client wrappe analyzers et views — voir [clients/arangosearch.md](clients/arangosearch.md). Pour du full-text sur **une seule** collection, la couche client expose aussi un `InvertedIndex` ([clients/indexes.md](clients/indexes.md#invertedindex--full-text-moderne-310)) qui n'est pas encore disponible sur la façade `db/`.
+Pour la recherche textuelle avancée (analyseurs linguistiques, BM25, facettes), préférer les **vues ArangoSearch** plutôt qu'un index `fulltext`. La couche client wrappe analyzers et views — voir [clients/arangosearch.md](clients/arangosearch.md). Pour du full-text sur **une seule** collection, la couche client expose aussi un `InvertedIndex` ([clients/indexes.md](clients/indexes.md#invertedindex--full-text-moderne-310)) qu'un modèle peut aussi déclarer dans `AQL::INDEXES` (voir plus bas).
 
 ## Méthodes de gestion
 
@@ -25,7 +25,7 @@ Pour la recherche textuelle avancée (analyseurs linguistiques, BM25, facettes),
 
 | Méthode | Description |
 |---|---|
-| `createIndex( $collection , $options )` | Crée un index. Accepte un tableau brut ou une instance d'`IndexOptions` (sérialisée auto). Retourne la définition serveur ou `null` en cas d'erreur. |
+| `createIndex( $collection , $options )` | Crée un index. Accepte un tableau brut, une instance d'`IndexOptions` (sérialisée auto) ou une définition du client (`InvertedIndex`, `GeoIndex`…). Retourne la définition serveur ou `null` en cas d'erreur. |
 | `dropIndex( $collection , $indexHandle )` | Supprime un index par son *handle* (de la forme `collection/index-id`). |
 | `getIndex( $collection , $indexId )` | Renvoie la définition d'un index. |
 | `getIndexes( $collection )` | Liste tous les index d'une collection. |
@@ -85,7 +85,7 @@ return
 
 > Le constructeur des `*IndexOptions` accepte un **tableau associatif** (clés = constantes `IndexOptions::*`), appliqué par réflexion. Inutile donc d'instancier puis d'affecter les propriétés une à une.
 
-`AQL::INDEXES` attend une **liste** (`IndexOptions[]` ou définitions brutes). Par commodité, un `IndexOptions` **seul** est accepté à la place d'une liste à un élément (un tableau brut reste, lui, toujours la liste) — la normalisation est centralisée dans `ArangoTrait::initializeIndexes()`, donc tous les consommateurs (provisioning lazy, `doctor`) voient toujours un `IndexOptions[]`.
+`AQL::INDEXES` attend une **liste** (`IndexOptions[]`, définitions du client comme `InvertedIndex`, ou définitions brutes). Par commodité, un `IndexOptions` ou une définition **seule** est acceptée à la place d'une liste à un élément (un tableau brut reste, lui, toujours la liste) — la normalisation est centralisée dans `ArangoTrait::initializeIndexes()`, donc tous les consommateurs (provisioning lazy, `doctor`) voient toujours une liste. Un index inversé n'a pas de classe d'options : il se déclare par sa définition du client, `new InvertedIndex( fields : [ 'title' ] , name : 'byTitle' )`.
 
 Avantages :
 
@@ -97,6 +97,59 @@ Limite : la création d'index `persistent` lourd peut **bloquer les écritures**
 
 > ⚠️ **Le provisioning lazy ne crée les index qu'à la création de la collection.** Un index ajouté à `AQL::INDEXES` d'une collection **déjà existante** n'est **jamais** créé par le lazy (aucune erreur — les requêtes retombent silencieusement en *full scan*). C'est la commande [`arangodb doctor`](commands/arangodb.md#doctor--bilan-de-santé-de-la-structure) qui réconcilie l'écart : `doctor` le signale, `doctor --apply` le crée (`--force` pour reconstruire un index dérivé). Pour déclarer des index **par collection**, indépendamment des modèles (plusieurs modèles sur une même collection), voir le [registre d'index par collection](commands/arangodb.md#index-déclarés-par-collection-registre-autonome).
 
+> 🚨 **Un index que le serveur refuse est nommé.** `createIndex()` rend `null` et laisse un avertissement qui dit ce que le serveur a répondu ; le provisioning lazy ajoute une erreur du journal qui nomme l'index et sa collection — `The index "byOwner" of the collection "tasks" could not be created`. Sans elle, la collection naissait sans l'un de ses index, et rien n'y menait avant le prochain `doctor`.
+
+## Valeurs stockées — `storedValues`
+
+Un index `persistent` peut garder, à côté de ses champs, d'autres attributs du document : ils ne servent ni à chercher ni à trier, mais une requête qui n'a besoin que d'eux est servie **sans relire un seul document**. C'est ce qui fait d'un index qui filtre un index qui répond aussi au tri ou au départage d'une page.
+
+```php
+new PersistentIndexOptions
+([
+    IndexOptions::NAME          => 'byOwner' ,
+    IndexOptions::FIELDS        => [ 'owner' ] ,
+    IndexOptions::STORED_VALUES => [ 'due' , '_key' ] , // lus dans l'index, jamais dans le document
+]) ;
+```
+
+> 🚨 La clé s'écrit `IndexOptions::STORED_VALUES` (`'storedValues'`). L'ancienne constante `STORED_VALUE` (`'storedValue'`, au singulier) ne remplissait rien : le constructeur ignore une clé inconnue, et l'index naissait sans ses valeurs stockées.
+
+> ⚠️ ArangoDB **ne tient pas compte** des `storedValues` pour décider si un index existe déjà : redemander un index de mêmes champs avec d'autres valeurs stockées rend l'index existant, inchangé. C'est `doctor` qui le dit (« drop + recreate required »), et `doctor --apply --force` qui le reconstruit.
+
+## Imposer un index aux listes d'un modèle — `AQL::INDEX_HINT`
+
+L'optimiseur choisit un index sur des estimations, et une estimation peut se tromper dans le sens qui coûte : une liste restreinte à une valeur très sélective et triée sur un autre champ peut être lue par l'index du tri, en parcourant tous les documents pour en garder une poignée. L'`EXPLAIN` dit quel index une requête prend ([explain-and-profiling.md](db/explain-and-profiling.md)) ; quand il prend le mauvais, le modèle peut imposer le bon :
+
+```php
+new Documents( $container ,
+[
+    AQL::COLLECTION       => 'tasks' ,
+    AQL::INDEX_HINT       => 'byOwnerDue' ,   // un nom, ou une liste de noms par ordre de préférence
+    AQL::FORCE_INDEX_HINT => true ,           // facultatif : une erreur plutôt qu'un autre index
+]) ;
+```
+
+| Requête | Ce que reçoit sa boucle `FOR` |
+|---|---|
+| la liste | `OPTIONS {"forceIndexHint":true,"indexHint":"byOwnerDue"}` |
+| le compte, les facettes, les bornes | `OPTIONS {"indexHint":"byOwnerDue"}` — une préférence, jamais forcée |
+| une recherche par la vue (`?search=`) | rien : une vue ne connaît pas `indexHint` |
+
+- 🔑 **Rien de déclaré, rien de changé** : la requête est celle d'avant, au caractère près.
+- 🔑 **Le même index pour les quatre requêtes**, parce qu'elles partagent leur boucle : une liste et son compte lisent le même ensemble.
+- 🚨 **Mais la liste seule le force.** Un index peut servir la liste par son **tri** seulement (`[ due ]` pour « les tâches d'un propriétaire, par échéance ») ; le compte, les facettes et les bornes ne trient rien, et un tel index leur est inutilisable : forcé, le serveur refuse la requête (« could not use index hint to serve query », mesuré). Ils le reçoivent comme une préférence, que l'optimiseur prend dès que l'index sert leur filtre.
+- ⚠️ **`forceIndexHint` fait échouer la liste si l'index n'existe pas** ou ne la sert pas. Déclarer l'index dans `AQL::INDEXES` avant de l'imposer. Sans `forceIndexHint`, un index absent est une préférence que l'optimiseur écarte.
+- Imposer un index **change le chemin, jamais la réponse** : les mêmes documents, dans le même ordre, le même compte — c'est ce que vérifie l'essai en direct `IndexHintIntegrationTest`.
+
+## Ce que `doctor` compare
+
+`doctor` (et `indexesDiff()`) compare chaque clé **déclarée** à ce que le serveur renvoie ; une clé que le serveur ajoute sans qu'on l'ait déclarée n'est pas lue. Deux règles en découlent :
+
+- une classe d'options n'envoie, pour ses clés à risque, **que ce qui est déclaré** (voir la [référence des options](options.md#options-dindex--optionsindexes)) — sinon la comparaison lit un écart que personne n'a voulu ;
+- **un nombre est comparé par sa valeur**, pas par son type PHP : une durée déclarée `315361825.0` revient du serveur en entier `315361825`, et une comparaison stricte annonçait un « drop + recreate » pour un index conforme (mesuré).
+
+L'essai en direct `IndexDeclarationsIntegrationTest` crée chaque type d'index par sa classe d'options et vérifie que la comparaison ne lit **aucun** écart juste après.
+
 ## Catalogue des classes par type
 
 Détaillé dans [Référence des options AQL — Options d'index](options.md#options-dindex--optionsindexes). Résumé des classes disponibles :
@@ -107,12 +160,12 @@ Détaillé dans [Référence des options AQL — Options d'index](options.md#opt
 | `PersistentIndexOptions` | `persistent` |
 | `TTLIndexOptions` | `ttl` |
 | `GeoIndexOptions` | `geo` |
-| `MDIIndexOptions` | `mdi` |
+| `MDIIndexOptions` | `mdi`, `mdi-prefixed` (par `type`) |
 | `VectorIndexOptions` | `vector` |
 
 Toutes ces classes :
 
-- Héritent de `IndexOptions` (et donc des propriétés communes `fields`, `name`, `inBackground`, `sparse`).
+- Héritent de `IndexOptions` (et donc des propriétés communes `fields`, `name`, `type`).
 - Implémentent `JsonSerializable` — `json_encode($options)` produit le JSON consommé par le moteur ArangoDB.
 - Ajoutent des propriétés spécifiques au type (`expireAfter` pour TTL, `geoJson` pour Geo, `params` pour Vector...).
 
@@ -197,7 +250,7 @@ $vec->name = 'idx_documents_vector' ;
 $db->createIndex( 'documents' , $vec ) ;
 ```
 
-La dimension doit matcher exactement la taille du vecteur. La métrique (`cosine`, `l2`, `inner_product`) dépend du modèle d'*embedding* utilisé pour générer le vecteur.
+La dimension doit matcher exactement la taille du vecteur. La métrique (`cosine`, `l2`, `innerProduct` — depuis ArangoDB 3.12.6) dépend du modèle d'*embedding* utilisé pour générer le vecteur. Le serveur doit tourner avec `--experimental-vector-index`, sinon il refuse de créer l'index.
 
 ## Inspection à l'exécution
 

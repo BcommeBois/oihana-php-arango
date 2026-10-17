@@ -46,5 +46,11 @@ class IndexFieldTest extends TestCase
         $this->assertSame( 'trackListPositions'        , IndexField::TRACK_LIST_POSITIONS        ) ;
         $this->assertSame( 'type'                      , IndexField::TYPE                        ) ;
         $this->assertSame( 'unique'                    , IndexField::UNIQUE                      ) ;
+        $this->assertSame( 'consolidationPolicy'       , IndexField::CONSOLIDATION_POLICY        ) ;
+        $this->assertSame( 'legacyPolygons'            , IndexField::LEGACY_POLYGONS             ) ;
+        $this->assertSame( 'optimizeTopK'              , IndexField::OPTIMIZE_TOP_K              ) ;
+        $this->assertSame( 'writebufferActive'         , IndexField::WRITEBUFFER_ACTIVE          ) ;
+        $this->assertSame( 'writebufferIdle'           , IndexField::WRITEBUFFER_IDLE            ) ;
+        $this->assertSame( 'writebufferSizeMax'        , IndexField::WRITEBUFFER_SIZE_MAX        ) ;
     }
 }

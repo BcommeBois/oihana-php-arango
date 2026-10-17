@@ -64,6 +64,12 @@ class IndexField
     public const string CONSOLIDATION_INTERVAL_MSEC = 'consolidationIntervalMsec' ;
 
     /**
+     * The policy merging the segments of the index (`inverted` only) — an object
+     * whose `type` is `tier` and whose other keys tune it.
+     */
+    public const string CONSOLIDATION_POLICY = 'consolidationPolicy' ;
+
+    /**
      * Whether duplicate documents matching a unique index should be
      * silently deduplicated rather than rejected (`persistent` only).
      */
@@ -136,6 +142,12 @@ class IndexField
     public const string INDEXES = 'indexes' ;
 
     /**
+     * How the polygons of a GeoJSON index are read : `true` keeps the reading of
+     * the indexes created before ArangoDB 3.10 (`geo` only).
+     */
+    public const string LEGACY_POLYGONS = 'legacyPolygons' ;
+
+    /**
      * Minimum word length to index, in characters (`fulltext` only).
      */
     public const string MIN_LENGTH = 'minLength' ;
@@ -146,6 +158,12 @@ class IndexField
      * as an alternative to the numeric `id`.
      */
     public const string NAME = 'name' ;
+
+    /**
+     * The scoring expressions the index precomputes to answer a top-k query
+     * faster (`inverted` only, since ArangoDB 3.12).
+     */
+    public const string OPTIMIZE_TOP_K = 'optimizeTopK' ;
 
     /**
      * Parallelism level — number of threads that may build / query the
@@ -212,4 +230,21 @@ class IndexField
      * tuples (`persistent` only).
      */
     public const string UNIQUE = 'unique' ;
+
+    /**
+     * How many writers may be active at once on the index (`inverted` only) —
+     * `0` for no limit.
+     */
+    public const string WRITEBUFFER_ACTIVE = 'writebufferActive' ;
+
+    /**
+     * How many idle writers the index keeps in its pool (`inverted` only).
+     */
+    public const string WRITEBUFFER_IDLE = 'writebufferIdle' ;
+
+    /**
+     * The memory, in bytes, a writer buffers before it is flushed (`inverted`
+     * only) — `0` for no limit.
+     */
+    public const string WRITEBUFFER_SIZE_MAX = 'writebufferSizeMax' ;
 }

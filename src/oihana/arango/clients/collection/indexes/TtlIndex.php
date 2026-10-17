@@ -36,14 +36,14 @@ readonly class TtlIndex implements IndexDefinition
 {
     /**
      * @param array<int, string> $fields       Exactly one field path holding the reference date / timestamp.
-     * @param int                $expireAfter  Document lifetime, in seconds, past the indexed timestamp.
+     * @param int|float          $expireAfter  Document lifetime, in seconds, past the indexed timestamp — a decimal is kept as sent.
      * @param string|null        $name         Optional human-readable index name.
      * @param bool|null          $inBackground Build the index in the background.
      */
     public function __construct
     (
         public array   $fields ,
-        public int     $expireAfter ,
+        public int|float $expireAfter ,
         public ?string $name         = null ,
         public ?bool   $inBackground = null ,
     )
@@ -62,7 +62,7 @@ readonly class TtlIndex implements IndexDefinition
             IndexField::EXPIRE_AFTER => $this->expireAfter ,
         ] ;
 
-        if ( $this->name         !== null ) { $data[ IndexField::NAME ]          = $this->name         ; }
+        if ( $this->name         !== null ) { $data[ IndexField::NAME          ] = $this->name         ; }
         if ( $this->inBackground !== null ) { $data[ IndexField::IN_BACKGROUND ] = $this->inBackground ; }
 
         return $data ;

@@ -112,14 +112,18 @@ aqlTraversal
 
 Six classes modélisent les options de création d'index, consommées par [`CollectionManagementTrait::createIndex()`](db/quickstart.md#gérer-les-index).
 
-| Classe | Type d'index | Options principales |
-|---|---|---|
-| `IndexOptions` | Base abstraite | `fields`, `name`, `inBackground`, `sparse` |
-| `PersistentIndexOptions` | `persistent` | `fields`, `unique`, `sparse`, `name`, `deduplicate`, `inBackground`, `cacheEnabled`, `estimates` |
-| `TTLIndexOptions` | `ttl` | `fields`, `expireAfter`, `name`, `inBackground`, `selectivityEstimate` |
-| `GeoIndexOptions` | `geo` | `fields`, `geoJson`, `name`, `inBackground`, `legacyPolygons` |
-| `MDIIndexOptions` | `mdi` (multi-dimensionnel) | `fields`, `fieldValueTypes`, `unique`, `sparse`, `storedValues` |
-| `VectorIndexOptions` | `vector` (ArangoDB 3.12+) | `fields`, `params` (avec sous-`FaithParam` pour Faiss), `cacheEnabled` |
+| Classe | Type d'index | Options | Envoyées seulement si déclarées |
+|---|---|---|---|
+| `IndexOptions` | Base abstraite | `fields`, `name`, `type` | — |
+| `PersistentIndexOptions` | `persistent` | `fields`, `name`, `unique`, `sparse`, `deduplicate`, `estimates`, `cacheEnabled`, `inBackground`, `storedValues` | `storedValues` |
+| `TTLIndexOptions` | `ttl` | `fields`, `name`, `expireAfter` (un nombre, décimal compris), `inBackground` | `inBackground` |
+| `GeoIndexOptions` | `geo` | `fields`, `name`, `geoJson`, `inBackground`, `legacyPolygons` | `legacyPolygons` |
+| `MDIIndexOptions` | `mdi`, `mdi-prefixed` (par `type`) | `fields`, `name`, `fieldValueTypes` (`'double'` par défaut, la seule valeur admise), `prefixFields`, `unique`, `sparse`, `estimates`, `storedValues`, `inBackground` | `prefixFields`, `estimates`, `storedValues` |
+| `VectorIndexOptions` | `vector` (ArangoDB 3.12+, expérimental) | `fields`, `name`, `params` (cf. `FaithParam`), `parallelism`, `sparse`, `storedValues` (3.12.7+), `inBackground` | `parallelism`, `sparse`, `storedValues` |
+
+🚨 **Une option que le serveur refuserait vide, ou qu'il renvoie autrement, n'est envoyée que si elle est déclarée** : un `mdi` refuse un `prefixFields` vide, aucun type n'accepte un `storedValues` vide, et un `mdi` répond `estimates: false` quoi qu'on lui demande. Envoyées par défaut, ces valeurs empêchaient `MDIIndexOptions` de créer le moindre index, et faisaient annoncer à `doctor` un écart à chaque passage. Non déclarées, elles prennent la valeur par défaut du serveur.
+
+⚠️ **Le constructeur ignore une clé qu'il ne connaît pas**, sans erreur : une faute de frappe (`'storedValue'`) disparaît en silence. Écrire les clés avec les constantes `IndexOptions::*` — un essai de la bibliothèque vérifie que chacune nomme bien une propriété. Les valeurs stockées s'écrivent `IndexOptions::STORED_VALUES`.
 
 ### Exemples
 

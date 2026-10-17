@@ -45,10 +45,10 @@ class UpsertOptions extends QueryOptions
      * The index hint is passed through to an internal FOR loop that is used for the lookup.
      * Also see indexHint Option of the FOR Operation.
      * Inverted indexes cannot be used for UPSERT lookups.
-     * @var string|null
+     * @var string|array<int,string>|null A name, or a list of names in order of preference.
      * @see https://docs.arangodb.com/stable/aql/high-level-operations/upsert/#indexhint
      */
-    public ?string $indexHint ;
+    public null|string|array $indexHint ;
 
     /**
      * Suppress query errors that may occur when trying to update non-existing documents or when violating unique key constraints.

@@ -52,6 +52,7 @@ readonly class VectorIndex implements IndexDefinition
      * @param string|null             $name         Optional human-readable index name.
      * @param array<int, string>|null $storedValues Additional attribute paths kept alongside the index entries.
      * @param bool|null               $inBackground Build the index in the background.
+     * @param bool|null               $sparse       Leave out of the index the documents that do not hold the vector.
      */
     public function __construct
     (
@@ -61,6 +62,7 @@ readonly class VectorIndex implements IndexDefinition
         public ?string $name         = null ,
         public ?array  $storedValues = null ,
         public ?bool   $inBackground = null ,
+        public ?bool   $sparse       = null ,
     )
     {
     }
@@ -77,10 +79,11 @@ readonly class VectorIndex implements IndexDefinition
             IndexField::PARAMS => $this->params ,
         ] ;
 
-        if ( $this->parallelism  !== null ) { $data[ IndexField::PARALLELISM ]   = $this->parallelism  ; }
-        if ( $this->name         !== null ) { $data[ IndexField::NAME ]          = $this->name         ; }
+        if ( $this->parallelism  !== null ) { $data[ IndexField::PARALLELISM   ] = $this->parallelism  ; }
+        if ( $this->name         !== null ) { $data[ IndexField::NAME          ] = $this->name         ; }
         if ( $this->storedValues !== null ) { $data[ IndexField::STORED_VALUES ] = $this->storedValues ; }
         if ( $this->inBackground !== null ) { $data[ IndexField::IN_BACKGROUND ] = $this->inBackground ; }
+        if ( $this->sparse       !== null ) { $data[ IndexField::SPARSE        ] = $this->sparse       ; }
 
         return $data ;
     }

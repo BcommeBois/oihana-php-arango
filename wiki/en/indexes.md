@@ -17,7 +17,7 @@ ArangoDB exposes six index types usable by the framework. The right choice depen
 | `vector` | Similarity search (*embeddings*, *cosine*). ArangoDB 3.12+. | float-array field | Requires Enterprise edition for some Faiss features. |
 | `fulltext` *(deprecated)* | Simple text search. | one string field | Replaced by ArangoSearch views — avoid for new features. |
 
-For advanced text search (linguistic analyzers, BM25, facets), prefer **ArangoSearch views** rather than a `fulltext` index. The client layer wraps both analyzers and views — see [clients/arangosearch.md](clients/arangosearch.md). For full-text on a **single** collection, the client layer also exposes an `InvertedIndex` ([clients/indexes.md](clients/indexes.md#invertedindex--modern-full-text-310)) that is not yet available on the `db/` façade.
+For advanced text search (linguistic analyzers, BM25, facets), prefer **ArangoSearch views** rather than a `fulltext` index. The client layer wraps both analyzers and views — see [clients/arangosearch.md](clients/arangosearch.md). For full-text on a **single** collection, the client layer also exposes an `InvertedIndex` ([clients/indexes.md](clients/indexes.md#invertedindex--modern-full-text-310)) that a model can also declare in `AQL::INDEXES` (see below).
 
 ## Management methods
 
@@ -25,7 +25,7 @@ For advanced text search (linguistic analyzers, BM25, facets), prefer **ArangoSe
 
 | Method | Description |
 |---|---|
-| `createIndex( $collection , $options )` | Creates an index. Accepts a raw array or an `IndexOptions` instance (auto-serialized). Returns the server definition or `null` on error. |
+| `createIndex( $collection , $options )` | Creates an index. Accepts a raw array, an `IndexOptions` instance (auto-serialized) or a client definition (`InvertedIndex`, `GeoIndex`…). Returns the server definition or `null` on error. |
 | `dropIndex( $collection , $indexHandle )` | Drops an index by its *handle* (of the form `collection/index-id`). |
 | `getIndex( $collection , $indexId )` | Returns an index definition. |
 | `getIndexes( $collection )` | Lists all indexes of a collection. |
@@ -85,7 +85,7 @@ return
 
 > The `*IndexOptions` constructor accepts an **associative array** (keys = `IndexOptions::*` constants), applied by reflection — no need to instantiate then set each property one by one.
 
-`AQL::INDEXES` expects a **list** (`IndexOptions[]` or raw definitions). As a convenience a **single** `IndexOptions` is accepted in place of a one-element list (a raw array always stays the list) — normalization is centralized in `ArangoTrait::initializeIndexes()`, so every consumer (lazy provisioning, `doctor`) always sees an `IndexOptions[]`.
+`AQL::INDEXES` expects a **list** (`IndexOptions[]`, client definitions such as `InvertedIndex`, or raw definitions). As a convenience a **single** `IndexOptions` or definition is accepted in place of a one-element list (a raw array always stays the list) — normalization is centralized in `ArangoTrait::initializeIndexes()`, so every consumer (lazy provisioning, `doctor`) always sees a list. An inverted index has no options class : it is declared through its client definition, `new InvertedIndex( fields : [ 'title' ] , name : 'byTitle' )`.
 
 Advantages:
 
@@ -97,6 +97,59 @@ Limit: creating a heavy `persistent` index can **block writes** for several minu
 
 > ⚠️ **Lazy provisioning only creates indexes when the collection is created.** An index added to `AQL::INDEXES` of an **already existing** collection is **never** created lazily (no error — queries silently fall back to full scans). The [`arangodb doctor`](commands/arangodb.md#doctor--structure-health-check) command reconciles the gap: `doctor` reports it, `doctor --apply` creates it (`--force` to rebuild a drifted index). To declare indexes **per collection**, independently of the models (several models on one collection), see the [collection-level index registry](commands/arangodb.md#indexes-declared-per-collection-autonomous-registry).
 
+> 🚨 **An index the server refuses is named.** `createIndex()` answers `null` and leaves a warning saying what the server answered ; the lazy provisioning adds a log error naming the index and its collection — `The index "byOwner" of the collection "tasks" could not be created`. Without it, the collection was born without one of its indexes, and nothing pointed at it before the next `doctor`.
+
+## Stored values — `storedValues`
+
+A `persistent` index may keep, beside its fields, other attributes of the document : they serve neither a lookup nor a sort, but a query that needs nothing else is served **without reading a single document**. It is what turns an index that filters into one that also answers the sort or the tiebreak of a page.
+
+```php
+new PersistentIndexOptions
+([
+    IndexOptions::NAME          => 'byOwner' ,
+    IndexOptions::FIELDS        => [ 'owner' ] ,
+    IndexOptions::STORED_VALUES => [ 'due' , '_key' ] , // read in the index, never in the document
+]) ;
+```
+
+> 🚨 The key is spelled `IndexOptions::STORED_VALUES` (`'storedValues'`). The former constant `STORED_VALUE` (`'storedValue'`, singular) filled nothing : the constructor ignores an unknown key, and the index was born without its stored values.
+
+> ⚠️ ArangoDB **does not consider** `storedValues` when deciding whether an index already exists : asking again for an index of the same fields with other stored values answers the existing index, unchanged. `doctor` says so (« drop + recreate required »), and `doctor --apply --force` rebuilds it.
+
+## Imposing an index on the lists of a model — `AQL::INDEX_HINT`
+
+The optimizer chooses an index from estimates, and an estimate can be wrong in the direction that costs : a list narrowed on a very selective value and ordered on another field may be read through the index of the order, every document walked to keep a handful. The `EXPLAIN` says which index a query takes ([explain-and-profiling.md](db/explain-and-profiling.md)) ; when it takes the wrong one, the model can impose the right one :
+
+```php
+new Documents( $container ,
+[
+    AQL::COLLECTION       => 'tasks' ,
+    AQL::INDEX_HINT       => 'byOwnerDue' ,   // a name, or a list of names in order of preference
+    AQL::FORCE_INDEX_HINT => true ,           // optional : an error rather than another index
+]) ;
+```
+
+| Query | What its `FOR` loop receives |
+|---|---|
+| the list | `OPTIONS {"forceIndexHint":true,"indexHint":"byOwnerDue"}` |
+| the count, the facet counts, the bounds | `OPTIONS {"indexHint":"byOwnerDue"}` — a preference, never forced |
+| a search through the View (`?search=`) | nothing : a View knows no `indexHint` |
+
+- 🔑 **Nothing declared, nothing changed** : the query is the one it was, to the character.
+- 🔑 **The same index for the four queries**, because they share their loop : a list and its count read the same set.
+- 🚨 **But the list alone forces it.** An index may serve the list for its **sort** alone (`[ due ]` for « the tasks of one owner, by due date ») ; the count, the facet counts and the bounds sort nothing, and such an index is one they cannot use : forced, the server refuses the query (« could not use index hint to serve query », measured). They receive it as a preference, which the optimizer takes whenever the index serves their filter.
+- ⚠️ **`forceIndexHint` makes the list fail when the index is missing** or cannot serve it. Declare the index in `AQL::INDEXES` before imposing it. Without `forceIndexHint`, a missing index is a preference the optimizer sets aside.
+- Imposing an index **changes the path, never the answer** : the same documents, in the same order, the same count — what the live essay `IndexHintIntegrationTest` checks.
+
+## What `doctor` compares
+
+`doctor` (and `indexesDiff()`) compares every **declared** key with what the server answers ; a key the server adds without it being declared is not read. Two rules follow :
+
+- an options class sends, for its risky keys, **only what is declared** (see the [options reference](options.md#index-options--optionsindexes)) — otherwise the comparison reads a difference nobody wanted ;
+- **a number is compared by its value**, not by its PHP type : a lifetime declared `315361825.0` comes back from the server as the integer `315361825`, and a strict comparison announced a « drop + recreate » for a compliant index (measured).
+
+The live essay `IndexDeclarationsIntegrationTest` creates every index type through its options class and checks that the comparison reads **no** difference right after.
+
 ## Class catalog by type
 
 Detailed in [AQL options reference — Index options](options.md#index-options--optionsindexes). Summary of available classes:
@@ -107,12 +160,12 @@ Detailed in [AQL options reference — Index options](options.md#index-options--
 | `PersistentIndexOptions` | `persistent` |
 | `TTLIndexOptions` | `ttl` |
 | `GeoIndexOptions` | `geo` |
-| `MDIIndexOptions` | `mdi` |
+| `MDIIndexOptions` | `mdi`, `mdi-prefixed` (through `type`) |
 | `VectorIndexOptions` | `vector` |
 
 All these classes:
 
-- Inherit from `IndexOptions` (and therefore from the common properties `fields`, `name`, `inBackground`, `sparse`).
+- Inherit from `IndexOptions` (and therefore from the common properties `fields`, `name`, `type`).
 - Implement `JsonSerializable` — `json_encode($options)` produces the JSON consumed by the ArangoDB engine.
 - Add type-specific properties (`expireAfter` for TTL, `geoJson` for Geo, `params` for Vector...).
 
@@ -197,7 +250,7 @@ $vec->name = 'idx_documents_vector' ;
 $db->createIndex( 'documents' , $vec ) ;
 ```
 
-The dimension must exactly match the vector size. The metric (`cosine`, `l2`, `inner_product`) depends on the *embedding* model used to generate the vector.
+The dimension must exactly match the vector size. The metric (`cosine`, `l2`, `innerProduct` — since ArangoDB 3.12.6) depends on the *embedding* model used to generate the vector. The server must run with `--experimental-vector-index`, or it refuses to create the index.
 
 ## Runtime inspection
 

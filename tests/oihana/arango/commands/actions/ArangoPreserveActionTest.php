@@ -229,4 +229,23 @@ class ArangoPreserveActionTest extends TestCase
 
         $host->run( $this->input() , new BufferedOutput() ) ;
     }
+
+    /**
+     * The transaction itself, run to its end : the copy, the rule and the backup
+     * agree with the plan, so the copy is kept and its count is what the action
+     * reports — the backup is not dropped.
+     */
+    public function testTheCountsOfTheTransactionAgreeAndTheCopyIsKept() :void
+    {
+        $host = $this->host() ;
+        $host->fakeDatabase = $this->database( [ 'articles' => true , 'articles__preserved' => false ] , [ 3 , 3 , 3 , 3 ] ) ;
+        $host->fakeDatabase->method( 'withTransaction' )->willReturnCallback( fn( callable $callback ) => $callback() ) ;
+        $this->collections[ 'articles__preserved' ]->expects( $this->never() )->method( 'drop' ) ;
+        $output = new BufferedOutput() ;
+
+        $code = $host->run( $this->input() , $output ) ;
+
+        $this->assertSame( ExitCode::SUCCESS , $code ) ;
+        $this->assertStringContainsString( 'articles : 3 document(s) set aside in articles__preserved' , $output->fetch() ) ;
+    }
 }

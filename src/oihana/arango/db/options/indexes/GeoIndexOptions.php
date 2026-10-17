@@ -28,6 +28,18 @@ class GeoIndexOptions extends IndexOptions
     public bool $inBackground = false ;
 
     /**
+     * How the polygons of a GeoJSON index are read : `true` keeps the reading of the
+     * indexes created before ArangoDB 3.10 (a polygon's edges are straight lines in
+     * longitude and latitude), `false` reads them as geodesics on the sphere — the
+     * default of every index created since.
+     *
+     * Sent only when declared : the server then applies its own default.
+     *
+     * @var bool
+     */
+    public bool $legacyPolygons ;
+
+    /**
      * Can be one of the following values:
      * - "persistent": persistent (array) index, including vertex-centric index
      * - "inverted": inverted index

@@ -57,4 +57,16 @@ class GeoIndexTest extends TestCase
         $this->assertSame( 'idx_geo' , $payload[ 'name' ] ) ;
         $this->assertTrue( $payload[ 'inBackground' ] ) ;
     }
+
+    /**
+     * The reading of the GeoJSON polygons the indexes created before ArangoDB 3.10
+     * kept — sent when set, and only then.
+     */
+    public function testLegacyPolygonsAreEmittedWhenSet() :void
+    {
+        $payload = ( new GeoIndex( fields : [ 'area' ] , geoJson : true , legacyPolygons : true ) )->toArray() ;
+
+        $this->assertTrue( $payload[ 'legacyPolygons' ] ) ;
+        $this->assertArrayNotHasKey( 'legacyPolygons' , ( new GeoIndex( fields : [ 'area' ] ) )->toArray() ) ;
+    }
 }

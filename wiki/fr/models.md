@@ -71,6 +71,8 @@ Le conteneur est utilisé pour résoudre les dépendances déclarées par identi
 | `AQL::ARRAYS`       | `array`         | Champs-tableaux embarqués et leur mode/compteur (cf. [arrays.md](db/arrays.md)).                       |
 | `AQL::ALTERS`       | `array`         | Transformations post-requête sur les documents renvoyés.                                               |
 | `AQL::INDEXES`      | `array`         | Index à créer à la première instanciation (lazy).                                                      |
+| `AQL::INDEX_HINT`   | `string\|array` | Index (ou liste d'index, par ordre de préférence) remis à l'optimiseur pour la liste, le compte, les facettes et les bornes (cf. [indexes.md](indexes.md#imposer-un-index-aux-listes-dun-modèle--aqlindex_hint)). |
+| `AQL::FORCE_INDEX_HINT` | `bool`      | Rend l'index de `AQL::INDEX_HINT` obligatoire — sur la **liste** seulement.                            |
 | `AQL::CONDITIONS`   | `array`         | Conditions AQL injectées côté serveur (cf. [filter-internal.md](db/filter-internal.md)).               |
 | `AQL::BINDS`        | `array`         | *Bind variables* injectées côté serveur.                                                               |
 

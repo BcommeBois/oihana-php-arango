@@ -58,6 +58,11 @@ readonly class InvertedIndex implements IndexDefinition
      * @param int|null                                $commitIntervalMsec        Commit interval, in milliseconds.
      * @param int|null                                $consolidationIntervalMsec Consolidation interval, in milliseconds.
      * @param bool|null                               $inBackground              Build the index in the background.
+     * @param array<string, mixed>|null               $consolidationPolicy       How the segments are merged (`{ type: 'tier' , … }`).
+     * @param array<int, string>|null                 $optimizeTopK              Scoring expressions precomputed for top-k queries (ArangoDB 3.12+).
+     * @param int|null                                $writebufferActive         How many writers may be active at once — `0` for no limit.
+     * @param int|null                                $writebufferIdle           How many idle writers the pool keeps.
+     * @param int|null                                $writebufferSizeMax        The bytes a writer buffers before it is flushed — `0` for no limit.
      */
     public function __construct
     (
@@ -77,6 +82,11 @@ readonly class InvertedIndex implements IndexDefinition
         public ?int    $commitIntervalMsec        = null ,
         public ?int    $consolidationIntervalMsec = null ,
         public ?bool   $inBackground              = null ,
+        public ?array  $consolidationPolicy       = null ,
+        public ?array  $optimizeTopK              = null ,
+        public ?int    $writebufferActive         = null ,
+        public ?int    $writebufferIdle           = null ,
+        public ?int    $writebufferSizeMax        = null ,
     )
     {
     }
@@ -107,6 +117,11 @@ readonly class InvertedIndex implements IndexDefinition
         if ( $this->commitIntervalMsec        !== null ) { $data[ IndexField::COMMIT_INTERVAL_MSEC ]        = $this->commitIntervalMsec        ; }
         if ( $this->consolidationIntervalMsec !== null ) { $data[ IndexField::CONSOLIDATION_INTERVAL_MSEC ] = $this->consolidationIntervalMsec ; }
         if ( $this->inBackground              !== null ) { $data[ IndexField::IN_BACKGROUND ]               = $this->inBackground              ; }
+        if ( $this->consolidationPolicy       !== null ) { $data[ IndexField::CONSOLIDATION_POLICY ]        = $this->consolidationPolicy       ; }
+        if ( $this->optimizeTopK              !== null ) { $data[ IndexField::OPTIMIZE_TOP_K ]              = $this->optimizeTopK              ; }
+        if ( $this->writebufferActive         !== null ) { $data[ IndexField::WRITEBUFFER_ACTIVE ]          = $this->writebufferActive         ; }
+        if ( $this->writebufferIdle           !== null ) { $data[ IndexField::WRITEBUFFER_IDLE ]            = $this->writebufferIdle           ; }
+        if ( $this->writebufferSizeMax        !== null ) { $data[ IndexField::WRITEBUFFER_SIZE_MAX ]        = $this->writebufferSizeMax        ; }
 
         return $data ;
     }

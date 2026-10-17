@@ -7,6 +7,15 @@ use oihana\arango\db\enums\IndexType;
 /**
  * The options of a multi-dimensional index.
  *
+ * 🚨 **A list or a flag the caller did not declare is not sent.** The server
+ * refuses an empty `prefixFields` on an `mdi` (« does not support prefixed
+ * fields ») and an empty `storedValues` on both types (« invalid number of index
+ * attributes ») — measured on ArangoDB 3.12.4 : with those two lists sent by
+ * default, this class could create no index at all. And an `mdi` answers
+ * `estimates: false` whatever it was asked, so a `true` sent by default was a
+ * difference the index comparison reported on every run. Undeclared, each one
+ * takes the server's default.
+ *
  * @see https://docs.arango.ai/arangodb/stable/develop/http-api/indexes/multi-dimensional/
  */
 class MDIIndexOptions extends IndexOptions
@@ -22,16 +31,21 @@ class MDIIndexOptions extends IndexOptions
      *
      * The option has no effect on indexes other than persistent, mdi, and mdi-prefixed.
      *
+     * ⚠️ An `mdi` keeps no estimates whatever it is asked, and answers `false` ; an
+     * `mdi-prefixed` keeps them by default. Sent only when declared.
+     *
      * @var bool
      */
-    public bool $estimates = true ;
+    public bool $estimates ;
 
     /**
      * Must be equal to "double". Currently only doubles are supported as values.
      *
+     * Required by the server, hence its only admitted value as the default.
+     *
      * @var string
      */
-    public string $fieldValueTypes ;
+    public string $fieldValueTypes = 'double' ;
 
     /**
      * Set this option to true to keep the collection/shards available for write operations
@@ -46,9 +60,11 @@ class MDIIndexOptions extends IndexOptions
      *
      * An array of attribute names used as search prefix. Array expansions are not allowed.
      *
-     * @var array
+     * Sent only when declared : an `mdi` refuses the key, even empty.
+     *
+     * @var array<int,string>
      */
-    public array $prefixFields = [] ;
+    public array $prefixFields ;
 
     /**
      * Can be true or false.
@@ -79,9 +95,11 @@ class MDIIndexOptions extends IndexOptions
      *
      * Non-existing attributes are stored as null values inside storedValues.
      *
-     * @var array
+     * Sent only when declared : the server refuses an empty list.
+     *
+     * @var array<int,string>
      */
-    public array $storedValues = [] ;
+    public array $storedValues ;
 
     /**
      * Can be one of the following values:

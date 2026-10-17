@@ -71,6 +71,8 @@ The container is used to resolve dependencies declared by service identifier: `D
 | `AQL::ARRAYS` | `array` | Embedded array fields and their mode/counter (see [arrays.md](db/arrays.md)). |
 | `AQL::ALTERS` | `array` | Post-query transformations on returned documents. |
 | `AQL::INDEXES` | `array` | Indexes to create on first instantiation (lazy). |
+| `AQL::INDEX_HINT` | `string\|array` | Index (or list of indexes, in order of preference) handed to the optimizer for the list, the count, the facet counts and the bounds (see [indexes.md](indexes.md#imposing-an-index-on-the-lists-of-a-model--aqlindex_hint)). |
+| `AQL::FORCE_INDEX_HINT` | `bool` | Makes the index of `AQL::INDEX_HINT` mandatory — on the **list** alone. |
 | `AQL::CONDITIONS` | `array` | Server-side injected AQL conditions (see [filter-internal.md](db/filter-internal.md)). |
 | `AQL::BINDS` | `array` | Server-side injected *bind variables*. |
 

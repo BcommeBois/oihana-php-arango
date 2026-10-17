@@ -37,10 +37,10 @@ class ForOptions extends QueryOptions
      * In case of an array of indexes, the optimizer will check the feasibility of each index in the specified order.
      * It will use the first suitable index, regardless of whether it would normally use a different index.
      * If none of the specified indexes is suitable, then it falls back to its normal logic to select another index or fails if forceIndexHint is enabled.
-     * @var string|null
+     * @var string|array<int,string>|null A name, or a list of names in order of preference.
      * @see https://docs.arangodb.com/stable/aql/high-level-operations/for/#indexhint
      */
-    public ?string $indexHint ;
+    public null|string|array $indexHint ;
 
     /**
      * The multi-dimensional index types mdi and mdi-prefixed support an optional index hint for tweaking performance:

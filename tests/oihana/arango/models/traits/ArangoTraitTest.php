@@ -10,6 +10,9 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use PHPUnit\Framework\TestCase;
 
+use Psr\Log\LoggerInterface;
+
+use oihana\arango\clients\collection\indexes\InvertedIndex;
 use oihana\arango\clients\cursor\enums\CursorField;
 use oihana\arango\db\ArangoDB;
 use oihana\arango\db\binds\AqlBindReference;
@@ -672,5 +675,92 @@ class ArangoTraitTest extends TestCase
         $host->initializeDatabase( [ Arango::DATABASE => 'missing' ] , new Container() ) ;
 
         $this->assertNull( $host->rawDatabase() ) ;
+    }
+
+    /**
+     * A model may declare an index through its client definition — an inverted index
+     * has no options class — and the creation forwards it as is.
+     */
+    public function testCreateIndexForwardsAnIndexDefinition() :void
+    {
+        $index = new InvertedIndex( fields : [ 'title' ] ) ;
+
+        $db = $this->getMockBuilder( ArangoDB::class )->disableOriginalConstructor()->onlyMethods([ 'createIndex' ])->getMock() ;
+        $db->expects( $this->once() )->method( 'createIndex' )->with( 'things' , $index )->willReturn( [ 'id' => 'idx/2' ] ) ;
+
+        $this->assertSame( [ 'id' => 'idx/2' ] , new ArangoTraitHost( $db )->createIndex( 'things' , $index ) ) ;
+    }
+
+    public function testInitializeIndexesNormalizesASingleIndexDefinitionToAList() :void
+    {
+        $index = new InvertedIndex( fields : [ 'title' ] ) ;
+
+        $host = new ArangoTraitHost( null ) ;
+        $host->initializeIndexes([ Arango::INDEXES => $index ]) ;
+
+        $this->assertSame( [ $index ] , $host->indexes ) ;
+    }
+
+    /**
+     * 🚨 An index the server refuses is NAMED, with its collection : the creation
+     * answers null, and the collection would otherwise be born without one of its
+     * indexes with nothing pointing at it. A named index is named ; an unnamed one is
+     * told by its type and its fields.
+     */
+    public function testALazyIndexTheServerRefusesIsNamed() :void
+    {
+        $db = $this->getMockBuilder( ArangoDB::class )
+            ->disableOriginalConstructor()
+            ->onlyMethods([ 'collectionExists' , 'collectionCreate' , 'createIndex' ])
+            ->getMock() ;
+
+        $db->method( 'collectionExists' )->willReturn( false ) ;
+        $db->method( 'collectionCreate' )->willReturn( true ) ;
+        $db->method( 'createIndex'      )->willReturn( null ) ;
+
+        $messages = [] ;
+
+        $logger = $this->createMock( LoggerInterface::class ) ;
+        $logger->expects( $this->exactly( 2 ) )->method( 'error' )->willReturnCallback
+        (
+            function( string $message ) use ( &$messages ) :void { $messages[] = $message ; }
+        ) ;
+
+        $host = new ArangoTraitHost( $db ) ;
+        $host->setLogger( $logger ) ;
+
+        $host->initializeCollection
+        ([
+            Arango::COLLECTION => 'things' ,
+            Arango::INDEXES    =>
+            [
+                new PersistentIndexOptions([ IndexOptions::NAME => 'byOwner' , IndexOptions::FIELDS => [ 'owner' ] ]) ,
+                [ 'type' => 'persistent' , 'fields' => [ 'x' , 'y' ] ] ,
+            ] ,
+        ]) ;
+
+        $this->assertStringContainsString( '"byOwner"' , $messages[ 0 ] ) ;
+        $this->assertStringContainsString( '"things"'  , $messages[ 0 ] ) ;
+        $this->assertStringContainsString( 'persistent(x, y)' , $messages[ 1 ] ) ;
+    }
+
+    public function testALazyIndexCreatedSaysNothing() :void
+    {
+        $db = $this->getMockBuilder( ArangoDB::class )
+            ->disableOriginalConstructor()
+            ->onlyMethods([ 'collectionExists' , 'collectionCreate' , 'createIndex' ])
+            ->getMock() ;
+
+        $db->method( 'collectionExists' )->willReturn( false ) ;
+        $db->method( 'collectionCreate' )->willReturn( true ) ;
+        $db->method( 'createIndex'      )->willReturn( [ 'id' => 'idx/1' ] ) ;
+
+        $logger = $this->createMock( LoggerInterface::class ) ;
+        $logger->expects( $this->never() )->method( 'error' ) ;
+
+        $host = new ArangoTraitHost( $db ) ;
+        $host->setLogger( $logger ) ;
+
+        $host->initializeCollection([ Arango::COLLECTION => 'things' , Arango::INDEXES => [ new InvertedIndex( fields : [ 'title' ] ) ] ]) ;
     }
 }

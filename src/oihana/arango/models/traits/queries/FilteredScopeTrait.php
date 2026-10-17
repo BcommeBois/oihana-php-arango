@@ -11,6 +11,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
 
 use oihana\arango\db\enums\AQL;
+use oihana\arango\models\traits\aql\IndexHintTrait;
 
 use oihana\exceptions\BindException;
 use oihana\exceptions\ValidationException;
@@ -34,6 +35,10 @@ use function oihana\arango\db\operations\aqlFor;
  * bound only on its own branch — an unused bind variable would be rejected by
  * the server.
  *
+ * The collection `FOR` carries the index the model hands the optimizer
+ * (`AQL::INDEX_HINT`, {@see IndexHintTrait}) — the View `FOR` never does : a View
+ * knows no `indexHint`.
+ *
  * The trait assumes a host that provides the filtering fragments it composes
  * (`prepareViewSearch()`, `prepareActive()`, `prepareFacets()`, `prepareFilter()`,
  * `prepareSearch()`, `bindView()`, `bindCollection()` and the `$conditions`
@@ -47,12 +52,17 @@ use function oihana\arango\db\operations\aqlFor;
  */
 trait FilteredScopeTrait
 {
+    use IndexHintTrait ;
+
     /**
      * Builds the `FOR` segment and the conjunctive `FILTER` clause shared by the
      * list-family queries.
      *
      * @param array $init     The query options.
      * @param array $bindVars The bind variables, populated by reference.
+     * @param bool  $forcible Whether the declared hint may be FORCED on this loop :
+     *                        the list passes `true`, its count, facet counts and
+     *                        bounds keep the default — see {@see IndexHintTrait}.
      *
      * @return array{0:string,1:?string} The `[ $for, $filter ]` pair.
      *
@@ -66,13 +76,13 @@ trait FilteredScopeTrait
      * @throws UnsupportedOperationException
      * @throws ValidationException
  */
-    protected function buildFilteredScope( array $init = [] , array &$bindVars = [] ) :array
+    protected function buildFilteredScope( array $init = [] , array &$bindVars = [] , bool $forcible = false ) :array
     {
         $viewSearch = $this->prepareViewSearch( $init , $bindVars ) ;
 
         $for = $viewSearch !== null
              ? aqlFor( [ AQL::IN => $this->bindView( $bindVars ) , AQL::SEARCH => $viewSearch ] )
-             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) ] ) ;
+             : aqlFor( [ AQL::IN => $this->bindCollection( $bindVars ) , AQL::OPTIONS => $this->indexHintOptions( $forcible ) ] ) ;
 
         $filter = aqlFilter
         ([

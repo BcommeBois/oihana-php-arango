@@ -362,6 +362,11 @@ trait IndexManagementTrait
      * lists compare order-sensitively; every drift line carries the
      * `drop + recreate` reminder (indexes are immutable).
      *
+     * 🚨 A number is compared by its value, not by its PHP type : a lifetime
+     * declared `315361825.0` comes back from the server as the integer
+     * `315361825`, and a strict comparison announced a drift — a « drop +
+     * recreate » for an index that was exactly what was declared (measured live).
+     *
      * @param string               $label  The declared index label used in the change lines.
      * @param array<string, mixed> $body   The declared index body ({@see indexBody()}).
      * @param array<string, mixed> $actual The matched server index.
@@ -387,7 +392,7 @@ trait IndexManagementTrait
                 $actualValue = is_array( $actualValue ) ? array_values( $actualValue ) : $actualValue ;
             }
 
-            if ( $actualValue !== $value )
+            if ( !$this->sameIndexValue( $value , $actualValue ) )
             {
                 $changes[] = sprintf
                 (
@@ -569,6 +574,44 @@ trait IndexManagementTrait
         }
 
         return $projected ;
+    }
+
+    /**
+     * Whether a declared index value and the server's are the same : a number by
+     * its value (`315361825.0` and `315361825` are one lifetime), a list or an
+     * object key by key and in order, anything else strictly.
+     *
+     * @param mixed $declared The declared value.
+     * @param mixed $actual   The server value.
+     *
+     * @return bool
+     */
+    private function sameIndexValue( mixed $declared , mixed $actual ) : bool
+    {
+        if ( ( is_int( $declared ) || is_float( $declared ) ) && ( is_int( $actual ) || is_float( $actual ) ) )
+        {
+            return (float) $declared === (float) $actual ;
+        }
+
+        if ( is_array( $declared ) && is_array( $actual ) )
+        {
+            if ( array_keys( $declared ) !== array_keys( $actual ) )
+            {
+                return false ;
+            }
+
+            foreach ( $declared as $key => $value )
+            {
+                if ( !$this->sameIndexValue( $value , $actual[ $key ] ) )
+                {
+                    return false ;
+                }
+            }
+
+            return true ;
+        }
+
+        return $declared === $actual ;
     }
 
     /**

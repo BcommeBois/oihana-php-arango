@@ -22,7 +22,7 @@ trait IndexOptionsTrait
     public const string PARAMS              = 'params' ;
     public const string PREFIX_FIELDS       = 'prefixFields' ;
     public const string SPARSE              = 'sparse' ;
-    public const string STORED_VALUE        = 'storedValue' ;
+    public const string STORED_VALUES       = 'storedValues' ;
     public const string TYPE                = 'type' ;
     public const string UNIQUE              = 'unique' ;
 }

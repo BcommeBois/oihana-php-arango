@@ -55,4 +55,12 @@ class TtlIndexTest extends TestCase
         $this->assertSame( 'idx_ttl' , $payload[ 'name'         ] ) ;
         $this->assertTrue( $payload[ 'inBackground' ] ) ;
     }
+
+    /**
+     * A lifetime is a number : the server keeps `1.5` as it was sent.
+     */
+    public function testALifetimeMayBeADecimal() :void
+    {
+        $this->assertSame( 1.5 , ( new TtlIndex( fields : [ 'at' ] , expireAfter : 1.5 ) )->toArray()[ 'expireAfter' ] ) ;
+    }
 }

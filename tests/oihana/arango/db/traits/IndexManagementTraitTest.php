@@ -10,6 +10,7 @@ use oihana\arango\db\enums\DiffKind;
 use oihana\arango\db\enums\DiffStatus;
 use oihana\arango\db\options\indexes\IndexOptions;
 use oihana\arango\db\options\indexes\PersistentIndexOptions;
+use oihana\arango\db\options\indexes\TTLIndexOptions;
 use oihana\arango\db\traits\IndexManagementTrait;
 
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -266,6 +267,47 @@ class IndexManagementTraitTest extends ArangoDBTestCase
 
         $this->assertSame( DiffStatus::DRIFTED , $report->status ) ;
         $this->assertSame( [ 'id.unique : server false ≠ declared true (drop + recreate required)' ] , $report->changes ) ;
+    }
+
+    /**
+     * 🚨 A number is compared by its value : a lifetime declared `315361825.0` comes
+     * back as the integer `315361825` (measured live), and a strict comparison
+     * announced a « drop + recreate » for an index that was what was declared.
+     */
+    public function testIndexesDiffComparesANumberByItsValue() :void
+    {
+        $declared = [ new TTLIndexOptions([ IndexOptions::NAME => 'expiry' , IndexOptions::FIELDS => [ 'at' ] , IndexOptions::EXPIRE_AFTER => 315361825.0 ]) ] ;
+        $server   = [ 'estimates' => false , 'expireAfter' => 315361825 , 'fields' => [ 'at' ] , 'id' => 'places/2' , 'name' => 'expiry' , 'sparse' => true , 'type' => 'ttl' , 'unique' => false ] ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertTrue( $report->inSync() , implode( ' | ' , $report->changes ) ) ;
+    }
+
+    /**
+     * … and a number that differs still drifts, whatever its type.
+     */
+    public function testIndexesDiffStillReportsANumberThatDiffers() :void
+    {
+        $declared = [ new TTLIndexOptions([ IndexOptions::NAME => 'expiry' , IndexOptions::FIELDS => [ 'at' ] , IndexOptions::EXPIRE_AFTER => 1.5 ]) ] ;
+        $server   = [ 'expireAfter' => 1 , 'fields' => [ 'at' ] , 'id' => 'places/2' , 'name' => 'expiry' , 'type' => 'ttl' ] ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $server ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertSame( [ 'expiry.expireAfter : server 1 ≠ declared 1.5 (drop + recreate required)' ] , $report->changes ) ;
+    }
+
+    /**
+     * A list compared by value keeps its length : a stored value the server no longer
+     * holds is a drift, whatever the values that remain.
+     */
+    public function testIndexesDiffReportsAStoredValueTheServerDropped() :void
+    {
+        $declared = [ new PersistentIndexOptions([ IndexOptions::NAME => 'id' , IndexOptions::FIELDS => [ 'id' ] , IndexOptions::UNIQUE => true , IndexOptions::STORED_VALUES => [ 'due' , '_key' ] ]) ] ;
+
+        $report = $this->newArangoDB( $this->databaseReturning( $this->collectionWithIndexes( [ $this->serverIndex( [ 'storedValues' => [ 'due' ] ] ) ] ) ) )->indexesDiff( 'places' , $declared ) ;
+
+        $this->assertSame( [ 'id.storedValues : server ["due"] ≠ declared ["due","_key"] (drop + recreate required)' ] , $report->changes ) ;
     }
 
     public function testIndexesDiffComparesFieldsOrderSensitively() :void

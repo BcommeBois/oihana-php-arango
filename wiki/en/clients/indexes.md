@@ -63,6 +63,9 @@ new GeoIndex( fields: [ 'lat' , 'lng' ] ) ;
 
 // Single GeoJSON object
 new GeoIndex( fields: [ 'location' ] , geoJson: true ) ;
+
+// Polygons read as the indexes created before ArangoDB 3.10 did
+new GeoIndex( fields: [ 'area' ] , geoJson: true , legacyPolygons: true ) ;
 ```
 
 ### `TtlIndex` — automatic expiration
@@ -124,6 +127,8 @@ new InvertedIndex(
     parallelism      : 2 ,
 ) ;
 ```
+
+The inverted index also tunes the merging of its segments (`consolidationPolicy`), the scoring expressions it precomputes for a *top-k* query (`optimizeTopK`, ArangoDB 3.12+) and its writers (`writebufferActive`, `writebufferIdle`, `writebufferSizeMax`) — each sent only when given. A model declares it as is in `AQL::INDEXES`.
 
 #### Diffing an inverted index
 

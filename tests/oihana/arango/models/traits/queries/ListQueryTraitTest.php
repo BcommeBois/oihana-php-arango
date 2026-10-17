@@ -201,4 +201,23 @@ class ListQueryTraitTest extends TestCase
             ) ,
         ) ;
     }
+
+    /**
+     * The index the model hands the optimizer rides on the loop of the list ;
+     * nothing declared leaves the loop as it was.
+     */
+    public function testTheListLoopCarriesTheIndexHint() :void
+    {
+        $stub  = $this->stub() ;
+        $binds = [] ;
+
+        $stub->indexHint      = 'byOwner' ;
+        $stub->forceIndexHint = true ;
+
+        $this->assertSame
+        (
+            'FOR doc IN @@collection OPTIONS {"forceIndexHint":true,"indexHint":"byOwner"} RETURN doc' ,
+            $stub->buildListQuery( [] , $binds )
+        ) ;
+    }
 }

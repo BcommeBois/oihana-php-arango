@@ -72,4 +72,26 @@ class CountQueryTraitTest extends TestCase
         ) ;
         $this->assertSame( [ '@collection' => 'users' , 'active' => 1 ] , $binds ) ;
     }
+
+    /**
+     * A filtered count walks the same loop as its list, and carries the same index
+     * hint — the count of a page is served by the index of the page.
+     *
+     * 🚨 As a preference, never forced : an index that serves the list for its sort
+     * alone is one a count cannot use, and the server refuses the query (measured).
+     */
+    public function testAFilteredCountCarriesTheIndexHint() :void
+    {
+        $stub  = $this->stub() ;
+        $binds = [] ;
+
+        $stub->indexHint      = [ 'byOwner' , 'byDue' ] ;
+        $stub->forceIndexHint = true ;
+
+        $this->assertStringContainsString
+        (
+            'FOR doc IN @@collection OPTIONS {"indexHint":["byOwner","byDue"]} FILTER' ,
+            $stub->callBuildCountQuery( [ Arango::CONDITIONS => [ 'doc.owner == "o1"' ] ] , $binds )
+        ) ;
+    }
 }

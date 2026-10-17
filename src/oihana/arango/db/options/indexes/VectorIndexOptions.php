@@ -7,19 +7,22 @@ use oihana\arango\db\enums\IndexType;
 
 /**
  * The options of a vector index.
+ *
+ * 🚨 **An option the caller did not declare is not sent.** `sparse`,
+ * `parallelism` and `storedValues` take the server's default when absent — an
+ * empty `storedValues` is the list the server refuses on the other index types
+ * that hold one, and the option only exists since ArangoDB 3.12.7 : sent by
+ * default, it would have been refused by every older server. The class no longer
+ * carries `geoJson` either, an option of the geo-spatial index a vector index
+ * does not know.
+ *
+ * ⚠️ The vector index is an experimental feature of ArangoDB 3.12 : the server
+ * must run with `--experimental-vector-index`, or it refuses to create one.
+ *
+ * @see https://docs.arango.ai/arangodb/stable/develop/http-api/indexes/vector/
  */
 class VectorIndexOptions extends IndexOptions
 {
-    /**
-     * If you create a geo-spatial index over a single attribute and geoJson is true,
-     * then the coordinate order within the attribute’s array is longitude followed by latitude.
-     *
-     * This corresponds to the format described in http://geojson.org/geojson-spec.html#positions
-     *
-     * @var bool
-     */
-    public bool $geoJson = false ;
-
     /**
      * Set this option to true to keep the collection/shards available for write operations
      * by not using an exclusive write lock for the duration of the index creation.
@@ -29,10 +32,11 @@ class VectorIndexOptions extends IndexOptions
     public bool $inBackground = false ;
 
     /**
-     * The number of threads to use for indexing.
+     * The number of threads to use for indexing — 2 when not declared.
+     *
      * @var int
      */
-    public int $parallelism = 2 ;
+    public int $parallelism ;
 
     /**
      * The parameters as used by the Faiss library.
@@ -50,9 +54,11 @@ class VectorIndexOptions extends IndexOptions
      *
      * The inverted, fulltext, and geo index types are sparse by definition.
      *
+     * `false` when not declared.
+     *
      * @var bool
      */
-    public bool $sparse = false  ;
+    public bool $sparse ;
 
     /**
      * The optional storedValues attribute can contain an array of paths to additional attributes to store in the index.
@@ -72,9 +78,11 @@ class VectorIndexOptions extends IndexOptions
      *
      * Non-existing attributes are stored as null values inside storedValues.
      *
-     * @var array
+     * Since ArangoDB 3.12.7 ; sent only when declared.
+     *
+     * @var array<int,string>
      */
-    public array $storedValues = [] ;
+    public array $storedValues ;
 
     /**
      * Can be one of the following values:

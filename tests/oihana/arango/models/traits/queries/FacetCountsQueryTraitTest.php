@@ -726,4 +726,23 @@ class FacetCountsQueryTraitTest extends TestCase
         $binds = [] ;
         $this->stub()->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'locationSideways' ] , $binds ) ;
     }
+
+    /**
+     * The facet counts walk the loop of the list, and carry its index hint — as a
+     * preference, never forced : they sort nothing.
+     */
+    public function testTheFacetLoopCarriesTheIndexHint() :void
+    {
+        $stub  = $this->stub() ;
+        $binds = [] ;
+
+        $stub->indexHint      = 'byCategory' ;
+        $stub->forceIndexHint = true ;
+
+        $this->assertStringContainsString
+        (
+            'FOR doc IN @@collection OPTIONS {"indexHint":"byCategory"} COLLECT value = doc.category' ,
+            $stub->buildFacetCountsQuery( [ Arango::FACET_COUNTS => 'category' ] , $binds )
+        ) ;
+    }
 }

@@ -16,9 +16,11 @@ class TTLIndexOptions extends IndexOptions
      * Can be set to 0 to let documents expire as soon as the server time passes the point in time stored
      * in the document attribute, or to a higher number to delay the expiration.
      *
-     * @var int
+     * A number, not only an integer : the server keeps `1.5` as it was sent.
+     *
+     * @var int|float
      */
-    public int $expireAfter ;
+    public int|float $expireAfter ;
 
     /**
      * Set this option to true to keep the collection/shards available for write operations

@@ -57,4 +57,12 @@ class VectorIndexTest extends TestCase
         $this->assertSame( [ 'title' ]     , $payload[ 'storedValues' ] ) ;
         $this->assertTrue ( $payload[ 'inBackground' ] ) ;
     }
+
+    public function testSparseIsEmittedWhenSet() :void
+    {
+        $index = new VectorIndex( fields : [ 'embedding' ] , params : [ 'metric' => 'cosine' , 'dimension' => 3 ] , sparse : true ) ;
+
+        $this->assertTrue( $index->toArray()[ 'sparse' ] ) ;
+        $this->assertArrayNotHasKey( 'sparse' , ( new VectorIndex( fields : [ 'embedding' ] , params : [ 'metric' => 'cosine' , 'dimension' => 3 ] ) )->toArray() ) ;
+    }
 }

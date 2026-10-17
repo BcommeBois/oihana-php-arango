@@ -258,8 +258,9 @@ trait ListQueryTrait
 
         // The FOR + conjunctive FILTER are the list's scope (View + SEARCH when a
         // ?search term hits a declared View, otherwise the collection FOR with the
-        // LIKE sweep in the FILTER). Shared by every list-family query.
-        [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars ) ;
+        // LIKE sweep in the FILTER). Shared by every list-family query — the list
+        // alone may FORCE the index hint (see IndexHintTrait).
+        [ $for , $filter ] = $this->buildFilteredScope( $init , $bindVars , forcible : true ) ;
 
         $limit = aqlLimit( $limit , $offset ) ;
 

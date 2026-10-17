@@ -79,6 +79,13 @@ class AQL
     public const string FILTERS         = 'filters' ;
     public const string FIRST           = 'first' ;
     public const string FOLLOWING       = 'following' ;
+
+    /**
+     * Makes the index named by {@see INDEX_HINT} mandatory : a query it cannot serve
+     * fails instead of falling back on another index.
+     */
+    public const string FORCE_INDEX_HINT = 'forceIndexHint' ;
+
     public const string FROM            = 'from' ;
     public const string GRAPH           = 'graph' ;
     public const string GRAPH_DEFAULT   = 'vertex, edge, path' ;
@@ -98,6 +105,14 @@ class AQL
     public const string HYDRATION       = 'hydration' ;
     public const string ID              = 'id' ;
     public const string INDEXES         = 'indexes' ;
+
+    /**
+     * The index — a name, or a list of names in order of preference — a model
+     * hands the optimizer for the loop its list, count, facet counts and bounds
+     * share. See {@see \oihana\arango\models\traits\aql\IndexHintTrait}.
+     */
+    public const string INDEX_HINT      = 'indexHint' ;
+
     public const string IN              = 'in' ;
     public const string INSERT          = 'insert' ;
     public const string INTO            = 'into' ;

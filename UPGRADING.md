@@ -11,6 +11,44 @@ the CHANGELOG entries.
 
 Nothing yet.
 
+## 1.9.0 → 1.10.0 - 2026-10-17
+
+### 🚨 Breaking
+
+#### 1. `IndexOptions::STORED_VALUE` is removed
+
+**Before.** `IndexOptions::STORED_VALUE` (and `QueryOptions::STORED_VALUE`) was `'storedValue'`. The
+property it was meant to fill is `storedValues` : declared through it, the stored values were dropped
+in silence and the index was created without them.
+
+**Now.** Use `IndexOptions::STORED_VALUES` (`'storedValues'`). A caller still naming the old constant
+fails to compile — which it should : it never filled anything. An index created that way has no
+stored values on the server ; `doctor` reports the difference once the declaration is fixed, and
+`doctor --apply --force` rebuilds the index.
+
+#### 2. `MDIIndexOptions` and `VectorIndexOptions` send only what is declared
+
+`prefixFields`, `storedValues` and `estimates` (`MDIIndexOptions`), `storedValues`, `sparse` and
+`parallelism` (`VectorIndexOptions`) are no longer sent with a default. `VectorIndexOptions` has no
+`geoJson` property any more. `MDIIndexOptions::$fieldValueTypes` defaults to `'double'`. A
+multi-dimensional index declared through the class could not be created before ; nothing to migrate.
+Code reading `$options->prefixFields` (or one of the others) before setting it now reads an
+uninitialized property : set it first, or read it through `jsonSerialize()`.
+
+#### 3. Signatures a subclass may have to follow
+
+- `ArangoTrait::createIndex()` takes `IndexDefinition|IndexOptions|array` ; an override narrower than
+  that no longer compiles.
+- `FilteredScopeTrait::buildFilteredScope()` takes a third parameter, `bool $forcible = false`.
+- The models gain `$indexHint`, `$forceIndexHint`, `initializeIndexHint()` and `indexHintOptions()`
+  (`IndexHintTrait`) : a subclass declaring a member of the same name with another type must rename it.
+
+### Nothing to do
+
+- `AQL::INDEX_HINT` / `AQL::FORCE_INDEX_HINT` are opt-in : a model declaring neither builds the same
+  queries as before, to the character.
+- `ForOptions::$indexHint` and `UpsertOptions::$indexHint` accept a list too ; a string still works.
+
 ## 1.8.1 → 1.9.0 - 2026-10-12
 
 1.8.0 and 1.8.1 carried no breaking change. 1.9.0 carries three, all of the same kind : a filter

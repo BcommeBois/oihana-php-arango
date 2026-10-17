@@ -17,6 +17,7 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\clients\aql\AqlQuery;
 use oihana\arango\clients\collection\Collection;
+use oihana\arango\clients\collection\indexes\IndexDefinition;
 use oihana\arango\clients\collection\enums\CollectionField;
 use oihana\arango\clients\collection\enums\CollectionType;
 use oihana\arango\clients\exceptions\ArangoException;
@@ -155,14 +156,16 @@ trait ArangoTrait
     /**
      * Creates an index on a collection on the server.
      *
-     * @param string|Collection $collection Collection name or {@see Collection} client handle.
-     * @param array|IndexOptions $indexOptions An IndexOptions definition or an associative array of options for the index like array('type' => 'persistent', 'fields' => ['id','additionalType'], 'sparse' => false)
+     * @param string|Collection                  $collection   Collection name or {@see Collection} client handle.
+     * @param IndexDefinition|IndexOptions|array $indexOptions An {@see IndexDefinition} value object (an {@see \oihana\arango\clients\collection\indexes\InvertedIndex}…),
+     *                                                         an {@see IndexOptions} definition, or an associative array of options for the index
+     *                                                         like array('type' => 'persistent', 'fields' => ['id','additionalType'], 'sparse' => false)
      *
      * @return array|null The server response of the created index or null
      *
      * @throws ReflectionException
      */
-    public function createIndex( string|Collection $collection, array|IndexOptions $indexOptions ) :?array
+    public function createIndex( string|Collection $collection, IndexDefinition|IndexOptions|array $indexOptions ) :?array
     {
         return $this->arangodb->createIndex( $collection , $indexOptions ) ;
     }
@@ -561,11 +564,22 @@ trait ArangoTrait
             ) ;
 
             // optional index registration when the collection is created.
+            //
+            // 🚨 An index the server refuses is NAMED : `createIndex()` answers
+            // null and leaves a warning that says what the server said, not which
+            // index it said it of — the collection was born without one of its
+            // indexes, and nothing pointed at it before the next `doctor`.
             if( !empty( $this->indexes ) )
             {
                 foreach( $this->indexes as $options )
                 {
-                    $this->createIndex( $this->collection , $options ) ;
+                    if ( $this->createIndex( $this->collection , $options ) === null )
+                    {
+                        $this->logger?->error
+                        (
+                            sprintf( 'The index %s of the collection "%s" could not be created — see the warning above ; `doctor` reports it missing.' , $this->indexLabelOf( $options ) , $this->collection )
+                        ) ;
+                    }
                 }
             }
         }
@@ -575,10 +589,10 @@ trait ArangoTrait
 
     /**
      * Sets the declared indexes of the collection from the init definition,
-     * normalizing a single {@see IndexOptions} value to a one-element list (a
-     * raw array always stays the index list) — so every consumer sees a plain
-     * `IndexOptions[]`: the {@see initializeCollection()} lazy provisioning and
-     * the {@see DoctorTrait} diagnose/repair diffs.
+     * normalizing a single {@see IndexOptions} or {@see IndexDefinition} value to
+     * a one-element list (a raw array always stays the index list) — so every
+     * consumer sees a plain list : the {@see initializeCollection()} lazy
+     * provisioning and the {@see DoctorTrait} diagnose/repair diffs.
      *
      * @param array $init The init definition (reads the `Arango::INDEXES` key).
      *
@@ -587,8 +601,39 @@ trait ArangoTrait
     public function initializeIndexes( array $init = [] ) :static
     {
         $indexes = $init[ AQL::INDEXES ] ?? $this->indexes ;
-        $this->indexes = $indexes instanceof IndexOptions ? [ $indexes ] : $indexes ;
+        $this->indexes = $indexes instanceof IndexOptions || $indexes instanceof IndexDefinition ? [ $indexes ] : $indexes ;
         return $this ;
+    }
+
+    /**
+     * How a declared index is named in a message : its `name` when it has one,
+     * its `type(field, …)` signature otherwise.
+     *
+     * @param IndexDefinition|IndexOptions|array<string, mixed> $index The declared index.
+     *
+     * @return string
+     *
+     * @throws ReflectionException When the {@see IndexOptions} cannot be serialised.
+     */
+    private function indexLabelOf( IndexDefinition|IndexOptions|array $index ) :string
+    {
+        $body = match( true )
+        {
+            $index instanceof IndexDefinition => $index->toArray() ,
+            $index instanceof IndexOptions    => $index->jsonSerialize() ,
+            default                           => $index ,
+        } ;
+
+        $name = $body[ IndexOptions::NAME ] ?? null ;
+
+        if ( is_string( $name ) && $name !== Char::EMPTY )
+        {
+            return sprintf( '"%s"' , $name ) ;
+        }
+
+        $fields = is_array( $body[ IndexOptions::FIELDS ] ?? null ) ? $body[ IndexOptions::FIELDS ] : [] ;
+
+        return sprintf( '%s(%s)' , $body[ IndexOptions::TYPE ] ?? '?' , implode( ', ' , array_filter( $fields , 'is_string' ) ) ) ;
     }
 
     /**

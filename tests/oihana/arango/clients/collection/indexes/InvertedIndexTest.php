@@ -99,4 +99,33 @@ class InvertedIndexTest extends TestCase
         $this->assertSame( 10000          , $payload[ 'consolidationIntervalMsec' ] ) ;
         $this->assertTrue ( $payload[ 'inBackground'              ] ) ;
     }
+
+    public function testTheConsolidationTheTopKAndTheWriteBuffersAreEmittedWhenSet() :void
+    {
+        $payload = ( new InvertedIndex
+        (
+            fields              : [ 'title' ] ,
+            consolidationPolicy : [ 'type' => 'tier' , 'segmentsBytesMax' => 1024 ] ,
+            optimizeTopK        : [ 'BM25(@doc) DESC' ] ,
+            writebufferActive   : 0 ,
+            writebufferIdle     : 64 ,
+            writebufferSizeMax  : 33554432 ,
+        ))->toArray() ;
+
+        $this->assertSame( [ 'type' => 'tier' , 'segmentsBytesMax' => 1024 ] , $payload[ 'consolidationPolicy' ] ) ;
+        $this->assertSame( [ 'BM25(@doc) DESC' ] , $payload[ 'optimizeTopK' ] ) ;
+        $this->assertSame( 0        , $payload[ 'writebufferActive'  ] ) ;
+        $this->assertSame( 64       , $payload[ 'writebufferIdle'    ] ) ;
+        $this->assertSame( 33554432 , $payload[ 'writebufferSizeMax' ] ) ;
+    }
+
+    public function testTheNewOptionsAreLeftOutWhenNotSet() :void
+    {
+        $payload = ( new InvertedIndex( fields : [ 'title' ] ) )->toArray() ;
+
+        foreach ( [ 'consolidationPolicy' , 'optimizeTopK' , 'writebufferActive' , 'writebufferIdle' , 'writebufferSizeMax' ] as $key )
+        {
+            $this->assertArrayNotHasKey( $key , $payload , $key ) ;
+        }
+    }
 }

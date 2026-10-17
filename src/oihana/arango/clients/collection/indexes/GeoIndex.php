@@ -32,6 +32,9 @@ readonly class GeoIndex implements IndexDefinition
      * @param string|null        $name         Optional human-readable index name.
      * @param bool|null          $geoJson      Interpret the single field as a GeoJSON object instead of a `[lat, lng]` pair.
      * @param bool|null          $inBackground Build the index in the background.
+     * @param bool|null          $legacyPolygons Read the GeoJSON polygons as the indexes created before
+     *                                           ArangoDB 3.10 did (straight edges in longitude and latitude) ;
+     *                                           `false`, the server's default since, reads them as geodesics.
      */
     public function __construct
     (
@@ -39,6 +42,7 @@ readonly class GeoIndex implements IndexDefinition
         public ?string $name         = null ,
         public ?bool   $geoJson      = null ,
         public ?bool   $inBackground = null ,
+        public ?bool   $legacyPolygons = null ,
     )
     {
     }
@@ -57,6 +61,7 @@ readonly class GeoIndex implements IndexDefinition
         if ( $this->name         !== null ) { $data[ IndexField::NAME ]          = $this->name         ; }
         if ( $this->geoJson      !== null ) { $data[ IndexField::GEO_JSON ]      = $this->geoJson      ; }
         if ( $this->inBackground !== null ) { $data[ IndexField::IN_BACKGROUND ] = $this->inBackground ; }
+        if ( $this->legacyPolygons !== null ) { $data[ IndexField::LEGACY_POLYGONS ] = $this->legacyPolygons ; }
 
         return $data ;
     }
