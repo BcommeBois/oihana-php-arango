@@ -16,6 +16,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use ReflectionException;
 use RuntimeException;
+use Throwable;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
@@ -2529,5 +2530,212 @@ class HasHierarchicalFilterTest extends TestCase
         $this->expectExceptionMessage( 'The filter key "seller" at "offers[*]" is not an object : write it "offers[*].seller".' ) ;
 
         $model->prepareFilter( [ 'key' => 'offers[*].seller.id' , 'val' => 'org-42' ] , $this->binds ) ;
+    }
+
+    // ------------------------------------------- a filter reads the relation as the projection does
+
+    /**
+     * A join model on « tracks », filterable by name, under the given join definition.
+     *
+     * @param string              $field      The join field.
+     * @param string              $type       Filter::JOIN or Filter::JOINS.
+     * @param array<string,mixed> $definition Extra keys of the join definition.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    private function albumsJoining( string $field , string $type , array $definition = [] ) :Documents
+    {
+        $this->container->set( 'TrackModel' , new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'tracks' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'name' => FilterType::STRING ] ,
+        ])) ;
+
+        return new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'albums' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ $field => [ AQL::TYPE => $type , AQL::FILTERS => [ 'name' => FilterType::STRING ] ] ] ,
+            AQL::JOINS      => [ $field => [ AQL::MODEL => 'TrackModel' , AQL::KEY => '_key' , ...$definition ] ] ,
+        ]) ;
+    }
+
+    /**
+     * 🚨 R1 — a list join matches when the key is IN the list : `==` compared a key with
+     * a list, which is never true.
+     *
+     * @throws Throwable
+     */
+    public function testAListJoinMatchesAKeyInTheList() :void
+    {
+        $result = $this->albumsJoining( 'tracks' , Filter::JOINS )->prepareFilter( [ 'key' => 'tracks[*].name' , 'val' => 'Intro' ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/\._key IN \(IS_ARRAY\(doc\.tracks\) \? doc\.tracks : \[\]\)/' , $result ) ;
+        $this->assertStringNotContainsString( '== doc.tracks' , $result ) ;
+    }
+
+    /**
+     * R1 — a list of objects, on its expanded key.
+     *
+     * @throws Throwable
+     */
+    public function testAListOfObjectsMatchesOnItsExpandedKey() :void
+    {
+        $result = $this->albumsJoining( 'refs' , Filter::JOINS , [ Arango::PROPERTY => '[*]._key' ] )->prepareFilter( [ 'key' => 'refs[*].name' , 'val' => 'Intro' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '._key IN (IS_ARRAY(doc.refs[*]._key) ? doc.refs[*]._key : [])' , $result ) ;
+    }
+
+    /**
+     * 🚨 R2 — the conditions of the join hold inside the filter, beside the key.
+     *
+     * @throws Throwable
+     */
+    public function testTheJoinConditionsHoldInsideTheFilter() :void
+    {
+        $result = $this->albumsJoining( 'track' , Filter::JOIN , [ Arango::CONDITIONS => fn( string $join ) => [ $join . '.kind == "audio"' ] ] )
+                       ->prepareFilter( [ 'key' => 'track.name' , 'val' => 'Intro' ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/(join_\w+)\._key == doc\.track && \1\.kind == "audio" && \1\.name == @/' , $result ) ;
+    }
+
+    /**
+     * R2 — under `all`, the conditions stay POSITIVE : only the leaf is negated.
+     *
+     * @throws Throwable
+     */
+    public function testTheJoinConditionsStayPositiveUnderAll() :void
+    {
+        $result = $this->albumsJoining( 'tracks' , Filter::JOINS , [ Arango::CONDITIONS => fn( string $join ) => [ $join . '.kind == "audio"' ] ] )
+                       ->prepareFilter( [ 'key' => 'tracks[*].name' , 'val' => 'Intro' , 'quant' => 'all' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '.kind == "audio" && !(' , $result ) ;
+    }
+
+    /**
+     * 🚨 R3 — Arango::SOURCE anchors the key the filter compares.
+     *
+     * @throws Throwable
+     */
+    public function testTheJoinSourceAnchorsTheFilter() :void
+    {
+        $result = $this->albumsJoining( 'track' , Filter::JOIN , [ Arango::SOURCE => 'selector.trackId' ] )->prepareFilter( [ 'key' => 'track.name' , 'val' => 'Intro' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '._key == doc.selector.trackId' , $result ) ;
+    }
+
+    /**
+     * R3 — Arango::PROPERTY is appended to the anchor, on a single join.
+     *
+     * @throws Throwable
+     */
+    public function testTheJoinPropertyIsAppendedOnASingleJoin() :void
+    {
+        $result = $this->albumsJoining( 'track' , Filter::JOIN , [ Arango::PROPERTY => 'ref' ] )->prepareFilter( [ 'key' => 'track.name' , 'val' => 'Intro' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '._key == doc.track.ref' , $result ) ;
+    }
+
+    /**
+     * An edge on « employees », filterable by name, under the given edge definition.
+     *
+     * @param array<string,mixed> $definition Extra keys of the edge definition.
+     *
+     * @throws ContainerExceptionInterface
+     * @throws DependencyException
+     * @throws NotFoundException
+     * @throws NotFoundExceptionInterface
+     * @throws ReflectionException
+     */
+    private function companiesThrough( array $definition ) :Documents
+    {
+        $this->container->set( 'EmployeeEdge' , new MockEdges( 'employee_edges' ) ) ;
+
+        return new Documents( $this->container ,
+        [
+            AQL::COLLECTION => 'companies' ,
+            AQL::LAZY       => false ,
+            AQL::FILTERS    => [ 'employee' => [ AQL::TYPE => Filter::EDGES , AQL::FILTERS => [ 'name' => FilterType::STRING ] ] ] ,
+            AQL::EDGES      => [ 'employee' => [ AQL::MODEL => 'EmployeeEdge' , AQL::DIRECTION => Traversal::OUTBOUND , ...$definition ] ] ,
+        ]) ;
+    }
+
+    /**
+     * 🚨 R4 — the row scope of an edge (AQL::WHERE) holds inside the filter.
+     *
+     * @throws Throwable
+     */
+    public function testTheEdgeScopeHoldsInsideTheFilter() :void
+    {
+        $result = $this->companiesThrough( [ AQL::WHERE => [ 'active' , 'eq' , true ] ] )->prepareFilter( [ 'key' => 'employee[*].name' , 'val' => 'Bob' ] , $this->binds ) ;
+
+        $this->assertMatchesRegularExpression( '/FILTER (v_\w+)\.active == true && \1\.name == @/' , $result ) ;
+    }
+
+    /**
+     * R4 — under `all`, the scope stays POSITIVE : only the leaf is negated.
+     *
+     * @throws Throwable
+     */
+    public function testTheEdgeScopeStaysPositiveUnderAll() :void
+    {
+        $result = $this->companiesThrough( [ AQL::WHERE => [ 'active' , 'eq' , true ] ] )->prepareFilter( [ 'key' => 'employee[*].name' , 'val' => 'Bob' , 'quant' => 'all' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( '.active == true && !(' , $result ) ;
+    }
+
+    /**
+     * R4 — AQL::PRUNE stops the walk of the filter, as it stops the projection's.
+     *
+     * @throws Throwable
+     */
+    public function testTheEdgePruneHoldsInsideTheFilter() :void
+    {
+        $result = $this->companiesThrough( [ AQL::MAX_DEPTH => 3 , AQL::WHERE => [ 'active' , 'eq' , true ] , AQL::PRUNE => true ] )->prepareFilter( [ 'key' => 'employee[*].name' , 'val' => 'Bob' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( ' PRUNE ' , $result ) ;
+    }
+
+    /**
+     * 🚨 R6 — the filter walks the depth the projection walks.
+     *
+     * @throws Throwable
+     */
+    public function testTheEdgeDepthHoldsInsideTheFilter() :void
+    {
+        $result = $this->companiesThrough( [ AQL::MIN_DEPTH => 1 , AQL::MAX_DEPTH => 3 ] )->prepareFilter( [ 'key' => 'employee[*].name' , 'val' => 'Bob' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'IN @minDepth..@maxDepth OUTBOUND' , $result ) ;
+        $this->assertSame( 1 , $this->binds[ 'minDepth' ] ) ;
+        $this->assertSame( 3 , $this->binds[ 'maxDepth' ] ) ;
+    }
+
+    /**
+     * The filter starts where the projection starts : Arango::SOURCE.
+     *
+     * @throws Throwable
+     */
+    public function testTheEdgeSourceMovesTheStartOfTheFilter() :void
+    {
+        $result = $this->companiesThrough( [ Arango::SOURCE => 'selector.companyRef' ] )->prepareFilter( [ 'key' => 'employee[*].name' , 'val' => 'Bob' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'OUTBOUND doc.selector.companyRef' , $result ) ;
+    }
+
+    /**
+     * And it walks with the projection's traversal options.
+     *
+     * @throws Throwable
+     */
+    public function testTheEdgeFilterWalksWithTheProjectionOptions() :void
+    {
+        $result = $this->companiesThrough( [] )->prepareFilter( [ 'key' => 'employee[*].name' , 'val' => 'Bob' ] , $this->binds ) ;
+
+        $this->assertStringContainsString( 'OPTIONS {"order":"bfs","uniqueVertices":"global"}' , $result ) ;
     }
 }

@@ -481,6 +481,12 @@ Useful options on the join definition: `Arango::KEY` (join attribute, default `_
 
 > Natural combination with [embedded array fields](db/arrays.md): a `tracks` field (an array of ids mutated element-by-element via `ArrayPropertyController`) can **at the same time** be projected as sorted joined documents in the `GET` via `Filter::JOINS` — no duplication.
 
+> ⚠️ **`Filter::JOINS_COUNT` counts the STORED list, not the documents served.** It follows no join: it returns
+> `LENGTH( doc.<field> )`, the number of references the document carries. Beside a `Filter::JOINS`, the two numbers can
+> therefore differ: a reference whose document the target does not hold, or a document `Arango::CONDITIONS` masks, is
+> counted but not served. With `Field::ELSE` on the join, every reference stays in the served list and the two agree.
+> To count the documents served, count the list received.
+
 > **When the target does not hold the document**, the key of a `Filter::JOIN` vanishes from the answer. `Field::ELSE => true` on the field serves the stored reference — the bare code — in its place: see [Keeping the reference when a join resolves nothing](db/conditional-fields.md#keeping-the-reference-when-a-join-resolves-nothing--fieldelse-on-a-filterjoin). On a `Filter::JOINS`, it is an **element** of the list that drops out; `Field::ELSE` keeps each element in its place: see [A list that keeps what it cannot resolve](db/conditional-fields.md#a-list-that-keeps-what-it-cannot-resolve--fieldelse-on-a-filterjoins).
 
 ### Restricting the joined documents — `Arango::CONDITIONS`

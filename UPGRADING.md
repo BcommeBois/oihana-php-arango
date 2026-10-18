@@ -9,7 +9,29 @@ the CHANGELOG entries.
 
 ## [Unreleased]
 
-Nothing yet.
+### ⚠️ Behaviour changes
+
+#### 1. A filter through a relation may answer differently
+
+A filter through a join or an edge now reads the relation as the projection reads it (see the
+CHANGELOG). Nothing to change in a declaration ; but a request may return other documents than
+before :
+
+- **more**, through a list join (`Filter::JOINS`) : it found nothing before ;
+- **fewer**, through a join declaring `Arango::CONDITIONS`, an edge declaring `AQL::WHERE` or
+  `AQL::PRUNE` : the documents they mask no longer retain their parent ;
+- **other ones**, through a relation declaring `Arango::SOURCE` or `Arango::PROPERTY`, or an edge
+  declaring a depth : the filter now compares the anchored value, and walks the declared depth.
+
+A vertex reached by two edges is counted once under `quant: atleast`. A test that asserted the old
+answer asserted the defect : read the new one against the projection of the same relation.
+
+#### 2. A second traversal depth may draw its own bind name
+
+`aqlTraversalRange()` keeps `@minDepth` / `@maxDepth` while they are free or bound to the same depth.
+A second traversal with another depth, in the same binds, now draws `@minDepth_<n>` instead of raising
+a `BindException`. Code that read the depth back from `$binds[ 'minDepth' ]` after building two such
+traversals should read the name the AQL carries.
 
 ## 1.9.0 → 1.10.0 - 2026-10-17
 

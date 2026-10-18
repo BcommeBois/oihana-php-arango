@@ -730,7 +730,7 @@ AQL::JOINS =>
 // LENGTH(FOR j IN companies FILTER j._key == doc.company && j.name == @v LIMIT 1 RETURN 1) > 0
 ```
 
-- `AQL::KEY` (default `_key`) = the field compared **in the target collection**; `doc.company` (= the segment name) = the field holding the reference **on the root document**.
+- `AQL::KEY` (default `_key`) = the field compared **in the target collection**; `doc.company` (= the segment name, or `Arango::SOURCE` when declared, followed by `Arango::PROPERTY`) = the field holding the reference **on the root document** — see [The filter reads the relation as the projection reads it](#the-filter-reads-the-relation-as-the-projection-reads-it).
 - `AQL::MODEL` is **required**: a missing model throws a `RuntimeException` (a configuration error, not a client input).
 - **N references** variant: `Filter::JOINS` + the `[*]` notation (see cardinality below).
 
@@ -763,6 +763,40 @@ AQL::EDGES =>
 
 - `AQL::DIRECTION` (default `Traversal::OUTBOUND`) picks the direction; `Traversal::INBOUND` traverses toward the source vertex (`from`) instead of the target vertex (`to`).
 - The condition applies to the traversed **vertex** (`v.salary`), not to the edge.
+
+### The filter reads the relation as the projection reads it
+
+🚨 **A filter through a relation reads that relation's definition again**, through the same functions as the
+projection and the count. Otherwise it retains a document by a related one the answer does not show — or retains
+nothing, without an error.
+
+| Declared on the relation | What the filter does with it |
+|---|---|
+| `Filter::JOINS` (a list of keys) | the key of the related document is looked up **in** the list: `j._key IN doc.tracks` |
+| `Arango::PROPERTY` | appended to the field, as in the projection; on a **list of objects**, `'[*]._key'` compares `doc.refs[*]._key` |
+| `Arango::SOURCE` | anchors the key (join) or the start of the walk (edge): `doc.selector.trackId` |
+| `Arango::CONDITIONS` (join) | joins the key match: a masked document does not retain its parent |
+| `AQL::WHERE` / `AQL::PRUNE` (edge) | the projection's scope: a vertex out of the scope does not retain its parent, and the walk stops where the projection's stops |
+| `AQL::MIN_DEPTH` / `AQL::MAX_DEPTH` (edge) | the filter goes as deep as the projection |
+
+```jsonc
+// tracks: Filter::JOINS, CONDITIONS kind == "audio"
+{"key":"tracks[*].name","val":"Intro"}
+// LENGTH(FOR j IN tracks FILTER j._key IN doc.tracks && j.kind == "audio" && j.name == @v LIMIT 1 RETURN 1) > 0
+
+// employee: Filter::EDGES, MAX_DEPTH 3, WHERE active == true
+{"key":"employee[*].name","val":"Leo"}
+// LENGTH(FOR v IN 1..3 OUTBOUND doc employs OPTIONS {…} FILTER v.active == true && v.name == @v LIMIT 1 RETURN 1) > 0
+```
+
+- 🔑 **The scope stays positive under every quantifier.** `CONDITIONS` and `AQL::WHERE` say which related documents
+  the relation **holds**; only the condition of the request is negated under `quant: all` ("every related document
+  **in the scope** satisfies the condition").
+- **Two ranged edges in one filter** keep their own depths: the second depth draws a bind name of its own
+  (`@maxDepth_123456`).
+- ⚠️ **The walk takes the projection's options** (`order: bfs`, `uniqueVertices: global`): a vertex reached by two
+  edges is counted once, as the projection shows it once — which matters under `quant: atleast`.
+- **Out of the filter**: a polymorphic join (`Arango::MAP`) is not traversed by a filter.
 
 ### Cardinality & the `[*]` notation
 

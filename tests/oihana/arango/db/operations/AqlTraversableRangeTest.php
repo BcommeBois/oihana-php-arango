@@ -169,4 +169,39 @@ class AqlTraversableRangeTest extends TestCase
         ];
         $this->assertSame($expectedBinds, $binds);
     }
+
+    /**
+     * 🔑 Two traversals of one query with different depths : the second draws names of
+     * its own instead of refusing the first ones.
+     *
+     * @throws BindException
+     */
+    public function testASecondRangeWithOtherDepthsDrawsItsOwnNames(): void
+    {
+        $binds  = [] ;
+        $first  = aqlTraversalRange( 1 , 3 , $binds ) ;
+        $second = aqlTraversalRange( 1 , 5 , $binds ) ;
+
+        $this->assertSame( '@minDepth..@maxDepth' , $first ) ;
+        $this->assertMatchesRegularExpression( '/^@minDepth\.\.@maxDepth_\d+$/' , $second ) ;
+        $this->assertSame( 1 , $binds[ 'minDepth' ] ) ;
+        $this->assertSame( 3 , $binds[ 'maxDepth' ] ) ;
+        $this->assertContains( 5 , $binds ) ;
+        $this->assertCount( 3 , $binds ) ;
+    }
+
+    /**
+     * The same depth again reuses the fixed name : nothing changes for one traversal,
+     * nor for two that agree.
+     *
+     * @throws BindException
+     */
+    public function testTheSameDepthsReuseTheFixedNames(): void
+    {
+        $binds = [] ;
+        aqlTraversalRange( 2 , 4 , $binds ) ;
+
+        $this->assertSame( '@minDepth..@maxDepth' , aqlTraversalRange( 2 , 4 , $binds ) ) ;
+        $this->assertSame( [ 'minDepth' => 2 , 'maxDepth' => 4 ] , $binds ) ;
+    }
 }

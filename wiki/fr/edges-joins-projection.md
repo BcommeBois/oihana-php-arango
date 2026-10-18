@@ -481,6 +481,12 @@ Options utiles sur la définition de join : `Arango::KEY` (attribut de jointure,
 
 > Combinaison naturelle avec les [champs-tableaux embarqués](db/arrays.md) : un champ `tracks` (tableau d'ids muté élément par élément via `ArrayPropertyController`) peut **en même temps** être projeté en documents joints triés dans le `GET` via `Filter::JOINS` — aucune duplication.
 
+> ⚠️ **`Filter::JOINS_COUNT` compte la liste STOCKÉE, pas les documents servis.** Il ne suit aucune jointure : il rend
+> `LENGTH( doc.<champ> )`, le nombre de références que le document porte. À côté d'un `Filter::JOINS`, les deux nombres
+> peuvent donc différer : une référence dont la cible ne tient pas le document, ou un document qu'`Arango::CONDITIONS`
+> masque, est comptée mais pas servie. Avec `Field::ELSE` sur la jointure, chaque référence reste dans la liste servie
+> et les deux s'accordent. Pour compter les documents servis, compter la liste reçue.
+
 > **Quand la cible ne tient pas le document**, la clé d'un `Filter::JOIN` disparaît de la réponse. `Field::ELSE => true` sur le champ sert alors la référence stockée — le code nu — à sa place : voir [Garder la référence quand une jointure ne résout rien](db/conditional-fields.md#garder-la-référence-quand-une-jointure-ne-résout-rien--fieldelse-sur-un-filterjoin). Sur un `Filter::JOINS`, c'est un **élément** de la liste qui disparaît ; `Field::ELSE` y garde chaque élément à sa place : voir [Une liste qui garde ce qu'elle ne résout pas](db/conditional-fields.md#une-liste-qui-garde-ce-quelle-ne-résout-pas--fieldelse-sur-un-filterjoins).
 
 ### Restreindre les documents joints — `Arango::CONDITIONS`

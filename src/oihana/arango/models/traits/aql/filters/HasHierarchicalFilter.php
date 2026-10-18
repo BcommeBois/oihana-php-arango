@@ -17,6 +17,7 @@ use oihana\arango\models\enums\filters\FilterType;
 use oihana\arango\models\utils\FilterPath;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\Comparator;
+use oihana\arango\enums\Arango;
 use oihana\arango\enums\Filter;
 use oihana\arango\models\enums\filters\FilterParam;
 use oihana\arango\models\Edges;
@@ -33,8 +34,12 @@ use Psr\Log\LoggerAwareTrait;
 
 use function oihana\arango\db\binds\aqlBindCollection;
 use function oihana\arango\db\functions\arrays\flatten;
+use function oihana\arango\db\functions\isArray;
 use function oihana\arango\db\functions\length;
+use function oihana\arango\db\operators\in;
 use function oihana\arango\db\operators\logicalNot;
+use function oihana\arango\db\operators\ternary;
+use function oihana\arango\db\helpers\aqlArray;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
 use function oihana\arango\db\operations\aqlLimit;
@@ -42,10 +47,15 @@ use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operations\aqlTraversal;
 use function oihana\arango\db\helpers\requestAlt;
 use function oihana\arango\db\helpers\resolveTraversalQuantifier;
+use function oihana\arango\models\helpers\edges\edgeTraversalOptions;
 use function oihana\arango\models\helpers\edges\getEdges;
+use function oihana\arango\models\helpers\edges\resolveEdgeDepthRange;
 use function oihana\arango\models\helpers\edges\resolveEdgeDirection;
 use function oihana\arango\models\helpers\edges\resolveEdgeTarget;
+use function oihana\arango\models\helpers\edges\resolveEdgeVertexScope;
 use function oihana\arango\models\helpers\extractNestedRelations;
+use function oihana\arango\models\helpers\joins\joinKeyPaths;
+use function oihana\arango\models\helpers\joins\resolveJoinConditions;
 use function oihana\arango\models\helpers\isAuthorized;
 use function oihana\arango\models\helpers\isPathAuthorized;
 use function oihana\arango\models\helpers\unknownFilterKey;
@@ -784,8 +794,25 @@ trait HasHierarchicalFilter
             $innerCondition = logicalNot( $innerCondition , true ) ;
         }
 
-        $filter = $innerCondition !== null ? aqlFilter( [ $innerCondition ] ) : '' ;
-        $limit  = $quantifier->useLimit    ? aqlLimit ( limit : 1 )           : '' ;
+        // 🚨 The traversal walks the relation the PROJECTION walks : the same depth
+        // (AQL::MIN_DEPTH / AQL::MAX_DEPTH), the same row scope (AQL::WHERE keeps the
+        // vertices the relation yields, AQL::PRUNE stops the walk), the same start
+        // (Arango::SOURCE) and the same traversal options — read through the helpers
+        // the projection and the count read. A filter that walked one level, or ignored
+        // the scope, retained a document by a vertex the response does not show.
+        //
+        // The scope is POSITIVE whatever the quantifier : it says which vertices the
+        // relation holds ; only the leaf is negated under `all`.
+        [ $minDepth , $maxDepth ] = resolveEdgeDepthRange ( $edgeConfig ) ;
+        [ $where    , $prune    ] = resolveEdgeVertexScope( $edgeConfig , $vertexID ) ;
+
+        $source = $edgeConfig[ Arango::SOURCE ] ?? null ;
+        $start  = $source !== null ? key( $source , $docRef ) : $docRef ;
+
+        $predicates = array_values( array_filter( [ $where , $innerCondition ] , fn( ?string $condition ) => $condition !== null ) ) ;
+
+        $filter = $predicates !== []    ? aqlFilter( $predicates )  : '' ;
+        $limit  = $quantifier->useLimit ? aqlLimit ( limit : 1 )    : '' ;
 
         return betweenParentheses( predicate
         (
@@ -797,7 +824,11 @@ trait HasHierarchicalFilter
                         AQL::VERTEX_REF      => $vertexID,
                         AQL::EDGE_COLLECTION => $edgeCollection,
                         AQL::DIRECTION       => $direction,
-                        AQL::START_VERTEX    => $docRef
+                        AQL::START_VERTEX    => $start ,
+                        AQL::MIN_DEPTH       => $minDepth ,
+                        AQL::MAX_DEPTH       => $maxDepth ,
+                        AQL::PRUNE           => $prune ,
+                        AQL::OPTIONS         => edgeTraversalOptions() ,
                     ] ,
                     $binds
                 ),
@@ -891,7 +922,19 @@ trait HasHierarchicalFilter
 
         $joinDocRef = uniqid('join_' ) ;
         $currentKey = end( $segmentInfo->path ) ;
-        $sourceKey  = key( $currentKey , $docRef ) ;
+
+        // 🚨 The key is read where the PROJECTION reads it : Arango::SOURCE anchors it,
+        // Arango::PROPERTY is appended (an expansion `[*]` glued to its list), exactly
+        // as buildJoinSubquery() does. A filter that read `doc.<field>` compared the
+        // wrong value the moment either was declared.
+        // The segment of a list join is written with its expansion (`tracks[*]`) : the
+        // field it names is the part before it.
+        $field   = str_ends_with( $currentKey , Operator::ARRAY_EXPANSION ) ? substr( $currentKey , 0 , -strlen( Operator::ARRAY_EXPANSION ) ) : $currentKey ;
+        $anchor  = key( $joinConfig[ Arango::SOURCE ] ?? $field , $docRef ) ;
+        $isList  = $segmentInfo->type === Filter::JOINS ;
+        $keyPath = $isList
+                 ? joinKeyPaths( $anchor , $joinConfig[ AQL::PROPERTY ] ?? null )[ 0 ]
+                 : ( isset( $joinConfig[ AQL::PROPERTY ] ) ? key( $joinConfig[ AQL::PROPERTY ] , $anchor ) : $anchor ) ;
 
         // Get the target model to extract its edges/joins for next level
         $nextLevel = extractNestedRelations
@@ -958,8 +1001,22 @@ trait HasHierarchicalFilter
             $innerCondition = logicalNot( $innerCondition , true ) ;
         }
 
-        $keyCondition = predicate( key( $joinKey , $joinDocRef ) , Comparator::EQUAL , $sourceKey ) ;
-        $conditions   = $innerCondition !== null ? [ $keyCondition , $innerCondition ] : [ $keyCondition ] ;
+        // 🚨 A LIST join holds several keys : the joined document matches when its key
+        // is IN the list. `==` compared a key with a list, which is never true — the
+        // filter found nothing, without an error.
+        $keyCondition = $isList
+                      ? in( key( $joinKey , $joinDocRef ) , betweenParentheses( ternary( isArray( $keyPath ) , $keyPath , aqlArray() ) ) )
+                      : predicate( key( $joinKey , $joinDocRef ) , Comparator::EQUAL , $keyPath ) ;
+
+        // 🚨 And the documents the definition masks stay masked : its Arango::CONDITIONS
+        // join the key match, POSITIVE whatever the quantifier — like the key itself,
+        // they say which documents the relation holds, not what the leaf asks of them.
+        $conditions = [ $keyCondition , ...resolveJoinConditions( $joinConfig , $joinDocRef , $docRef , $init ) ] ;
+
+        if ( $innerCondition !== null )
+        {
+            $conditions[] = $innerCondition ;
+        }
         $limit        = $quantifier->useLimit ? aqlLimit( limit : 1 ) : '' ;
 
         return betweenParentheses( predicate

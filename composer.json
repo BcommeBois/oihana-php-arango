@@ -476,6 +476,7 @@
             "src/oihana/arango/models/helpers/joins/buildJoinVariables.php",
             "src/oihana/arango/models/helpers/joins/buildPolymorphicJoinVariable.php",
             "src/oihana/arango/models/helpers/joins/joinKeyPaths.php",
+            "src/oihana/arango/models/helpers/joins/resolveJoinConditions.php",
             "src/oihana/arango/models/helpers/joins/sortJoinVariable.php",
             "src/oihana/arango/models/helpers/normalizeSortable.php",
             "src/oihana/arango/models/helpers/parseFilterSegment.php",

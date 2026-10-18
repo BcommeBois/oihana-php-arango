@@ -730,7 +730,7 @@ AQL::JOINS =>
 // LENGTH(FOR j IN companies FILTER j._key == doc.company && j.name == @v LIMIT 1 RETURN 1) > 0
 ```
 
-- `AQL::KEY` (défaut `_key`) = le champ comparé **dans la collection cible** ; `doc.company` (= le nom du segment) = le champ portant la référence **sur le document racine**.
+- `AQL::KEY` (défaut `_key`) = le champ comparé **dans la collection cible** ; `doc.company` (= le nom du segment, ou `Arango::SOURCE` s'il est déclaré, suivi de `Arango::PROPERTY`) = le champ portant la référence **sur le document racine** — voir [Le filtre lit la relation comme la projection la lit](#le-filtre-lit-la-relation-comme-la-projection-la-lit).
 - `AQL::MODEL` est **obligatoire** : son absence lève une `RuntimeException` (erreur de configuration, pas une entrée client).
 - Variante **N références** : `Filter::JOINS` + notation `[*]` (voir la cardinalité ci-dessous).
 
@@ -763,6 +763,41 @@ AQL::EDGES =>
 
 - `AQL::DIRECTION` (défaut `Traversal::OUTBOUND`) choisit le sens ; `Traversal::INBOUND` traverse vers le sommet d'origine (`from`) au lieu du sommet d'arrivée (`to`).
 - La condition s'applique au **vertex** traversé (`v.salary`), pas à l'arête.
+
+### Le filtre lit la relation comme la projection la lit
+
+🚨 **Un filtre à travers une relation relit la définition de cette relation**, par les mêmes fonctions que la
+projection et le compte. Sinon il retient un document par un lié que la réponse ne montre pas — ou ne retient
+rien, sans erreur.
+
+| Déclaré sur la relation | Ce que le filtre en fait |
+|---|---|
+| `Filter::JOINS` (une liste de clés) | la clé du lié est cherchée **dans** la liste : `j._key IN doc.tracks` |
+| `Arango::PROPERTY` | ajouté au champ, comme dans la projection ; sur une **liste d'objets**, `'[*]._key'` compare `doc.refs[*]._key` |
+| `Arango::SOURCE` | ancre la clé (join) ou le départ du parcours (edge) : `doc.selector.trackId` |
+| `Arango::CONDITIONS` (join) | rejoint la comparaison de la clé : un document masqué ne fait pas retenir son parent |
+| `AQL::WHERE` / `AQL::PRUNE` (edge) | la portée de la projection : un sommet hors portée ne fait pas retenir son parent, et le parcours s'arrête où celui de la projection s'arrête |
+| `AQL::MIN_DEPTH` / `AQL::MAX_DEPTH` (edge) | le filtre descend aussi loin que la projection |
+
+```jsonc
+// tracks : Filter::JOINS, CONDITIONS kind == "audio"
+{"key":"tracks[*].name","val":"Intro"}
+// LENGTH(FOR j IN tracks FILTER j._key IN doc.tracks && j.kind == "audio" && j.name == @v LIMIT 1 RETURN 1) > 0
+
+// employee : Filter::EDGES, MAX_DEPTH 3, WHERE active == true
+{"key":"employee[*].name","val":"Leo"}
+// LENGTH(FOR v IN 1..3 OUTBOUND doc employs OPTIONS {…} FILTER v.active == true && v.name == @v LIMIT 1 RETURN 1) > 0
+```
+
+- 🔑 **La portée reste positive sous tout quantificateur.** `CONDITIONS` et `AQL::WHERE` disent quels liés la
+  relation **contient** ; seule la condition de la requête est niée sous `quant: all` (« tous les liés **de la
+  portée** satisfont la condition »).
+- **Deux arêtes à profondeur dans un même filtre** gardent chacune la leur : la seconde profondeur prend un nom de
+  valeur liée à elle (`@maxDepth_123456`).
+- ⚠️ **Le parcours prend les options de la projection** (`order: bfs`, `uniqueVertices: global`) : un sommet atteint
+  par deux arêtes n'est compté qu'une fois, comme la projection ne le montre qu'une fois — ce qui compte sous
+  `quant: atleast`.
+- **Hors du filtre** : une jointure polymorphe (`Arango::MAP`) ne se traverse pas par un filtre.
 
 ### Cardinalité & notation `[*]`
 

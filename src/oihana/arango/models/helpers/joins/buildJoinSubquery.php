@@ -218,34 +218,7 @@ function buildJoinSubquery
 
     $for = aqlFor([ AQL::DOC_REF => $docJoin , AQL::IN => $collection ]);
 
-    $conditions = [] ;
-
-    if ( isset( $definition[ AQL::CONDITIONS ] ) )
-    {
-        $cond = $definition[ AQL::CONDITIONS ] ;
-        if ( is_callable( $cond ) )
-        {
-            // The three arguments are ALWAYS passed, and a declaration takes only what it needs:
-            // PHP discards the surplus handed to a userland callable, so `fn( $join )`, `fn( $join , $parent )` and `fn( $join , $parent , $init )`
-            // all work unchanged. This used to be decided by counting the declared parameters — `=== 2 ? [ $docJoin , $docRef ] : [ $docJoin ]` —
-            // which meant any arity other than exactly two received a single argument, so a closure asking for the request context raised ArgumentCountError
-            // instead of getting it. Dropping the reflection also lets an object method or an invokable serve as the condition:
-            // ReflectionFunction accepted only a Closure or a function name.
-            $conditions = $cond( $docJoin , $docRef , $init ) ;
-        }
-        else
-        {
-            $conditions = $cond ;
-        }
-
-        if ( !is_array( $conditions ) )
-        {
-            throw new UnexpectedValueException
-            (
-                __FUNCTION__ . ' expected $conditions to be an array, ' . gettype( $conditions ) . ' given'
-            ) ;
-        }
-    }
+    $conditions = resolveJoinConditions( $definition , $docJoin , $docRef , $init ) ;
 
     // The discriminator guard (and any other injected predicate) sits right
     // after the key match, before the definition-level CONDITIONS.
