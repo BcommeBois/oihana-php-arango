@@ -12,15 +12,22 @@ use Psr\Container\NotFoundExceptionInterface;
 
 use oihana\arango\db\enums\AQL;
 use oihana\arango\models\Documents;
+use oihana\exceptions\UnsupportedOperationException;
 
 use org\schema\constants\Schema;
 
+use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\isArray;
+use function oihana\arango\db\functions\notNull;
 use function oihana\arango\db\helpers\aqlArray;
 use function oihana\arango\db\helpers\aqlFields;
+use function oihana\arango\db\helpers\aqlSafeArray;
+use function oihana\arango\db\helpers\fields\resolveWhenElse;
 use function oihana\arango\db\helpers\resolveSkinFields;
 use function oihana\arango\db\operations\aqlFilter;
 use function oihana\arango\db\operations\aqlFor;
+use function oihana\arango\db\operations\aqlLet;
+use function oihana\arango\db\operations\aqlLimit;
 use function oihana\arango\db\operations\aqlReturn;
 use function oihana\arango\db\operators\equal;
 use function oihana\arango\db\operators\in;
@@ -52,6 +59,22 @@ use function oihana\core\strings\randomKey;
  * joins, definition-level gating) per branch. The only addition over the
  * historical logic is `$extraConditions`, a list of ready-made AQL predicates
  * (typically the discriminator guard) prepended to the branch filter.
+ *
+ * ### A list join that keeps what it cannot resolve — `Field::ELSE`
+ *
+ * A list join returns the documents it FINDS, in place of the stored list : a reference
+ * whose document the target does not hold drops out of the answer. With a `Field::ELSE`
+ * on the field, the list is walked element by element instead, and keeps its stored order :
+ *
+ * ```
+ * FOR item IN ( IS_ARRAY( doc.refs ) ? doc.refs : [] )
+ *     LET doc_join_hit = FIRST( ( FOR doc_join IN @@collection FILTER doc_join._key == item._key LIMIT 1 RETURN { … } ) )
+ *     RETURN NOT_NULL( doc_join_hit , item )
+ * ```
+ *
+ * Each element is looked up by equality — the primary index when the key is `_key`.
+ * The key of an element is the part of `Arango::PROPERTY` after its expansion
+ * (`'[*]._key'` → `item._key`) ; with no expansion the elements are the keys.
  *
  * ### `Arango::CONDITIONS` — restricting which joined documents are kept
  *
@@ -102,6 +125,13 @@ use function oihana\core\strings\randomKey;
  *                                            `$name` lets `Arango::SOURCE` anchor the key elsewhere and
  *                                            keeps nested-variable prefixes free of the (possibly dotted)
  *                                            key path. A polymorphic branch passes the shared key path here.
+ * @param mixed                  $else      The `Field::ELSE` of a LIST join (`$isArray`), or null. When set, the
+ *                                            list is resolved ELEMENT BY ELEMENT, in its stored order : each element
+ *                                            becomes its joined document, or — when the target holds none — what
+ *                                            `$else` says, read on the element (`true` : the element as stored ;
+ *                                            `[ Field::PROPERTY => 'id' ]` : one of its attributes ; anything else : a
+ *                                            literal). Ignored on a single join, whose fallback is projected by
+ *                                            {@see aqlFields()}. Refused with an `Arango::SORT` (see below).
  *
  * @return string The compiled join sub-query body (no `LET`, no enclosing parentheses).
  *
@@ -111,6 +141,8 @@ use function oihana\core\strings\randomKey;
  * @throws ReflectionException         If a nested projection or relation fails reflection.
  * @throws UnexpectedValueException    If $name is empty, the model is invalid, collection not set,
  *                                     or CONDITIONS does not return an array.
+ * @throws UnsupportedOperationException If a list join resolved element by element declares a sort, or if its
+ *                                       property expands more than one list.
  */
 function buildJoinSubquery
 (
@@ -122,6 +154,7 @@ function buildJoinSubquery
     bool                $isArray         = false ,
     array               $extraConditions = [] ,
     ?string             $keyPath         = null ,
+    mixed               $else            = null ,
 )
 : string
 {
@@ -154,17 +187,33 @@ function buildJoinSubquery
     $subVariables = [] ;
 
     $docJoin = randomKey( AQL::DOC_JOIN ) ;
+    $itemRef = randomKey( AQL::ITEM ) ;
 
     // The key path (racine of the match) is decoupled from $name: $name still
     // prefixes the nested-relation variable names below (prepareQueryFields),
     // while $keyPath — when supplied by Arango::SOURCE or a polymorphic branch —
     // anchors the match elsewhere in the document. Null keeps the historical
     // "output name = key path" behaviour (doc.<name>).
-    $docKey  = key( $keyPath ?? $name , $docRef ) ;
+    $anchor = key( $keyPath ?? $name , $docRef ) ;
 
-    if ( $property !== null )
+    // A list join reads its keys through joinKeyPaths() : an expansion in the property
+    // (`'[*]._key'`) splits the list from the key each element carries. A single join
+    // appends the property as it always did.
+    [ $docKey , $listPath , $itemKey ] = $isArray
+                                       ? joinKeyPaths( $anchor , $property )
+                                       : [ $property === null ? $anchor : key( $property , $anchor ) , null , null ] ;
+
+    $perElement = $isArray && $else !== null ;
+
+    // 🚨 A list resolved element by element keeps the order it is STORED in : a sort
+    // over a mix of joined documents and of references left as stored has no safe
+    // meaning — the references do not carry the attributes the sort reads.
+    if ( $perElement && isset( $definition[ AQL::SORT ] ) )
     {
-        $docKey = key( $property , $docKey ) ;
+        throw new UnsupportedOperationException
+        (
+            __FUNCTION__ . " failed, the join '" . $name . "' declares both a sort and a Field::ELSE : a list that keeps what it cannot resolve keeps its stored order."
+        ) ;
     }
 
     $for = aqlFor([ AQL::DOC_REF => $docJoin , AQL::IN => $collection ]);
@@ -202,7 +251,19 @@ function buildJoinSubquery
     // after the key match, before the definition-level CONDITIONS.
     $conditions = [ ...$extraConditions , ...$conditions ] ;
 
-    if( $isArray )
+    if( $perElement )
+    {
+        // FOR doc_join IN @@collection
+        // FILTER doc_join._key == item._key
+        // LIMIT 1
+        // RETURN doc_join
+        $filter = aqlFilter
+        ([
+            equal( key( $key , $docJoin ) , $itemKey === null ? $itemRef : key( $itemKey , $itemRef ) ) ,
+            ...$conditions
+        ]) ;
+    }
+    else if( $isArray )
     {
         // FOR doc_join IN @@collection
         // FILTER doc_join._key IN ( IS_ARRAY( doc_ref.name ) ? doc_ref.name : [] )
@@ -259,6 +320,21 @@ function buildJoinSubquery
     else
     {
         $return = aqlReturn( $docJoin ) ;
+    }
+
+    if( $perElement )
+    {
+        // FOR item IN ( IS_ARRAY( doc.refs ) ? doc.refs : [] )
+        //   LET hit = FIRST( ( FOR doc_join IN @@collection FILTER … LIMIT 1 RETURN … ) )
+        //   RETURN NOT_NULL( hit , item )
+        $hitRef = $docJoin . '_hit' ;
+
+        return compile
+        ([
+            aqlFor( [ AQL::DOC_REF => $itemRef , AQL::IN => aqlSafeArray( $listPath ) ] ) ,
+            aqlLet( $hitRef , first( betweenParentheses( compile( [ $for , $subVariables , $filter , aqlLimit( 1 ) , $return ] ) ) ) ) ,
+            aqlReturn( notNull( $hitRef , $else === true ? $itemRef : resolveWhenElse( $else , $itemRef ) ) ) ,
+        ]) ;
     }
 
     $sort = $isArray ? sortJoinVariable( $definition , $docJoin ) : null ;

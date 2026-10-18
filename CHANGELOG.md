@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A list join keeps what it cannot resolve.** `Filter::JOINS` returns the documents it finds, in place of the stored list : a reference whose document the target does not hold dropped out of the answer, silently — the single join had `Field::ELSE` for that, the list join read it and threw it away. With a `Field::ELSE` on the field, the list is now resolved element by element, in its stored order : each element becomes its document, or what `Field::ELSE` says, read on the ELEMENT (`true` : the element as stored ; `[ Field::PROPERTY => 'id' ]` : one of its attributes ; anything else : a literal). Each element is looked up by equality with `LIMIT 1` — the primary index when the key is `_key` — and `Arango::CONDITIONS` applies inside that lookup. An `Arango::SORT` on such a join is refused, as is a `Field::ELSE` on a polymorphic list join : both raise an `UnsupportedOperationException` naming the join. Without `Field::ELSE`, a list join is the query it always was, character for character.
+- **`joinKeyPaths()`** (`models/helpers/joins`) : where a join reads its keys — the path an `IN` compares, the list they come from, and the key each element carries.
+
+### Fixed
+
+- **A list of objects can be joined.** `Arango::PROPERTY` is appended to the joined field with a dot, so `'[*]._key'` wrote `doc.refs.[*]._key` — a syntax error on every query — and `'_key'` wrote `doc.refs._key`, the attribute of a list, which ArangoDB answers with `null` : nothing was joined, and nothing said so. An expansion is now glued to the list it expands (`doc.refs[*]._key`), and on a list resolved element by element the part after it is read on each element (`item._key`). A property with no expansion keeps its path ; two expansions are refused.
+
 ## [1.10.0] - 2026-10-17
 
 ### Fixed

@@ -6,6 +6,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
+use oihana\exceptions\UnsupportedOperationException;
 
 use PHPUnit\Framework\TestCase;
 
@@ -319,6 +320,41 @@ final class BuildVariablesTest extends TestCase
         ) ;
     }
 
+    /**
+     * A list join declaring a Field::ELSE is built element by element.
+     */
+    public function testJoinsWithElseBuildsTheElementByElementForm() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'roles' => [ Field::FILTER => Filter::JOINS , Field::ELSE => true ] ] ,
+            [] ,
+            [ 'roles' => [ AQL::MODEL => new MockDocuments( 'roles' ) ] ]
+        ) ;
+
+        $this->assertStringContainsString( 'RETURN NOT_NULL(doc_join_hit,' , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
+    /**
+     * A SINGLE join declaring a Field::ELSE keeps its sub-query : its fallback is
+     * projected by aqlFields().
+     */
+    public function testJoinWithElseKeepsItsSubQuery() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'role' => [ Field::FILTER => Filter::JOIN , Field::ELSE => true ] ] ,
+            [] ,
+            [ 'role' => [ AQL::MODEL => new MockDocuments( 'roles' ) ] ]
+        ) ;
+
+        $this->assertSame( 'LET role = (FOR doc_join IN roles FILTER doc_join._key == doc.role RETURN doc_join)' , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
     public function testJoinStringReferenceResolvesToAnotherDefinition() :void
     {
         $variables = [] ;
@@ -401,6 +437,55 @@ final class BuildVariablesTest extends TestCase
         $this->assertStringStartsWith( 'LET area = APPEND(' , $this->normalize( $variables[ 0 ] ) ) ;
         $this->assertStringContainsString( 'IN warehouses'   , $this->normalize( $variables[ 0 ] ) ) ;
         $this->assertStringContainsString( 'IN subsidiaries' , $this->normalize( $variables[ 0 ] ) ) ;
+    }
+
+    /**
+     * 🚨 A polymorphic LIST join declaring a Field::ELSE is refused, naming the join :
+     * the element by element form is not built across several target collections.
+     */
+    public function testPolymorphicJoinsWithElseIsRefused() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessage( "'areas'" ) ;
+
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'areas' => [ Field::FILTER => Filter::JOINS , Field::ELSE => true ] ] ,
+            [] ,
+            [ 'areas' =>
+            [
+                Arango::DISCRIMINATOR => 'selector.areaScope' ,
+                Arango::MAP           =>
+                [
+                    'W' => [ AQL::MODEL => new MockDocuments( 'warehouses'   ) ] ,
+                    'C' => [ AQL::MODEL => new MockDocuments( 'subsidiaries' ) ] ,
+                ] ,
+            ] ]
+        ) ;
+    }
+
+    /**
+     * A polymorphic SINGLE join with a Field::ELSE is not refused : its fallback is
+     * projected by aqlFields(), whatever branch answered.
+     */
+    public function testPolymorphicJoinWithElseIsNotRefused() :void
+    {
+        $variables = [] ;
+        buildVariables
+        (
+            $variables ,
+            [ 'area' => [ Field::FILTER => Filter::JOIN , Field::ELSE => true ] ] ,
+            [] ,
+            [ 'area' =>
+            [
+                Arango::DISCRIMINATOR => 'selector.areaScope' ,
+                Arango::MAP           => [ 'W' => [ AQL::MODEL => new MockDocuments( 'warehouses' ) ] ] ,
+            ] ]
+        ) ;
+
+        $this->assertCount( 1 , $variables ) ;
     }
 
     public function testPolymorphicJoinDeniedByGatingIsSkipped() :void

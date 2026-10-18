@@ -161,6 +161,48 @@ Trois choses à savoir :
 Côté hydratation, un scalaire à la place d'un objet est un cas prévu : les fonctions `hydrate*()`
 gardent une référence non résolue telle quelle, elles n'en font pas un objet vide.
 
+### Une liste qui garde ce qu'elle ne résout pas — `Field::ELSE` sur un `Filter::JOINS`
+
+Une jointure sur une **liste** (`Filter::JOINS`) rend les documents qu'elle **trouve**, à la place
+de la liste stockée : une référence dont la cible ne tient pas le document **disparaît** de la
+liste, sans un mot. Avec `Field::ELSE` sur le champ, la liste est parcourue **élément par élément**
+et chaque élément devient son document — ou, s'il n'y en a pas, ce que dit `Field::ELSE` :
+
+```php
+AQL::FIELDS => [ 'refs' => [ Field::FILTER => Filter::JOINS , Field::ELSE => true ] ] ,
+AQL::JOINS  => [ 'refs' => [ AQL::MODEL => 'tracks' , Arango::PROPERTY => '[*]._key' ] ] ,
+```
+
+```aql
+LET refs = (
+  FOR item IN ( IS_ARRAY( doc.refs ) ? doc.refs : [] )
+    LET doc_join_hit = FIRST( ( FOR doc_join IN tracks FILTER doc_join._key == item._key LIMIT 1 RETURN { … } ) )
+    RETURN NOT_NULL( doc_join_hit , item )
+)
+```
+
+Stocké `[ { _key: "t1" } , { id: "3" } , { _key: "t2" } ]`, avec `t1` et `t2` dans la collection :
+
+| Déclaré | Servi |
+|---|---|
+| *(sans `Field::ELSE`)* | `[ t2 , t1 ]` — les documents trouvés, triés sur leur clé, l'élément du milieu perdu |
+| `Field::ELSE => true` | `[ t1 , { id: "3" } , t2 ]` — l'élément tel qu'il est stocké |
+| `Field::ELSE => [ Field::PROPERTY => 'id' ]` | `[ t1 , "3" , t2 ]` — un attribut **de l'élément** |
+| `Field::ELSE => 'inconnu'` | `[ t1 , "inconnu" , t2 ]` — un littéral |
+
+Quatre choses à savoir :
+
+- ⚠️ **L'attribut est lu sur l'élément, pas sur le document.** C'est la seule différence avec la
+  jointure simple : lu sur le document, chaque élément manquant recevrait la même valeur.
+- **L'ordre est celui de la liste stockée.** Un `Arango::SORT` sur la même jointure est **refusé**
+  (`UnsupportedOperationException`) : trier un mélange de documents et de références nues n'a pas de
+  sens sûr. Sans `Field::ELSE`, le tri reste celui de toujours (la clé, décroissante, par défaut).
+- **Chaque élément se cherche par égalité**, `LIMIT 1` : l'index primaire quand la clé est `_key`.
+  `Arango::CONDITIONS` s'applique dans cette recherche — un document masqué laisse son élément à son
+  repli.
+- **Une jointure polymorphe ne le connaît pas** : sur une liste, `Field::ELSE` y est refusé avec un
+  message qui nomme le champ.
+
 ### Un littéral ambigu — `betweenQuotes()`
 
 Un littéral chaîne est quoté automatiquement… **sauf s'il ressemble déjà à de l'AQL**. C'est

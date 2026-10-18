@@ -43,6 +43,12 @@ class Field
      * On a `Filter::JOIN`, the value served when the join resolves nothing : `true` keeps the
      * reference the document stores (`doc.<field>`), an array `[ Field::PROPERTY => … ]` or a
      * literal follows the `else` grammar of `Field::WHEN`. Without it the key vanishes.
+     *
+     * On a `Filter::JOINS`, the list is resolved element by element and keeps its stored
+     * order : each element the join cannot resolve is replaced by this fallback, read on the
+     * ELEMENT (`true` : the element as stored ; `[ Field::PROPERTY => … ]` : one of its
+     * attributes ; anything else : a literal). Refused with an `Arango::SORT`, and on a
+     * polymorphic list join.
      */
     public const string ELSE = 'else' ;
 

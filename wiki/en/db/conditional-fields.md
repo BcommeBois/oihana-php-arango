@@ -155,6 +155,48 @@ Three things to know:
 On the hydration side, a scalar in place of an object is an expected case: the `hydrate*()`
 functions keep an unresolved reference as it stands, they do not turn it into an empty object.
 
+### A list that keeps what it cannot resolve — `Field::ELSE` on a `Filter::JOINS`
+
+A join over a **list** (`Filter::JOINS`) returns the documents it **finds**, in place of the stored
+list: a reference whose document the target does not hold **drops out** of the list, silently.
+With `Field::ELSE` on the field, the list is walked **element by element** and each element becomes
+its document — or, when there is none, what `Field::ELSE` says:
+
+```php
+AQL::FIELDS => [ 'refs' => [ Field::FILTER => Filter::JOINS , Field::ELSE => true ] ] ,
+AQL::JOINS  => [ 'refs' => [ AQL::MODEL => 'tracks' , Arango::PROPERTY => '[*]._key' ] ] ,
+```
+
+```aql
+LET refs = (
+  FOR item IN ( IS_ARRAY( doc.refs ) ? doc.refs : [] )
+    LET doc_join_hit = FIRST( ( FOR doc_join IN tracks FILTER doc_join._key == item._key LIMIT 1 RETURN { … } ) )
+    RETURN NOT_NULL( doc_join_hit , item )
+)
+```
+
+Stored `[ { _key: "t1" } , { id: "3" } , { _key: "t2" } ]`, with `t1` and `t2` in the collection:
+
+| Declared | Served |
+|---|---|
+| *(no `Field::ELSE`)* | `[ t2 , t1 ]` — the documents found, sorted on their key, the middle element lost |
+| `Field::ELSE => true` | `[ t1 , { id: "3" } , t2 ]` — the element as stored |
+| `Field::ELSE => [ Field::PROPERTY => 'id' ]` | `[ t1 , "3" , t2 ]` — an attribute **of the element** |
+| `Field::ELSE => 'unknown'` | `[ t1 , "unknown" , t2 ]` — a literal |
+
+Four things to know:
+
+- ⚠️ **The attribute is read on the element, not on the document.** It is the one difference with
+  the single join: read on the document, every missing element would get the same value.
+- **The order is the stored one.** An `Arango::SORT` on the same join is **refused**
+  (`UnsupportedOperationException`): sorting a mix of documents and bare references has no safe
+  meaning. Without `Field::ELSE`, the sort is the one it always was (the key, descending, by default).
+- **Each element is looked up by equality**, `LIMIT 1`: the primary index when the key is `_key`.
+  `Arango::CONDITIONS` applies inside that lookup — a masked document leaves its element to its
+  fallback.
+- **A polymorphic join does not know it**: on a list, `Field::ELSE` is refused there with a message
+  naming the field.
+
 ### An ambiguous literal — `betweenQuotes()`
 
 A string literal is quoted automatically… **unless it already looks like AQL**. That is

@@ -64,6 +64,9 @@ use function oihana\arango\db\operations\aqlLet;
  * @param ContainerInterface|null $container Optional DI container instance used to resolve models.
  * @param array                   $init      Optional associative array used for variable initialization in nested joins.
  * @param bool                    $isArray   If true, the join key is treated as an array of keys, generating an `IN` filter.
+ * @param mixed                   $else      The `Field::ELSE` of a list join, or null : the list is then resolved
+ *                                           element by element and keeps what it cannot resolve
+ *                                           (see {@see buildJoinSubquery()}).
  *
  * @return string The complete AQL 'LET' statement.
  *
@@ -82,6 +85,7 @@ function buildJoinVariable
     ?ContainerInterface $container   = null ,
     array               $init        = [] ,
     bool                $isArray     = false ,
+    mixed               $else        = null ,
 )
 : string
 {
@@ -95,7 +99,7 @@ function buildJoinVariable
     return aqlLet
     (
         $varName ,
-        buildJoinSubquery( $name , $definition , $docRef , $container , $init , $isArray , [] , $keyPath ) ,
+        buildJoinSubquery( $name , $definition , $docRef , $container , $init , $isArray , [] , $keyPath , $else ) ,
         true
     ) ;
 }

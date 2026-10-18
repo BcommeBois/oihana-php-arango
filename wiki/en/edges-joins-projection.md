@@ -477,11 +477,11 @@ LET tracks = (
 
 > **Sorting a joined array happens INSIDE the join** (`Arango::SORT` on the join definition), not through the outer `?sort=` — which sorts the **parent documents**, never the content of a joined field. That is the correct separation.
 
-Useful options on the join definition: `Arango::KEY` (join attribute, default `_key`), `Arango::PROPERTY` (point at a nested parent property as the key), `Arango::CONDITIONS` (extra filters), nested `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN` / `AQL::SKIN_FIELDS` (the joined projection varies with `?skin=`), `AQL::REQUIRES` ([permission gating](projection.md#permission-gated-edges-and-joins--aqlrequires)).
+Useful options on the join definition: `Arango::KEY` (join attribute, default `_key`), `Arango::PROPERTY` (point at a nested parent property as the key — and, on a **list of objects**, the key of each element: `'[*]._key'` compares `doc.refs[*]._key`), `Arango::CONDITIONS` (extra filters), nested `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS`, `AQL::SKIN` / `AQL::SKIN_FIELDS` (the joined projection varies with `?skin=`), `AQL::REQUIRES` ([permission gating](projection.md#permission-gated-edges-and-joins--aqlrequires)).
 
 > Natural combination with [embedded array fields](db/arrays.md): a `tracks` field (an array of ids mutated element-by-element via `ArrayPropertyController`) can **at the same time** be projected as sorted joined documents in the `GET` via `Filter::JOINS` — no duplication.
 
-> **When the target does not hold the document**, the key of a `Filter::JOIN` vanishes from the answer. `Field::ELSE => true` on the field serves the stored reference — the bare code — in its place: see [Keeping the reference when a join resolves nothing](db/conditional-fields.md#keeping-the-reference-when-a-join-resolves-nothing--fieldelse-on-a-filterjoin).
+> **When the target does not hold the document**, the key of a `Filter::JOIN` vanishes from the answer. `Field::ELSE => true` on the field serves the stored reference — the bare code — in its place: see [Keeping the reference when a join resolves nothing](db/conditional-fields.md#keeping-the-reference-when-a-join-resolves-nothing--fieldelse-on-a-filterjoin). On a `Filter::JOINS`, it is an **element** of the list that drops out; `Field::ELSE` keeps each element in its place: see [A list that keeps what it cannot resolve](db/conditional-fields.md#a-list-that-keeps-what-it-cannot-resolve--fieldelse-on-a-filterjoins).
 
 ### Restricting the joined documents — `Arango::CONDITIONS`
 

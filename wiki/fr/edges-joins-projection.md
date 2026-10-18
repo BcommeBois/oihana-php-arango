@@ -477,11 +477,11 @@ LET tracks = (
 
 > **Le tri d'un tableau joint se fait DANS la jointure** (`Arango::SORT` sur la définition du join), pas via le `?sort=` externe — qui, lui, trie les **documents parents**, jamais le contenu d'un champ joint. C'est la bonne séparation.
 
-Options utiles sur la définition de join : `Arango::KEY` (attribut de jointure, défaut `_key`), `Arango::PROPERTY` (pointer une propriété imbriquée du parent comme clé), `Arango::CONDITIONS` (filtres supplémentaires), `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS` imbriqués, `AQL::SKIN` / `AQL::SKIN_FIELDS` (la projection jointe varie avec `?skin=`), `AQL::REQUIRES` ([gating par permission](projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)).
+Options utiles sur la définition de join : `Arango::KEY` (attribut de jointure, défaut `_key`), `Arango::PROPERTY` (pointer une propriété imbriquée du parent comme clé — et, sur une **liste d'objets**, la clé de chaque élément : `'[*]._key'` compare `doc.refs[*]._key`), `Arango::CONDITIONS` (filtres supplémentaires), `AQL::FIELDS` / `AQL::EDGES` / `AQL::JOINS` imbriqués, `AQL::SKIN` / `AQL::SKIN_FIELDS` (la projection jointe varie avec `?skin=`), `AQL::REQUIRES` ([gating par permission](projection.md#restreindre-la-projection-dun-edge-ou-dun-join-à-une-permission--aqlrequires)).
 
 > Combinaison naturelle avec les [champs-tableaux embarqués](db/arrays.md) : un champ `tracks` (tableau d'ids muté élément par élément via `ArrayPropertyController`) peut **en même temps** être projeté en documents joints triés dans le `GET` via `Filter::JOINS` — aucune duplication.
 
-> **Quand la cible ne tient pas le document**, la clé d'un `Filter::JOIN` disparaît de la réponse. `Field::ELSE => true` sur le champ sert alors la référence stockée — le code nu — à sa place : voir [Garder la référence quand une jointure ne résout rien](db/conditional-fields.md#garder-la-référence-quand-une-jointure-ne-résout-rien--fieldelse-sur-un-filterjoin).
+> **Quand la cible ne tient pas le document**, la clé d'un `Filter::JOIN` disparaît de la réponse. `Field::ELSE => true` sur le champ sert alors la référence stockée — le code nu — à sa place : voir [Garder la référence quand une jointure ne résout rien](db/conditional-fields.md#garder-la-référence-quand-une-jointure-ne-résout-rien--fieldelse-sur-un-filterjoin). Sur un `Filter::JOINS`, c'est un **élément** de la liste qui disparaît ; `Field::ELSE` y garde chaque élément à sa place : voir [Une liste qui garde ce qu'elle ne résout pas](db/conditional-fields.md#une-liste-qui-garde-ce-quelle-ne-résout-pas--fieldelse-sur-un-filterjoins).
 
 ### Restreindre les documents joints — `Arango::CONDITIONS`
 

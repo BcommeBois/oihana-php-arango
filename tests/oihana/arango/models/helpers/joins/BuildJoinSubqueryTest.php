@@ -5,6 +5,7 @@ namespace tests\oihana\arango\models\helpers\joins;
 use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
+use oihana\exceptions\UnsupportedOperationException;
 
 use PHPUnit\Framework\TestCase;
 
@@ -108,6 +109,166 @@ final class BuildJoinSubqueryTest extends TestCase
         $this->assertStringContainsString( 'salary' , $granted ) ;
     }
 
+    // ------------------------------------------------- a list of objects, a list that keeps its references
+
+    /**
+     * 🚨 A list of objects is joined on `'[*]._key'` : the expansion is glued to the
+     * list, where it used to be written `doc.refs.[*]._key` — a syntax error.
+     */
+    public function testAListOfObjectsIsJoinedOnItsExpandedKey() :void
+    {
+        $result = $this->normalize( buildJoinSubquery
+        (
+            'refs' ,
+            [ AQL::MODEL => new MockDocuments( 'notes' ) , Arango::PROPERTY => '[*]._key' ] ,
+            AQL::DOC , null , [] , true
+        ) ) ;
+
+        $this->assertSame
+        (
+            'FOR doc_join IN notes FILTER doc_join._key IN (IS_ARRAY(doc.refs[*]._key) ? doc.refs[*]._key : []) SORT doc_join._key DESC RETURN doc_join' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * Without a Field::ELSE, a list join is the one it always was, character for
+     * character — the default sort included.
+     */
+    public function testAListJoinWithoutElseIsUnchanged() :void
+    {
+        $result = $this->normalize( buildJoinSubquery( 'roles' , [ AQL::MODEL => new MockDocuments( 'roles' ) ] , AQL::DOC , null , [] , true ) ) ;
+
+        $this->assertSame
+        (
+            'FOR doc_join IN roles FILTER doc_join._key IN (IS_ARRAY(doc.roles) ? doc.roles : []) SORT doc_join._key DESC RETURN doc_join' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * With `Field::ELSE => true`, the stored list is walked element by element : each
+     * element becomes its document, or stays as stored — in its stored order, with no
+     * sort.
+     */
+    public function testElseTrueResolvesTheListElementByElement() :void
+    {
+        $result = $this->normalize( buildJoinSubquery
+        (
+            'refs' ,
+            [ AQL::MODEL => new MockDocuments( 'notes' ) , Arango::PROPERTY => '[*]._key' ] ,
+            AQL::DOC , null , [] , true , [] , null , true
+        ) ) ;
+
+        $this->assertSame
+        (
+            'FOR item IN (IS_ARRAY(doc.refs) ? doc.refs : []) ' .
+            'LET doc_join_hit = FIRST((FOR doc_join IN notes FILTER doc_join._key == item._key LIMIT 1 RETURN doc_join)) ' .
+            'RETURN NOT_NULL(doc_join_hit,item)' ,
+            $result
+        ) ;
+        $this->assertStringNotContainsString( 'SORT' , $result ) ;
+    }
+
+    /**
+     * A list of bare keys : the element IS the key.
+     */
+    public function testElseOnAListOfBareKeysComparesTheElementItself() :void
+    {
+        $result = $this->normalize( buildJoinSubquery( 'tracks' , [ AQL::MODEL => new MockDocuments( 'tracks' ) ] , AQL::DOC , null , [] , true , [] , null , true ) ) ;
+
+        $this->assertStringContainsString( 'FILTER doc_join._key == item LIMIT 1' , $result ) ;
+        $this->assertStringContainsString( 'RETURN NOT_NULL(doc_join_hit,item)' , $result ) ;
+    }
+
+    /**
+     * The two other forms of Field::ELSE are read on the ELEMENT : one of its
+     * attributes, or a literal.
+     */
+    public function testElseTakesTheWhenElseGrammarReadOnTheElement() :void
+    {
+        $definition = [ AQL::MODEL => new MockDocuments( 'notes' ) , Arango::PROPERTY => '[*]._key' ] ;
+
+        $attribute = $this->normalize( buildJoinSubquery( 'refs' , $definition , AQL::DOC , null , [] , true , [] , null , [ Field::PROPERTY => 'id' ] ) ) ;
+        $literal   = $this->normalize( buildJoinSubquery( 'refs' , $definition , AQL::DOC , null , [] , true , [] , null , 'unknown' ) ) ;
+
+        $this->assertStringContainsString( 'RETURN NOT_NULL(doc_join_hit,item.id)' , $attribute ) ;
+        $this->assertStringContainsString( "RETURN NOT_NULL(doc_join_hit,'unknown')" , $literal ) ;
+    }
+
+    /**
+     * The conditions and the projection of the join live in the INNER loop, beside
+     * the key match : an element whose document a condition masks keeps its fallback.
+     */
+    public function testConditionsAndProjectionStayInTheInnerLoop() :void
+    {
+        $result = $this->normalize( buildJoinSubquery
+        (
+            'tracks' ,
+            [ AQL::MODEL => new MockDocuments( 'tracks' ) , Arango::CONDITIONS => [ 'doc.ok == true' ] , AQL::FIELDS => [ 'name' => [] ] ] ,
+            AQL::DOC , null , [] , true , [] , null , true
+        ) ) ;
+
+        $this->assertStringContainsString
+        (
+            'FIRST((FOR doc_join IN tracks FILTER doc_join._key == item && doc.ok == true LIMIT 1 RETURN {name:doc_join.name}))' ,
+            $result
+        ) ;
+    }
+
+    /**
+     * The anchor of the list follows Arango::SOURCE, as the key match always did.
+     */
+    public function testElseFollowsTheKeyPathAnchor() :void
+    {
+        $result = $this->normalize( buildJoinSubquery
+        (
+            'providers' ,
+            [ AQL::MODEL => new MockDocuments( 'providers' ) ] ,
+            AQL::DOC , null , [] , true , [] , 'selector.providerIds' , true
+        ) ) ;
+
+        $this->assertStringStartsWith( 'FOR item IN (IS_ARRAY(doc.selector.providerIds) ? doc.selector.providerIds : [])' , $result ) ;
+    }
+
+    /**
+     * 🚨 A sort and a Field::ELSE together are refused, naming the join.
+     */
+    public function testASortWithElseIsRefused() :void
+    {
+        $this->expectException( UnsupportedOperationException::class ) ;
+        $this->expectExceptionMessage( "'refs'" ) ;
+
+        buildJoinSubquery
+        (
+            'refs' ,
+            [ AQL::MODEL => new MockDocuments( 'notes' ) , AQL::SORT => 'name' ] ,
+            AQL::DOC , null , [] , true , [] , null , true
+        ) ;
+    }
+
+    /**
+     * A sort WITHOUT Field::ELSE is the sort it always was.
+     */
+    public function testASortWithoutElseStillSorts() :void
+    {
+        $result = $this->normalize( buildJoinSubquery( 'refs' , [ AQL::MODEL => new MockDocuments( 'notes' ) , AQL::SORT => 'name' ] , AQL::DOC , null , [] , true ) ) ;
+
+        $this->assertStringContainsString( 'SORT doc_join.name ASC' , $result ) ;
+    }
+
+    /**
+     * On a SINGLE join the Field::ELSE is aqlFields()'s business : the sub-query is
+     * the one it always was.
+     */
+    public function testElseIsIgnoredOnASingleJoin() :void
+    {
+        $with    = $this->normalize( buildJoinSubquery( 'role' , [ AQL::MODEL => new MockDocuments( 'roles' ) ] , AQL::DOC , null , [] , false , [] , null , true ) ) ;
+        $without = $this->normalize( buildJoinSubquery( 'role' , [ AQL::MODEL => new MockDocuments( 'roles' ) ] ) ) ;
+
+        $this->assertSame( $without , $with ) ;
+    }
+
     /**
      * Normalizes the random `doc_join_<n>` loop ref to a stable token.
      *
@@ -117,6 +278,6 @@ final class BuildJoinSubqueryTest extends TestCase
      */
     private function normalize( string $aql ) :string
     {
-        return preg_replace( '/doc_join_\d+/' , 'doc_join' , $aql ) ;
+        return preg_replace( [ '/doc_join_\d+/' , '/item_\d+/' ] , [ 'doc_join' , 'item' ] , $aql ) ;
     }
 }

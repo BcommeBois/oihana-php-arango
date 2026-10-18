@@ -76,6 +76,28 @@ final class BuildJoinVariableTest extends TestCase
         ) ;
     }
 
+    /**
+     * The Field::ELSE of a list join reaches the sub-query : the LET wraps the list
+     * resolved element by element.
+     */
+    public function testElseOnAListJoinWrapsTheElementByElementForm() :void
+    {
+        $result = preg_replace
+        (
+            '/item_\d+/' ,
+            'item' ,
+            $this->normalize( buildJoinVariable( 'roles' , [ AQL::MODEL => new MockDocuments( 'roles' ) ] , AQL::DOC , null , [] , true , true ) )
+        ) ;
+
+        $this->assertSame
+        (
+            'LET roles = (FOR item IN (IS_ARRAY(doc.roles) ? doc.roles : []) ' .
+            'LET doc_join_hit = FIRST((FOR doc_join IN roles FILTER doc_join._key == item LIMIT 1 RETURN doc_join)) ' .
+            'RETURN NOT_NULL(doc_join_hit,item))' ,
+            $result
+        ) ;
+    }
+
     public function testPropertyNestsTheForeignKeyPath() :void
     {
         $result = $this->normalize

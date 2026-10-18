@@ -8,6 +8,7 @@ use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
 use oihana\exceptions\BindException;
+use oihana\exceptions\UnsupportedOperationException;
 use oihana\reflect\exceptions\ConstantException;
 
 use Psr\Container\ContainerInterface;
@@ -61,6 +62,7 @@ use function oihana\core\strings\key;
  * @throws ContainerExceptionInterface
  * @throws NotFoundExceptionInterface
  * @throws ReflectionException
+ * @throws UnsupportedOperationException If a polymorphic list join declares a Field::ELSE.
  */
 function buildVariables
 (
@@ -179,9 +181,22 @@ function buildVariables
                 // its target collection from a discriminator field of the parent,
                 // so it routes to a dedicated builder; a regular join keeps its
                 // single fixed collection.
+                // A list join declaring a Field::ELSE keeps what it cannot resolve, element by
+                // element (buildJoinSubquery). A single join's fallback is projected by
+                // aqlFields() and needs nothing here.
+                $else = $filter == Filter::JOINS ? ( $field[ Field::ELSE ] ?? null ) : null ;
+
+                if ( $else !== null && isPolymorphic( $definition ) )
+                {
+                    throw new UnsupportedOperationException
+                    (
+                        __FUNCTION__ . " failed, the polymorphic list join '" . $key . "' declares a Field::ELSE : a list resolved element by element is not supported across several target collections."
+                    ) ;
+                }
+
                 $variables[] = isPolymorphic( $definition )
                              ? buildPolymorphicJoinVariable( $key , $definition , $docRef , $container , $init , $filter == Filter::JOINS )
-                             : buildJoinVariable           ( $key , $definition , $docRef , $container , $init , $filter == Filter::JOINS ) ;
+                             : buildJoinVariable           ( $key , $definition , $docRef , $container , $init , $filter == Filter::JOINS , $else ) ;
                 break ;
             }
         }
