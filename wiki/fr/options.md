@@ -61,11 +61,12 @@ Neuf classes ciblent chacune une opération AQL spécifique.
 
 ```php
 use oihana\arango\db\enums\OverwriteMode ;
+use function oihana\arango\db\helpers\aqlDocument ;
 
 aqlInsert
 ([
     AQL::COLLECTION => 'users'                     ,
-    AQL::DOCUMENT   => $document                   ,
+    AQL::DOC        => aqlDocument( $document )    ,
     AQL::OPTIONS    =>
     [
         'ignoreErrors'   => true                   ,

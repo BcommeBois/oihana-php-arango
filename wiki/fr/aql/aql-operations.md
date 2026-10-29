@@ -356,7 +356,7 @@ Doc officielle : [`RETURN`](https://docs.arangodb.com/stable/aql/high-level-oper
 
 ## Modification
 
-Les six opérations de modification suivent la même mécanique : un tableau de clés `AQL::*` (`KEY`, `DOCUMENT`, `WITH`, `COLLECTION`, `OPTIONS`) configure l'instruction produite.
+Les six opérations de modification suivent la même mécanique : un tableau de clés `AQL::*` (`KEY`, `DOC`, `WITH`, `COLLECTION`, `OPTIONS`) configure l'instruction produite. Le document (`DOC`, `WITH`) et la clé (`KEY`) sont du texte AQL recopié tel quel : un tableau PHP n'est pas formaté, il se construit avec `aqlDocument()`. Dans `aqlUpdate()` / `aqlReplace()`, `WITH` est le document appliqué à `KEY` (`UPDATE <key> WITH <doc>`), pas la clause `WITH` des collections.
 
 ### `aqlInsert()`
 

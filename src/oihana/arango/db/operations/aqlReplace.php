@@ -20,18 +20,22 @@ use oihana\arango\db\options\ReplaceOptions;
  *
  * @param array{
  * collection? : string,
- * doc?        : array|string|null,
+ * doc?        : string|null,
+ * key?        : string|null,
  * operation?  : string|null ,
  * options?    : array|ReplaceOptions|null ,
  * with?       : string|null
  * } $init Initial options for the REPLACE statement, with the keys:
- * - 'collection' : The name of the collection in which the document should be replaced.
- * - 'doc'        : An object and contain the attributes and values to replace.
+ * - 'collection' : The collection in which the document is replaced, written verbatim (default `@@collection`).
+ * - 'doc'        : The document expression that replaces (`REPLACE <doc> IN …`), used when 'with' is absent (default `doc`).
+ * - 'key'        : The key expression that 'with' applies to (`REPLACE <key> WITH …`), used with 'with' only (default `doc`).
  * - 'options'    : The default 'options' expression definition
- * - 'with'       : One or multiple collections for WITH clause -> WITH collection1 [, collection2 [, ... collectionN ] ]
+ * - 'with'       : The replacement document for 'key' (`REPLACE <key> WITH <with> IN …`).
+ *                  It is not the AQL `WITH` collections clause.
  *
- * 'doc' and 'with' are written verbatim : build them with {@see \oihana\arango\db\helpers\aqlDocument()},
- * which takes the 'rawKeys' / 'rawValues' / 'useSpace' options. This function reads none of them.
+ * 'doc', 'key' and 'with' are written verbatim : build a document with {@see \oihana\arango\db\helpers\aqlDocument()},
+ * which takes the 'rawKeys' / 'rawValues' / 'useSpace' options. This function reads none of them, and a PHP array
+ * passed here is not formatted.
  *
  * @return string
  *
@@ -41,22 +45,22 @@ use oihana\arango\db\options\ReplaceOptions;
  *
  * ```php
  * // Replace a document by key
- * $this->replace
+ * echo aqlReplace
  * ([
  *    'collection' => 'users',
- *    'doc'        => [ '_key' => 123 , 'name' => "John" ]
+ *    'doc'        => aqlDocument( [ '_key' => '123' , 'name' => 'John' ] )
  * ]);
- * // Produces: REPLACE {_key:"123",name: "John"} IN users
+ * // REPLACE {_key:123,name:'John'} IN users
  *
- * // Replace with additional collections and options
- * $this->replace
+ * // Replace a key with a document, with options
+ * echo aqlReplace
  * ([
  *     'collection' => 'orders',
  *     'key'        => key( 'my_key' , 'doc' ) ,
- *     'with'       => [ 'status' => 'shipped' ] ,
+ *     'with'       => aqlDocument( [ 'status' => 'shipped' ] ) ,
  *     'options'    => [ 'ignoreRevs' => true ]
  * ]);
- * // Produces: REPLACE doc.my_key WITH {'status':'shipped'} IN orders {"ignoreRevs":true}
+ * // REPLACE doc.my_key WITH {status:'shipped'} IN orders OPTIONS {"ignoreRevs":true}
  * ```
  *
  * @see https://docs.arangodb.com/stable/aql/high-level-operations/replace

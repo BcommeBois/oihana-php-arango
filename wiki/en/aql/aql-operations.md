@@ -356,7 +356,7 @@ Official docs: [`RETURN`](https://docs.arangodb.com/stable/aql/high-level-operat
 
 ## Modification
 
-The six modification operations follow the same mechanic: an array of `AQL::*` keys (`KEY`, `DOCUMENT`, `WITH`, `COLLECTION`, `OPTIONS`) configures the instruction produced.
+The six modification operations follow the same mechanic: an array of `AQL::*` keys (`KEY`, `DOC`, `WITH`, `COLLECTION`, `OPTIONS`) configures the instruction produced. The document (`DOC`, `WITH`) and the key (`KEY`) are AQL text, written verbatim: a PHP array is not formatted, build it with `aqlDocument()`. In `aqlUpdate()` / `aqlReplace()`, `WITH` is the document applied to `KEY` (`UPDATE <key> WITH <doc>`), not the collections `WITH` clause.
 
 ### `aqlInsert()`
 

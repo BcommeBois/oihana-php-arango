@@ -25,18 +25,22 @@ use function oihana\core\strings\compile;
  *
  * @param array{
  * collection? : string,
- * doc?        : array|string|null,
+ * doc?        : string|null,
+ * key?        : string|null,
  * operation?  : string|null ,
  * options?    : array|UpdateOptions|ReplaceOptions|null ,
  * with?       : string|null
  * } $init Initial options for the UPDATE or REPLACE statement, with the keys:
- * - 'collection' : The name of the collection in which the document should be updated.
- * - 'doc'        : An object and contain the attributes and values to update.
+ * - 'collection' : The collection in which the document is updated, written verbatim (default `@@collection`).
+ * - 'doc'        : The document expression to update (`UPDATE <doc> IN …`), used when 'with' is absent (default `doc`).
+ * - 'key'        : The key expression that 'with' applies to (`UPDATE <key> WITH …`), used with 'with' only (default `doc`).
  * - 'options'    : The default 'options' expression definition
- * - 'with'       : One or multiple collections for WITH clause -> WITH collection1 [, collection2 [, ... collectionN ] ]
+ * - 'with'       : The document of attributes to apply to 'key' (`UPDATE <key> WITH <with> IN …`).
+ *                  It is not the AQL `WITH` collections clause.
  *
- * 'doc' and 'with' are written verbatim : build them with {@see \oihana\arango\db\helpers\aqlDocument()},
- * which takes the 'rawKeys' / 'rawValues' / 'useSpace' options. This function reads none of them.
+ * 'doc', 'key' and 'with' are written verbatim : build a document with {@see \oihana\arango\db\helpers\aqlDocument()},
+ * which takes the 'rawKeys' / 'rawValues' / 'useSpace' options. This function reads none of them, and a PHP array
+ * passed here is not formatted.
  *
  * @param string $operation The AQL operation to perform.
  * Must be either {@see Operation::UPDATE} (default) or {@see Operation::REPLACE}.
@@ -50,11 +54,11 @@ use function oihana\core\strings\compile;
  *Examples**
  *
  * ```php
- * // 1. Basic UPDATE with default doc variable:
+ * // 1. Basic UPDATE of a document expression:
  * echo aqlUpdate
  * ([
  *    'collection' => 'users',
- *    'doc'        => [ 'name' => 'John' ]
+ *    'doc'        => aqlDocument( [ 'name' => 'John' ] )
  * ]);
  * // UPDATE {name:'John'} IN users
  *
@@ -64,13 +68,13 @@ use function oihana\core\strings\compile;
  *    'collection' => 'products',
  *    'doc'        => '{ price: 99.99 }'
  * ]);
- * // UPDATE {price:99.99} IN products
+ * // UPDATE { price: 99.99 } IN products
  *
  * // 3. REPLACE instead of UPDATE:
  * echo aqlUpdate
  * ([
  *    'collection' => 'profiles',
- *    'doc'        => [ 'name' => 'Marc', 'age' => 42 ]
+ *    'doc'        => aqlDocument( [ 'name' => 'Marc', 'age' => 42 ] )
  * ] , Operation::REPLACE ) ;
  * // REPLACE {name:'Marc',age:42} IN profiles
  *
@@ -91,7 +95,7 @@ use function oihana\core\strings\compile;
  * echo aqlUpdate
  * ([
  *    'collection' => 'products',
- *    'doc'        => [ 'price' => 42 ],
+ *    'doc'        => aqlDocument( [ 'price' => 42 ] ),
  *    'options'    => new UpdateOptions(['mergeObjects' => true])
  * ]);
  * // UPDATE {price:42} IN products OPTIONS {"mergeObjects":true}
@@ -101,7 +105,7 @@ use function oihana\core\strings\compile;
  * ([
  *    'collection' => 'orders',
  *    'key'        => betweenQuotes('my_key'),
- *    'with'       => [ 'name' => 'eka', 'age' => 48 ]
+ *    'with'       => aqlDocument( [ 'name' => 'eka', 'age' => 48 ] )
  * ]);
  * // UPDATE 'my_key' WITH {name:'eka',age:48} IN orders
  *
@@ -110,9 +114,17 @@ use function oihana\core\strings\compile;
  * ([
  *    'collection' => 'orders',
  *    'key'        => key('my_key', 'doc'),
- *    'with'       => [ 'name' => 'eka', 'age' => 48 ]
+ *    'with'       => aqlDocument( [ 'name' => 'eka', 'age' => 48 ] )
  * ]);
  * // UPDATE doc.my_key WITH {name:'eka',age:48} IN orders
+ *
+ * // 8. WITH without a key applies to the loop variable doc:
+ * echo aqlUpdate
+ * ([
+ *    'collection' => 'orders',
+ *    'with'       => aqlDocument( [ 'status' => 'shipped' ] )
+ * ]);
+ * // UPDATE doc WITH {status:'shipped'} IN orders
  * ```
  *
  * @see https://docs.arangodb.com/stable/aql/high-level-operations/update

@@ -96,6 +96,7 @@ Trois points à retenir :
 Le pattern `FOR ... UPDATE` :
 
 ```php
+use function oihana\arango\db\helpers\aqlDocument ;
 use function oihana\arango\db\operations\aqlUpdate ;
 
 $query = implode( ' ' ,
@@ -108,7 +109,7 @@ $query = implode( ' ' ,
     aqlUpdate
     ([
         AQL::KEY        => 'doc' ,
-        AQL::WITH       => [ 'status' => aqlBind( 'active' , $binds , 'newStatus' ) ] ,
+        AQL::WITH       => aqlDocument( [ 'status' => aqlBind( 'active' , $binds , 'newStatus' ) ] ) ,
         AQL::COLLECTION => 'users' ,
     ]) ,
 ]) ;

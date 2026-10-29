@@ -31,8 +31,10 @@ use function oihana\core\strings\compile;
  * The `$init` array may contain:
  * - `AQL::DOC` (string) — The document to insert, written verbatim (default `{}`).
  * - `AQL::COLLECTION` (string) — The target collection name.
- * - `AQL::BIND_COLLECTION` (bool) — Whether to bind the collection as a variable.
- * - `AQL::QUERY_ID` (string) — An optional query identifier to prepend the default name of the bind collection variable.
+ * - `AQL::BIND_COLLECTION` (string|null) — The NAME of the bind variable that carries the collection,
+ *   without `@` (e.g. `AQL::COLLECTION` → `@@collection`). The collection is always bound : when
+ *   omitted, a name is generated (`@@c_<n>`). Not a switch — a boolean is refused (`BindException`).
+ * - `AQL::QUERY_ID` (string) — An optional query identifier to prepend the generated name of the bind collection variable.
  *
  * The document is not formatted here : build it with {@see \oihana\arango\db\helpers\aqlDocument()},
  * which takes the `AQL::RAW_KEYS` / `AQL::RAW_VALUES` / `AQL::USE_SPACE` options. This function reads none of them.

@@ -147,4 +147,21 @@ class AqlUpdateTest extends TestCase
         $query = aqlUpdate( [ AQL::COLLECTION => 'test' ]);
         $this->assertEquals( 'UPDATE doc IN test' , $query );
     }
+
+    /**
+     * WITH without KEY updates the loop variable `doc`.
+     *
+     * @throws ReflectionException
+     * @throws UnsupportedOperationException
+     */
+    public function testWithWithoutKeyTargetsTheDocVariable(): void
+    {
+        $query = aqlUpdate
+        ([
+            AQL::COLLECTION => 'orders' ,
+            AQL::WITH       => aqlDocument( [ 'status' => 'shipped' ] ) ,
+        ]);
+
+        $this->assertSame( "UPDATE doc WITH {status:'shipped'} IN orders" , $query );
+    }
 }

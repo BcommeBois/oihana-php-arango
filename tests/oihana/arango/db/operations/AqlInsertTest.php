@@ -155,4 +155,38 @@ class AqlInsertTest extends TestCase
             AQL::DOC => aqlDocument(['name'=>'Eka'])
         ]);
     }
+
+    /**
+     * BIND_COLLECTION names the bind variable (without `@`) ; the collection is
+     * bound whether it is given or not.
+     *
+     * @throws BindException
+     * @throws ReflectionException
+     */
+    public function testBindCollectionNamesTheBindVariable(): void
+    {
+        $binds = [] ;
+        $query = aqlInsert( [ AQL::COLLECTION => 'users' , AQL::BIND_COLLECTION => 'target' ] , $binds ) ;
+
+        $this->assertSame( 'INSERT {} INTO @@target RETURN NEW' , $query ) ;
+        $this->assertSame( [ '@target' => 'users' ] , $binds ) ;
+
+        $binds = [] ;
+        $query = aqlInsert( [ AQL::COLLECTION => 'users' ] , $binds ) ;
+
+        $this->assertMatchesRegularExpression( '/^INSERT \{\} INTO @@c_\w+ RETURN NEW$/' , $query ) ;
+        $this->assertSame( [ 'users' ] , array_values( $binds ) ) ;
+    }
+
+    /**
+     * BIND_COLLECTION is a name, not a switch : a boolean is refused.
+     *
+     * @throws ReflectionException
+     */
+    public function testBindCollectionIsNotABoolean(): void
+    {
+        $this->expectException( BindException::class ) ;
+        $binds = [] ;
+        aqlInsert( [ AQL::COLLECTION => 'users' , AQL::BIND_COLLECTION => true ] , $binds ) ;
+    }
 }
