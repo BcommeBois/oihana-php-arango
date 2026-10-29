@@ -126,6 +126,14 @@ L'ensemble complet des *document/object functions* AQL (21 helpers, un par const
 
 Clés (`attributes`/`keys`, `values`, `entries`, `count`/`length`), projection (`keep`/`keepRecursive`, `unsetAttributes`/`unsetRecursive`), fusion (`merge`/`mergeRecursive`), construction (`zip`), lookup (`translate`, `value`), correspondance (`matches`, `has`) et analyse d'identifiant (`parseCollection`/`parseIdentifier`/`parseKey`, `isSameCollection`).
 
+> **`translate()` et sa valeur par défaut** — les trois arguments sont du texte AQL, recopié tel quel. Un `null` PHP (ou `''`) **omet** la valeur par défaut, et `TRANSLATE()` renvoie alors la valeur **elle-même** quand elle n'est pas dans la table. Pour renvoyer le `null` AQL, passer `AQL::NULL` ; pour un texte, le quoter avec `aqlValue()`.
+>
+> ```php
+> translate( 'doc.status' , '@labels' ) ;                        // TRANSLATE(doc.status,@labels)           → le statut lui-même
+> translate( 'doc.status' , '@labels' , AQL::NULL ) ;            // TRANSLATE(doc.status,@labels,null)      → null
+> translate( 'doc.status' , '@labels' , aqlValue( 'unknown' ) ) ; // TRANSLATE(doc.status,@labels,'unknown') → 'unknown'
+> ```
+
 > **Quoting** — les helpers dont l'argument AQL doit être un *littéral string* le mettent entre guillemets pour vous : les noms d'attributs de `keep`/`unset*`, le nom de collection de `isSameCollection`, et les tableaux PHP passés à `matches`/`zip` (émis en JSON via `json_encode`). Les arguments `document` / identifiant restent des expressions AQL brutes (`doc`, `@bind`, `doc._id`). `unsetAttributes()` porte ce nom car `unset` est un mot-clé réservé de PHP.
 
 ```php

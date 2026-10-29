@@ -68,7 +68,6 @@ class AqlInsertTest extends TestCase
                 keyValue( 'name' , aqlBind('test', $binds, 'name')),
                 keyValue( 'active', true),
             ]),
-            AQL::RAW_VALUES => ['_key'],
         ], $binds);
 
         $this->assertEquals(

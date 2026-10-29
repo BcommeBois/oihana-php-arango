@@ -6,6 +6,7 @@ use ReflectionClass;
 
 use PHPUnit\Framework\TestCase;
 
+use oihana\arango\db\enums\AQL;
 use oihana\arango\db\enums\functions\DocumentFunction;
 use oihana\exceptions\UnsupportedOperationException;
 
@@ -30,6 +31,7 @@ use function oihana\arango\db\functions\documents\unsetRecursive;
 use function oihana\arango\db\functions\documents\value;
 use function oihana\arango\db\functions\documents\values;
 use function oihana\arango\db\functions\documents\zip;
+use function oihana\arango\db\helpers\aqlValue;
 
 use function oihana\arango\db\helpers\aqlDocument;
 
@@ -92,6 +94,27 @@ class DocumentFunctionsTest extends TestCase
         $result = translate("value", "{foo:1}", "bar");
         $expected = "TRANSLATE(value,{foo:1},bar)";
         $this->assertSame($expected, $result);
+    }
+
+    /**
+     * A PHP null (or an empty string) omits the default : TRANSLATE() then
+     * returns the value itself when it is not in the lookup.
+     */
+    public function testTranslateNullOmitsTheDefault(): void
+    {
+        $this->assertSame( 'TRANSLATE(doc.status,@labels)' , translate( 'doc.status' , '@labels' ) ) ;
+        $this->assertSame( 'TRANSLATE(doc.status,@labels)' , translate( 'doc.status' , '@labels' , null ) ) ;
+        $this->assertSame( 'TRANSLATE(doc.status,@labels)' , translate( 'doc.status' , '@labels' , '' ) ) ;
+    }
+
+    /**
+     * AQL::NULL writes the AQL null as the default ; a string default is AQL
+     * text, so a literal is quoted first.
+     */
+    public function testTranslateWritesAnAqlNullOrAQuotedDefault(): void
+    {
+        $this->assertSame( 'TRANSLATE(doc.status,@labels,null)'      , translate( 'doc.status' , '@labels' , AQL::NULL ) ) ;
+        $this->assertSame( "TRANSLATE(doc.status,@labels,'unknown')" , translate( 'doc.status' , '@labels' , aqlValue( 'unknown' ) ) ) ;
     }
 
     public function testValue(): void

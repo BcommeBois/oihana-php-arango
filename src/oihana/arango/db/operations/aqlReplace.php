@@ -28,10 +28,10 @@ use oihana\arango\db\options\ReplaceOptions;
  * - 'collection' : The name of the collection in which the document should be replaced.
  * - 'doc'        : An object and contain the attributes and values to replace.
  * - 'options'    : The default 'options' expression definition
- * - 'rawValues'  : array, keys whose values should be treated as raw AQL expressions - used with the 'with' option)
- * - 'rawKeys'    : array, keys which should be kept raw (their values are not wrapped or converted) - used with the 'with' option)
- * - 'useSpace'   : bool, add spaces around braces and after commas
  * - 'with'       : One or multiple collections for WITH clause -> WITH collection1 [, collection2 [, ... collectionN ] ]
+ *
+ * 'doc' and 'with' are written verbatim : build them with {@see \oihana\arango\db\helpers\aqlDocument()},
+ * which takes the 'rawKeys' / 'rawValues' / 'useSpace' options. This function reads none of them.
  *
  * @return string
  *

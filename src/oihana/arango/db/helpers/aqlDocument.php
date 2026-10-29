@@ -22,8 +22,17 @@ use function oihana\core\strings\compile;
  *
  * Options can be passed as an associative array:
  * - 'useSpace'  : bool, add spaces around braces and after commas
- * - 'rawValues' : array, keys whose values should be treated as raw AQL expressions
- * - 'rawKeys'   : array, keys which should be kept raw (their values are not wrapped or converted)
+ * - 'rawKeys'   : array, KEYS whose value is emitted raw (not quoted, not converted).
+ *                 The key itself is still escaped when it is not an identifier.
+ *                 Applies to the top level only.
+ * - 'rawValues' : array, VALUES (exact strings) emitted raw wherever they appear,
+ *                 nested documents included. It never matches a key : to keep the
+ *                 value of a given key raw, use 'rawKeys'.
+ *
+ * A string value is emitted raw when {@see isAQLExpression()} recognizes it (a known
+ * function call, `doc.field`, `@bind`, `collection/key`) ; anything else is quoted.
+ * Compound expressions and parenthesized subqueries are NOT recognized : declare
+ * them with 'rawKeys' (or 'rawValues').
  *
  * @param object|array|string|null $keyValues Array of key-value pairs, associative array, object, string, or null
  * @param array                    $options   Optional settings: ['useSpace'=>bool, 'rawValues'=>array, 'rawKeys'=>array]
@@ -46,17 +55,28 @@ use function oihana\core\strings\compile;
  * // { _from:u._id, _to:p._id }
  * ```
  *
- * Using raw values for AQL expressions
+ * Known function calls are detected, no option needed
  * ```php
- * echo document([ '_key'=>"CONCAT('test', i)", 'name'=>"test", 'foobar'=>true ],
- * ['useSpace'=>true, 'rawValues'=>['_key']]);
- * // { _key: CONCAT('test', i), name:'test', foobar:true }
+ * echo document([ '_key'=>"CONCAT('test', i)", 'name'=>"test", 'foobar'=>true ], ['useSpace'=>true]);
+ * // { _key:CONCAT('test', i), name:'test', foobar:true }
  * ```
  *
- * Forcing keys to be raw
+ * Keeping the value of a key raw (rawKeys)
  * ```php
- * echo document([ 'custom'=> 'something' ], ['rawKeys'=>['custom']]);
- * // {custom:something}
+ * echo document([ 'next'=>'i + 1', 'items'=>'(FOR x IN things RETURN x)' ], ['rawKeys'=>['next','items']]);
+ * // {next:i + 1,items:(FOR x IN things RETURN x)}
+ *
+ * echo document([ 'items'=>'(FOR x IN things RETURN x)' ]);
+ * // {items:'(FOR x IN things RETURN x)'}  ← not detected, quoted
+ * ```
+ *
+ * Keeping a value raw wherever it appears (rawValues)
+ * ```php
+ * echo document([ 'a'=>'i + 1', 'o'=>[ 'b'=>'i + 1' ] ], ['rawValues'=>['i + 1']]);
+ * // {a:i + 1,o:{b:i + 1}}
+ *
+ * echo document([ 'a'=>'i + 1' ], ['rawValues'=>['a']]);
+ * // {a:'i + 1'}  ← 'a' is a key, not a value : no effect
  * ```
  *
  * Nested associative array

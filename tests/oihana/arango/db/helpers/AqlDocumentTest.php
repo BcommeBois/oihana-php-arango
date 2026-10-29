@@ -118,21 +118,102 @@ class AqlDocumentTest extends TestCase
      */
     public function testRawExpressions()
     {
+        // 'i + 1' is not auto-detected as AQL : only RAW_KEYS keeps it raw.
         $input = [
-            '_key' => "CONCAT('test',i)",
-            'name' => 'test',
+            '_key'   => 'i + 1',
+            'name'   => 'test',
             'foobar' => true
         ];
         $this->assertSame
         (
-            "{_key:CONCAT('test',i),name:'test',foobar:true}" ,
-            aqlDocument( $input , [ AQL::RAW_KEYS => '_key' ] )
+            "{_key:i + 1,name:'test',foobar:true}" ,
+            aqlDocument( $input , [ AQL::RAW_KEYS => [ '_key' ] ] )
         );
 
         $this->assertSame
         (
-            "{ _key:CONCAT('test',i), name:'test', foobar:true }" ,
-            aqlDocument( $input , [ AQL::RAW_KEYS => '_key' , AQL::USE_SPACE => true ] )
+            "{ _key:i + 1, name:'test', foobar:true }" ,
+            aqlDocument( $input , [ AQL::RAW_KEYS => [ '_key' ] , AQL::USE_SPACE => true ] )
+        );
+    }
+
+    /**
+     * RAW_KEYS keeps the VALUE raw, never the key : a key that is not an
+     * identifier is still quoted.
+     * @throws UnsupportedOperationException
+     */
+    public function testRawKeysStillEscapeTheKey()
+    {
+        $this->assertSame
+        (
+            "{'my key':i + 1}" ,
+            aqlDocument( [ 'my key' => 'i + 1' ] , [ AQL::RAW_KEYS => [ 'my key' ] ] )
+        );
+    }
+
+    /**
+     * RAW_KEYS must be a list : a bare string is ignored.
+     * @throws UnsupportedOperationException
+     */
+    public function testRawKeysAsStringIsIgnored()
+    {
+        $this->assertSame
+        (
+            "{_key:'i + 1'}" ,
+            aqlDocument( [ '_key' => 'i + 1' ] , [ AQL::RAW_KEYS => '_key' ] )
+        );
+    }
+
+    /**
+     * RAW_VALUES lists VALUES (exact strings), not keys.
+     * @throws UnsupportedOperationException
+     */
+    public function testRawValuesMatchValuesNotKeys()
+    {
+        $input = [ 'a' => 'i + 1' , 'b' => 'i + 1' , 'c' => 'i + 2' ] ;
+
+        $this->assertSame
+        (
+            "{a:i + 1,b:i + 1,c:'i + 2'}" ,
+            aqlDocument( $input , [ AQL::RAW_VALUES => [ 'i + 1' ] ] )
+        );
+
+        $this->assertSame
+        (
+            "{a:'i + 1',b:'i + 1',c:'i + 2'}" ,
+            aqlDocument( $input , [ AQL::RAW_VALUES => [ 'a' , 'b' , 'c' ] ] ) ,
+            'A key listed in RAW_VALUES must not keep its value raw.'
+        );
+    }
+
+    /**
+     * RAW_VALUES reaches the values of a nested document ; RAW_KEYS does not.
+     * @throws UnsupportedOperationException
+     */
+    public function testRawValuesReachNestedDocuments()
+    {
+        $this->assertSame
+        (
+            "{o:{k:i + 1}}" ,
+            aqlDocument( [ 'o' => [ 'k' => 'i + 1' ] ] , [ AQL::RAW_VALUES => [ 'i + 1' ] ] )
+        );
+    }
+
+    /**
+     * A parenthesized subquery is not auto-detected : it is quoted, unless its
+     * key is declared in RAW_KEYS.
+     * @throws UnsupportedOperationException
+     */
+    public function testSubqueryIsQuotedUnlessDeclaredRaw()
+    {
+        $input = [ 'items' => '(FOR x IN things RETURN x)' ] ;
+
+        $this->assertSame( "{items:'(FOR x IN things RETURN x)'}" , aqlDocument( $input ) ) ;
+
+        $this->assertSame
+        (
+            "{items:(FOR x IN things RETURN x)}" ,
+            aqlDocument( $input , [ AQL::RAW_KEYS => [ 'items' ] ] )
         );
     }
 

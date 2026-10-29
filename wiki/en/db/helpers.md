@@ -49,12 +49,23 @@ aqlValue( '@userId'         ) ;    // '@userId'         (raw)
 aqlValue( 'users/123'       ) ;    // 'users/123'       (raw)
 ```
 
-The second `$rawValues` parameter allows forcing *raw* treatment for strings that would otherwise be escaped:
+The second `$rawValues` parameter allows forcing *raw* treatment for strings that would otherwise be escaped. It lists **values** (exact strings), not keys:
 
 ```php
 aqlValue( 'my_variable' )                       ; // "'my_variable'" (quoted)
 aqlValue( 'my_variable' , [ 'my_variable' ] )   ; // 'my_variable'   (raw, forced)
 ```
+
+#### What the detection does not recognize
+
+**The situation.** A value holds a subquery, or a computation: `(FOR x IN things RETURN x)`, `i + 1`. The detection recognizes **atoms** only — a call that starts with a known function, `doc.field`, `@bind`, `collection/key`. A compound expression or a parenthesized subquery is not one of them: it comes back **quoted**, as text.
+
+```php
+aqlValue( '(FOR x IN things RETURN x)' ) ;   // "'(FOR x IN things RETURN x)'"  (quoted)
+aqlValue( 'i + 1' ) ;                        // "'i + 1'"                       (quoted)
+```
+
+This is deliberate. Recognizing `(FOR …` would turn ordinary text into code — AQL keywords are case-insensitive, so `(for sale)` would qualify — and a well-formed subquery coming from **data** would run. Declare the expression instead: `$rawValues` here, `AQL::RAW_KEYS` in `aqlDocument()` (below).
 
 Associative arrays are delegated to `aqlDocument()`, objects to `aqlDocument(get_object_vars(...))`, indexed arrays are serialized as `[v1,v2,v3]`. Any unsupported type throws `oihana\exceptions\UnsupportedOperationException`.
 
@@ -89,8 +100,8 @@ Builds an inline document expression `{key:value,...}`. Accepts an associative *
 Three options:
 
 - `AQL::USE_SPACE` *(bool)* — adds spaces around braces and after commas (readability of long queries).
-- `AQL::RAW_VALUES` *(array)* — list of keys whose value must be treated as a raw AQL expression (no escape, no *quotes*).
-- `AQL::RAW_KEYS` *(array)* — list of keys whose **entire** value must stay raw (both the key AND the value).
+- `AQL::RAW_KEYS` *(array)* — list of **keys** whose value stays raw (no escape, no *quotes*). The key itself is still escaped when it is not an identifier. Top level only.
+- `AQL::RAW_VALUES` *(array)* — list of **values** (exact strings) that stay raw wherever they appear, nested documents included. It never matches a key.
 
 ```php
 use function oihana\arango\db\helpers\aqlDocument ;
@@ -102,15 +113,32 @@ aqlDocument( [ '_from' => 'u._id' , '_to' => 'p._id' ] ) ;
 aqlDocument
 (
     [ '_key' => 'CONCAT("u_", i)' , 'name' => 'test' ] ,
-    [ AQL::USE_SPACE => true , AQL::RAW_VALUES => [ '_key' ] ]
+    [ AQL::USE_SPACE => true ]
 ) ;
-// "{ _key: CONCAT(\"u_\", i), name:'test' }"
+// "{ _key:CONCAT(\"u_\", i), name:'test' }"  (a known function call : detected, no option needed)
 
 aqlDocument( [ 'user' => [ 'name' => 'Eka' , 'age' => 47 ] , 'active' => true ] ) ;
 // "{user:{name:'Eka',age:47},active:true}"
 ```
 
 Keys are validated: only those matching `/^[a-zA-Z_]\w*$/` are left as-is, others are quoted and escaped.
+
+#### `RAW_KEYS` or `RAW_VALUES`
+
+**The situation.** A document holds a subquery under `items`: the detection does not recognize it (see [`aqlValue()`](#what-the-detection-does-not-recognize)), so it must be declared. `RAW_KEYS` names the **key**; `RAW_VALUES` names the **value** itself — a key listed in `RAW_VALUES` has no effect.
+
+```php
+$doc = [ 'items' => '(FOR x IN things RETURN x)' ] ;
+
+aqlDocument( $doc ) ;                                           // "{items:'(FOR x IN things RETURN x)'}"  ✗ quoted, a string
+aqlDocument( $doc , [ AQL::RAW_KEYS   => [ 'items' ] ] ) ;      // "{items:(FOR x IN things RETURN x)}"    ✓ the subquery
+aqlDocument( $doc , [ AQL::RAW_VALUES => [ 'items' ] ] ) ;      // "{items:'(FOR x IN things RETURN x)'}"  ✗ 'items' is a key, not a value
+aqlDocument( $doc , [ AQL::RAW_VALUES => [ '(FOR x IN things RETURN x)' ] ] ) ; // "{items:(FOR x IN things RETURN x)}" ✓
+```
+
+Prefer `RAW_KEYS`: it says *where* the code is. `RAW_VALUES` says *what* the code is, and also reaches nested documents — any occurrence of that exact string is emitted raw.
+
+> **Write operations.** `aqlInsert()`, `aqlUpdate()` and `aqlReplace()` write `AQL::DOC` / `AQL::WITH` verbatim and read none of these options: build the document with `aqlDocument()` first.
 
 ### `aqlArray()` and `aqlSafeArray()`
 
@@ -356,7 +384,7 @@ Four predicates classify a string:
 
 | Function | Signature | True if... |
 |---|---|---|
-| `isAQLExpression` | `(mixed $value) : bool` | The string looks like an AQL expression (function, doc reference, bind, *handle*). |
+| `isAQLExpression` | `(mixed $value) : bool` | The string looks like an AQL expression (function, doc reference, bind, *handle*). Atoms only: a compound expression or a subquery is never recognized ([why](#what-the-detection-does-not-recognize)). |
 | `isAQLFunction` | `(string $expression) : bool` | The string is a valid and known AQL function call (`COUNT(doc)`, `DATE_NOW()`, ...). |
 | `isAQLId` | `(mixed $value) : bool` | The string matches the *document handle* format `collection/key`. |
 | `isAttributeName` | `(mixed $value) : bool` | The string is a safe attribute name — one or more identifier segments joined by dots (`value`, `_key`, `breeding.alternateName`). |

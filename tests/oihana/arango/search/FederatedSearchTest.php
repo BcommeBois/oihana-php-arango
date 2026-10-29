@@ -325,6 +325,9 @@ final class FederatedSearchTest extends TestCase
         $this->assertStringContainsString( 'FOR doc IN @@' , $typeAql ) ;
         $this->assertStringContainsString( 'FILTER doc._key IN @' , $typeAql ) ;
         $this->assertStringContainsString( 'doc.additionalType' , $typeAql ) ;
+
+        // both projected values stay raw AQL references, never quoted strings
+        $this->assertStringEndsWith( 'RETURN { _key:doc._key, discriminator:doc.additionalType }' , $typeAql ) ;
     }
 
     public function testRebuildUsesTheFallbackModelForAnUnmappedType() :void
@@ -507,6 +510,9 @@ final class FederatedSearchTest extends TestCase
         $this->assertStringContainsString( 'SORT score DESC' , $aql ) ;
         $this->assertStringContainsString( 'LIMIT 10' , $aql ) ;
         $this->assertStringContainsString( 'MERGE(PARSE_IDENTIFIER(doc._id)' , $aql ) ;
+
+        // the score is the LET variable, never the string 'score'
+        $this->assertStringEndsWith( 'RETURN MERGE(PARSE_IDENTIFIER(doc._id),{ score:score })' , $aql ) ;
 
         // fullCount requested → foundRows() exposes the total (before the LIMIT)
         $this->assertSame( [ 'options' => [ 'fullCount' => true ] ] , $captured[ 'options' ] ) ;

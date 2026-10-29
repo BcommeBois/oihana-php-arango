@@ -29,12 +29,13 @@ use function oihana\core\strings\compile;
  * and optionally returning the newly inserted document.
  *
  * The `$init` array may contain:
- * - `AQL::DOCUMENT` (array|object|string) — The document to insert.
+ * - `AQL::DOC` (string) — The document to insert, written verbatim (default `{}`).
  * - `AQL::COLLECTION` (string) — The target collection name.
  * - `AQL::BIND_COLLECTION` (bool) — Whether to bind the collection as a variable.
  * - `AQL::QUERY_ID` (string) — An optional query identifier to prepend the default name of the bind collection variable.
- * - `AQL::RAW_VALUES` (array) — Keys in the document whose values should be treated as raw AQL expressions.
- * - `AQL::USE_SPACE` (bool) — Whether to add spaces around braces and commas for readability.
+ *
+ * The document is not formatted here : build it with {@see \oihana\arango\db\helpers\aqlDocument()},
+ * which takes the `AQL::RAW_KEYS` / `AQL::RAW_VALUES` / `AQL::USE_SPACE` options. This function reads none of them.
  *
  * @param array      $init An associative array containing the insert parameters.
  * @param array|null $binds A reference array to hold bind variables for the query.
@@ -50,41 +51,41 @@ use function oihana\core\strings\compile;
  * ```php
  * echo aqlInsert
  * ([
- *     AQL::DOCUMENT   => ['name' => 'Eka', 'age' => 47],
- *     AQL::COLLECTION => 'users'
- * ]);
- * // INSERT {name:'Eka',age:47} INTO users OPTIONS {} RETURN NEW
+ *     AQL::DOC             => aqlDocument( [ 'name' => 'Eka' , 'age' => 47 ] ) ,
+ *     AQL::COLLECTION      => 'users' ,
+ *     AQL::BIND_COLLECTION => AQL::COLLECTION ,
+ * ] , $binds );
+ * // INSERT {name:'Eka',age:47} INTO @@collection RETURN NEW
  * ```
  *
- * Insert a document with raw AQL expressions
+ * Insert a document holding a raw AQL expression
  * ```php
  * echo aqlInsert
  * ([
- *     AQL::DOCUMENT =>
- *     [
- *          '_key' => "CONCAT('test', i)",
- *          'name' => 'test',
- *          'active' => true
- *     ],
- *     AQL::RAW_VALUES => [ '_key' ] ,
- *     AQL::COLLECTION => 'items'
- * ]);
- * // INSERT {_key:CONCAT('test', i),name:'test',active:true} INTO items OPTIONS {} RETURN NEW
+ *     AQL::DOC => aqlDocument
+ *     (
+ *         [ '_key' => 'i + 1' , 'name' => 'test' , 'active' => true ] ,
+ *         [ AQL::RAW_KEYS => [ '_key' ] ]
+ *     ) ,
+ *     AQL::COLLECTION      => 'items' ,
+ *     AQL::BIND_COLLECTION => AQL::COLLECTION ,
+ * ] , $binds );
+ * // INSERT {_key:i + 1,name:'test',active:true} INTO @@collection RETURN NEW
  * ```
  *
  * Insert a nested document with arrays
  * ```php
  * echo aqlInsert
  * ([
- *     AQL::DOC =>
- *     [
- *          'user' => ['name' => 'Eka', 'roles' => ['admin','editor']],
- *          'active' => true
- *     ],
- *     AQL::USE_SPACE => true,
- *     AQL::COLLECTION => 'users'
- * ]);
- * // INSERT { user:{name:'Eka',roles:['admin','editor']}, active:true } INTO users OPTIONS {} RETURN NEW
+ *     AQL::DOC => aqlDocument
+ *     (
+ *         [ 'user' => [ 'name' => 'Eka' , 'roles' => [ 'admin' , 'editor' ] ] , 'active' => true ] ,
+ *         [ AQL::USE_SPACE => true ]
+ *     ) ,
+ *     AQL::COLLECTION      => 'users' ,
+ *     AQL::BIND_COLLECTION => AQL::COLLECTION ,
+ * ] , $binds );
+ * // INSERT { user:{name:'Eka',roles:['admin','editor']}, active:true } INTO @@collection RETURN NEW
  * ```
  *
  * @see InsertOptions Allows passing advanced options such as overwriteMode, waitForSync, etc.

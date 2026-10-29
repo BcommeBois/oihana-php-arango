@@ -49,12 +49,23 @@ aqlValue( '@userId'         ) ;    // '@userId'         (raw)
 aqlValue( 'users/123'       ) ;    // 'users/123'       (raw)
 ```
 
-Le second paramètre `$rawValues` permet de forcer le traitement *raw* pour des chaînes qui passeraient sinon par l'échappement :
+Le second paramètre `$rawValues` permet de forcer le traitement *raw* pour des chaînes qui passeraient sinon par l'échappement. Il liste des **valeurs** (chaînes exactes), pas des clés :
 
 ```php
 aqlValue( 'my_variable' )                       ; // "'my_variable'" (quotée)
 aqlValue( 'my_variable' , [ 'my_variable' ] )   ; // 'my_variable'   (raw, forcée)
 ```
+
+#### Ce que la détection ne reconnaît pas
+
+**La situation.** Une valeur contient une sous-requête, ou un calcul : `(FOR x IN things RETURN x)`, `i + 1`. La détection ne reconnaît que des **atomes** — un appel qui commence par une fonction connue, `doc.champ`, `@bind`, `collection/clé`. Une expression composée ou une sous-requête entre parenthèses n'en fait pas partie : elle revient **entre guillemets**, comme un texte.
+
+```php
+aqlValue( '(FOR x IN things RETURN x)' ) ;   // "'(FOR x IN things RETURN x)'"  (quotée)
+aqlValue( 'i + 1' ) ;                        // "'i + 1'"                       (quotée)
+```
+
+C'est voulu. Reconnaître `(FOR …` ferait d'un texte ordinaire du code — les mots-clés AQL sont insensibles à la casse, donc `(for sale)` passerait — et une sous-requête bien formée venue d'une **donnée** s'exécuterait. On déclare l'expression à la place : `$rawValues` ici, `AQL::RAW_KEYS` dans `aqlDocument()` (ci-dessous).
 
 Les tableaux associatifs sont délégués à `aqlDocument()`, les objets à `aqlDocument(get_object_vars(...))`, les tableaux indexés sont sérialisés en `[v1,v2,v3]`. Tout type non pris en charge lève `oihana\exceptions\UnsupportedOperationException`.
 
@@ -89,8 +100,8 @@ Construit une expression de type document inline `{key:value,...}`. Accepte un *
 Trois options :
 
 - `AQL::USE_SPACE` *(bool)* — ajoute des espaces autour des accolades et après les virgules (lisibilité des requêtes longues).
-- `AQL::RAW_VALUES` *(array)* — liste de clés dont la valeur doit être traitée comme expression AQL brute (pas d'échappement, pas de *quotes*).
-- `AQL::RAW_KEYS` *(array)* — liste de clés dont la valeur **entière** doit rester brute (la clé ET la valeur).
+- `AQL::RAW_KEYS` *(array)* — liste de **clés** dont la valeur reste brute (pas d'échappement, pas de *quotes*). La clé elle-même reste échappée si ce n'est pas un identifiant. Premier niveau seulement.
+- `AQL::RAW_VALUES` *(array)* — liste de **valeurs** (chaînes exactes) qui restent brutes partout où elles apparaissent, sous-documents compris. Elle ne correspond jamais à une clé.
 
 ```php
 use function oihana\arango\db\helpers\aqlDocument ;
@@ -102,15 +113,32 @@ aqlDocument( [ '_from' => 'u._id' , '_to' => 'p._id' ] ) ;
 aqlDocument
 (
     [ '_key' => 'CONCAT("u_", i)' , 'name' => 'test' ] ,
-    [ AQL::USE_SPACE => true , AQL::RAW_VALUES => [ '_key' ] ]
+    [ AQL::USE_SPACE => true ]
 ) ;
-// "{ _key: CONCAT(\"u_\", i), name:'test' }"
+// "{ _key:CONCAT(\"u_\", i), name:'test' }"  (appel de fonction connue : détecté, aucune option)
 
 aqlDocument( [ 'user' => [ 'name' => 'Eka' , 'age' => 47 ] , 'active' => true ] ) ;
 // "{user:{name:'Eka',age:47},active:true}"
 ```
 
 Les clés sont validées : seules celles qui matchent `/^[a-zA-Z_]\w*$/` sont laissées telles quelles, les autres sont quotées et échappées.
+
+#### `RAW_KEYS` ou `RAW_VALUES`
+
+**La situation.** Un document porte une sous-requête sous `items` : la détection ne la reconnaît pas (voir [`aqlValue()`](#ce-que-la-détection-ne-reconnaît-pas)), il faut donc la déclarer. `RAW_KEYS` nomme la **clé** ; `RAW_VALUES` nomme la **valeur** elle-même — une clé listée dans `RAW_VALUES` n'a aucun effet.
+
+```php
+$doc = [ 'items' => '(FOR x IN things RETURN x)' ] ;
+
+aqlDocument( $doc ) ;                                           // "{items:'(FOR x IN things RETURN x)'}"  ✗ quotée, une chaîne
+aqlDocument( $doc , [ AQL::RAW_KEYS   => [ 'items' ] ] ) ;      // "{items:(FOR x IN things RETURN x)}"    ✓ la sous-requête
+aqlDocument( $doc , [ AQL::RAW_VALUES => [ 'items' ] ] ) ;      // "{items:'(FOR x IN things RETURN x)'}"  ✗ 'items' est une clé, pas une valeur
+aqlDocument( $doc , [ AQL::RAW_VALUES => [ '(FOR x IN things RETURN x)' ] ] ) ; // "{items:(FOR x IN things RETURN x)}" ✓
+```
+
+Préférer `RAW_KEYS` : il dit *où* est le code. `RAW_VALUES` dit *quel* est le code, et descend aussi dans les sous-documents — toute occurrence de cette chaîne exacte sort brute.
+
+> **Opérations d'écriture.** `aqlInsert()`, `aqlUpdate()` et `aqlReplace()` recopient `AQL::DOC` / `AQL::WITH` tels quels et ne lisent aucune de ces options : construire le document avec `aqlDocument()` d'abord.
 
 ### `aqlArray()` et `aqlSafeArray()`
 
@@ -357,7 +385,7 @@ Quatre prédicats permettent de classifier une chaîne :
 
 | Fonction | Signature | Vrai si... |
 |---|---|---|
-| `isAQLExpression` | `(mixed $value) : bool` | La chaîne ressemble à une expression AQL (fonction, référence doc, bind, *handle*). |
+| `isAQLExpression` | `(mixed $value) : bool` | La chaîne ressemble à une expression AQL (fonction, référence doc, bind, *handle*). Des atomes seulement : une expression composée ou une sous-requête n'est jamais reconnue ([pourquoi](#ce-que-la-détection-ne-reconnaît-pas)). |
 | `isAQLFunction` | `(string $expression) : bool` | La chaîne est un appel de fonction AQL valide et reconnu (`COUNT(doc)`, `DATE_NOW()`, ...). |
 | `isAQLId` | `(mixed $value) : bool` | La chaîne respecte le format *document handle* `collection/key`. |
 | `isAttributeName` | `(mixed $value) : bool` | La chaîne est un nom d'attribut sûr — un ou plusieurs segments identifiant séparés par des points (`value`, `_key`, `breeding.alternateName`). |

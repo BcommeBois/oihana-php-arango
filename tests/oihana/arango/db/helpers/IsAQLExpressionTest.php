@@ -75,6 +75,20 @@ class IsAQLExpressionTest extends TestCase
         $this->assertTrue(isAQLExpression("'hello world'"));
     }
 
+    /**
+     * Compound expressions are never detected : a value that merely looks like
+     * code stays a quoted string. Declare them raw instead (RAW_KEYS / RAW_VALUES).
+     */
+    public function testCompoundExpressionsAreNotDetected()
+    {
+        $this->assertFalse(isAQLExpression('(FOR x IN things RETURN x)'));
+        $this->assertFalse(isAQLExpression('(for x in things return x)'));
+        $this->assertFalse(isAQLExpression('(LET a = 1 RETURN a)'));
+        $this->assertFalse(isAQLExpression('(1 + 2)'));
+        $this->assertFalse(isAQLExpression('x.y == 1'));
+        $this->assertFalse(isAQLExpression('i + 1'));
+    }
+
     public function testRandomStringReturnsFalse()
     {
         $this->assertFalse(isAQLExpression('hello world'));

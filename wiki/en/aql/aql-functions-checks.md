@@ -126,6 +126,14 @@ The full set of the AQL *document/object functions* (21 helpers, one per `Docume
 
 Key reference (`attributes`/`keys`, `values`, `entries`, `count`/`length`), projection (`keep`/`keepRecursive`, `unsetAttributes`/`unsetRecursive`), merging (`merge`/`mergeRecursive`), building (`zip`), lookup (`translate`, `value`), matching (`matches`, `has`), and identifier parsing (`parseCollection`/`parseIdentifier`/`parseKey`, `isSameCollection`).
 
+> **`translate()` and its default** — the three arguments are AQL text, written verbatim. A PHP `null` (or `''`) **omits** the default, and `TRANSLATE()` then returns the value **itself** when it is not in the lookup. To return the AQL `null` instead, pass `AQL::NULL`; for a text default, quote it with `aqlValue()`.
+>
+> ```php
+> translate( 'doc.status' , '@labels' ) ;                        // TRANSLATE(doc.status,@labels)           → the status itself
+> translate( 'doc.status' , '@labels' , AQL::NULL ) ;            // TRANSLATE(doc.status,@labels,null)      → null
+> translate( 'doc.status' , '@labels' , aqlValue( 'unknown' ) ) ; // TRANSLATE(doc.status,@labels,'unknown') → 'unknown'
+> ```
+
 > **Quoting** — helpers whose AQL argument must be a *string literal* quote it for you: the attribute names of `keep`/`unset*`, the collection name of `isSameCollection`, and PHP arrays passed to `matches`/`zip` (emitted as JSON via `json_encode`). The `document` / identifier arguments stay raw AQL expressions (`doc`, `@bind`, `doc._id`). `unsetAttributes()` is named so because `unset` is a reserved PHP keyword.
 
 ```php

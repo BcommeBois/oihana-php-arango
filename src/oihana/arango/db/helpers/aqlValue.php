@@ -13,6 +13,10 @@ use function oihana\core\arrays\isAssociative;
  * Automatically detects AQL functions using pattern matching and treats them as raw expressions.
  * Also supports manual raw value specification for edge cases.
  *
+ * Compound expressions (`i + 1`, `x.y == 1`) and parenthesized subqueries
+ * (`(FOR x IN things RETURN x)`) are NOT detected and come back quoted : list them in
+ * `$rawValues` (see {@see isAQLExpression()} for why the detection stays narrow).
+ *
  * String handling flow:
  * ```
  *        +--------------------------+

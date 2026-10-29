@@ -1192,7 +1192,7 @@ class FederatedSearch
             aqlFilter( [ compile( [ $keyPath , Comparator::IN , $keysVar ] ) ] ) ,
             aqlReturn( aqlDocument(
                 [ Schema::_KEY => $keyPath , self::DISCRIMINATOR_ALIAS => key( $field , AQL::DOC ) ] ,
-                [ AQL::USE_SPACE => true , AQL::RAW_VALUES => [ Schema::_KEY , self::DISCRIMINATOR_ALIAS ] ]
+                [ AQL::USE_SPACE => true , AQL::RAW_KEYS => [ Schema::_KEY , self::DISCRIMINATOR_ALIAS ] ]
             ) ) ,
         ]) ;
 
@@ -1280,7 +1280,7 @@ class FederatedSearch
         return merge
         ([
             parseIdentifier( key( Schema::_ID , AQL::DOC ) ) ,
-            aqlDocument( [ self::SCORE => self::SCORE ] , [ AQL::USE_SPACE => true , AQL::RAW_VALUES => [ self::SCORE ] ] ) ,
+            aqlDocument( [ self::SCORE => self::SCORE ] , [ AQL::USE_SPACE => true , AQL::RAW_KEYS => [ self::SCORE ] ] ) ,
         ]) ;
     }
 
