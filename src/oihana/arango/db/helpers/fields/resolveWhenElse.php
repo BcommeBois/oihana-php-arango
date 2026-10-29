@@ -24,9 +24,11 @@ use function oihana\core\strings\key;
  * deliberate (it is what lets a condition compare two attributes, `[ 'price', 'gt',
  * 'doc.minPrice' ]`). A few real-world literals fall into that net: `'N/A'` and `'en/US'` have
  * the shape of a document handle (`collection/key`) and are emitted raw, which ArangoDB then
- * reads as code and refuses (error 1203). Declare an ambiguous literal — one containing a `/`
- * or a `.` — with {@see \oihana\core\strings\betweenQuotes()}, the explicit « this really is a
- * string » form, which passes through untouched:
+ * reads as code and refuses (error 1203). A numeric string that is an AQL number (`'123'`,
+ * `'1e3'`) and `'true'` / `'false'` are emitted raw too, and read as a number or a boolean.
+ * Declare an ambiguous literal — one containing a `/` or a `.`, or one that must stay a string
+ * although it reads as a number or a boolean — with {@see \oihana\core\strings\betweenQuotes()},
+ * the explicit « this really is a string » form, which passes through untouched:
  *
  * ```php
  * Field::ELSE => betweenQuotes( 'N/A' ) ,   // →  : 'N/A'

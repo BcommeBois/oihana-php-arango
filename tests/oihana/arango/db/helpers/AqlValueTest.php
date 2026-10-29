@@ -127,4 +127,21 @@ class AqlValueTest extends TestCase
         $expected = "{_key:CONCAT(\"test\"),custom:MY_VAR}";
         $this->assertEquals($expected, aqlValue($data, $raws));
     }
+
+    /**
+     * A numeric string the server would refuse is quoted ; an AQL number stays raw.
+     * @throws UnsupportedOperationException
+     */
+    public function testNumericStringsFollowTheAqlNumberGrammar()
+    {
+        $this->assertSame( "'007'"   , aqlValue( '007'   ) ) ;
+        $this->assertSame( "'01000'" , aqlValue( '01000' ) ) ;
+        $this->assertSame( "'5.'"    , aqlValue( '5.'    ) ) ;
+        $this->assertSame( "{zip:'01000',n:42}" , aqlValue( [ 'zip' => '01000' , 'n' => '42' ] ) ) ;
+
+        $this->assertSame( '123' , aqlValue( '123' ) ) ;
+        $this->assertSame( '+5'  , aqlValue( '+5'  ) ) ;
+        $this->assertSame( '0.5' , aqlValue( '0.5' ) ) ;
+        $this->assertSame( '1e3' , aqlValue( '1e3' ) ) ;
+    }
 }

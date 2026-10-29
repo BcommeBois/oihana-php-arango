@@ -67,6 +67,36 @@ aqlValue( 'i + 1' ) ;                        // "'i + 1'"                       
 
 C'est voulu. Reconnaître `(FOR …` ferait d'un texte ordinaire du code — les mots-clés AQL sont insensibles à la casse, donc `(for sale)` passerait — et une sous-requête bien formée venue d'une **donnée** s'exécuterait. On déclare l'expression à la place : `$rawValues` ici, `AQL::RAW_KEYS` dans `aqlDocument()` (ci-dessous).
 
+#### Ce que la détection prend pour un nombre
+
+**La situation.** Une valeur est un code à zéros en tête, `'01000'`, ou un téléphone, `'0612345678'`. PHP les dit numériques ; AQL non — le serveur refuse un zéro en tête suivi d'un chiffre, et un point final (`'5.'`), par une erreur de syntaxe qui fait tomber **toute la requête**. Une chaîne numérique ne sort donc brute que si elle suit la grammaire des nombres AQL ; toute autre est mise entre guillemets.
+
+```php
+aqlValue( '01000' ) ;   // "'01000'"  ✓ une chaîne        (écrit 01000 auparavant : erreur de syntaxe)
+aqlValue( '5.'    ) ;   // "'5.'"     ✓ une chaîne
+aqlValue( '123'   ) ;   // '123'      brut : un nombre AQL
+aqlValue( '+5'    ) ;   // '+5'       brut
+aqlValue( '1e3'   ) ;   // '1e3'      brut
+```
+
+La frontière est celle du serveur, vérifiée contre lui sur toutes les chaînes numériques qu'une petite grammaire engendre (signes, zéros en tête, points, exposants, espaces).
+
+Une chaîne qui **est** un nombre AQL est lue comme un nombre — le piège qui reste, sans erreur :
+
+| Chaîne | Écrit | Le serveur lit… |
+|---|---|---|
+| `'123'` | `123` | un nombre : `FILTER doc.code == 123` ne trouve pas un `'123'` stocké, et `{_key:123}` est refusé |
+| `'12.50'` | `12.50` | `12.5` |
+| `'true'` / `'false'` | `true` | un booléen |
+| `'12345678901234567890'` | idem | `1.2345678901234567e+19` (au-delà des entiers 64 bits, arrondi) |
+
+Pour garder une telle valeur en chaîne, la déclarer avec `betweenQuotes()` :
+
+```php
+aqlDocument( [ '_key' => '123' ] ) ;                    // "{_key:123}"    ✗ un nombre, refusé comme clé
+aqlDocument( [ '_key' => betweenQuotes( '123' ) ] ) ;   // "{_key:'123'}"  ✓ une chaîne
+```
+
 Les tableaux associatifs sont délégués à `aqlDocument()`, les objets à `aqlDocument(get_object_vars(...))`, les tableaux indexés sont sérialisés en `[v1,v2,v3]`. Tout type non pris en charge lève `oihana\exceptions\UnsupportedOperationException`.
 
 ### `aqlExpression()` — point d'entrée simplifié

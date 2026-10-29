@@ -10,7 +10,19 @@ namespace oihana\arango\db\helpers;
  * - Document references: doc.field, user.name, etc.
  * - Bind parameters: @userId, @filter.name, etc.
  * - Collection paths: users/12345, etc.
- * - Already quoted strings ('hello'), booleans and numbers
+ * - Already quoted strings ('hello'), booleans ('true', 'false') and AQL numbers ('123', '+5', '0.5', '1e3')
+ *
+ * What is taken for a number : a string that follows the AQL number grammar — an
+ * optional sign, no leading zero before a digit, at least one digit after a dot, an
+ * optional exponent. The server refuses the other numeric strings PHP accepts
+ * (`'007'`, `'01000'`, `'5.'`) : those are text, and come back quoted. A string that
+ * IS an AQL number is emitted raw and read as a number, which can be a trap :
+ * - `'123'` compared to a stored `'123'` finds nothing, and `{_key:123}` is refused ;
+ * - `'12.50'` is written `12.5` ;
+ * - past 64-bit integers a value is rounded (`'12345678901234567890'` → `1.2345678901234567e+19`) ;
+ * - `'true'` / `'false'` become booleans.
+ * To keep such a value a string, declare it with {@see \oihana\core\strings\betweenQuotes()} :
+ * `betweenQuotes( '123' )` → `'123'`.
  *
  * What is NOT detected : compound expressions (`i + 1`, `x.y == 1`, `(1 + 2)`) and
  * parenthesized subqueries (`(FOR x IN things RETURN x)`). The detection decides
@@ -62,6 +74,14 @@ namespace oihana\arango\db\helpers;
  * isAQLExpression('user name'); // false
  * ```
  *
+ * Numeric strings
+ * ```php
+ * isAQLExpression('123');   // true  — an AQL number
+ * isAQLExpression('1e3');   // true
+ * isAQLExpression('007');   // false — the server refuses a leading zero
+ * isAQLExpression('5.');    // false — and a trailing dot
+ * ```
+ *
  * Compound expressions and subqueries (not detected, declare them raw)
  * ```php
  * isAQLExpression('i + 1');                      // false
@@ -88,7 +108,14 @@ function isAQLExpression( mixed $value ) :bool
         return true ;
     }
 
-    if ( in_array( strtolower( $value ) , [ 'true' , 'false' ] , true ) || is_numeric( $value ) )
+    if ( in_array( strtolower( $value ) , [ 'true' , 'false' ] , true ) )
+    {
+        return true ;
+    }
+
+    // An AQL number, not any PHP numeric string : the server refuses a leading zero
+    // before a digit ('007', '01000') and a trailing dot ('5.'), so those are text.
+    if ( preg_match( '/^[-+]?(?:(?:0|[1-9][0-9]*)(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$/' , $value ) )
     {
         return true ;
     }

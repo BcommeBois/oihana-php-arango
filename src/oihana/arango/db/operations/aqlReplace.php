@@ -48,9 +48,11 @@ use oihana\arango\db\options\ReplaceOptions;
  * echo aqlReplace
  * ([
  *    'collection' => 'users',
- *    'doc'        => aqlDocument( [ '_key' => '123' , 'name' => 'John' ] )
+ *    'doc'        => aqlDocument( [ '_key' => 'u123' , 'name' => 'John' ] )
  * ]);
- * // REPLACE {_key:123,name:'John'} IN users
+ * // REPLACE {_key:'u123',name:'John'} IN users
+ * // ⚠ a numeric key ('123') would be written _key:123, a number the server refuses as a key :
+ * //   declare it with betweenQuotes( '123' ).
  *
  * // Replace a key with a document, with options
  * echo aqlReplace

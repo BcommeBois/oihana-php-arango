@@ -17,6 +17,10 @@ use function oihana\core\arrays\isAssociative;
  * (`(FOR x IN things RETURN x)`) are NOT detected and come back quoted : list them in
  * `$rawValues` (see {@see isAQLExpression()} for why the detection stays narrow).
  *
+ * A numeric string is emitted raw only when it is an AQL number (`'123'`, `'+5'`, `'1e3'`) ;
+ * one the server would refuse (`'007'`, `'01000'`, `'5.'`) is quoted. A raw number is read as
+ * a number : to keep `'123'` or `'true'` a string, use {@see \oihana\core\strings\betweenQuotes()}.
+ *
  * String handling flow:
  * ```
  *        +--------------------------+

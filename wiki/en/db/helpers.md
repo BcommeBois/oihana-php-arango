@@ -67,6 +67,36 @@ aqlValue( 'i + 1' ) ;                        // "'i + 1'"                       
 
 This is deliberate. Recognizing `(FOR …` would turn ordinary text into code — AQL keywords are case-insensitive, so `(for sale)` would qualify — and a well-formed subquery coming from **data** would run. Declare the expression instead: `$rawValues` here, `AQL::RAW_KEYS` in `aqlDocument()` (below).
 
+#### What the detection takes for a number
+
+**The situation.** A value is a zero-padded code, `'01000'`, or a phone number, `'0612345678'`. PHP calls both numeric; AQL does not — the server refuses a leading zero before a digit, and a trailing dot (`'5.'`), with a syntax error that fails the **whole query**. So a numeric string is emitted raw only when it follows the AQL number grammar; any other is quoted.
+
+```php
+aqlValue( '01000' ) ;   // "'01000'"  ✓ a string          (written 01000 before : syntax error)
+aqlValue( '5.'    ) ;   // "'5.'"     ✓ a string
+aqlValue( '123'   ) ;   // '123'      raw : an AQL number
+aqlValue( '+5'    ) ;   // '+5'       raw
+aqlValue( '1e3'   ) ;   // '1e3'      raw
+```
+
+The line is the server's, checked against it on every numeric string a small grammar generates (signs, leading zeros, dots, exponents, spaces).
+
+A string that **is** an AQL number is read as a number — the trap that stays, with no error:
+
+| String | Written | The server reads… |
+|---|---|---|
+| `'123'` | `123` | a number : `FILTER doc.code == 123` misses a stored `'123'`, and `{_key:123}` is refused |
+| `'12.50'` | `12.50` | `12.5` |
+| `'true'` / `'false'` | `true` | a boolean |
+| `'12345678901234567890'` | same | `1.2345678901234567e+19` (past 64-bit integers, rounded) |
+
+To keep such a value a string, declare it with `betweenQuotes()`:
+
+```php
+aqlDocument( [ '_key' => '123' ] ) ;                    // "{_key:123}"    ✗ a number, refused as a key
+aqlDocument( [ '_key' => betweenQuotes( '123' ) ] ) ;   // "{_key:'123'}"  ✓ a string
+```
+
 Associative arrays are delegated to `aqlDocument()`, objects to `aqlDocument(get_object_vars(...))`, indexed arrays are serialized as `[v1,v2,v3]`. Any unsupported type throws `oihana\exceptions\UnsupportedOperationException`.
 
 ### `aqlExpression()` — simplified entry point

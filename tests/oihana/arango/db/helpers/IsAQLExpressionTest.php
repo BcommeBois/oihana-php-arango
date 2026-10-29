@@ -89,6 +89,29 @@ class IsAQLExpressionTest extends TestCase
         $this->assertFalse(isAQLExpression('i + 1'));
     }
 
+    /**
+     * A numeric string is code only when it is an AQL number. The server refuses a
+     * leading zero before a digit and a trailing dot : those are text.
+     */
+    public function testNumericStringsTheServerRefusesAreNotDetected()
+    {
+        foreach ( [ '00' , '007' , '-007' , '+05' , '00.5' , '01e3' , '01000' , '0612345678' , '5.' , '-5.' , ' 007 ' ] as $value )
+        {
+            $this->assertFalse( isAQLExpression( $value ) , var_export( $value , true ) ) ;
+        }
+    }
+
+    /**
+     * Every numeric string the server reads as a number stays detected.
+     */
+    public function testAqlNumbersStayDetected()
+    {
+        foreach ( [ '0' , '0.5' , '-0' , '.5' , '-.5' , '5.0' , '0e5' , '+5' , '1e3' , '1E3' , '1e+3' , '1e-3' , '1.5e3' , '123' , ' 42 ' , '9007199254740993' ] as $value )
+        {
+            $this->assertTrue( isAQLExpression( $value ) , var_export( $value , true ) ) ;
+        }
+    }
+
     public function testRandomStringReturnsFalse()
     {
         $this->assertFalse(isAQLExpression('hello world'));
