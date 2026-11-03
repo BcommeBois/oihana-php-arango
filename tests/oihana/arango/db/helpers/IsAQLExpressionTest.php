@@ -112,6 +112,18 @@ class IsAQLExpressionTest extends TestCase
         }
     }
 
+    /**
+     * The two AQL boolean literals, written as text, are code — whatever their case
+     * and the spaces around them. A PHP boolean is not text, and stays a value.
+     */
+    public function testTheBooleanLiteralsAreDetected()
+    {
+        foreach ( [ 'true' , 'false' , 'TRUE' , 'False' , ' true ' ] as $value )
+        {
+            $this->assertTrue( isAQLExpression( $value ) , var_export( $value , true ) ) ;
+        }
+    }
+
     public function testRandomStringReturnsFalse()
     {
         $this->assertFalse(isAQLExpression('hello world'));
