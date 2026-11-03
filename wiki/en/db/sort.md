@@ -334,6 +334,30 @@ on the locale.
 Painless over a few thousand documents; on a large paginated collection, the remedy is
 an attribute computed at write time (a *computed value*), which is indexable.
 
+## The documents without a value, last — `Field::NULLS_LAST`
+
+AQL ranks `null` **below** every other value: in an ascending sort, the documents missing the field come **first**. A list of tasks sorted by due date then shows every task without one first, and the nearest due dates only after them. A descending sort has no such problem: the empty ones already come last.
+
+An explicit `AQL::SORTABLE` entry may send the empty ones to the end, in both directions:
+
+```php
+AQL::SORTABLE =>
+[
+    'due' => [ Field::PATH => 'dueDate' , Field::NULLS_LAST => true ] ,
+] ,
+// ?sort=due  → SORT IS_NULL(doc.dueDate) ASC, doc.dueDate ASC
+// ?sort=-due → SORT IS_NULL(doc.dueDate) ASC, doc.dueDate DESC
+```
+
+The leading criterion is `false` for a document carrying the value and `true` for an empty one. `false` ranks before `true`: the valued documents come first whatever the direction, and the requested criterion orders them.
+
+- **The option is opt-in.** An entry without it, an entry set to `false` or a plain path sorts exactly as before.
+- **It holds wherever the entry serves**: the requested sort, the default sort (`SORT_DEFAULT`), a sort through a relation (`IS_NULL(FIRST(authorRef).name) ASC, …`), a multilingual label (the whole `NOT_NULL(…)` expression is tested).
+- **A refused key yields neither criterion.** The permission gate runs first: an `IS_NULL()` alone would tell which documents carry the hidden value.
+- **The tiebreaker stays last**, after both criteria.
+
+⚠ **No index serves a sort on an expression**: ArangoDB sorts the filtered set in memory. Do not set the option on a sort an index used to serve — it would lose it. On a field no index sorts, it costs one more comparison.
+
 ## Sort permission
 
 Whitelisting is not always enough. A field may be **hidden from reading** by a permission (`Field::REQUIRES` in the projection): if it stays sortable, the order of the results betrays its value. That is the **sort oracle** — sorting on `salary` without the right to read it, and guessing who earns the most just by looking at the order.

@@ -22,6 +22,7 @@ use org\schema\constants\Schema;
 
 use function oihana\arango\db\functions\arrays\first;
 use function oihana\arango\db\functions\geo\distance;
+use function oihana\arango\db\functions\isNull;
 use function oihana\arango\db\functions\search\bm25;
 use function oihana\arango\db\functions\notNull;
 use function oihana\arango\db\helpers\assertAttributeName;
@@ -84,6 +85,17 @@ use function oihana\core\strings\key;
  * AQL::SORTABLE => [ Prop::NAME , 'rank' => [ Field::PATH => 'internal.rank' , Field::REQUIRES => 'staff:read' ] ]
  * ```
  * A denied key drops its criterion; no subject (or no authorizer injected) sorts freely.
+ *
+ * ### The documents without a value, last (`Field::NULLS_LAST`)
+ * AQL ranks `null` below every other value, so an ascending sort serves the documents
+ * missing the field **first**. An explicit entry may send them to the end, in both
+ * directions :
+ * ```php
+ * AQL::SORTABLE => [ 'due' => [ Field::PATH => 'dueDate' , Field::NULLS_LAST => true ] ] ,
+ * // ?sort=due  → SORT IS_NULL(doc.dueDate) ASC, doc.dueDate ASC
+ * // ?sort=-due → SORT IS_NULL(doc.dueDate) ASC, doc.dueDate DESC
+ * ```
+ * ⚠ A sort on an expression is served in memory, never by an index.
  *
  * ### `AQL::SORTABLE` notations
  * The whitelist is normalised by {@see normalizeSortable()} into the canonical
@@ -821,7 +833,13 @@ trait SortTrait
      * @param array      $init     The request-level init. Reads `Arango::AUTHORIZER`.
      * @param string     $docRef   The document variable the fields hang off.
      *
-     * @return string|null The `<field> <order>` criterion, or `null` when either gate refuses it.
+     * 🔑 **The documents without a value may be sent to the end.** An entry declaring
+     * `Field::NULLS_LAST => true` is preceded by `IS_NULL(<field>) ASC` : `false` ranks
+     * below `true`, so the valued documents come first whatever the direction, and the
+     * criterion orders them. A refused key yields neither.
+     *
+     * @return string|null The `<field> <order>` criterion — `IS_NULL(<field>) ASC, <field> <order>`
+     *                     under `Field::NULLS_LAST` —, or `null` when either gate refuses it.
      *
      * @throws ValidationException
      */
@@ -832,9 +850,35 @@ trait SortTrait
             return null ;
         }
 
-        $field = $this->authorizeSortKey( $key , $sortable[ $key ] ?? null , $init , $docRef ) ;
+        $entry = $sortable[ $key ] ?? null ;
+        $field = $this->authorizeSortKey( $key , $entry , $init , $docRef ) ;
 
-        return $field === null ? null : $field . Char::SPACE . $order ;
+        if( $field === null )
+        {
+            return null ;
+        }
+
+        $criterion = $field . Char::SPACE . $order ;
+
+        return $this->sortsNullsLast( $entry )
+             ? isNull( $field ) . Char::SPACE . Order::ASC . Char::COMMA . Char::SPACE . $criterion
+             : $criterion ;
+    }
+
+    /**
+     * Decides whether a sortable entry sends the documents without a value to the end.
+     *
+     * Only an **explicit definition** carries the option — an associative entry with
+     * `Field::NULLS_LAST => true`. A plain path, a list path or any other value keeps
+     * the order AQL gives : `null` first when ascending, last when descending.
+     *
+     * @param mixed $entry The `$sortable[$key]` value (path or explicit definition).
+     *
+     * @return bool `true` when the documents without a value come last.
+     */
+    private function sortsNullsLast( mixed $entry ) :bool
+    {
+        return is_array( $entry ) && !array_is_list( $entry ) && ( $entry[ Field::NULLS_LAST ] ?? false ) === true ;
     }
 
     /**

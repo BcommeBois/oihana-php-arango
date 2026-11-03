@@ -772,6 +772,103 @@ class SortTraitTest extends TestCase
      * 🔑 **Initialising without the key keeps the property**, so a model may hold its
      * tiebreaker as a class default and let an instance override it.
      */
+    // ---------------- The documents without a value, last (Field::NULLS_LAST)
+
+    /**
+     * The entry a test sorts on : a due date, the documents without one sent last.
+     */
+    private const array DUE_LAST = [ 'due' => [ Field::PATH => 'dueDate' , Field::NULLS_LAST => true ] ] ;
+
+    /**
+     * AQL ranks `null` below every value : ascending, the documents without a due
+     * date would come first. The option puts them last, then orders the others.
+     */
+    public function testNullsLastPrecedesAnAscendingSort() :void
+    {
+        $this->assertSame
+        (
+            'IS_NULL(doc.dueDate) ASC, doc.dueDate ASC' ,
+            $this->stub( self::DUE_LAST )->prepareSort( [ Arango::SORT => 'due' ] ) ,
+        ) ;
+    }
+
+    /**
+     * Descending, the documents without a value stay last : the leading criterion
+     * keeps its own direction, the requested one orders the valued documents.
+     */
+    public function testNullsLastKeepsTheEmptyOnesLastWhenDescending() :void
+    {
+        $this->assertSame
+        (
+            'IS_NULL(doc.dueDate) ASC, doc.dueDate DESC' ,
+            $this->stub( self::DUE_LAST )->prepareSort( [ Arango::SORT => '-due' ] ) ,
+        ) ;
+    }
+
+    /**
+     * Opt-in : an entry without the option, or with it off, orders as AQL does.
+     */
+    public function testWithoutTheOptionTheSortIsUnchanged() :void
+    {
+        $this->assertSame( 'doc.dueDate ASC' , $this->stub( [ 'due' => [ Field::PATH => 'dueDate' ] ] )->prepareSort( [ Arango::SORT => 'due' ] ) ) ;
+        $this->assertSame( 'doc.dueDate ASC' , $this->stub( [ 'due' => [ Field::PATH => 'dueDate' , Field::NULLS_LAST => false ] ] )->prepareSort( [ Arango::SORT => 'due' ] ) ) ;
+        $this->assertSame( 'doc.dueDate ASC' , $this->stub( [ 'due' => 'dueDate' ] )->prepareSort( [ Arango::SORT => 'due' ] ) ) ;
+    }
+
+    public function testNullsLastMixesWithTheOtherCriteria() :void
+    {
+        $this->assertSame
+        (
+            'doc.name ASC, IS_NULL(doc.dueDate) ASC, doc.dueDate ASC' ,
+            $this->stub( [ 'name' => 'name' ] + self::DUE_LAST )->prepareSort( [ Arango::SORT => 'name,due' ] ) ,
+        ) ;
+    }
+
+    public function testNullsLastAppliesToTheDefaultSort() :void
+    {
+        $this->assertSame( 'IS_NULL(doc.dueDate) ASC, doc.dueDate ASC' , $this->stub( self::DUE_LAST , 'due' )->prepareSort( [] ) ) ;
+    }
+
+    /**
+     * The tiebreaker still closes the order, after both criteria.
+     */
+    public function testTheTiebreakerComesAfterBothCriteria() :void
+    {
+        $this->assertSame
+        (
+            'IS_NULL(doc.dueDate) ASC, doc.dueDate ASC, doc._key ASC' ,
+            $this->stub( self::DUE_LAST + [ '_key' => '_key' ] , null , '_key' )->prepareSort( [ Arango::SORT => 'due' ] ) ,
+        ) ;
+    }
+
+    /**
+     * 🚨 A key the permission gate refuses yields neither criterion : the leading
+     * `IS_NULL()` would otherwise tell which documents carry the hidden value.
+     */
+    public function testARefusedKeyYieldsNeitherCriterion() :void
+    {
+        $stub = $this->stub( self::DUE_LAST ) ;
+        $stub->fields = [ 'dueDate' => [ Field::REQUIRES => 'billing:read' ] ] ;
+
+        $this->assertSame( '' , $stub->prepareSort( [ Arango::SORT => 'due' , Arango::AUTHORIZER => fn() => false ] ) ) ;
+        $this->assertSame
+        (
+            'IS_NULL(doc.dueDate) ASC, doc.dueDate ASC' ,
+            $stub->prepareSort( [ Arango::SORT => 'due' , Arango::AUTHORIZER => fn( string $s ) => $s === 'billing:read' ] ) ,
+        ) ;
+    }
+
+    public function testNullsLastAppliesThroughARelation() :void
+    {
+        $stub = $this->relationStub( sortable: [ 'author' => [ AQL::EDGE => 'author' , Field::PATH => 'name' , Field::NULLS_LAST => true ] ] ) ;
+
+        $this->assertSame
+        (
+            'IS_NULL(FIRST(authorRef).name) ASC, FIRST(authorRef).name DESC' ,
+            $stub->prepareSort( [ Arango::SORT => '-author' ] ) ,
+        ) ;
+    }
+
     public function testInitializeSortTiebreakKeepsThePropertyWhenTheKeyIsAbsent() :void
     {
         $stub = new SortTraitStub() ;

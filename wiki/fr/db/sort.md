@@ -339,6 +339,30 @@ jeu filtré. Indolore sur quelques milliers de documents ; sur une grosse collec
 paginée, la parade est un attribut calculé à l'écriture (*computed value*), donc
 indexable.
 
+## Les documents sans valeur, en dernier — `Field::NULLS_LAST`
+
+AQL range `null` **sous** toutes les autres valeurs : dans un tri croissant, les documents qui n'ont pas le champ passent **en tête**. Une liste de tâches triée par échéance montre alors d'abord toutes les tâches qui n'en ont pas, et les échéances les plus proches seulement après elles. Dans un tri décroissant, le problème ne se pose pas : les vides passent déjà en dernier.
+
+Une entrée explicite de `AQL::SORTABLE` peut envoyer les vides en fin de liste, dans les deux sens :
+
+```php
+AQL::SORTABLE =>
+[
+    'due' => [ Field::PATH => 'dueDate' , Field::NULLS_LAST => true ] ,
+] ,
+// ?sort=due  → SORT IS_NULL(doc.dueDate) ASC, doc.dueDate ASC
+// ?sort=-due → SORT IS_NULL(doc.dueDate) ASC, doc.dueDate DESC
+```
+
+Le premier critère vaut `false` pour un document qui a la valeur et `true` pour un vide. `false` passe avant `true` : les documents renseignés viennent donc d'abord, quel que soit le sens, et le critère demandé les ordonne.
+
+- **L'option est opt-in.** Une entrée sans elle, une entrée à `false` ou un simple chemin trient exactement comme avant.
+- **Elle vaut partout où l'entrée sert** : le tri demandé, le tri par défaut (`SORT_DEFAULT`), un tri à travers une relation (`IS_NULL(FIRST(authorRef).name) ASC, …`), un libellé multilingue (l'expression `NOT_NULL(…)` entière est testée).
+- **Une clé refusée ne produit aucun des deux critères.** Le contrôle d'autorisation passe avant : un `IS_NULL()` seul dirait quels documents portent la valeur cachée.
+- **Le départage reste en dernier**, après les deux critères.
+
+⚠ **Aucun index ne sert un tri sur une expression** : ArangoDB trie en mémoire le jeu filtré. Ne posez pas l'option sur un tri qu'un index servait — il le perdrait. Sur un champ qu'aucun index ne trie, elle ne coûte qu'une comparaison de plus.
+
 ## Permission de tri
 
 Whitelister ne suffit pas toujours. Un champ peut être **caché à la lecture** par une permission (`Field::REQUIRES` dans la projection) : s'il reste triable, l'ordre des résultats trahit sa valeur. C'est l'**oracle de tri** — trier sur `salary` sans le droit de le lire, et deviner qui gagne le plus rien qu'en regardant l'ordre.

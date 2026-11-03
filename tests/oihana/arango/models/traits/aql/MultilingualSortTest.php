@@ -2,7 +2,6 @@
 
 namespace tests\oihana\arango\models\traits\aql;
 
-use oihana\arango\db\enums\AQL;
 use oihana\arango\enums\Arango;
 use oihana\arango\enums\Field;
 use oihana\arango\enums\Filter;
@@ -72,6 +71,18 @@ final class MultilingualSortTest extends TestCase
         $sort = $this->model( 'fr' )->prepareSort( [ Arango::SORT => 'label' ] ) ;
 
         $this->assertSame( 'NOT_NULL(doc.alternateName["fr"],doc.name) ASC' , $sort ) ;
+    }
+
+    /**
+     * The documents without a value in any link of the chain go last : the option
+     * wraps the whole expression.
+     */
+    #[Test]
+    public function theDocumentsWithoutALabelGoLastUnderNullsLast() : void
+    {
+        $sort = $this->model( 'fr' , [ Field::NULLS_LAST => true ] )->prepareSort( [ Arango::SORT => 'label' ] ) ;
+
+        $this->assertSame( 'IS_NULL(NOT_NULL(doc.alternateName["fr"],doc.name)) ASC, NOT_NULL(doc.alternateName["fr"],doc.name) ASC' , $sort ) ;
     }
 
     #[Test]

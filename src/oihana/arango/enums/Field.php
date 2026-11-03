@@ -87,6 +87,15 @@ class Field
     public const string NULLABLE = 'nullable' ;
 
     /**
+     * On an `AQL::SORTABLE` entry : the documents without a value come **last**, in both
+     * directions. An ascending sort otherwise serves them first — AQL ranks `null` below
+     * every other value. The criterion becomes `IS_NULL(<field>) ASC, <field> <order>` ;
+     * a sort on an expression is served in memory, never by an index. Opt-in ; a sortable
+     * entry, not a projection marker.
+     */
+    public const string NULLS_LAST = 'nullsLast' ;
+
+    /**
      * Source path the field reads from — a URL route template for `Filter::URL`, and the mandatory fallback route when `Field::PATHS` is set.
      */
     public const string PATH = 'path' ;
