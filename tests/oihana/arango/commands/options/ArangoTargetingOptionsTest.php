@@ -24,8 +24,8 @@ class ArangoTargetingOptionsTest extends TestCase
             [ ArangoDumpOption::COLLECTION => [ 'users' , 'products' ] ]
         ) ;
 
-        $this->assertStringContainsString( '--collection "users"'    , $command ) ;
-        $this->assertStringContainsString( '--collection "products"' , $command ) ;
+        $this->assertStringContainsString( "--collection 'users'"    , $command ) ;
+        $this->assertStringContainsString( "--collection 'products'" , $command ) ;
     }
 
     public function testDumpWithoutTargetingHasNoCollectionFlag() :void
@@ -45,7 +45,7 @@ class ArangoTargetingOptionsTest extends TestCase
             [ ArangoRestoreOption::COLLECTION => [ 'users' ] ]
         ) ;
 
-        $this->assertStringContainsString( '--collection "users"' , $command ) ;
+        $this->assertStringContainsString( "--collection 'users'" , $command ) ;
     }
 
     public function testRestoreWithoutTargetingHasNoCollectionFlag() :void
