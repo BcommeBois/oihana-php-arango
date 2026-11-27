@@ -144,6 +144,21 @@ The flow:
 
 Advantage: a single *source of truth* (the *edges*), a denormalized view (the Casbin *policies*) regenerable on demand.
 
+### Live sync: a removal checks the other paths
+
+`CasbinPolicySync` keeps the view up to date at each *edge* insertion or removal, without a full rebuild. Casbin keeps
+**one** *policy* per `(subject, domain, object, action, effect)`, whatever path grants it. Yet a role can hold the same
+permission directly (`role_has_permissions`) and through one or more policies (`role_has_policies` →
+`policy_has_permissions`); so can a service (`service_has_permissions`, `service_has_policies`).
+
+A removal therefore removes the *policy* only when **no other path** still grants it to the subject
+(`CasbinPolicySyncGrantTrait`): detaching a policy from a role that also holds its permissions directly leaves the role
+its rights. Deleting a policy ignores the deleted policy, whose *edges* are still there when the signal runs. Deleting a
+**permission** removes it from every subject: the right no longer exists.
+
+When the graph cannot be read during the check, the *policy* is removed anyway and a warning is logged: a lost right
+comes back at the next rebuild, while a right kept by mistake would stay granted.
+
 ## Known pitfalls
 
 ### `savePolicy()` resets everything

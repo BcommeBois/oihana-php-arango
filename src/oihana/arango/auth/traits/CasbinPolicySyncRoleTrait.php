@@ -8,6 +8,7 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\controllers\enums\Skin;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 use oihana\signals\notices\Payload;
 
 use org\schema\constants\Schema;
@@ -92,12 +93,15 @@ trait CasbinPolicySyncRoleTrait
      *
      * @param string $roleKey
      * @param string $permissionKey
+     *
      * @return void
+     *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function addRolePermissionPolicy( string $roleKey , string $permissionKey ) :void
     {
@@ -137,16 +141,17 @@ trait CasbinPolicySyncRoleTrait
      * `validatePolicyAttachmentPermissions` even though they have the
      * permission "on paper" (in the role's policies tab).
      *
-     * @param string $roleKey   The role ArangoDB `_key`.
+     * @param string $roleKey The role ArangoDB `_key`.
      * @param string $policyKey The policy ArangoDB `_key`.
      *
      * @return void
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function addRolePolicyPolicies( string $roleKey , string $policyKey ) :void
     {
@@ -234,11 +239,12 @@ trait CasbinPolicySyncRoleTrait
      *
      * @return void
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function removeRolePermissionPolicy( string $roleKey , string $permissionKey ) :void
     {
@@ -247,6 +253,12 @@ trait CasbinPolicySyncRoleTrait
 
         if( !$roleSubject || !$permission )
         {
+            return ;
+        }
+
+        if( isset( $this->roleHeldRules( $roleKey )[ $this->ruleKey( $permission ) ] ) )
+        {
+            $this->logger?->info( "CasbinSync: =policy role '$roleSubject' → perm '$permissionKey' kept, still granted by a policy" ) ;
             return ;
         }
 
@@ -267,16 +279,17 @@ trait CasbinPolicySyncRoleTrait
      *
      * Mirror of {@see addRolePolicyPolicies}.
      *
-     * @param string $roleKey   The role ArangoDB `_key`.
+     * @param string $roleKey The role ArangoDB `_key`.
      * @param string $policyKey The policy ArangoDB `_key`.
      *
      * @return void
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function removeRolePolicyPolicies( string $roleKey , string $policyKey ) :void
     {
@@ -294,20 +307,11 @@ trait CasbinPolicySyncRoleTrait
             return ;
         }
 
-        foreach( $policy->permissions as $permission )
-        {
-            $this->enforcer->removePolicy
-            (
-                $roleSubject ,
-                $permission->domain ?? $this->domain ,
-                $permission->object ?? '' ,
-                $permission->action ?? '' ,
-                $permission->effect ?? PermissionEffect::ALLOW
-            ) ;
-        }
+        // The policy itself never counts : detached, its edge is already gone ; deleted, it is still there.
+        $removed = $this->removeUnheldRules( $roleSubject , $policy->permissions , $this->roleHeldRules( $roleKey , $policyKey ) ) ;
 
-        $count = count( $policy->permissions ) ;
-        $this->logger?->info( "CasbinSync: -$count policies role '$roleSubject' via policy '$policyKey'" ) ;
+        $kept = count( $policy->permissions ) - $removed ;
+        $this->logger?->info( "CasbinSync: -$removed policies role '$roleSubject' via policy '$policyKey', $kept kept (still granted by another path)" ) ;
     }
 
     /**
@@ -324,11 +328,12 @@ trait CasbinPolicySyncRoleTrait
      * @param string $roleKey The ArangoDB `_key` of the role vertex.
      * @return string|null null if the role vertex is gone.
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function resolveRoleSubject( string $roleKey ) :?string
     {

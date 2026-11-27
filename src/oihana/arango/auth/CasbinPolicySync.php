@@ -5,6 +5,7 @@ namespace oihana\arango\auth;
 use DI\Container;
 
 use oihana\arango\auth\traits\CasbinPolicySyncEdgeTrait;
+use oihana\arango\auth\traits\CasbinPolicySyncGrantTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncPolicyTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncRoleTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncServiceTrait;
@@ -36,6 +37,12 @@ use Psr\Container\NotFoundExceptionInterface;
  * XxxEdgesTrait, EnforcerTrait and LoggerTrait families, then wires
  * them through the standard $init / $container init pattern shared
  * by every other auth-side service.
+ *
+ * Casbin keeps one rule per `(subject, domain, object, action, effect)`,
+ * whatever path of the graph grants it. A removal therefore removes a rule
+ * only when no other path of the graph still grants it to the subject
+ * ({@see CasbinPolicySyncGrantTrait}) : detaching a policy from a role that
+ * also holds its permissions directly leaves the role its rights.
  *
  * @package oihana\arango\auth
  * @author  Marc Alcaraz
@@ -71,6 +78,7 @@ class CasbinPolicySync
     }
 
     use CasbinPolicySyncEdgeTrait    ,
+        CasbinPolicySyncGrantTrait   ,
         CasbinPolicySyncPolicyTrait  ,
         CasbinPolicySyncRoleTrait    ,
         CasbinPolicySyncServiceTrait ,

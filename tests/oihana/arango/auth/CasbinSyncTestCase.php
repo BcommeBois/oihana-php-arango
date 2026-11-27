@@ -21,6 +21,8 @@ use tests\oihana\arango\auth\mocks\FakeEdges;
  */
 abstract class CasbinSyncTestCase extends TestCase
 {
+    use GraphFixturesTrait ;
+
     /**
      * A {@see FakeDocuments} double for the given collection.
      *

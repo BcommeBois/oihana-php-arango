@@ -8,6 +8,7 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\arango\models\Edges;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 use oihana\signals\notices\Payload;
 
 use org\schema\constants\Schema;
@@ -213,11 +214,12 @@ trait CasbinPolicySyncPolicyTrait
      *
      * @return void
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     public function cleanupPermissionDerivedPolicies( string $permissionKey ) :void
     {
@@ -325,11 +327,12 @@ trait CasbinPolicySyncPolicyTrait
      *
      * @return void
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     public function cleanupPolicyDerivedPolicies( string $policyKey ) :void
     {
@@ -409,11 +412,12 @@ trait CasbinPolicySyncPolicyTrait
      * @param string $policyKey The policy ArangoDB `_key`.
      * @param string $permissionKey The permission ArangoDB `_key`.
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function addPolicyPermissionPolicy( string $policyKey , string $permissionKey ) :void
     {
@@ -471,11 +475,12 @@ trait CasbinPolicySyncPolicyTrait
      * @param string $policyKey The policy ArangoDB `_key`.
      * @param string $permissionKey The permission ArangoDB `_key`.
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function removePolicyPermissionPolicy( string $policyKey , string $permissionKey ) :void
     {
@@ -487,10 +492,16 @@ trait CasbinPolicySyncPolicyTrait
         }
 
         $count = 0 ;
+        $rule  = $this->ruleKey( $ctx[ 'permission' ] ) ;
 
         foreach( $ctx[ 'serviceKeys' ] as $serviceKey )
         {
             $subject = $this->resolveServiceSubject( $serviceKey ) ;
+
+            if( isset( $this->serviceHeldRules( $serviceKey )[ $rule ] ) )
+            {
+                continue ;
+            }
 
             if( $this->enforcer->removePolicy( $subject , $ctx[ 'domain' ] , $ctx[ 'object' ] , $ctx[ 'action' ] , $ctx[ 'effect' ] ) )
             {
@@ -502,7 +513,7 @@ trait CasbinPolicySyncPolicyTrait
         {
             $subject = $this->resolveRoleSubject( $roleKey ) ;
 
-            if( !$subject )
+            if( !$subject || isset( $this->roleHeldRules( $roleKey )[ $rule ] ) )
             {
                 continue ;
             }
@@ -527,7 +538,7 @@ trait CasbinPolicySyncPolicyTrait
      * the early-return + lookup + (domain, object, action, effect)
      * extraction. Keeps both handlers down to a clean two-loop body.
      *
-     * @param string $policyKey     The policy ArangoDB `_key`.
+     * @param string $policyKey The policy ArangoDB `_key`.
      * @param string $permissionKey The permission ArangoDB `_key`.
      *
      * @return array{
@@ -540,11 +551,12 @@ trait CasbinPolicySyncPolicyTrait
      *   effect:      string ,
      * }|null
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     private function loadPolicyPermissionContext( string $policyKey , string $permissionKey ) :?array
     {
@@ -683,11 +695,12 @@ trait CasbinPolicySyncPolicyTrait
      *
      * @return int The number of policies actually removed.
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     private function purgePoliciesViaPolicy
     (

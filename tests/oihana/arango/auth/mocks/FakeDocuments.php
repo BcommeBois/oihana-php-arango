@@ -58,6 +58,13 @@ class FakeDocuments extends Documents
     public array $listResult = [] ;
 
     /**
+     * When set, `list()` returns what it computes from the call options instead of {@see $listResult}.
+     *
+     * @var (callable(array<string,mixed>):array<int,object|array>)|null
+     */
+    public $listResolver = null ;
+
+    /**
      * When set, {@see list()} throws it instead of returning.
      */
     public ?Throwable $listThrows = null ;
@@ -126,6 +133,11 @@ class FakeDocuments extends Documents
         if( $this->listThrows !== null )
         {
             throw $this->listThrows ;
+        }
+
+        if( $this->listResolver !== null )
+        {
+            return ( $this->listResolver )( $init ) ;
         }
 
         return $this->listResult ;

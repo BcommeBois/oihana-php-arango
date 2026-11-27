@@ -7,6 +7,8 @@ use oihana\auth\enums\PermissionEffect;
 use oihana\signals\Signal;
 use oihana\signals\notices\Payload;
 
+use RuntimeException;
+
 use stdClass;
 
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -260,6 +262,90 @@ class CasbinPolicySyncRoleTraitTest extends CasbinSyncTestCase
             [ [ 'role-id' , 'my-api' , 'a' , 'read' , 'allow' ] ] ,
             $enforcer->callsFor( 'removePolicy' )
         ) ;
+    }
+
+    public function testRemoveRolePermissionKeepsARuleAPolicyOfTheRoleStillGrants() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'a' , 'read' ) ;
+
+        $roles = $this->documents( 'roles' ) ;
+        $roles->getResults[ 'r1' ] = $this->role( 'role-id' ) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'             => $enforcer ,
+            'domain'               => 'my-api' ,
+            'rolesModel'           => $roles ,
+            'permissionsModel'     => $this->permissionsByKey([ 'k1' => $permission ]) ,
+            'roleHasPermissions'   => $this->edgesFrom( 'role_has_permissions'   , [] ) , // the direct edge is already gone
+            'roleHasPolicies'      => $this->edgesFrom( 'role_has_policies'      , [ 'roles/r1'    => [ 'policies/p1'    ] ] ) ,
+            'policyHasPermissions' => $this->edgesFrom( 'policy_has_permissions' , [ 'policies/p1' => [ 'permissions/k1' ] ] ) ,
+        ]) ;
+
+        $sync->invoke( 'removeRolePermissionPolicy' , 'r1' , 'k1' ) ;
+
+        $this->assertSame( [] , $enforcer->callsFor( 'removePolicy' ) ) ;
+    }
+
+    public function testRemoveRolePolicyKeepsTheRulesTheRoleHoldsDirectly() :void
+    {
+        $enforcer = new SpyEnforcer() ;
+        $read     = $this->permission( 'my-api' , 'a' , 'read'  ) ;
+        $write    = $this->permission( 'my-api' , 'a' , 'write' ) ;
+
+        $roles = $this->documents( 'roles' ) ;
+        $roles->getResults[ 'r1' ] = $this->role( 'role-id' ) ;
+
+        $policies = $this->documents( 'policies' ) ;
+        $policies->getResults[ 'p1' ] = $this->policy([ $read , $write ]) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'           => $enforcer ,
+            'domain'             => 'my-api' ,
+            'rolesModel'         => $roles ,
+            'policiesModel'      => $policies ,
+            'permissionsModel'   => $this->permissionsByKey([ 'k1' => $read ]) ,
+            'roleHasPermissions' => $this->edgesFrom( 'role_has_permissions' , [ 'roles/r1' => [ 'permissions/k1' ] ] ) ,
+            'roleHasPolicies'    => $this->edgesFrom( 'role_has_policies'    , [] ) , // the detached edge is already gone
+        ]) ;
+
+        $sync->invoke( 'removeRolePolicyPolicies' , 'r1' , 'p1' ) ;
+
+        $this->assertSame
+        (
+            [ [ 'role-id' , 'my-api' , 'a' , 'write' , 'allow' ] ] ,
+            $enforcer->callsFor( 'removePolicy' ) ,
+            'the read rule the role holds directly is kept'
+        ) ;
+    }
+
+    public function testRemoveRolePolicyRemovesEveryRuleWhenTheGraphCannotBeRead() :void
+    {
+        $enforcer = new SpyEnforcer() ;
+
+        $roles = $this->documents( 'roles' ) ;
+        $roles->getResults[ 'r1' ] = $this->role( 'role-id' ) ;
+
+        $policies = $this->documents( 'policies' ) ;
+        $policies->getResults[ 'p1' ] = $this->policy([ $this->permission( 'my-api' , 'a' , 'read' ) ]) ;
+
+        $direct = $this->edges( 'role_has_permissions' ) ;
+        $direct->listThrows = new RuntimeException( 'connection lost' ) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'           => $enforcer ,
+            'rolesModel'         => $roles ,
+            'policiesModel'      => $policies ,
+            'permissionsModel'   => $this->permissionsByKey( [] ) ,
+            'roleHasPermissions' => $direct ,
+        ]) ;
+
+        $sync->invoke( 'removeRolePolicyPolicies' , 'r1' , 'p1' ) ;
+
+        $this->assertSame( [ [ 'role-id' , 'my-api' , 'a' , 'read' , 'allow' ] ] , $enforcer->callsFor( 'removePolicy' ) ) ;
     }
 
     public function testRemoveRolePolicyIsNoOpWhenRoleUnresolvedOrPolicyEmpty() :void

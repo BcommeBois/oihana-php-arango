@@ -8,6 +8,7 @@ use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
 use oihana\controllers\enums\Skin;
 use oihana\exceptions\BindException;
+use oihana\exceptions\ValidationException;
 use oihana\signals\notices\Payload;
 
 use org\schema\constants\Schema;
@@ -30,7 +31,7 @@ use function oihana\arango\helpers\parseKey;
  *
  * Subject namespacing : every Service Account row in `rbac` is keyed on
  * `service:{$service->_key}`. The middleware
- * {@see \oihana\api\middlewares\CheckJwtAuthentication::process()}
+ * {@see CheckJwtAuthentication::process()}
  * writes the same `service:` prefix into `ATTR_USER_ID` for incoming JWTs
  * so the in-memory keys match end-to-end.
  *
@@ -83,11 +84,13 @@ trait CasbinPolicySyncServiceTrait
      *
      * @param string $serviceKey The service ArangoDB `_key`.
      * @param string $permissionKey The permission ArangoDB `_key`.
+     *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function addServicePermissionPolicy( string $serviceKey , string $permissionKey ) :void
     {
@@ -130,11 +133,12 @@ trait CasbinPolicySyncServiceTrait
      * @param string $serviceKey The service ArangoDB `_key`.
      * @param string $policyKey The policy ArangoDB `_key`.
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function addServicePolicyPolicies( string $serviceKey , string $policyKey ) :void
     {
@@ -222,11 +226,13 @@ trait CasbinPolicySyncServiceTrait
      *
      * @param string $serviceKey The service ArangoDB `_key`.
      * @param string $permissionKey The permission ArangoDB `_key`.
+     *
+     * @throws ArangoException
+     * @throws BindException
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
-     * @throws ArangoException
-     * @throws BindException
+     * @throws ValidationException
      */
     protected function removeServicePermissionPolicy( string $serviceKey , string $permissionKey ) :void
     {
@@ -244,6 +250,12 @@ trait CasbinPolicySyncServiceTrait
 
         if( !$permission )
         {
+            return ;
+        }
+
+        if( isset( $this->serviceHeldRules( $serviceKey )[ $this->ruleKey( $permission ) ] ) )
+        {
+            $this->logger?->info( "CasbinSync: =direct perm service '$subject' → '$permissionKey' kept, still granted by a policy" ) ;
             return ;
         }
 
@@ -266,11 +278,12 @@ trait CasbinPolicySyncServiceTrait
      * @param string $serviceKey The service ArangoDB `_key`.
      * @param string $policyKey The policy ArangoDB `_key`.
      *
+     * @throws ArangoException
      * @throws BindException
      * @throws ContainerExceptionInterface
-     * @throws ArangoException
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
+     * @throws ValidationException
      */
     protected function removeServicePolicyPolicies( string $serviceKey , string $policyKey ) :void
     {
@@ -292,20 +305,11 @@ trait CasbinPolicySyncServiceTrait
             return ;
         }
 
-        foreach( $policy->permissions as $permission )
-        {
-            $this->enforcer->removePolicy
-            (
-                $subject ,
-                $permission->domain ?? $this->domain ,
-                $permission->object ?? '' ,
-                $permission->action ?? '' ,
-                $permission->effect ?? PermissionEffect::ALLOW
-            ) ;
-        }
+        // The policy itself never counts : detached, its edge is already gone ; deleted, it is still there.
+        $removed = $this->removeUnheldRules( $subject , $policy->permissions , $this->serviceHeldRules( $serviceKey , $policyKey ) ) ;
 
-        $count = count( $policy->permissions ) ;
-        $this->logger?->info( "CasbinSync: -$count policies service '$subject' via policy '$policyKey'" ) ;
+        $kept = count( $policy->permissions ) - $removed ;
+        $this->logger?->info( "CasbinSync: -$removed policies service '$subject' via policy '$policyKey', $kept kept (still granted by another path)" ) ;
     }
 
     /**
@@ -366,7 +370,7 @@ trait CasbinPolicySyncServiceTrait
      * since a leaked human token must never match a Service Account's
      * RBAC bundle. The middleware writes the same prefix into
      * `ATTR_USER_ID` for incoming JWTs (see
-     * {@see \oihana\api\middlewares\CheckJwtAuthentication::process()}).
+     * {@see CheckJwtAuthentication::process()}).
      *
      * @param string $serviceKey The service ArangoDB `_key`.
      *

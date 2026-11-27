@@ -144,6 +144,22 @@ Le flot :
 
 Avantage : un seul *source of truth* (les *edges*), une vue dénormalisée (les *policies* Casbin) régénérable à la demande.
 
+### Synchronisation en direct : un retrait vérifie les autres chemins
+
+`CasbinPolicySync` tient la vue à jour à chaque ajout ou retrait d'*edge*, sans reconstruction complète. Casbin ne garde
+qu'**une** *policy* par `(sujet, domaine, objet, action, effet)`, quel que soit le chemin qui la donne. Or un rôle peut
+tenir la même permission en direct (`role_has_permissions`) et par une ou plusieurs politiques (`role_has_policies` →
+`policy_has_permissions`) ; un service aussi (`service_has_permissions`, `service_has_policies`).
+
+Un retrait ne retire donc la *policy* que si **aucun autre chemin** ne la donne encore au sujet
+(`CasbinPolicySyncGrantTrait`) : détacher une politique d'un rôle qui tient aussi ses permissions en direct lui laisse
+ses droits. La suppression d'une politique ignore la politique supprimée, dont les *edges* sont encore là au moment
+du signal. La suppression d'une **permission**, elle, la retire de tous les sujets : le droit n'existe plus.
+
+Si le graphe ne peut pas être lu pendant la vérification, la *policy* est retirée quand même, et un avertissement est
+écrit dans le journal : un droit perdu revient à la prochaine reconstruction, un droit gardé par erreur resterait
+accordé.
+
 ## Pièges connus
 
 ### `savePolicy()` réinitialise tout

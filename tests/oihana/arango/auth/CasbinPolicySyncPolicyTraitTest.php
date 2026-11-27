@@ -36,6 +36,8 @@ use tests\oihana\arango\auth\mocks\SpyEnforcer;
 #[CoversClass( CasbinPolicySync::class )]
 class CasbinPolicySyncPolicyTraitTest extends TestCase
 {
+    use GraphFixturesTrait ;
+
     // ---- cleanupPermissionDerivedPolicies -------------------------------
 
     public function testCleanupPermissionIsNoOpWithoutEnforcer() :void
@@ -464,6 +466,161 @@ class CasbinPolicySyncPolicyTraitTest extends TestCase
             ] ,
             $enforcer->callsFor( 'removePolicy' )
         ) ;
+    }
+
+    public function testRemovePolicyPermissionKeepsTheRuleOfASubjectHoldingItOtherwise() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'res' , 'del' ) ;
+
+        $roles = $this->documents( 'roles' ) ;
+        $roles->getResults[ 'r1' ] = $this->role( 'role-r' ) ;
+        $roles->getResults[ 'r2' ] = $this->role( 'role-s' ) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'           => $enforcer ,
+            'domain'             => 'my-api' ,
+            'permissionsModel'   => $this->permissionsByKey([ 'perm1' => $permission ]) ,
+            'rolesModel'         => $roles ,
+            'roleHasPolicies'    => $this->edgesOf( 'role_has_policies'    , [ [ 'roles/r1' , 'policies/p1' ] , [ 'roles/r2' , 'policies/p1' ] ] ) ,
+            'roleHasPermissions' => $this->edgesOf( 'role_has_permissions' , [ [ 'roles/r1' , 'permissions/perm1' ] ] ) ,
+        ]) ;
+
+        $sync->invoke( 'removePolicyPermissionPolicy' , 'p1' , 'perm1' ) ;
+
+        $this->assertSame
+        (
+            [ [ 'role-s' , 'my-api' , 'res' , 'del' , 'allow' ] ] ,
+            $enforcer->callsFor( 'removePolicy' ) ,
+            'role-r holds the permission directly : only role-s loses it'
+        ) ;
+    }
+
+    public function testCleanupPolicyIgnoresThePolicyBeingDeleted() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'a' , 'read' ) ;
+
+        $roles = $this->documents( 'roles' ) ;
+        $roles->getResults[ 'r1' ] = $this->role( 'role-r' ) ;
+
+        $policies = $this->documents( 'policies' ) ;
+        $policies->getResults[ 'p1' ] = $this->policy([ $permission ]) ;
+
+        // beforeDelete : the edges of the deleted policy are still in the graph.
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'             => $enforcer ,
+            'domain'               => 'my-api' ,
+            'rolesModel'           => $roles ,
+            'policiesModel'        => $policies ,
+            'permissionsModel'     => $this->permissionsByKey([ 'k1' => $permission ]) ,
+            'roleHasPolicies'      => $this->edgesOf( 'role_has_policies'      , [ [ 'roles/r1'    , 'policies/p1'    ] ] ) ,
+            'policyHasPermissions' => $this->edgesOf( 'policy_has_permissions' , [ [ 'policies/p1' , 'permissions/k1' ] ] ) ,
+        ]) ;
+
+        $sync->cleanupPolicyDerivedPolicies( 'p1' ) ;
+
+        $this->assertSame( [ [ 'role-r' , 'my-api' , 'a' , 'read' , 'allow' ] ] , $enforcer->callsFor( 'removePolicy' ) ) ;
+    }
+
+    public function testCleanupPolicyKeepsARuleAnotherPolicyOfTheRoleGrants() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'a' , 'read' ) ;
+
+        $roles = $this->documents( 'roles' ) ;
+        $roles->getResults[ 'r1' ] = $this->role( 'role-r' ) ;
+
+        $policies = $this->documents( 'policies' ) ;
+        $policies->getResults[ 'p1' ] = $this->policy([ $permission ]) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'             => $enforcer ,
+            'domain'               => 'my-api' ,
+            'rolesModel'           => $roles ,
+            'policiesModel'        => $policies ,
+            'permissionsModel'     => $this->permissionsByKey([ 'k1' => $permission ]) ,
+            'roleHasPolicies'      => $this->edgesOf( 'role_has_policies'      , [ [ 'roles/r1' , 'policies/p1' ] , [ 'roles/r1' , 'policies/p2' ] ] ) ,
+            'policyHasPermissions' => $this->edgesOf( 'policy_has_permissions' , [ [ 'policies/p1' , 'permissions/k1' ] , [ 'policies/p2' , 'permissions/k1' ] ] ) ,
+        ]) ;
+
+        $sync->cleanupPolicyDerivedPolicies( 'p1' ) ;
+
+        $this->assertSame( [] , $enforcer->callsFor( 'removePolicy' ) ) ;
+    }
+
+    public function testCleanupPolicyIgnoresThePolicyBeingDeletedForAService() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'a' , 'read' ) ;
+
+        $policies = $this->documents( 'policies' ) ;
+        $policies->getResults[ 'p1' ] = $this->policy([ $permission ]) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'             => $enforcer ,
+            'domain'               => 'my-api' ,
+            'policiesModel'        => $policies ,
+            'permissionsModel'     => $this->permissionsByKey([ 'k1' => $permission ]) ,
+            'serviceHasPolicies'   => $this->edgesOf( 'service_has_policies'   , [ [ 'services/s1' , 'policies/p1'    ] ] ) ,
+            'policyHasPermissions' => $this->edgesOf( 'policy_has_permissions' , [ [ 'policies/p1' , 'permissions/k1' ] ] ) ,
+        ]) ;
+
+        $sync->cleanupPolicyDerivedPolicies( 'p1' ) ;
+
+        $this->assertSame( [ [ 'service:s1' , 'my-api' , 'a' , 'read' , 'allow' ] ] , $enforcer->callsFor( 'removePolicy' ) ) ;
+    }
+
+    public function testRemovePolicyPermissionKeepsTheRuleOfAServiceHoldingItDirectly() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'res' , 'del' ) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'              => $enforcer ,
+            'domain'                => 'my-api' ,
+            'permissionsModel'      => $this->permissionsByKey([ 'perm1' => $permission ]) ,
+            'serviceHasPolicies'    => $this->edgesOf( 'service_has_policies'    , [ [ 'services/s1' , 'policies/p1' ] , [ 'services/s2' , 'policies/p1' ] ] ) ,
+            'serviceHasPermissions' => $this->edgesOf( 'service_has_permissions' , [ [ 'services/s1' , 'permissions/perm1' ] ] ) ,
+        ]) ;
+
+        $sync->invoke( 'removePolicyPermissionPolicy' , 'p1' , 'perm1' ) ;
+
+        $this->assertSame( [ [ 'service:s2' , 'my-api' , 'res' , 'del' , 'allow' ] ] , $enforcer->callsFor( 'removePolicy' ) ) ;
+    }
+
+    public function testCleanupPermissionStillRemovesARuleHeldByTwoPaths() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'article' , 'read' ) ;
+
+        $roles = $this->documents( 'roles' ) ;
+        $roles->getResults[ 'r1' ] = $this->role( 'role-editor' ) ;
+
+        $permissions = $this->permissionsByKey([ 'perm1' => $permission ]) ;
+
+        $roleHasPermissions = $this->edges( 'role_has_permissions' ) ;
+        $roleHasPermissions->listResult = [ $this->edgeFrom( 'roles/r1' ) ] ;
+
+        // The role also reaches the permission through a policy : a deleted permission leaves it anyway.
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'             => $enforcer ,
+            'domain'               => 'my-api' ,
+            'permissionsModel'     => $permissions ,
+            'rolesModel'           => $roles ,
+            'roleHasPermissions'   => $roleHasPermissions ,
+            'policyHasPermissions' => $this->edgesOf( 'policy_has_permissions' , [ [ 'policies/p1' , 'permissions/perm1' ] ] ) ,
+        ]) ;
+
+        $sync->cleanupPermissionDerivedPolicies( 'perm1' ) ;
+
+        $this->assertContains( [ 'role-editor' , 'my-api' , 'article' , 'read' , 'allow' ] , $enforcer->callsFor( 'removePolicy' ) ) ;
     }
 
     public function testPolicyPermissionContextNullWhenNoSubjectsAttached() :void

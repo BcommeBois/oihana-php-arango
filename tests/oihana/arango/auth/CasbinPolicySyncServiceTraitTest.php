@@ -206,6 +206,54 @@ class CasbinPolicySyncServiceTraitTest extends CasbinSyncTestCase
         ) ;
     }
 
+    public function testRemoveServicePermissionKeepsARuleAPolicyOfTheServiceStillGrants() :void
+    {
+        $enforcer   = new SpyEnforcer() ;
+        $permission = $this->permission( 'my-api' , 'a' , 'read' ) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'             => $enforcer ,
+            'domain'               => 'my-api' ,
+            'permissionsModel'     => $this->permissionsByKey([ 'k1' => $permission ]) ,
+            'serviceHasPolicies'   => $this->edgesFrom( 'service_has_policies'   , [ 'services/s1' => [ 'policies/p1'    ] ] ) ,
+            'policyHasPermissions' => $this->edgesFrom( 'policy_has_permissions' , [ 'policies/p1' => [ 'permissions/k1' ] ] ) ,
+        ]) ;
+
+        $sync->invoke( 'removeServicePermissionPolicy' , 's1' , 'k1' ) ;
+
+        $this->assertSame( [] , $enforcer->callsFor( 'removePolicy' ) ) ;
+    }
+
+    public function testRemoveServicePolicyKeepsTheRulesAnotherPolicyOfTheServiceGrants() :void
+    {
+        $enforcer = new SpyEnforcer() ;
+        $read     = $this->permission( 'my-api' , 'a' , 'read'  ) ;
+        $write    = $this->permission( 'my-api' , 'a' , 'write' ) ;
+
+        $policies = $this->documents( 'policies' ) ;
+        $policies->getResults[ 'p1' ] = $this->policy([ $read , $write ]) ;
+
+        $sync = new MockCasbinPolicySync
+        ([
+            'enforcer'             => $enforcer ,
+            'domain'               => 'my-api' ,
+            'policiesModel'        => $policies ,
+            'permissionsModel'     => $this->permissionsByKey([ 'k1' => $read ]) ,
+            'serviceHasPolicies'   => $this->edgesFrom( 'service_has_policies'   , [ 'services/s1' => [ 'policies/p2'    ] ] ) , // p1 is already detached
+            'policyHasPermissions' => $this->edgesFrom( 'policy_has_permissions' , [ 'policies/p2' => [ 'permissions/k1' ] ] ) ,
+        ]) ;
+
+        $sync->invoke( 'removeServicePolicyPolicies' , 's1' , 'p1' ) ;
+
+        $this->assertSame
+        (
+            [ [ 'service:s1' , 'my-api' , 'a' , 'write' , 'allow' ] ] ,
+            $enforcer->callsFor( 'removePolicy' ) ,
+            'the read rule p2 still grants is kept'
+        ) ;
+    }
+
     public function testRemoveServicePolicyIsNoOpWithoutEnforcerModelOrEmptyPolicy() :void
     {
         // no enforcer
