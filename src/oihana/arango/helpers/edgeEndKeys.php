@@ -12,7 +12,7 @@ namespace oihana\arango\helpers ;
  * @param iterable<mixed> $edges The edges, as objects or arrays.
  * @param string          $end   The end to read : `Schema::_FROM` or `Schema::_TO`.
  *
- * @return array<int, string> The distinct keys.
+ * @return list<string> The distinct keys.
  *
  * @example
  * ```php
