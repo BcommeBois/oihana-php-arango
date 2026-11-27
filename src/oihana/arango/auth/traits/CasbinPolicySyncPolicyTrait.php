@@ -2,7 +2,6 @@
 
 namespace oihana\arango\auth\traits;
 
-use oihana\auth\enums\PermissionEffect;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -17,7 +16,8 @@ use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
 use Throwable;
 
-use function oihana\arango\helpers\parseKey;
+use function oihana\arango\helpers\edgeEndKey;
+use function oihana\arango\helpers\edgeEndKeys;
 
 /**
  * Casbin policy synchronization handlers for the `policies` collection.
@@ -247,10 +247,7 @@ trait CasbinPolicySyncPolicyTrait
         // below can rely on strict types without sprinkling casts at every call
         // site. A non-string value falls back to the same defaults the existing
         // listeners use when the field is absent.
-        $domain = is_string( $permission->domain ?? null ) ? $permission->domain : $this->domain ;
-        $object = is_string( $permission->object ?? null ) ? $permission->object : '' ;
-        $action = is_string( $permission->action ?? null ) ? $permission->action : '' ;
-        $effect = is_string( $permission->effect ?? null ) ? $permission->effect : PermissionEffect::ALLOW ;
+        [ $domain , $object , $action , $effect ] = $this->ruleOf( $permission ) ;
 
         $permissionId = "permissions/$permissionKey" ;
         $purged       = 0 ;
@@ -348,40 +345,11 @@ trait CasbinPolicySyncPolicyTrait
             $this->removeServicePolicyPolicies( $serviceKey , $policyKey ) ;
         }
 
-        $roleKeys = [] ;
+        $roleKeys = $this->resolveRolesForPolicy( $policyKey ) ;
 
-        if( $this->roleHasPolicies )
+        foreach( $roleKeys as $roleKey )
         {
-            try
-            {
-                $roleEdges = $this->roleHasPolicies->list
-                ([
-                    Arango::CONDITIONS => [ 'doc._to == @policyId' ] ,
-                    Arango::BINDS      => [ 'policyId' => "policies/$policyKey" ] ,
-                    Arango::LIMIT      => 1000 ,
-                ]) ;
-            }
-            catch( Throwable $e )
-            {
-                $this->logger?->warning( "CasbinSync: failed to list roles for policy '$policyKey': " . $e->getMessage() ) ;
-                $roleEdges = [] ;
-            }
-
-            foreach( $roleEdges as $edge )
-            {
-                $from = is_object( $edge ) ? ( $edge->_from ?? null ) : ( $edge[ '_from' ] ?? null ) ;
-                $key  = parseKey( $from ) ;
-
-                if( $key )
-                {
-                    $roleKeys[ $key ] = true ;
-                }
-            }
-
-            foreach( array_keys( $roleKeys ) as $roleKey )
-            {
-                $this->removeRolePolicyPolicies( $roleKey , $policyKey ) ;
-            }
+            $this->removeRolePolicyPolicies( $roleKey , $policyKey ) ;
         }
 
         $this->logger?->info( "CasbinSync: policy '$policyKey' derived policies cleaned for " . count( $serviceKeys ) . ' service(s) + ' . count( $roleKeys ) . ' role(s)' ) ;
@@ -434,7 +402,7 @@ trait CasbinPolicySyncPolicyTrait
         {
             $subject = $this->resolveServiceSubject( $serviceKey ) ;
 
-            if( $this->enforcer->addPolicy( $subject , $ctx[ 'domain' ] , $ctx[ 'object' ] , $ctx[ 'action' ] , $ctx[ 'effect' ] ) )
+            if( $this->enforcer->addPolicy( $subject , ...$ctx[ 'rule' ] ) )
             {
                 $count++ ;
             }
@@ -449,7 +417,7 @@ trait CasbinPolicySyncPolicyTrait
                 continue ;
             }
 
-            if( $this->enforcer->addPolicy( $subject , $ctx[ 'domain' ] , $ctx[ 'object' ] , $ctx[ 'action' ] , $ctx[ 'effect' ] ) )
+            if( $this->enforcer->addPolicy( $subject , ...$ctx[ 'rule' ] ) )
             {
                 $count++ ;
             }
@@ -492,18 +460,18 @@ trait CasbinPolicySyncPolicyTrait
         }
 
         $count = 0 ;
-        $rule  = $this->ruleKey( $ctx[ 'permission' ] ) ;
+        $ruleKey = $this->ruleKey( $ctx[ 'permission' ] ) ;
 
         foreach( $ctx[ 'serviceKeys' ] as $serviceKey )
         {
             $subject = $this->resolveServiceSubject( $serviceKey ) ;
 
-            if( isset( $this->serviceHeldRules( $serviceKey )[ $rule ] ) )
+            if( isset( $this->serviceHeldRules( $serviceKey )[ $ruleKey ] ) )
             {
                 continue ;
             }
 
-            if( $this->enforcer->removePolicy( $subject , $ctx[ 'domain' ] , $ctx[ 'object' ] , $ctx[ 'action' ] , $ctx[ 'effect' ] ) )
+            if( $this->enforcer->removePolicy( $subject , ...$ctx[ 'rule' ] ) )
             {
                 $count++ ;
             }
@@ -513,12 +481,12 @@ trait CasbinPolicySyncPolicyTrait
         {
             $subject = $this->resolveRoleSubject( $roleKey ) ;
 
-            if( !$subject || isset( $this->roleHeldRules( $roleKey )[ $rule ] ) )
+            if( !$subject || isset( $this->roleHeldRules( $roleKey )[ $ruleKey ] ) )
             {
                 continue ;
             }
 
-            if( $this->enforcer->removePolicy( $subject , $ctx[ 'domain' ] , $ctx[ 'object' ] , $ctx[ 'action' ] , $ctx[ 'effect' ] ) )
+            if( $this->enforcer->removePolicy( $subject , ...$ctx[ 'rule' ] ) )
             {
                 $count++ ;
             }
@@ -545,10 +513,7 @@ trait CasbinPolicySyncPolicyTrait
      *   permission:  object ,
      *   serviceKeys: string[] ,
      *   roleKeys:    string[] ,
-     *   domain:      string ,
-     *   object:      string ,
-     *   action:      string ,
-     *   effect:      string ,
+     *   rule:        array{0:string,1:string,2:string,3:string} ,
      * }|null
      *
      * @throws ArangoException
@@ -585,10 +550,7 @@ trait CasbinPolicySyncPolicyTrait
             'permission'  => $permission ,
             'serviceKeys' => $serviceKeys ,
             'roleKeys'    => $roleKeys ,
-            'domain'      => $permission->domain ?? $this->domain ,
-            'object'      => $permission->object ?? '' ,
-            'action'      => $permission->action ?? '' ,
-            'effect'      => $permission->effect ?? PermissionEffect::ALLOW ,
+            'rule'        => $this->ruleOf( $permission ) ,
         ] ;
     }
 
@@ -650,8 +612,7 @@ trait CasbinPolicySyncPolicyTrait
 
         foreach( $rows as $edge )
         {
-            $from = is_object( $edge ) ? ( $edge->_from ?? null ) : ( $edge[ '_from' ] ?? null ) ;
-            $key  = parseKey( $from ) ;
+            $key = edgeEndKey( $edge , Schema::_FROM ) ;
 
             if( !$key )
             {
@@ -731,10 +692,7 @@ trait CasbinPolicySyncPolicyTrait
 
         foreach( $policyRows as $policyEdge )
         {
-            $policyKey = parseKey
-            (
-                is_object( $policyEdge ) ? ( $policyEdge->_from ?? null ) : ( $policyEdge[ '_from' ] ?? null )
-            ) ;
+            $policyKey = edgeEndKey( $policyEdge , Schema::_FROM ) ;
 
             if( !$policyKey )
             {
@@ -756,33 +714,8 @@ trait CasbinPolicySyncPolicyTrait
             // identifier (mirror of the M2M paths above).
             if( $this->roleHasPolicies )
             {
-                try
+                foreach( $this->resolveRolesForPolicy( $policyKey ) as $roleKey )
                 {
-                    $roleRows = $this->roleHasPolicies->list
-                    ([
-                        Arango::CONDITIONS => [ 'doc._to == @policyId' ] ,
-                        Arango::BINDS      => [ 'policyId' => "policies/$policyKey" ] ,
-                        Arango::LIMIT      => 1000 ,
-                    ]) ;
-                }
-                catch( Throwable $e )
-                {
-                    $this->logger?->warning( "CasbinSync: failed to list roles for policy '$policyKey': " . $e->getMessage() ) ;
-                    $roleRows = [] ;
-                }
-
-                foreach( $roleRows as $roleEdge )
-                {
-                    $roleKey = parseKey
-                    (
-                        is_object( $roleEdge ) ? ( $roleEdge->_from ?? null ) : ( $roleEdge[ '_from' ] ?? null )
-                    ) ;
-
-                    if( !$roleKey )
-                    {
-                        continue ;
-                    }
-
                     $roleSubject = $this->resolveRoleSubject( $roleKey ) ;
 
                     if( !$roleSubject )
@@ -830,19 +763,6 @@ trait CasbinPolicySyncPolicyTrait
             return [] ;
         }
 
-        $roleKeys = [] ;
-
-        foreach( $edges as $edge )
-        {
-            $from = is_object( $edge ) ? ( $edge->_from ?? null ) : ( $edge[ '_from' ] ?? null ) ;
-            $key  = parseKey( $from ) ;
-
-            if( $key )
-            {
-                $roleKeys[ $key ] = true ;
-            }
-        }
-
-        return array_keys( $roleKeys ) ;
+        return edgeEndKeys( $edges , Schema::_FROM ) ;
     }
 }

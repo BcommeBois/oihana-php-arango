@@ -8,6 +8,7 @@ use oihana\arango\auth\traits\CasbinPolicySyncEdgeTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncGrantTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncPolicyTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncRoleTrait;
+use oihana\arango\auth\traits\CasbinPolicySyncRuleTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncServiceTrait;
 use oihana\arango\auth\traits\CasbinPolicySyncUserTrait;
 use oihana\auth\casbin\traits\EnforcerTrait;
@@ -81,6 +82,7 @@ class CasbinPolicySync
         CasbinPolicySyncGrantTrait   ,
         CasbinPolicySyncPolicyTrait  ,
         CasbinPolicySyncRoleTrait    ,
+        CasbinPolicySyncRuleTrait    ,
         CasbinPolicySyncServiceTrait ,
         CasbinPolicySyncUserTrait    ,
         EnforcerTrait                ,

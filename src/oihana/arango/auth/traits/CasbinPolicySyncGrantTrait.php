@@ -5,9 +5,10 @@ namespace oihana\arango\auth\traits;
 use DI\DependencyException;
 use DI\NotFoundException;
 use oihana\arango\clients\exceptions\ArangoException;
-use oihana\auth\enums\PermissionEffect;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Edges;
+
+use org\schema\constants\Schema;
 
 use oihana\exceptions\BindException;
 use oihana\exceptions\UnsupportedOperationException;
@@ -18,7 +19,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
 use Throwable;
 
-use function oihana\arango\helpers\parseKey;
+use function oihana\arango\helpers\edgeEndKeys;
 
 /**
  * Tells which Casbin rules a role or a service still holds, read from the
@@ -83,14 +84,7 @@ trait CasbinPolicySyncGrantTrait
                 continue ;
             }
 
-            $this->enforcer->removePolicy
-            (
-                $subject ,
-                $permission->domain ?? $this->domain ,
-                $permission->object ?? '' ,
-                $permission->action ?? '' ,
-                $permission->effect ?? PermissionEffect::ALLOW
-            ) ;
+            $this->enforcer->removePolicy( $subject , ...$this->ruleOf( $permission ) ) ;
 
             $removed++ ;
         }
@@ -104,30 +98,11 @@ trait CasbinPolicySyncGrantTrait
      * @param string      $roleKey          The role ArangoDB `_key`.
      * @param string|null $ignoredPolicyKey A policy whose permissions do not count (a policy being deleted).
      *
-     * @return array<string, true>|null The keys of the held rules (see {@see self::ruleKey()}), or `null` when the graph cannot be read.
+     * @return array<string, true>|null The keys of the held rules (see {@see CasbinPolicySyncRuleTrait::ruleKey()}), or `null` when the graph cannot be read.
      */
     protected function roleHeldRules( string $roleKey , ?string $ignoredPolicyKey = null ) :?array
     {
         return $this->heldRules( "roles/$roleKey" , $this->roleHasPermissions , $this->roleHasPolicies , $ignoredPolicyKey ) ;
-    }
-
-    /**
-     * Builds the key of the Casbin rule a permission writes : its domain, object,
-     * action and effect, with the defaults the sync writes.
-     *
-     * @param object $permission The permission.
-     *
-     * @return string The rule key.
-     */
-    protected function ruleKey( object $permission ) :string
-    {
-        return implode( "\n" ,
-        [
-            (string) ( $permission->domain ?? $this->domain               ) ,
-            (string) ( $permission->object ?? ''                          ) ,
-            (string) ( $permission->action ?? ''                          ) ,
-            (string) ( $permission->effect ?? PermissionEffect::ALLOW     ) ,
-        ]) ;
     }
 
     /**
@@ -136,7 +111,7 @@ trait CasbinPolicySyncGrantTrait
      * @param string      $serviceKey       The service ArangoDB `_key`.
      * @param string|null $ignoredPolicyKey A policy whose permissions do not count (a policy being deleted).
      *
-     * @return array<string, true>|null The keys of the held rules (see {@see self::ruleKey()}), or `null` when the graph cannot be read.
+     * @return array<string, true>|null The keys of the held rules (see {@see CasbinPolicySyncRuleTrait::ruleKey()}), or `null` when the graph cannot be read.
      */
     protected function serviceHeldRules( string $serviceKey , ?string $ignoredPolicyKey = null ) :?array
     {
@@ -242,26 +217,15 @@ trait CasbinPolicySyncGrantTrait
             return [] ;
         }
 
-        $rows = $edges->list
-        ([
-            Arango::CONDITIONS => [ 'doc._from IN @fromIds' ] ,
-            Arango::BINDS      => [ 'fromIds' => $fromIds ] ,
-            Arango::LIMIT      => self::GRANT_LOOKUP_LIMIT ,
-        ]) ;
-
-        $keys = [] ;
-
-        foreach( $rows as $row )
-        {
-            $to  = is_object( $row ) ? ( $row->_to ?? null ) : ( is_array( $row ) ? ( $row[ '_to' ] ?? null ) : null ) ;
-            $key = is_string( $to ) ? parseKey( $to ) : null ;
-
-            if( $key )
-            {
-                $keys[] = $key ;
-            }
-        }
-
-        return $keys ;
+        return edgeEndKeys
+        (
+            $edges->list
+            ([
+                Arango::CONDITIONS => [ 'doc._from IN @fromIds' ] ,
+                Arango::BINDS      => [ 'fromIds' => $fromIds ] ,
+                Arango::LIMIT      => self::GRANT_LOOKUP_LIMIT ,
+            ]) ,
+            Schema::_TO
+        ) ;
     }
 }

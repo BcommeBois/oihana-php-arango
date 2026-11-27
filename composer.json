@@ -416,6 +416,8 @@
             "src/oihana/arango/helpers/ascKey.php",
             "src/oihana/arango/helpers/decodeRevision.php",
             "src/oihana/arango/helpers/descKey.php",
+            "src/oihana/arango/helpers/edgeEndKey.php",
+            "src/oihana/arango/helpers/edgeEndKeys.php",
             "src/oihana/arango/helpers/encodeRevision.php",
             "src/oihana/arango/helpers/parseCollection.php",
             "src/oihana/arango/helpers/parseIdentifier.php",

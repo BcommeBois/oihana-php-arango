@@ -2,7 +2,6 @@
 
 namespace oihana\arango\auth\traits;
 
-use oihana\auth\enums\PermissionEffect;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -113,14 +112,7 @@ trait CasbinPolicySyncRoleTrait
             return ;
         }
 
-        $this->enforcer->addPolicy
-        (
-            $roleSubject ,
-            $permission->domain ?? $this->domain ,
-            $permission->object ?? '' ,
-            $permission->action ?? '' ,
-            $permission->effect ?? PermissionEffect::ALLOW
-        ) ;
+        $this->enforcer->addPolicy( $roleSubject , ...$this->ruleOf( $permission ) ) ;
 
         $this->logger?->info( "CasbinSync: +policy role '$roleSubject' → perm '$permissionKey'" ) ;
     }
@@ -171,14 +163,7 @@ trait CasbinPolicySyncRoleTrait
 
         foreach( $policy->permissions as $permission )
         {
-            $this->enforcer->addPolicy
-            (
-                $roleSubject ,
-                $permission->domain ?? $this->domain ,
-                $permission->object ?? '' ,
-                $permission->action ?? '' ,
-                $permission->effect ?? PermissionEffect::ALLOW
-            ) ;
+            $this->enforcer->addPolicy( $roleSubject , ...$this->ruleOf( $permission ) ) ;
         }
 
         $count = count( $policy->permissions ) ;
@@ -262,14 +247,7 @@ trait CasbinPolicySyncRoleTrait
             return ;
         }
 
-        $this->enforcer->removePolicy
-        (
-            $roleSubject ,
-            $permission->domain ?? $this->domain ,
-            $permission->object ?? '' ,
-            $permission->action ?? '' ,
-            $permission->effect ?? PermissionEffect::ALLOW
-        ) ;
+        $this->enforcer->removePolicy( $roleSubject , ...$this->ruleOf( $permission ) ) ;
 
         $this->logger?->info( "CasbinSync: -policy role '$roleSubject' → perm '$permissionKey'" ) ;
     }

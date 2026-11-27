@@ -12,9 +12,11 @@ use oihana\exceptions\BindException;
 use oihana\signals\notices\Payload;
 
 use Psr\Container\ContainerExceptionInterface;
+use org\schema\constants\Schema;
+
 use Psr\Container\NotFoundExceptionInterface;
 
-use function oihana\arango\helpers\parseKey;
+use function oihana\arango\helpers\edgeEndKey;
 
 /**
  * Casbin policy synchronization edge dispatcher.
@@ -83,8 +85,8 @@ trait CasbinPolicySyncEdgeTrait
 
         foreach( $edges as $edge )
         {
-            $from = parseKey( is_object( $edge ) ? ( $edge->_from ?? null ) : ( $edge[ '_from' ] ?? null ) ) ;
-            $to   = parseKey( is_object( $edge ) ? ( $edge->_to   ?? null ) : ( $edge[ '_to'   ] ?? null ) ) ;
+            $from = edgeEndKey( $edge , Schema::_FROM ) ;
+            $to   = edgeEndKey( $edge , Schema::_TO   ) ;
 
             if( !$from || !$to )
             {
@@ -130,8 +132,8 @@ trait CasbinPolicySyncEdgeTrait
             return ;
         }
 
-        $from = parseKey( $edge->_from ?? null ) ;
-        $to   = parseKey( $edge->_to   ?? null ) ;
+        $from = edgeEndKey( $edge , Schema::_FROM ) ;
+        $to   = edgeEndKey( $edge , Schema::_TO   ) ;
 
         if( !$from || !$to )
         {

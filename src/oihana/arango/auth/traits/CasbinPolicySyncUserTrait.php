@@ -2,7 +2,6 @@
 
 namespace oihana\arango\auth\traits;
 
-use oihana\auth\enums\PermissionEffect;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -110,14 +109,7 @@ trait CasbinPolicySyncUserTrait
             return ;
         }
 
-        $this->enforcer->addPolicy
-        (
-            $userId ,
-            $permission->domain ?? $this->domain ,
-            $permission->object ?? '' ,
-            $permission->action ?? '' ,
-            $permission->effect ?? PermissionEffect::ALLOW
-        ) ;
+        $this->enforcer->addPolicy( $userId , ...$this->ruleOf( $permission ) ) ;
 
         $this->logger?->info( "CasbinSync: +direct perm user '$userId' → '$permissionKey'" ) ;
     }
@@ -223,14 +215,7 @@ trait CasbinPolicySyncUserTrait
             return ;
         }
 
-        $this->enforcer->removePolicy
-        (
-            $userId ,
-            $permission->domain ?? $this->domain ,
-            $permission->object ?? '' ,
-            $permission->action ?? '' ,
-            $permission->effect ?? PermissionEffect::ALLOW
-        ) ;
+        $this->enforcer->removePolicy( $userId , ...$this->ruleOf( $permission ) ) ;
 
         $this->logger?->info( "CasbinSync: -direct perm user '$userId' → '$permissionKey'" ) ;
     }

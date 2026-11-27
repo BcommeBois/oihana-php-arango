@@ -2,7 +2,6 @@
 
 namespace oihana\arango\auth\traits;
 
-use oihana\auth\enums\PermissionEffect;
 use oihana\arango\clients\exceptions\ArangoException;
 use oihana\arango\enums\Arango;
 use oihana\arango\models\Documents;
@@ -17,8 +16,8 @@ use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
 use Throwable;
 
+use function oihana\arango\helpers\edgeEndKeys;
 use function oihana\auth\helpers\casbinSafeSubject;
-use function oihana\arango\helpers\parseKey;
 
 /**
  * Casbin policy synchronization handlers for the `services` collection.
@@ -47,7 +46,7 @@ use function oihana\arango\helpers\parseKey;
  *  - `?Edges $serviceHasPermissions`
  *  - `?LoggerInterface $logger`
  *
- * Plus the standalone helpers `casbinSafeSubject()` and `parseKey()`.
+ * Plus the standalone helpers `casbinSafeSubject()` and `edgeEndKeys()`.
  *
  * @package oihana\arango\auth\traits
  * @author  Marc Alcaraz
@@ -111,14 +110,7 @@ trait CasbinPolicySyncServiceTrait
             return ;
         }
 
-        $this->enforcer->addPolicy
-        (
-            $subject ,
-            $permission->domain ?? $this->domain ,
-            $permission->object ?? '' ,
-            $permission->action ?? '' ,
-            $permission->effect ?? PermissionEffect::ALLOW
-        ) ;
+        $this->enforcer->addPolicy( $subject , ...$this->ruleOf( $permission ) ) ;
 
         $this->logger?->info( "CasbinSync: +direct perm service '$subject' → '$permissionKey'" ) ;
     }
@@ -162,14 +154,7 @@ trait CasbinPolicySyncServiceTrait
 
         foreach( $policy->permissions as $permission )
         {
-            $this->enforcer->addPolicy
-            (
-                $subject ,
-                $permission->domain ?? $this->domain ,
-                $permission->object ?? '' ,
-                $permission->action ?? '' ,
-                $permission->effect ?? PermissionEffect::ALLOW
-            ) ;
+            $this->enforcer->addPolicy( $subject , ...$this->ruleOf( $permission ) ) ;
         }
 
         $count = count( $policy->permissions ) ;
@@ -259,14 +244,7 @@ trait CasbinPolicySyncServiceTrait
             return ;
         }
 
-        $this->enforcer->removePolicy
-        (
-            $subject ,
-            $permission->domain ?? $this->domain ,
-            $permission->object ?? '' ,
-            $permission->action ?? '' ,
-            $permission->effect ?? PermissionEffect::ALLOW
-        ) ;
+        $this->enforcer->removePolicy( $subject , ...$this->ruleOf( $permission ) ) ;
 
         $this->logger?->info( "CasbinSync: -direct perm service '$subject' → '$permissionKey'" ) ;
     }
@@ -346,20 +324,7 @@ trait CasbinPolicySyncServiceTrait
             return [] ;
         }
 
-        $serviceKeys = [] ;
-
-        foreach( $edges as $edge )
-        {
-            $from = is_object( $edge ) ? ( $edge->_from ?? null ) : ( $edge[ '_from' ] ?? null ) ;
-            $key  = parseKey( $from ) ;
-
-            if( $key )
-            {
-                $serviceKeys[ $key ] = true ;
-            }
-        }
-
-        return array_keys( $serviceKeys ) ;
+        return edgeEndKeys( $edges , Schema::_FROM ) ;
     }
 
     /**
